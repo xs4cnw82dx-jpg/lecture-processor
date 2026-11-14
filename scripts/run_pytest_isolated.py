@@ -13,6 +13,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def main() -> int:
+    # Legacy contract fixtures opt out; rollout tests enable their synthetic
+    # runtime explicitly. An explicit caller setting still takes precedence.
+    os.environ.setdefault('UNIFIED_CREDITS_ENABLED', '0')
     for name in ('RENDER', 'FIREBASE_CREDENTIALS', 'GOOGLE_APPLICATION_CREDENTIALS',
                  'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'STRIPE_SECRET_KEY',
                  'SENTRY_DSN_BACKEND', 'SENTRY_DSN_FRONTEND', 'SENTRY_DSN'):

@@ -76,11 +76,18 @@ def test_processing_upload_zones_are_keyboard_accessible():
     assert re.search(r'<div class="upload-zone" id="audio-zone"[^>]*role="button"[^>]*tabindex="0"', index_template)
 
 
-def test_processing_disabled_button_state_is_described():
-    index_template = Path('templates/index.html').read_text(encoding='utf-8')
+def test_processing_disabled_button_state_is_described(client):
+    index_template = client.get('/lecture-notes').get_data(as_text=True)
 
     assert 'id="process-disabled-reason" aria-live="polite"' in index_template
-    assert 'id="process-button" disabled aria-describedby="mobile-process-summary process-disabled-reason no-credits-warning" aria-disabled="true"' in index_template
+    parser = _TemplateButtonParser()
+    parser.feed(index_template)
+    attrs = next(button['attrs'] for button in parser.buttons if button['attrs'].get('id') == 'process-button')
+    assert 'disabled' in attrs
+    assert attrs['aria-disabled'] == 'true'
+    assert set(attrs['aria-describedby'].split()) == {
+        'mobile-process-summary', 'process-disabled-reason', 'no-credits-warning', 'mode-cost-summary', 'mode-credit-cost',
+    }
     assert 'id="no-credits-warning" aria-live="polite"' in index_template
 
 
@@ -434,7 +441,6 @@ def test_shared_shell_hidden_and_live_region_contracts():
     assert "currentPath === '/instant_batch_mode'" in app_shell_js
     assert "currentPath.indexOf('/instant_batch_mode_') === 0" in app_shell_js
     assert "link.setAttribute('aria-current', 'page');" in app_shell_js
-    assert "creditsLink.setAttribute('aria-label', 'Buy credits, ' + creditsTotalLabel.textContent);" in app_shell_js
 
 
 def test_non_study_toasts_and_auth_messages_are_live_regions():

@@ -8,7 +8,7 @@ Credit-bearing runtime jobs commit their debit journal and initial job record in
 
 Receipts retain the amount charged to each component. Refunds use those amounts, including zero for category exemptions, and cumulative targets prevent repeated requests from returning more than was charged. A failed refund retains a pending marker; marked runtime snapshots do not expire until settlement. Recovery retries only the marked components, including failed extras on otherwise successful work. Terminal batches retain a parent retry flag and per-row component targets, queried in bounded groups. Transactional claims prevent overlapping retries; settlement updates receipt history and aggregate credit totals without rerunning successful work or counting another completed job.
 
-`UNIFIED_CREDITS_ENABLED` is a server setting with a default of `0`. It controls new conversion and the checkout catalog. Stored `credits_version: 2` accounts and `credit_scheme: 2` receipts remain authoritative when it is disabled. Prices, conversion rates, bundle terms and the signup grant are defined in `lecture_processor/domains/billing/policy.py`. Conversion occurs within the same transaction as the account read or money change; deployment does not run a migration script. Existing category balances and public receipts keep their prior format while the setting is disabled and the account is unconverted.
+`UNIFIED_CREDITS_ENABLED` is a server setting with a default of `1`. It controls new conversion and the checkout catalog. Stored `credits_version: 2` accounts and `credit_scheme: 2` receipts remain authoritative when it is disabled. Prices, conversion rates, bundle terms and the signup grant are defined in `lecture_processor/domains/billing/policy.py`. Conversion occurs within the same transaction as the account read or money change; deployment does not run a migration script. Existing category balances and public receipts keep their prior format while the setting is disabled and the account is unconverted.
 
 | Setting | Default | Purpose |
 |---|---|---|
@@ -16,6 +16,6 @@ Receipts retain the amount charged to each component. Refunds use those amounts,
 | `RUNTIME_JOB_RECOVERY_LEASE_SECONDS` | `300` | Coordinates periodic and startup scans across instances. |
 | `ENABLE_RUNTIME_JOB_RECOVERY` | `1` | Enables runtime-job startup, periodic, and status-request recovery. |
 | `ENABLE_BATCH_JOB_RECOVERY` | `1` | Enables the separate batch startup recovery scan. |
-| `UNIFIED_CREDITS_ENABLED` | `0` | Enables lazy balance conversion and the unified checkout catalog; requires compatible client UI before activation. |
+| `UNIFIED_CREDITS_ENABLED` | `1` | Enables lazy balance conversion and the unified checkout catalog. Set `0` to keep unconverted accounts on legacy terms; stored version-two balances remain authoritative. |
 
 The isolated preview and pytest runners disable both recovery flags and the normal cleanup thread. Their test fixtures use synthetic records and external services.

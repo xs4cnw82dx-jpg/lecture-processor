@@ -6,6 +6,7 @@
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
   var downloadUtils = window.LectureProcessorDownload || {};
+  var creditUtils = window.LectureProcessorCreditUtils || {};
 
   var body = document.body;
   var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
@@ -132,6 +133,87 @@
   var accountResolved = !!(auth && auth.currentUser);
   var BATCH_CACHE_KEY_PREFIX = isInstantBatch ? 'instant_batch_mode_last_batch_' : 'batch_mode_last_batch_';
 
+  function batchCreditText(message, params) {
+    if (window.LectureI18n) return window.LectureI18n.t(message, params || {});
+    return message.replace(/\{(\w+)\}/g, function (_match, key) { return String((params || {})[key] ?? ''); });
+  }
+
+  function batchCreditState() {
+    var shell = window.LectureProcessorShell;
+    var value = shell && shell.getCreditState ? shell.getCreditState() : null;
+    return value && auth && auth.currentUser && value.uid === auth.currentUser.uid ? value : null;
+  }
+
+  function batchCreditQuote(nodes, overnight) {
+    var value = batchCreditState();
+    if (!value || !value.snapshot || value.snapshot.scheme !== 2) return null;
+    var action = { 'lecture-notes': 'lecture_notes', 'slides-only': 'slides_extraction', interview: 'interview_transcription', 'audio-transcription': 'audio_transcription', 'text-combine': 'text_combine' }[mode];
+    var components = [];
+    Array.from(nodes || rowsWrap.querySelectorAll('.batch-row')).forEach(function (row) {
+      components.push({ action: action, units: 1 });
+      if (mode === 'interview') components.push({ action: 'interview_extra', units: row.querySelectorAll('[data-interview-feature-chip].active').length });
+    });
+    return creditUtils.quote(value.snapshot, components, { overnight: overnight === undefined ? !isInstantBatch : overnight });
+  }
+
+  function batchCreditProblem() {
+    if (!auth || !auth.currentUser) return '';
+    var value = batchCreditState();
+    if (!value || value.status === 'loading') return batchCreditText('Checking credits…');
+    if (value.status !== 'ready' || value.source !== 'server' || !value.snapshot) return batchCreditText('Credits are unavailable. Please try again.');
+    if (value.snapshot.scheme === 1) return '';
+    var quote = batchCreditQuote();
+    return !quote ? batchCreditText('Credit cost unavailable.') : quote.sufficient ? '' : creditUtils.formatInsufficient({ needed: quote.needed, available: quote.available });
+  }
+
+  function updateBatchCreditUi() {
+    var value = batchCreditState();
+    var unified = value && value.snapshot && value.snapshot.scheme === 2;
+    var quote = unified ? batchCreditQuote() : null;
+    var instantQuote = unified && !isInstantBatch ? batchCreditQuote(undefined, false) : null;
+    var halfPrice = quote && instantQuote && quote.quoted > 0 && quote.components.every(function (component, index) {
+      return component.quoted * 2 === instantQuote.components[index].quoted;
+    });
+    var speedDescription = document.getElementById('batch-speed-description');
+    if (speedDescription) speedDescription.textContent = batchCreditText(isInstantBatch
+      ? 'Starts now. Standard credit cost.'
+      : halfPrice ? 'Overnight batches use half the instant credit price. Allow up to 24 hours for results.' : 'Allow up to 24 hours for results.');
+    var summary = document.getElementById('batch-credit-summary');
+    var problem = batchCreditProblem();
+    if (summary) {
+      summary.hidden = !unified && !problem;
+      summary.textContent = quote
+        ? batchCreditText('Batch total: {credits}.', { credits: creditUtils.formatCredits(quote.needed) }) + ' ' + (problem || batchCreditText('{credits} available', { credits: creditUtils.formatCredits(quote.available) }))
+        : problem;
+    }
+    Array.from(rowsWrap.querySelectorAll('.batch-row')).forEach(function (row) {
+      var rowCost = row.querySelector('[data-row-credit-cost]');
+      var rowQuote = unified ? batchCreditQuote([row]) : null;
+      if (rowCost) {
+        rowCost.hidden = !unified;
+        rowCost.textContent = rowQuote ? batchCreditText('Row total: {credits}.', { credits: creditUtils.formatCredits(rowQuote.needed) }) : batchCreditText('Credit cost unavailable.');
+      }
+      var extraNote = row.querySelector('[data-interview-extra-note]');
+      if (unified && extraNote) {
+        var count = row.querySelectorAll('[data-interview-feature-chip].active').length;
+        var extras = creditUtils.quote(value.snapshot, [{ action: 'interview_extra', units: count || 1 }], { overnight: !isInstantBatch });
+        extraNote.textContent = extras ? batchCreditText(count ? 'Selected extras: {credits}.' : 'Optional extras: {credits} each.', { credits: creditUtils.formatCredits(extras.needed) }) : batchCreditText('Credit cost unavailable.');
+      }
+    });
+    if (submitBtn) submitBtn.disabled = pendingStartRequest || startLockedByBatchState || Boolean(problem);
+  }
+
+  function refreshBatchCredits(force) {
+    var current = captureAccount();
+    var shell = window.LectureProcessorShell;
+    if (!shell || !shell.refreshCreditSnapshot) return Promise.reject(new Error(batchCreditText('Credits are unavailable. Please try again.')));
+    return shell.refreshCreditSnapshot({ force: !!force }).then(function (result) {
+      if (!current()) throw new Error('Your account changed. Please try again.');
+      updateBatchCreditUi();
+      return result;
+    });
+  }
+
   function captureAccount() {
     var user = auth && auth.currentUser;
     var revision = accountRevision;
@@ -184,7 +266,6 @@
     var toggle = document.getElementById('batch-speed-switch');
     if (toggle) toggle.setAttribute('aria-checked', String(instant));
     document.getElementById('batch-speed-title').textContent = instant ? 'Instant processing' : 'Deferred processing';
-    document.getElementById('batch-speed-description').textContent = instant ? 'Starts now. Standard credit cost.' : 'Allow up to 24 hours for results.';
     document.getElementById('batch-speed-deferred').classList.toggle('is-selected', !instant);
     document.getElementById('batch-speed-instant').classList.toggle('is-selected', instant);
     var pageTitle = 'Batch Processing · ' + (active ? active.textContent : modeMeta().plural);
@@ -193,6 +274,7 @@
     if (shellTitle) shellTitle.textContent = pageTitle;
     updateRowLabels();
     setStartButtonState(pendingStartRequest || startLockedByBatchState);
+    updateBatchCreditUi();
   }
 
   function modeSupportsStudyTools() {
@@ -335,7 +417,7 @@
 
   function setStartButtonState(locked, label) {
     if (!submitBtn) return;
-    submitBtn.disabled = !!locked;
+    submitBtn.disabled = !!locked || Boolean(batchCreditProblem());
     submitBtn.textContent = String(label || (locked ? 'Queued…' : (isInstantBatch ? 'Start instant batch' : 'Start batch')));
     var toggle = document.getElementById('batch-speed-switch');
     if (toggle) toggle.disabled = !!locked;
@@ -490,6 +572,7 @@
       var transcriptTextZone = rowNode.querySelector('[data-upload-zone="transcriptText"]');
       if (transcriptTextZone) transcriptTextZone.setAttribute('aria-label', 'Upload audio transcript text for ' + meta.singular + ' ' + String(index + 1));
     });
+    updateBatchCreditUi();
   }
 
   function updateTopControls() {
@@ -1159,6 +1242,7 @@
         chip.classList.toggle('active');
         chip.setAttribute('aria-pressed', chip.classList.contains('active') ? 'true' : 'false');
         syncInterviewExtrasNote();
+        updateBatchCreditUi();
       });
       chip.setAttribute('aria-pressed', chip.classList.contains('active') ? 'true' : 'false');
     });
@@ -1376,6 +1460,7 @@
       '  <h3>' + meta.singular + ' ' + String(ordinal) + '</h3>' +
       '  <button type="button" class="btn danger-soft" data-action="remove-row">Remove</button>' +
       '</div>' +
+      '<p class="control-note row-credit-cost" data-row-credit-cost hidden></p>' +
       '<div class="batch-row-fields">' +
       slidesFieldHtml + audioFieldHtml + textCombineFieldsHtml + interviewExtrasHtml + overrideHtml +
       '</div>';
@@ -1617,9 +1702,15 @@
     showSubmitPendingFeedback('Preparing batch...');
 
     try {
+      await refreshBatchCredits(true);
+      if (!isCurrent()) return;
+      var creditProblem = batchCreditProblem();
+      if (creditProblem) throw new Error(creditProblem);
       showSubmitPendingFeedback('Preparing rows...');
       await runAutoImportSweepBeforeStart();
       if (!isCurrent()) return;
+      creditProblem = batchCreditProblem();
+      if (creditProblem) throw new Error(creditProblem);
       if (!activeSubmissionId) {
         activeSubmissionId = makeSubmissionId();
       }
@@ -1632,8 +1723,10 @@
       var payload = await response.json().catch(function () { return {}; });
       if (!isCurrent()) return;
       if (!response.ok) {
-        throw new Error(String(payload.error || 'Could not create batch.'));
+        if (response.status === 402) void refreshBatchCredits(true).catch(function () {});
+        throw new Error(creditUtils.formatInsufficient(payload) || String(payload.error || 'Could not create batch.'));
       }
+      void refreshBatchCredits(true).catch(function () {});
       currentBatchId = String(payload.batch_id || '');
       if (!currentBatchId) throw new Error('No batch id returned.');
       cacheCurrentBatchId(currentBatchId);
@@ -1888,7 +1981,11 @@
         if (accountResolved && nextUid !== accountUid) resetAccountState();
         accountUid = nextUid;
         accountResolved = true;
-        if (user) loadOutputLanguagePreference();
+        if (user) {
+          loadOutputLanguagePreference();
+          void refreshBatchCredits(false).catch(updateBatchCreditUi);
+        }
+        updateBatchCreditUi();
         if (user && queryBatchId) {
           currentBatchId = queryBatchId;
           startPollingForBatch();
@@ -1905,5 +2002,7 @@
     }
   }
 
+  window.addEventListener('lp:credits-changed', updateBatchCreditUi);
+  window.addEventListener('lp:language-changed', updateBatchCreditUi);
   boot();
 })();

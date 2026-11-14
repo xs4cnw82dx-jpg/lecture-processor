@@ -4,6 +4,8 @@ const authUtils = window.LectureProcessorAuth || {};
 const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
 const downloadUtils = window.LectureProcessorDownload || {};
 const uxUtils = window.LectureProcessorUx || {};
+const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
+const creditUtils = window.LectureProcessorCreditUtils || {};
 
 const signedInMeta = document.getElementById('signed-in-meta');
 const stateArea = document.getElementById('state-area');
@@ -45,6 +47,7 @@ const adminCreditGrantForm = document.getElementById('admin-credit-grant-form');
 const adminCreditGrantLecture = document.getElementById('admin-credit-grant-lecture');
 const adminCreditGrantSlides = document.getElementById('admin-credit-grant-slides');
 const adminCreditGrantInterview = document.getElementById('admin-credit-grant-interview');
+const adminCreditGrantAmount = document.getElementById('admin-credit-grant-amount');
 const adminCreditGrantNote = document.getElementById('admin-credit-grant-note');
 const adminCreditGrantBtn = document.getElementById('admin-credit-grant-btn');
 const adminCreditUnlimitedForm = document.getElementById('admin-credit-unlimited-form');
@@ -63,6 +66,10 @@ let latestModeBreakdown = {};
 let activeAdminTab = 'overview';
 let adminToastTimer = null;
 let currentAdminCreditUser = null;
+let adminCreditBusy = false;
+let pendingAdminGrant = null;
+let latestAdminGrants = [];
+let latestAdminDashboard = null;
 
 const adminToast = document.createElement('div');
 adminToast.className = 'admin-toast';
@@ -99,7 +106,9 @@ function onAdminAuthStateReady(callback) {
 }
 
 function formatMoney(cents) {
-    return `€${((cents || 0) / 100).toFixed(2)}`;
+    return displayFormatUtils.formatCurrencyFromCents
+        ? displayFormatUtils.formatCurrencyFromCents(cents, 'EUR')
+        : new Intl.NumberFormat(window.LectureI18n ? window.LectureI18n.locale() : 'en-GB', { style: 'currency', currency: 'EUR' }).format(Number(cents || 0) / 100);
 }
 
 function formatDate(timestampSeconds) {
@@ -294,9 +303,9 @@ async function loadAdminBatchJobs(showToastOnSuccess = false) {
 
 function adminCreditCategoryLabels() {
     return {
-        lecture: 'Lecture Notes',
-        slides: 'Text Extraction',
-        interview: 'Interview Transcription',
+        lecture: adminT('Lecture Notes'),
+        slides: adminT('Text Extraction'),
+        interview: adminT('Interview Transcription'),
     };
 }
 
@@ -314,8 +323,12 @@ function setAdminCreditState(message, type = '') {
 }
 
 function setAdminCreditBusy(busy) {
+    adminCreditBusy = !!busy;
     [adminCreditSearchBtn, adminCreditGrantBtn, adminCreditUnlimitedSaveBtn, adminCreditRefreshBtn].forEach((btn) => {
         if (btn) btn.disabled = !!busy;
+    });
+    [adminCreditGrantAmount, adminCreditGrantLecture, adminCreditGrantSlides, adminCreditGrantInterview, adminCreditGrantNote].forEach((input) => {
+        if (input) input.disabled = !!busy;
     });
     if (!busy && currentAdminCreditUser) {
         setUnlimitedInputsDisabled(!!currentAdminCreditUser.is_configured_admin);
@@ -342,6 +355,7 @@ function setUnlimitedCheckboxes(value) {
 }
 
 function renderAdminCreditUser(user) {
+    if (!user || !currentAdminCreditUser || currentAdminCreditUser.uid !== user.uid) pendingAdminGrant = null;
     currentAdminCreditUser = user || null;
     if (!adminCreditUserCard) return;
     if (!currentAdminCreditUser) {
@@ -360,6 +374,17 @@ function renderAdminCreditUser(user) {
     }
     const configuredAdmin = !!currentAdminCreditUser.is_configured_admin;
     if (adminCreditAdminNote) adminCreditAdminNote.hidden = !configuredAdmin;
+    const unified = currentAdminCreditUser.credits_version === 2;
+    document.getElementById('admin-credit-unified-summary').hidden = !unified;
+    document.getElementById('admin-credit-unified-grant').hidden = !unified;
+    document.getElementById('admin-credit-legacy-balances').hidden = unified;
+    document.getElementById('admin-credit-legacy-grant').hidden = unified;
+    const balance = currentAdminCreditUser.credits;
+    document.getElementById('admin-credit-summary-total').textContent = Number.isSafeInteger(balance) && balance >= 0 ? formatAdminCredits(balance) : '—';
+    const historical = document.getElementById('admin-credit-legacy-summary');
+    const historicalDetail = formatLegacyCreditDetail(currentAdminCreditUser.legacy_credits_snapshot);
+    historical.hidden = !historicalDetail;
+    historical.textContent = historicalDetail ? adminT('Before conversion: {detail}', { detail: historicalDetail }) : '';
 
     const summaryMap = {
         lecture: document.getElementById('admin-credit-summary-lecture'),
@@ -377,10 +402,34 @@ function renderAdminCreditUser(user) {
     setUnlimitedInputsDisabled(configuredAdmin);
 }
 
+function adminT(message, params) {
+    if (window.LectureI18n && window.LectureI18n.t) return window.LectureI18n.t(message, params);
+    return message.replace(/\{(\w+)\}/g, (match, key) => params && params[key] !== undefined ? String(params[key]) : match);
+}
+
+function formatAdminCredits(value) {
+    return creditUtils.formatCredits ? creditUtils.formatCredits(value) : `${value} credit${value === 1 ? '' : 's'}`;
+}
+
+function formatLegacyCreditDetail(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return '';
+    const fields = {
+        lecture_credits_standard: 'Lecture Notes (standard)', lecture_credits_extended: 'Lecture Notes (extended)',
+        slides_credits: 'Text Extraction', interview_credits_short: 'Interview (short)',
+        interview_credits_medium: 'Interview (medium)', interview_credits_long: 'Interview (long)',
+    };
+    return Object.entries(fields).filter(([key]) => Number(snapshot[key]) > 0)
+        .map(([key, label]) => `${adminT(label)}: ${Number(snapshot[key])}`).join(' · ');
+}
+
 function formatAdminGrantChange(grant) {
     const labels = adminCreditCategoryLabels();
     if (!grant || !grant.action) return '-';
     if (grant.action === 'grant_credits') {
+        if (grant.credit_scheme === 2 && Number.isSafeInteger(grant.credits) && grant.credits >= 0) {
+            const historical = formatLegacyCreditDetail(grant.legacy_credits_snapshot);
+            return `+${formatAdminCredits(grant.credits)}` + (historical ? ` · ${adminT('Before conversion: {detail}', { detail: historical })}` : '');
+        }
         const categories = grant.credit_categories || {};
         const parts = Object.keys(labels)
             .filter((category) => Number(categories[category] || 0) > 0)
@@ -402,6 +451,7 @@ function renderAdminCreditGrants(rows) {
     if (!adminCreditGrantsBody) return;
     adminCreditGrantsBody.innerHTML = '';
     const grants = Array.isArray(rows) ? rows : [];
+    latestAdminGrants = grants;
     if (!grants.length) {
         appendAdminEmptyTableRow(
             adminCreditGrantsBody,
@@ -435,6 +485,9 @@ async function loadAdminCreditGrants(showToastOnSuccess = false) {
         return;
     }
     const params = new URLSearchParams();
+    const adminUser = auth.currentUser;
+    const targetUid = currentAdminCreditUser && currentAdminCreditUser.uid;
+    const isCurrent = () => auth.currentUser === adminUser && (currentAdminCreditUser && currentAdminCreditUser.uid) === targetUid;
     params.set('limit', '20');
     if (currentAdminCreditUser && currentAdminCreditUser.email) {
         params.set('email', currentAdminCreditUser.email);
@@ -446,15 +499,18 @@ async function loadAdminCreditGrants(showToastOnSuccess = false) {
             throw new Error(payload.error || 'Could not load admin grants.');
         }
         const payload = await res.json();
+        if (!isCurrent()) return;
         renderAdminCreditGrants(payload.grants || []);
         if (showToastOnSuccess) showAdminToast('Admin grants refreshed.', 'success');
     } catch (error) {
+        if (!isCurrent()) return;
         console.error(error);
         showAdminToast(error.message || 'Could not load admin grants.', 'error');
     }
 }
 
 async function searchAdminCreditUser() {
+    if (adminCreditBusy) return;
     if (!auth.currentUser) {
         setAdminCreditState('Please sign in to search users.', 'blocked');
         return;
@@ -466,9 +522,11 @@ async function searchAdminCreditUser() {
     }
     setAdminCreditBusy(true);
     setAdminCreditState('Searching user...');
+    const adminUser = auth.currentUser;
     try {
         const res = await authFetch(`/api/admin/users/search?email=${encodeURIComponent(email)}`);
         const payload = await res.json().catch(() => ({}));
+        if (auth.currentUser !== adminUser) return;
         if (!res.ok) {
             renderAdminCreditUser(null);
             throw new Error(payload.error || 'Could not find that user.');
@@ -477,6 +535,7 @@ async function searchAdminCreditUser() {
         renderAdminCreditGrants(payload.recent_grants || []);
         showAdminToast('User loaded.', 'success');
     } catch (error) {
+        if (auth.currentUser !== adminUser) return;
         console.error(error);
         setAdminCreditState(error.message || 'Could not search users.', 'error');
         showAdminToast(error.message || 'Could not search users.', 'error');
@@ -487,44 +546,58 @@ async function searchAdminCreditUser() {
 
 function readGrantAmount(input) {
     const value = Number(input && input.value || 0);
-    if (!Number.isFinite(value)) return 0;
-    return Math.max(0, Math.floor(value));
+    return Number.isSafeInteger(value) && value >= 0 && value <= 10000 ? value : null;
 }
 
 async function submitAdminCreditGrant() {
+    if (adminCreditBusy) return;
     if (!currentAdminCreditUser) {
         setAdminCreditState('Search for a user before granting credits.', 'error');
         return;
     }
-    const credits = {
+    const unified = currentAdminCreditUser.credits_version === 2;
+    const credits = unified ? readGrantAmount(adminCreditGrantAmount) : {
         lecture: readGrantAmount(adminCreditGrantLecture),
         slides: readGrantAmount(adminCreditGrantSlides),
         interview: readGrantAmount(adminCreditGrantInterview),
     };
-    if (!credits.lecture && !credits.slides && !credits.interview) {
+    if (unified ? !credits : Object.values(credits).some(value => value === null) || !Object.values(credits).some(value => value > 0)) {
         setAdminCreditState('Enter at least one positive credit amount.', 'error');
         return;
     }
+    const targetUid = currentAdminCreditUser.uid;
+    const adminUser = auth.currentUser;
+    const note = adminCreditGrantNote ? adminCreditGrantNote.value : '';
+    const fingerprint = JSON.stringify({ uid: targetUid, credits, note });
+    if (!pendingAdminGrant || pendingAdminGrant.fingerprint !== fingerprint) {
+        pendingAdminGrant = { fingerprint, ref: window.crypto.randomUUID() };
+    }
+    const ref = pendingAdminGrant.ref;
+    const isCurrent = () => auth.currentUser === adminUser && currentAdminCreditUser && currentAdminCreditUser.uid === targetUid;
     setAdminCreditBusy(true);
     try {
-        const res = await authFetch(`/api/admin/users/${encodeURIComponent(currentAdminCreditUser.uid)}/credits/grant`, {
+        const res = await authFetch(`/api/admin/users/${encodeURIComponent(targetUid)}/credits/grant`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 credits,
-                note: adminCreditGrantNote ? adminCreditGrantNote.value : '',
+                note,
+                ref,
             }),
         });
         const payload = await res.json().catch(() => ({}));
+        if (!isCurrent()) return;
         if (!res.ok) throw new Error(payload.error || 'Could not grant credits.');
+        pendingAdminGrant = null;
         renderAdminCreditUser(payload.user || currentAdminCreditUser);
-        [adminCreditGrantLecture, adminCreditGrantSlides, adminCreditGrantInterview].forEach((input) => {
+        [adminCreditGrantAmount, adminCreditGrantLecture, adminCreditGrantSlides, adminCreditGrantInterview].forEach((input) => {
             if (input) input.value = '0';
         });
         if (adminCreditGrantNote) adminCreditGrantNote.value = '';
         showAdminToast('Credits granted.', 'success');
         await loadAdminCreditGrants(false);
     } catch (error) {
+        if (!isCurrent()) return;
         console.error(error);
         setAdminCreditState(error.message || 'Could not grant credits.', 'error');
         showAdminToast(error.message || 'Could not grant credits.', 'error');
@@ -534,6 +607,7 @@ async function submitAdminCreditGrant() {
 }
 
 async function submitAdminUnlimitedUpdate() {
+    if (adminCreditBusy) return;
     if (!currentAdminCreditUser) {
         setAdminCreditState('Search for a user before changing unlimited access.', 'error');
         return;
@@ -547,9 +621,12 @@ async function submitAdminUnlimitedUpdate() {
         slides: !!(adminCreditUnlimitedSlides && adminCreditUnlimitedSlides.checked),
         interview: !!(adminCreditUnlimitedInterview && adminCreditUnlimitedInterview.checked),
     };
+    const targetUid = currentAdminCreditUser.uid;
+    const adminUser = auth.currentUser;
+    const isCurrent = () => auth.currentUser === adminUser && currentAdminCreditUser && currentAdminCreditUser.uid === targetUid;
     setAdminCreditBusy(true);
     try {
-        const res = await authFetch(`/api/admin/users/${encodeURIComponent(currentAdminCreditUser.uid)}/credits/unlimited`, {
+        const res = await authFetch(`/api/admin/users/${encodeURIComponent(targetUid)}/credits/unlimited`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -558,12 +635,14 @@ async function submitAdminUnlimitedUpdate() {
             }),
         });
         const payload = await res.json().catch(() => ({}));
+        if (!isCurrent()) return;
         if (!res.ok) throw new Error(payload.error || 'Could not update unlimited access.');
         renderAdminCreditUser(payload.user || currentAdminCreditUser);
         if (adminCreditUnlimitedNote) adminCreditUnlimitedNote.value = '';
         showAdminToast('Unlimited access updated.', 'success');
         await loadAdminCreditGrants(false);
     } catch (error) {
+        if (!isCurrent()) return;
         console.error(error);
         setAdminCreditState(error.message || 'Could not update unlimited access.', 'error');
         showAdminToast(error.message || 'Could not update unlimited access.', 'error');
@@ -988,6 +1067,7 @@ function renderFunnel(funnel) {
 }
 
 function renderDashboard(data) {
+    latestAdminDashboard = data;
     const m = data.metrics || {};
     const t = data.trends || {};
     const successRate = m.job_count > 0 ? Math.round((m.success_jobs / m.job_count) * 100) : 0;
@@ -1044,7 +1124,9 @@ function renderDashboard(data) {
         const tdDuration = document.createElement('td');
         tdDuration.textContent = `${job.duration_seconds || 0}s`;
         const tdRefund = document.createElement('td');
-        tdRefund.textContent = job.credit_refunded ? 'Yes' : 'No';
+        tdRefund.textContent = job.credit_scheme === 2 && Number.isSafeInteger(job.charged_credits) && Number.isSafeInteger(job.refunded_credits)
+            ? adminT('{charged} charged · {refunded} refunded', { charged: formatAdminCredits(job.charged_credits), refunded: formatAdminCredits(job.refunded_credits) })
+            : (job.credit_refunded ? 'Yes' : 'No');
         const tdTokenIn = document.createElement('td');
         tdTokenIn.textContent = formatTokenCount(job.token_input_total);
         const tdTokenOut = document.createElement('td');
@@ -1209,6 +1291,8 @@ function setActiveModeViewButton() {
 }
 
 onAdminAuthStateReady(async (user) => {
+    pendingAdminGrant = null;
+    renderAdminCreditUser(null);
     if (user) {
         if (authClient && typeof authClient.setToken === 'function') {
             try { authClient.setToken(await user.getIdToken()); } catch (_) { }
@@ -1229,6 +1313,14 @@ onAdminAuthStateReady(async (user) => {
         renderAdminCreditGrants([]);
         setState('Please sign in with your admin account.', 'blocked');
     }
+});
+
+window.addEventListener('lp:language-changed', () => {
+    if (currentAdminCreditUser) renderAdminCreditUser(currentAdminCreditUser);
+    renderAdminCreditGrants(latestAdminGrants);
+    if (latestAdminDashboard) renderDashboard(latestAdminDashboard);
+    recalcCalculatorCosts();
+    if (analyzerPayload) { recomputeAnalyzerSummary(); renderActualCostJobs(); }
 });
 
 authBtn.addEventListener('click', async () => {
@@ -1491,7 +1583,7 @@ function numberOrZero(value) {
 }
 
 function formatUsd(value) {
-    return `$${numberOrZero(value).toFixed(4)}`;
+    return displayFormatUtils.formatCurrencyFromCents(numberOrZero(value) * 100, 'USD', { minimumFractionDigits: 4, maximumFractionDigits: 4, currencyDisplay: 'narrowSymbol' });
 }
 
 function formatPercent(value) {
@@ -1499,7 +1591,7 @@ function formatPercent(value) {
 }
 
 function formatEur(value) {
-    return `€${numberOrZero(value).toFixed(4)}`;
+    return displayFormatUtils.formatCurrencyFromCents(numberOrZero(value) * 100, 'EUR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 }
 
 function resolveStageModelId(baseModelId, inputTokens) {

@@ -7,6 +7,7 @@
   var userCache = window.LectureProcessorUserCache || {};
   var studyCache = window.LectureProcessorStudyCache || {};
   var uxUtils = window.LectureProcessorUx || {};
+  var creditUtils = window.LectureProcessorCreditUtils || {};
 
   var shell = document.getElementById('app-shell');
   var menuBtn = document.getElementById('app-shell-menu-btn');
@@ -63,13 +64,15 @@
   var mobileSidebarQuery = window.matchMedia ? window.matchMedia('(max-width: 1024px)') : null;
   var sidebarControlsInitialized = false;
   var CACHE_KEYS = {
-    credits: 'credits_breakdown',
+    credits: 'credit_snapshot',
+    legacyCredits: 'credits_breakdown',
     moreToolsExpanded: 'more_tools_group_expanded',
     profile: 'shell_profile',
     lastProfile: 'shell_profile:last'
   };
   var ACCOUNT_SCOPED_CACHE_KEYS = [
     CACHE_KEYS.credits,
+    CACHE_KEYS.legacyCredits,
     CACHE_KEYS.profile,
     'dashboard_summary',
     'plan_summary',
@@ -79,6 +82,10 @@
   var currentUserIsAdmin = false;
   var authRevision = 0;
   var profileRequestRevision = 0;
+  var profileInFlight = null;
+  var creditAuthUser = auth && auth.currentUser || null;
+  var creditSessionBlocked = false;
+  var creditState = { uid: '', status: 'signed-out', source: null, snapshot: null, receivedAt: null };
   var lastSignedInUid = auth && auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
   var authStateResolved = !!(auth && auth.currentUser);
   var authObserverStartedAt = Date.now();
@@ -161,6 +168,10 @@
     var uid = String((userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid) || '').trim();
     if (!uid) return true;
     authRevision += 1;
+    if (creditState.uid === uid || (auth && auth.currentUser && auth.currentUser.uid === uid)) {
+      creditSessionBlocked = true;
+      resetCreditState('');
+    }
     var preservePending = !!(options && options.preservePending);
     var studyCleared = typeof studyCache.clearUser === 'function' && studyCache.clearUser(uid, { preservePending: preservePending });
     var detail = { uid: uid, legacyCleared: true, preservePending: preservePending };
@@ -571,67 +582,59 @@
     });
   }
 
-  function hasValidCreditBalance(payload) {
-    var credits = payload && payload.credits;
-    if (!credits || typeof credits !== 'object' || Array.isArray(credits)) return false;
-    return ['lecture_standard', 'lecture_extended', 'slides', 'interview_short', 'interview_medium', 'interview_long'].every(function (key) {
-      return Number.isSafeInteger(credits[key]) && credits[key] >= 0;
-    });
+  function creditText(message, params) {
+    if (window.LectureI18n && typeof window.LectureI18n.t === 'function') return window.LectureI18n.t(message, params);
+    return message.replace(/\{(\w+)\}/g, function (match, key) { return params && params[key] !== undefined ? String(params[key]) : match; });
   }
 
-  function parseCreditBreakdown(payload) {
-    var credits = payload && payload.credits ? payload.credits : {};
-    var unlimited = payload && payload.unlimited_credits ? payload.unlimited_credits : (credits.unlimited || {});
-    var lecture = Number(credits.lecture_standard || 0) + Number(credits.lecture_extended || 0);
-    var textExtraction = Number(credits.slides || 0);
-    var interview = Number(credits.interview_short || 0) + Number(credits.interview_medium || 0) + Number(credits.interview_long || 0);
-    return {
-      lecture: lecture,
-      textExtraction: textExtraction,
-      interview: interview,
-      total: lecture + textExtraction + interview,
-      unlimited: {
-        lecture: !!(unlimited && unlimited.lecture),
-        slides: !!(unlimited && unlimited.slides),
-        interview: !!(unlimited && unlimited.interview)
-      }
-    };
-  }
+  function cloneCreditValue(value) { return JSON.parse(JSON.stringify(value)); }
 
-  function hasAnyUnlimitedCredits(breakdown) {
-    var unlimited = breakdown && breakdown.unlimited ? breakdown.unlimited : {};
-    return !!(unlimited.lecture || unlimited.slides || unlimited.interview);
-  }
-
-  function formatShellCreditValue(breakdown, category, value) {
-    var unlimited = breakdown && breakdown.unlimited ? breakdown.unlimited : {};
-    return unlimited[category] ? 'Unlimited' : String(Number(value || 0));
-  }
-
-  function applyCreditBreakdown(breakdown) {
-    if (!creditsTotalLabel) return;
-    if (!breakdown) {
-      creditsTotalLabel.textContent = 'Loading credits';
-      if (creditsLink) creditsLink.setAttribute('aria-label', 'Buy credits, loading credits');
-      if (creditsLectureValue) creditsLectureValue.textContent = '...';
-      if (creditsTextValue) creditsTextValue.textContent = '...';
-      if (creditsInterviewValue) creditsInterviewValue.textContent = '...';
-      if (creditsTotalValue) creditsTotalValue.textContent = '...';
-      return;
+  function getCreditState() {
+    var uid = auth && auth.currentUser ? String(auth.currentUser.uid || '') : '';
+    if (creditSessionBlocked || uid !== creditState.uid) {
+      return { uid: uid, status: uid && !creditSessionBlocked ? 'loading' : 'signed-out', source: null, snapshot: null, receivedAt: null };
     }
-    var next = {
-      lecture: Number(breakdown.lecture || 0),
-      textExtraction: Number(breakdown.textExtraction || 0),
-      interview: Number(breakdown.interview || 0),
-      total: Number(breakdown.total || 0),
-      unlimited: breakdown.unlimited || {}
-    };
-    creditsTotalLabel.textContent = hasAnyUnlimitedCredits(next) ? 'Unlimited credits' : (next.total + ' credits');
-    if (creditsLink) creditsLink.setAttribute('aria-label', 'Buy credits, ' + creditsTotalLabel.textContent);
-    if (creditsLectureValue) creditsLectureValue.textContent = formatShellCreditValue(next, 'lecture', next.lecture);
-    if (creditsTextValue) creditsTextValue.textContent = formatShellCreditValue(next, 'slides', next.textExtraction);
-    if (creditsInterviewValue) creditsInterviewValue.textContent = formatShellCreditValue(next, 'interview', next.interview);
-    if (creditsTotalValue) creditsTotalValue.textContent = hasAnyUnlimitedCredits(next) ? 'Unlimited' : String(next.total);
+    return cloneCreditValue(creditState);
+  }
+
+  function publishCreditState() {
+    applyCreditSnapshot(creditState.snapshot);
+    window.dispatchEvent(new CustomEvent('lp:credits-changed', { detail: getCreditState() }));
+  }
+
+  function resetCreditState(uid) {
+    profileRequestRevision += 1;
+    profileInFlight = null;
+    creditState = { uid: uid, status: uid ? 'loading' : 'signed-out', source: null, snapshot: null, receivedAt: null };
+    publishCreditState();
+  }
+
+  function applyCreditSnapshot(snapshot) {
+    if (!creditsTotalLabel) return;
+    var unified = !!(snapshot && snapshot.scheme === 2);
+    if (creditsTooltip) creditsTooltip.querySelectorAll('[data-unified-credit-copy]').forEach(function (node) { node.hidden = !unified; });
+    var totalTitle = document.getElementById('shell-credit-total-title');
+    if (totalTitle) totalTitle.textContent = creditText(unified ? 'Balance' : 'Total');
+    if (!snapshot) {
+      creditsTotalLabel.textContent = creditText(creditState.status === 'error' ? 'Credits unavailable' : 'Loading credits');
+      if (creditsLink) creditsLink.setAttribute('aria-label', creditText('Buy credits, {balance}', { balance: creditsTotalLabel.textContent }));
+    } else {
+      var unlimited = snapshot.unlimited;
+      var legacyUnlimited = !unified && (unlimited.lecture || unlimited.slides || unlimited.interview);
+      creditsTotalLabel.textContent = legacyUnlimited ? creditText('Unlimited credits') : creditUtils.formatCredits(snapshot.balance);
+      if (creditsLink) creditsLink.setAttribute('aria-label', creditText('Buy credits, {balance}', { balance: creditsTotalLabel.textContent }));
+    }
+    [[creditsLectureValue, 'lecture'], [creditsTextValue, 'slides'], [creditsInterviewValue, 'interview']].forEach(function (entry) {
+      var node = entry[0];
+      var category = entry[1];
+      if (!node) return;
+      var row = node.closest('.credit-tip-row');
+      if (row) row.hidden = unified && !snapshot.unlimited[category];
+      node.textContent = !snapshot ? '…' : (unified ? creditText('No credits charged') : (snapshot.unlimited[category] ? creditText('Unlimited') : String(snapshot.categories[category])));
+    });
+    if (creditsTotalValue) {
+      creditsTotalValue.textContent = !snapshot ? '…' : (!unified && Object.values(snapshot.unlimited).some(Boolean) ? creditText('Unlimited') : String(snapshot.balance));
+    }
   }
 
   function setCreditsVisible(visible) {
@@ -766,54 +769,87 @@
     }, 1200);
   }
 
-  async function refreshUserProfile(user) {
-    if (!user) return false;
+  function creditRequestError(message, status, code) {
+    var error = new Error(creditText(message));
+    if (status) error.status = status;
+    if (code) error.code = code;
+    return error;
+  }
+
+  function refreshCreditSnapshot(options) {
+    var user = auth && auth.currentUser;
+    if (!user || creditSessionBlocked) return Promise.reject(creditRequestError('Please sign in', 401, 'auth/session-changed'));
     var revision = authRevision;
+    if (!(options && options.force) && profileInFlight && profileInFlight.user === user && profileInFlight.revision === revision) return profileInFlight.promise;
     var requestRevision = ++profileRequestRevision;
+    var uid = String(user.uid || '');
     function isCurrent() {
-      return auth.currentUser === user && authRevision === revision && profileRequestRevision === requestRevision;
+      return !creditSessionBlocked && auth.currentUser === user && authRevision === revision && profileRequestRevision === requestRevision;
     }
-    try {
-      var response = await authFetch('/api/auth/user');
-      if (!response.ok) throw new Error('Could not load favorites. Reload to try again.');
-      var payload = await response.json();
-      if (!isCurrent()) return false;
-      if (!favoriteToolsSaving) {
-        favoriteTools = normalizedFavorites((payload.preferences || {}).favorite_tools);
-        favoriteToolsReady = true;
-        favoriteToolsError = '';
-        publishFavoriteTools();
+    function assertCurrent() {
+      if (!isCurrent()) throw creditRequestError('Your account changed. Please try again.', 0, 'auth/session-changed');
+    }
+    if (creditState.uid !== uid) creditState = { uid: uid, status: 'loading', source: null, snapshot: null, receivedAt: null };
+    creditState.status = 'loading';
+    publishCreditState();
+    var metadataApplied = false;
+    var promise = (async function () {
+      try {
+        var response = await authFetch('/api/auth/user');
+        assertCurrent();
+        if (!response.ok) throw creditRequestError('Could not load your account. Please try again.', response.status);
+        var payload = await response.json();
+        assertCurrent();
+        if (!payload || typeof payload !== 'object' || (payload.uid !== undefined && payload.uid !== uid)) throw creditRequestError('Could not load your account. Please try again.');
+        if (!favoriteToolsSaving) {
+          favoriteTools = normalizedFavorites((payload.preferences || {}).favorite_tools);
+          favoriteToolsReady = true;
+          favoriteToolsError = '';
+          publishFavoriteTools();
+        }
+        currentUserIsAdmin = !!payload.is_admin;
+        if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
+        if (workoutLink) workoutLink.hidden = !currentUserIsAdmin;
+        setPhysioGroupVisible(true);
+        markActiveNav();
+        metadataApplied = true;
+        var snapshot = typeof creditUtils.parseProfile === 'function' ? creditUtils.parseProfile(payload, uid) : null;
+        if (!snapshot) throw creditRequestError('Could not load your credits. Please try again.');
+        var receivedAt = Date.now();
+        var cached = creditUtils.encodeCache(uid, snapshot, receivedAt);
+        if (cached) writeUserCacheJson(user, CACHE_KEYS.credits, cached);
+        // Old pages may still read legacy units; never publish unified units to that key.
+        var legacyBreakdown = snapshot.scheme === 1 ? { lecture: snapshot.categories.lecture, textExtraction: snapshot.categories.slides, interview: snapshot.categories.interview, total: snapshot.balance, unlimited: snapshot.unlimited } : null;
+        if (legacyBreakdown) writeUserCacheJson(user, CACHE_KEYS.legacyCredits, legacyBreakdown);
+        var profile = {
+          uid: uid, email: String(user.email || payload.email || 'user'),
+          name: String((payload.email || user.email || 'Account')).split('@')[0] || 'Account',
+          initial: String((user.email || payload.email || '?').charAt(0) || '?').toUpperCase(),
+          isAdmin: currentUserIsAdmin, isPhysioAllowed: true, cachedAt: receivedAt
+        };
+        if (legacyBreakdown) profile.credits = legacyBreakdown;
+        writeUserCacheJson(user, CACHE_KEYS.profile, profile);
+        writeCacheJson(CACHE_KEYS.lastProfile, profile);
+        creditState = { uid: uid, status: 'ready', source: 'server', snapshot: snapshot, receivedAt: receivedAt };
+        publishCreditState();
+        return cloneCreditValue({ uid: uid, snapshot: snapshot, profile: payload });
+      } catch (error) {
+        if (isCurrent()) {
+          creditState.status = 'error';
+          publishCreditState();
+          if (!metadataApplied && favoriteToolsUid === user.uid) { favoriteToolsError = error.message; publishFavoriteTools(); }
+        }
+        throw error;
+      } finally {
+        if (profileInFlight && profileInFlight.promise === promise) profileInFlight = null;
       }
-      currentUserIsAdmin = !!payload.is_admin;
-      if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
-      if (workoutLink) workoutLink.hidden = !currentUserIsAdmin;
-      setPhysioGroupVisible(true);
-      markActiveNav();
-      if (!hasValidCreditBalance(payload)) return false;
-      var breakdown = parseCreditBreakdown(payload);
-      applyCreditBreakdown(breakdown);
-      writeUserCacheJson(user, CACHE_KEYS.credits, breakdown);
-      var profile = {
-        uid: String(user.uid || ''),
-        email: String(user.email || payload.email || 'user'),
-        name: String((payload.email || user.email || 'Account')).split('@')[0] || 'Account',
-        initial: String((user.email || payload.email || '?').charAt(0) || '?').toUpperCase(),
-        isAdmin: currentUserIsAdmin,
-        isPhysioAllowed: true,
-        credits: breakdown,
-        cachedAt: Date.now()
-      };
-      writeUserCacheJson(user, CACHE_KEYS.profile, profile);
-      writeCacheJson(CACHE_KEYS.lastProfile, profile);
-      return true;
-    } catch (error) {
-      if (isCurrent() && favoriteToolsUid === user.uid) { favoriteToolsError = error.message; publishFavoriteTools(); }
-      return false;
-    }
+    })();
+    profileInFlight = { user: user, revision: revision, promise: promise };
+    return promise;
   }
 
   function refreshCredits() {
-    return refreshUserProfile(auth && auth.currentUser);
+    return refreshCreditSnapshot({ force: true }).then(function () { return true; }, function () { return false; });
   }
 
   function applySignedOutState(userOrUid) {
@@ -826,7 +862,7 @@
     if (adminBtn) adminBtn.hidden = true;
     if (workoutLink) workoutLink.hidden = true;
     setCreditsVisible(false);
-    applyCreditBreakdown(null);
+    resetCreditState('');
     if (userEmail) userEmail.textContent = 'Not signed in';
     if (userName) userName.textContent = 'Account';
     if (userInitial) userInitial.textContent = '?';
@@ -868,10 +904,6 @@
     currentUserIsAdmin = settings.trustPermissions ? normalized.isAdmin : false;
     if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
     setPhysioGroupVisible(settings.trustPermissions ? normalized.isPhysioAllowed : false);
-    if (normalized.credits) {
-      setCreditsVisible(true);
-      applyCreditBreakdown(normalized.credits);
-    }
     return true;
   }
 
@@ -900,12 +932,21 @@
   }
 
   function hydrateCachedCredits(user) {
-    var cachedBreakdown = readUserCacheJson(user, CACHE_KEYS.credits, null);
-    applyCreditBreakdown(cachedBreakdown || null);
+    var uid = user && String(user.uid || '');
+    if (!uid || creditSessionBlocked) return;
+    var cached = typeof creditUtils.decodeCache === 'function' ? creditUtils.decodeCache(readUserCacheJson(user, CACHE_KEYS.credits, null), uid) : null;
+    creditState = { uid: uid, status: 'loading', source: cached ? 'cache' : null, snapshot: cached ? cached.snapshot : null, receivedAt: cached ? cached.receivedAt : null };
+    publishCreditState();
   }
 
   function applyAuth(user) {
-    authRevision += 1;
+    if (creditSessionBlocked && user && creditAuthUser === user) return;
+    if (creditAuthUser !== user) {
+      authRevision += 1;
+      creditAuthUser = user;
+      creditSessionBlocked = false;
+      resetCreditState(user ? String(user.uid || '') : '');
+    }
     if (workoutLink) workoutLink.hidden = true;
     currentUserIsAdmin = false;
     resetFavoriteTools(user);
@@ -922,13 +963,14 @@
 
     var nextUid = String(user.uid || '');
     if (lastSignedInUid && lastSignedInUid !== nextUid) clearUserScopedCaches(lastSignedInUid, { preservePending: true });
+    creditSessionBlocked = false;
     lastSignedInUid = nextUid;
     if (typeof studyCache.activate === 'function') studyCache.activate(nextUid);
     setCreditsVisible(true);
     applyCachedProfile(user);
     applyUserIdentity(user);
     hydrateCachedCredits(user);
-    refreshUserProfile(user);
+    refreshCreditSnapshot().catch(function () {});
   }
 
   function revealSignInIfAuthStalls() {
@@ -1207,6 +1249,8 @@
     }
   }
 
+  window.addEventListener('lp:language-changed', function () { applyCreditSnapshot(getCreditState().snapshot); });
+
   setupSidebarControls();
   markActiveNav();
   maybeShowNavigationNotice();
@@ -1235,6 +1279,8 @@
     window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
       showToast: showToast,
       refreshCredits: refreshCredits,
+      refreshCreditSnapshot: refreshCreditSnapshot,
+      getCreditState: getCreditState,
     });
     return;
   }
@@ -1489,7 +1535,7 @@
   });
 
   setAuthState('pending');
-  applyCreditBreakdown(null);
+  applyCreditSnapshot(null);
   if (auth.currentUser) {
     lastSignedInUid = String(auth.currentUser.uid || lastSignedInUid || '');
     if (typeof studyCache.activate === 'function') studyCache.activate(lastSignedInUid);
@@ -1510,5 +1556,7 @@
   window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
     showToast: showToast,
     refreshCredits: refreshCredits,
+    refreshCreditSnapshot: refreshCreditSnapshot,
+    getCreditState: getCreditState,
   });
 })();

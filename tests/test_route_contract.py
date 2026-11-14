@@ -446,7 +446,7 @@ def test_more_tools_pages_and_links_render(client):
     transcriber_response = client.get('/general-transcriber')
     assert transcriber_response.status_code == 200
     transcriber_html = transcriber_response.get_data(as_text=True)
-    assert 'Each run costs 1 interview credit.' in transcriber_html
+    assert 'Check the cost below before you start.' in transcriber_html
 
     overlay_response = client.get('/video-overlay-builder')
     assert overlay_response.status_code == 200

@@ -58,9 +58,15 @@
       <article class="support-card" id="billing">
         <h2>Credits and billing</h2>
         <ul>
+          {% if unified_credits_enabled %}
+          <li>One credit balance covers your processing tools. Each screen shows the cost before you start.</li>
+          <li>Optional interview summaries and sectioned transcripts add to the displayed total.</li>
+          <li>Overnight batches use half the instant credit price. Allow up to 24 hours for results.</li>
+          {% else %}
           <li>Lecture Notes uses lecture credits.</li>
           <li>Slides Extraction uses text extraction credits.</li>
           <li>Interview Transcription and Audio Transcription use interview credits. Optional interview extras can add text extraction credit usage.</li>
+          {% endif %}
           <li>Buy credits from <a href="/buy_credits">Buy Credits</a>. Checkout is handled by Stripe.</li>
           <li>If a run fails because of an internal processing error, the app may refund credits based on current refund rules.</li>
         </ul>

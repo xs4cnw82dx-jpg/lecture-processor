@@ -6,15 +6,16 @@ const evidence='/tmp/study-flow-creation-evidence';fs.mkdirSync(evidence,{recurs
 test.use({serviceWorkers:'block'});
 async function fixture(page){
  await installAccountFixture(page);
- await page.route(/\/static\/js\/(index-app|index-mode-config|buy-credits|batch-mode|lecture-downloader)(\.min)?\.js(?:\?.*)?$/,r=>r.fulfill({contentType:'application/javascript',path:path.resolve('static/js',new URL(r.request().url()).pathname.split('/').pop().replace('.min.js','.js'))}));
- await page.route('**/api/auth/user',r=>r.fulfill({json:{uid:'a',preferences:{output_language:'english',onboarding_completed:true},credits:{lecture_standard:0,slides:0,interview_short:0}}}));
+ await page.route(/\/static\/js\/(index-app|index-mode-config|buy-credits|batch-mode|lecture-downloader)(\.min)?\.js(?:\?.*)?$/,r=>process.env.USE_MINIFIED_JS_ASSETS==='1'?r.continue():r.fulfill({contentType:'application/javascript',path:path.resolve('static/js',new URL(r.request().url()).pathname.split('/').pop().replace('.min.js','.js'))}));
+ await page.route('**/api/auth/user',r=>r.fulfill({json:{uid:'a',preferences:{output_language:'english',onboarding_completed:true},credits:{lecture_standard:0,lecture_extended:0,slides:0,interview_short:0,interview_medium:0,interview_long:0}}}));
  await page.route('**/api/verify-email',r=>r.fulfill({json:{allowed:true}}));
 }
 for(const width of [1440,1024,390])test(`creation guidance and spacing at ${width}`,async({page})=>{
  await fixture(page);await page.setViewportSize({width,height:1000});
  await page.goto('/buy_credits');await page.evaluate(()=>document.fonts.ready);
- for(const category of await page.locator('.category').all()){
-  const description=await category.locator('.credit-category-description').boundingBox();const card=await category.locator('.bundle-buy-btn').first().boundingBox();expect(card.y-description.y-description.height).toBeLessThanOrEqual(18);
+ await expect(page.locator('#credit-bundles .bundle-buy-btn')).toHaveCount(3);
+ for(const bundle of await page.locator('#credit-bundles .bundle-buy-btn').all()){
+  const price=await bundle.locator('.price').boundingBox();const description=await bundle.locator('.meta').boundingBox();expect(description.y-price.y-price.height).toBeGreaterThanOrEqual(0);expect(description.y-price.y-price.height).toBeLessThanOrEqual(18);
  }
  await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await page.screenshot({path:`${evidence}/credits-${width}.png`,fullPage:true,animations:'disabled'});
  await page.goto('/lecture-notes');await page.locator('#other-audio-toggle').click();await page.locator('#audio-url-advanced-toggle').click();await expect(page.locator('#audio-url-advanced-panel')).toHaveAttribute('aria-hidden','false');
@@ -40,7 +41,7 @@ for(const url of ['/buy_credits','/lecture-notes'])test(`checkout Back and persi
  await page.route('**/api/create-checkout-session',async r=>{attempts++;if(hold)await new Promise(resolve=>{release=resolve;});await r.fulfill({json:{checkout_url:'/__mock_checkout'}});});
  await page.route('**/__mock_checkout',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><h1>Mock checkout</h1>'}));
  async function open(){await page.goto(url);if(url==='/lecture-notes')await page.getByRole('link',{name:'Buy more credits',exact:true}).click();}
- await open();await expect(page).toHaveURL(/buy_credits$/);let button=page.locator('.bundle-buy-btn[data-bundle-id="lecture_5"]');await button.click();await expect(page).toHaveURL(/__mock_checkout/);await page.goBack();
+ await open();await expect(page).toHaveURL(/buy_credits$/);let button=page.locator('.bundle-buy-btn[data-bundle-id="credits_40"]');await button.click();await expect(page).toHaveURL(/__mock_checkout/);await page.goBack();
  if(url==='/lecture-notes'&&!(await button.isVisible()))await page.getByRole('link',{name:'Buy more credits',exact:true}).click();
  await expect(button).toBeEnabled();await expect(button).not.toContainText('Redirecting');expect(attempts).toBe(1);
  hold=true;await button.click();await expect.poll(()=>attempts).toBe(2);await expect(button).toBeDisabled();

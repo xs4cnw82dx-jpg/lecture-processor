@@ -53,6 +53,18 @@
           <summary>Where do I buy credits?</summary>
           <p>Open <a href="/buy_credits">Buy Credits</a>. Payment is handled by Stripe.</p>
         </details>
+        {% if unified_credits_enabled %}
+        <details class="faq-item" data-animated-details>
+          <summary>How much does processing cost?</summary>
+          <p>All processing tools use one credit balance. Your selected files and options determine the cost shown before you start.</p>
+          <p>Compare the instant and overnight prices on the <a href="/buy_credits#credit-cost-title">credit guide</a>.</p>
+        </details>
+        <details class="faq-item" data-animated-details>
+          <summary>How does overnight pricing work?</summary>
+          <p>Each overnight batch action costs exactly half its instant price, including each selected interview extra. Prices and balances stay in whole credits.</p>
+          <p>Allow up to 24 hours for results. Tools without an overnight option use their displayed instant price.</p>
+        </details>
+        {% endif %}
         <details class="faq-item" data-animated-details>
           <summary>What happens if processing fails?</summary>
           <p>Internal processing failures may trigger a credit refund based on the app’s refund logic. You can also contact support if something looks incorrect.</p>

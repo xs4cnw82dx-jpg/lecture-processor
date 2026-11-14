@@ -1,4 +1,24 @@
-.buy-credits-page { display: grid; gap: 28px; }
+.buy-credits-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.pricing-grid[data-credit-scheme="2"] { grid-template-rows: none; align-items: stretch; }
+.unified-bundle { min-width: 0; }
+.credit-cost-guide h2 { margin: 8px 0 12px; }
+.credit-cost-guide p { color: var(--theme-muted, var(--text-muted)); line-height: 1.6; }
+.credit-cost-table-wrap { overflow-x: auto; }
+.credit-cost-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .9rem; }
+.credit-cost-table th:first-child { width: 50%; }
+.credit-cost-table th { overflow-wrap: anywhere; }
+.credit-cost-table th, .credit-cost-table td { padding: 14px 12px; border-bottom: 1px solid var(--theme-border, var(--border)); text-align: left; }
+.credit-cost-table td { font-variant-numeric: tabular-nums; }
+.credit-cost-table thead th { font-size: .78rem; color: var(--theme-muted, var(--text-muted)); }
+.credit-action-unit { display: block; margin-top: 4px; font-size: .76rem; font-weight: 400; color: var(--theme-muted, var(--text-muted)); }
+.credit-cost-footnote { font-size: .82rem; }
+.credit-rate-mobile { display: none; }
+@media (max-width: 600px) {
+  .credit-cost-table th, .credit-cost-table td { padding: 12px 5px; }
+  .credit-cost-table th:first-child { width: 54%; }
+  .credit-rate-desktop { display: none; }
+  .credit-rate-mobile { display: inline; }
+}
 .credits-heading { padding: 6px 0 4px; max-width: 720px; }
 .credits-eyebrow { color: var(--theme-accent-ink, var(--primary)); font-size: .74rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .credits-heading h1 { margin: 10px 0 12px; color: var(--theme-ink, var(--text)); font-size: clamp(1.8rem, 3vw, 2.4rem); line-height: 1.16; letter-spacing: -.045em; }
@@ -26,6 +46,7 @@
 .purchase-history-list { display: grid; }
 .purchase-row { padding: 15px 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--theme-line, var(--border)); }
 .purchase-row .title { font-weight: 600; overflow-wrap: anywhere; }
+.purchase-credit-detail { margin-top: 5px; color: var(--theme-muted, var(--text-muted)); font-size: .8rem; font-weight: 400; }
 .purchase-row .meta { color: var(--theme-muted, var(--text-muted)); font-size: .82rem; }
 .history-empty { color: var(--theme-muted, var(--text-muted)); font-size: .88rem; background: var(--theme-surface-soft, var(--bg)); border-radius: 12px; padding: 22px; }
 .payment-result { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 24px; border: 1px solid var(--theme-line, #b7dccc); background: var(--theme-success-soft, #f0faf5); border-radius: 16px; color: var(--theme-ink, #245b44); }

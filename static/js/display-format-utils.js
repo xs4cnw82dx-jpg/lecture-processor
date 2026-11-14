@@ -13,12 +13,12 @@
     return [pageLanguage === 'nl' ? 'nl-NL' : 'en-GB'];
   }
 
-  function fallbackCurrencyDisplay(amount, code) {
+  function fallbackCurrencyDisplay(amount, code, digits) {
     var safeCode = String(code || 'EUR').toUpperCase();
-    if (safeCode === 'EUR') return '\u20ac' + amount.toFixed(2);
-    if (safeCode === 'USD') return '$' + amount.toFixed(2);
-    if (safeCode === 'GBP') return '\u00a3' + amount.toFixed(2);
-    return safeCode + ' ' + amount.toFixed(2);
+    if (safeCode === 'EUR') return '\u20ac' + amount.toFixed(digits);
+    if (safeCode === 'USD') return '$' + amount.toFixed(digits);
+    if (safeCode === 'GBP') return '\u00a3' + amount.toFixed(digits);
+    return safeCode + ' ' + amount.toFixed(digits);
   }
 
   function formatCurrencyFromCents(cents, currency, options) {
@@ -34,10 +34,16 @@
     if (settings.currencyDisplay) {
       formatOptions.currencyDisplay = settings.currencyDisplay;
     }
+    var minDigits = settings.minimumFractionDigits === undefined ? 2 : settings.minimumFractionDigits;
+    var maxDigits = settings.maximumFractionDigits === undefined ? Math.max(2, minDigits) : settings.maximumFractionDigits;
+    if (Number.isInteger(minDigits) && Number.isInteger(maxDigits) && minDigits >= 0 && maxDigits <= 20 && minDigits <= maxDigits) {
+      formatOptions.minimumFractionDigits = minDigits;
+      formatOptions.maximumFractionDigits = maxDigits;
+    }
     try {
       return new Intl.NumberFormat(buildLocaleList(), formatOptions).format(amount);
     } catch (_error) {
-      return fallbackCurrencyDisplay(amount, code);
+      return fallbackCurrencyDisplay(amount, code, formatOptions.maximumFractionDigits);
     }
   }
 
