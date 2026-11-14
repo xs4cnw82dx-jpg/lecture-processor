@@ -207,8 +207,10 @@ test('changing accounts during confirmation never sends the old deletion', async
   await expect(page.locator('#pack-title')).toHaveValue('Pack A');
   await currentPackDelete(page);
   await page.evaluate(() => window.testAccount.switchTo('b'));
-  await page.locator('#confirm-modal-confirm').click();
   await expect(page.locator('#confirm-modal-overlay')).toBeHidden();
+  // The identity change cancels the old confirmation. A delayed activation of
+  // its former button must not revive the previous account's delete action.
+  await page.locator('#confirm-modal-confirm').evaluate(button => button.click());
   expect(deletedIds(state)).toEqual([]);
   expect(Object.keys(state.packs)).toEqual(['a', 'b']);
 });
