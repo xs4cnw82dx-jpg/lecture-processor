@@ -555,86 +555,17 @@ def accept_ai_coding_run(app_ctx, request, pack_id, run_id):
     run_doc, error_response, status = _owned_run_doc(app_ctx, uid, pack_id, run_id)
     if error_response is not None:
         return error_response, status
-    run = run_doc.to_dict() or {}
-    if str(run.get('status', '') or '') != 'draft':
-        return app_ctx.jsonify({'error': 'Only draft AI coding runs can be accepted'}), 400
+    from lecture_processor.domains.study import interview_coding_acceptance
 
-    now_ts = app_ctx.time.time()
-    existing_codes = _load_codes(app_ctx, uid)
-    existing_by_id = {code.get('code_id'): code for code in existing_codes}
-    existing_by_name = {str(code.get('name', '') or '').strip().lower(): code for code in existing_codes}
-    code_id_by_ref = {}
-    created_codes = []
-
-    for proposed in run.get('proposed_codes', []) if isinstance(run.get('proposed_codes', []), list) else []:
-        temp_id = str(proposed.get('temp_id', '') or '').strip()
-        existing_code_id = str(proposed.get('existing_code_id', '') or '').strip()
-        if existing_code_id and existing_code_id in existing_by_id:
-            code_id_by_ref[temp_id] = existing_code_id
-            continue
-        name_key = str(proposed.get('name', '') or '').strip().lower()
-        if name_key in existing_by_name:
-            code_id_by_ref[temp_id] = existing_by_name[name_key]['code_id']
-            continue
-        code_ref = app_ctx.repositories.study.create_interview_code_doc_ref(app_ctx.db)
-        payload = {
-            'code_id': code_ref.id,
-            'uid': uid,
-            'name': str(proposed.get('name', '') or 'Untitled code').strip()[:80],
-            'description': str(proposed.get('description', '') or '').strip()[:500],
-            'color': interview_coding.sanitize_code_color(proposed.get('color', 'teal')),
-            'parent_code_id': '',
-            'created_at': now_ts,
-            'updated_at': now_ts,
-        }
-        code_ref.set(payload)
-        code_id_by_ref[temp_id] = code_ref.id
-        created_codes.append((code_ref, proposed))
-
-    for code_ref, proposed in created_codes:
-        parent_ref = str(proposed.get('parent_temp_id', '') or '').strip()
-        parent_code_id = code_id_by_ref.get(parent_ref, '')
-        if parent_code_id and parent_code_id != code_ref.id:
-            code_ref.update({'parent_code_id': parent_code_id, 'updated_at': app_ctx.time.time()})
-
-    existing_code_ids = {code.get('code_id') for code in _load_codes(app_ctx, uid)}
-    transcript_key = interview_coding.transcript_base_key(pack_id, transcript)
-    created_quote_count = 0
-    for proposed_quote in run.get('proposed_quotations', []) if isinstance(run.get('proposed_quotations', []), list) else []:
-        code_ids = []
-        for ref in proposed_quote.get('code_refs', []) or []:
-            mapped = code_id_by_ref.get(str(ref or '').strip(), str(ref or '').strip())
-            if mapped in existing_code_ids and mapped not in code_ids:
-                code_ids.append(mapped)
-        quote_payload = interview_coding.sanitize_quotation_payload(
-            {
-                **proposed_quote,
-                'code_ids': code_ids,
-                'source': 'ai',
-            },
-            transcript,
-            existing_code_ids,
-            pack_id=pack_id,
-            transcript_key=transcript_key,
+    try:
+        interview_coding_acceptance.accept_run(
+            app_ctx, run_doc.reference, uid, pack_id, transcript, _load_codes(app_ctx, uid),
         )
-        if quote_payload is None:
-            continue
-        quote_ref = app_ctx.repositories.study.create_interview_quotation_doc_ref(app_ctx.db)
-        quote_ref.set({
-            'quotation_id': quote_ref.id,
-            'uid': uid,
-            **quote_payload,
-            'created_at': app_ctx.time.time(),
-            'updated_at': app_ctx.time.time(),
-        })
-        created_quote_count += 1
-    run_doc.reference.update({
-        'status': 'accepted',
-        'accepted_at': app_ctx.time.time(),
-        'accepted_code_count': len(created_codes),
-        'accepted_quotation_count': created_quote_count,
-        'updated_at': app_ctx.time.time(),
-    })
+    except interview_coding_acceptance.AcceptanceError as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
+    except Exception:
+        app_ctx.logger.exception('Could not finish accepting interview coding run %s', run_id)
+        return app_ctx.jsonify({'error': 'Could not finish applying the draft. Please try again.'}), 503
     return app_ctx.jsonify({'ok': True, 'state': _coding_state_payload(app_ctx, pack_id, pack, transcript, uid)})
 
 
@@ -652,7 +583,12 @@ def reject_ai_coding_run(app_ctx, request, pack_id, run_id):
     run_doc, error_response, status = _owned_run_doc(app_ctx, uid, pack_id, run_id)
     if error_response is not None:
         return error_response, status
-    run_doc.reference.update({'status': 'rejected', 'updated_at': app_ctx.time.time()})
+    from lecture_processor.domains.study import interview_coding_acceptance
+
+    try:
+        interview_coding_acceptance.reject_run(app_ctx, run_doc.reference, uid, pack_id)
+    except interview_coding_acceptance.AcceptanceError as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
     return app_ctx.jsonify({'ok': True, 'run': _serialize_run_doc(run_doc.reference.get())})
 
 
