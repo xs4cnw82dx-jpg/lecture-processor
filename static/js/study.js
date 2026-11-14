@@ -70,6 +70,7 @@ let activeRuntimeJobs = [];
 let runtimeJobsRefreshTimer = null;
 let runtimeJobsRefreshInFlight = false;
 let libraryRefreshPending = false, libraryRefreshInFlight = null;
+let studyKeepaliveBytesInFlight = 0;
 let videoOverlayProjects = [];
 let shareModalEntityType = '', shareModalEntityId = '', shareModalScope = 'private', shareModalLoadedLink = '', shareModalSaving = false;
 let collapsedFolderIds = new Set();
@@ -383,7 +384,14 @@ function localDateStringFromTimestamp(ts) {
 }
 function todayLocalDateString() { return getDateStringInTimezone(Date.now(), progressTimezone); }
 function addDaysToLocalDate(dateString, days) {
-  return progressUtils.addDaysToLocalDate(dateString || todayLocalDateString(), days) || todayLocalDateString();
+  var source = dateString || todayLocalDateString();
+  if (typeof progressUtils.addDaysToLocalDate === 'function') {
+    return progressUtils.addDaysToLocalDate(source, days) || todayLocalDateString();
+  }
+  var date = new Date(source + 'T00:00:00Z');
+  if (!Number.isFinite(date.getTime())) return todayLocalDateString();
+  date.setUTCDate(date.getUTCDate() + (parseInt(days, 10) || 0));
+  return date.toISOString().slice(0, 10);
 }
 function isDueDate(dateString) {
   var target = String(dateString || '').trim();
@@ -2547,7 +2555,12 @@ function reconcileCachedRuntimeJobs(serverJobs) {
       removeActiveRuntimeJob(cached.job_id);
       if (status === 'complete') {
         shouldReload = true;
-        showToast((cached.study_pack_title || 'A study pack') + ' is ready in your library.');
+        if (payload.study_generation_error) {
+          var partialNotice = 'Some tools were not refreshed. Existing material was kept.';
+          showToast(window.LectureI18n ? window.LectureI18n.t(partialNotice) : partialNotice);
+        } else {
+          showToast((cached.study_pack_title || 'A study pack') + ' is ready in your library.');
+        }
         return;
       }
       if (status === 'error') {
@@ -2600,10 +2613,14 @@ function refreshLibraryAfterWorkspace() {
   if (!libraryRefreshPending || !token || isStudyWorkspaceOpen()) return Promise.resolve();
   if (libraryRefreshInFlight) return libraryRefreshInFlight;
   libraryRefreshPending = false;
+  var failed = false;
   var request = loadData('', { listOnly: true }).catch(function () {
+    failed = true;
     libraryRefreshPending = true;
   }).finally(function () {
-    if (libraryRefreshInFlight === request) libraryRefreshInFlight = null;
+    if (libraryRefreshInFlight !== request) return;
+    libraryRefreshInFlight = null;
+    if (!failed && libraryRefreshPending) return refreshLibraryAfterWorkspace();
   });
   libraryRefreshInFlight = request;
   return request;
@@ -5795,8 +5812,56 @@ function saveFolderFromModal() {
 }
 
 /* ── Open pack ── */
+function clearFailedPackEditor() {
+  selectedPack = null;
+  selectedPackId = '';
+  inlineAutosaveBaseline = null;
+  showPackEditor(false);
+  renderPacks();
+  showToast('Could not display this study pack. Please reopen it.', 'error');
+}
+
+function renderLoadedPack(data, alreadySyncingHighlights) {
+  selectedPack = data;
+  captureStudyPackCacheSession();
+  setGoalPanelStatus('Synced', 'success');
+  selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
+  selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
+  resetInlineEditorViews();
+  selectedPack.has_audio_playback = !!selectedPack.has_audio_playback;
+  selectedPack.has_audio_sync = !!selectedPack.has_audio_sync;
+  selectedPack.audio_unavailable_reason = String(selectedPack.audio_unavailable_reason || '');
+  selectedPack.audio_unavailable_message = String(selectedPack.audio_unavailable_message || '');
+  selectedPack.has_source_slides = !!selectedPack.has_source_slides;
+  selectedPack.has_source_transcript = !!selectedPack.has_source_transcript;
+  selectedPack.notes_audio_map = Array.isArray(selectedPack.notes_audio_map) ? selectedPack.notes_audio_map : [];
+  codingState = null;
+  codingSelectionRange = null;
+  codingUndoStack = [];
+  selectedCodingCodeId = '';
+  codingMergeSourceId = '';
+  codingEditorLastSavedFingerprint = '';
+  if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
+  if (codingSelectionAutoApplyTimer) { clearTimeout(codingSelectionAutoApplyTimer); codingSelectionAutoApplyTimer = null; }
+  stopCodingAiProgress();
+  showPackEditor(true); updatePackSummary();
+  syncCodingTabAvailability();
+  syncStudyPackExportMenu();
+  syncInlineMetadataInputs();
+  setInlineAutosaveBaseline(selectedPack);
+  packAdvancedMetadataOpen = false;
+  syncPackAdvancedMetadataState();
+  renderGoalPanel();
+  renderNotesForSelectedPackBase();
+  reapplyHighlightsForPack(alreadySyncingHighlights);
+  initAudioForSelectedPack();
+  setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
+  updateShareActionAvailability();
+}
+
 function openPack(packId) {
   var seq = ++openPackSeq;
+  var rendering = false;
   stopCodingRunPolling();
   var previousPack = selectedPack;
   return flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
@@ -5804,6 +5869,7 @@ function openPack(packId) {
       if (seq === openPackSeq) resumeCodingRunPolling();
       return null;
     }
+    previousPack = selectedPack;
     flushHighlightSync();
     selectedPackId = packId;
     packEditorWrap.inert = true;
@@ -5813,41 +5879,8 @@ function openPack(packId) {
     if (!data || seq !== openPackSeq || selectedPackId !== packId) return false;
     return loadRemoteProgressForPack(packId).then(function () {
       if (seq !== openPackSeq || selectedPackId !== packId) return false;
-      selectedPack = data;
-      captureStudyPackCacheSession();
-      setGoalPanelStatus('Synced', 'success');
-      selectedPack.flashcards = Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
-      selectedPack.test_questions = Array.isArray(selectedPack.test_questions) ? selectedPack.test_questions.map(normalizeQuestion) : [];
-      resetInlineEditorViews();
-      selectedPack.has_audio_playback = !!selectedPack.has_audio_playback;
-      selectedPack.has_audio_sync = !!selectedPack.has_audio_sync;
-      selectedPack.audio_unavailable_reason = String(selectedPack.audio_unavailable_reason || '');
-      selectedPack.audio_unavailable_message = String(selectedPack.audio_unavailable_message || '');
-      selectedPack.has_source_slides = !!selectedPack.has_source_slides;
-      selectedPack.has_source_transcript = !!selectedPack.has_source_transcript;
-      selectedPack.notes_audio_map = Array.isArray(selectedPack.notes_audio_map) ? selectedPack.notes_audio_map : [];
-      codingState = null;
-      codingSelectionRange = null;
-      codingUndoStack = [];
-      selectedCodingCodeId = '';
-      codingMergeSourceId = '';
-      codingEditorLastSavedFingerprint = '';
-      if (codingAutosaveTimer) { clearTimeout(codingAutosaveTimer); codingAutosaveTimer = null; }
-      if (codingSelectionAutoApplyTimer) { clearTimeout(codingSelectionAutoApplyTimer); codingSelectionAutoApplyTimer = null; }
-      stopCodingAiProgress();
-      showPackEditor(true); updatePackSummary();
-      syncCodingTabAvailability();
-      syncStudyPackExportMenu();
-      syncInlineMetadataInputs();
-      setInlineAutosaveBaseline(selectedPack);
-      packAdvancedMetadataOpen = false;
-      syncPackAdvancedMetadataState();
-      renderGoalPanel();
-      renderNotesForSelectedPackBase();
-      reapplyHighlightsForPack();
-      initAudioForSelectedPack();
-      setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
-      updateShareActionAvailability();
+      rendering = true;
+      renderLoadedPack(data);
       // Deep link: auto-open learn mode if URL says so
       if (openLearnFromUrl && !autoLearnConsumed && selectedPack.study_pack_id === learnPackFromUrl) {
         autoLearnConsumed = true;
@@ -5857,13 +5890,17 @@ function openPack(packId) {
     });
   }).catch(function (error) {
     if (seq !== openPackSeq || selectedPackId !== packId) return false;
-    selectedPack = previousPack;
-    selectedPackId = previousPack ? previousPack.study_pack_id : '';
-    renderPacks();
-    showPackEditor(!!previousPack);
-    resumeCodingRunPolling();
-    updatePackSummary();
-    showToast(error.message || 'Could not open study pack.', 'error');
+    if (rendering) {
+      clearFailedPackEditor();
+    } else {
+      selectedPack = previousPack;
+      selectedPackId = previousPack ? previousPack.study_pack_id : '';
+      renderPacks();
+      showPackEditor(!!previousPack);
+      resumeCodingRunPolling();
+      updatePackSummary();
+      showToast(error.message || 'Could not open study pack.', 'error');
+    }
     return false;
   }).finally(function () {
     if (seq === openPackSeq) packEditorWrap.inert = false;
@@ -6173,7 +6210,7 @@ function renderCodingAiPanel() {
     return '<div class="coding-ai-preview-item"><span class="coding-ai-preview-dot"></span><span class="coding-ai-preview-text">' + escapeHtml(truncateCodingText(quote.text || '', 140)) + '</span></div>';
   }).join('');
   setSafeInnerHtml(codingAiPanel,
-    '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">AI draft ready to review</div><div class="coding-ai-panel-sub">Nothing is applied until you accept it. Preview the suggested codebook and quotations below.</div></div><div class="coding-ai-counts">' + proposedCodes.length + (proposedCodes.length === 1 ? ' code' : ' codes') + ' &middot; ' + proposedQuotes.length + (proposedQuotes.length === 1 ? ' quotation' : ' quotations') + '</div></div>' +
+    '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">AI draft ready to review</div><div class="coding-ai-panel-sub">Nothing is applied until you accept it. Preview the suggested codebook and quotations below.</div><div class="coding-ai-panel-sub">Reject the current draft to run again.</div></div><div class="coding-ai-counts">' + proposedCodes.length + (proposedCodes.length === 1 ? ' code' : ' codes') + ' &middot; ' + proposedQuotes.length + (proposedQuotes.length === 1 ? ' quotation' : ' quotations') + '</div></div>' +
     '<div class="coding-ai-preview-grid"><div class="coding-ai-preview-box"><div class="coding-ai-preview-box-title">Suggested codes</div><div class="coding-ai-preview-list">' + (codePreview || '<div class="coding-code-picker-empty">No suggested codes.</div>') + '</div></div><div class="coding-ai-preview-box"><div class="coding-ai-preview-box-title">Suggested quotations</div><div class="coding-ai-preview-list">' + (quotePreview || '<div class="coding-code-picker-empty">No suggested quotations.</div>') + '</div></div></div>' +
     '<div class="coding-ai-panel-actions"><button type="button" class="btn" data-ai-draft-action="reject">Reject Draft</button><button type="button" class="btn primary" data-ai-draft-action="accept">Accept Draft</button></div>'
   );
@@ -7228,7 +7265,7 @@ function runInlineAutosaveNow(options) {
   inlineAutoSaving = true;
   inlineAutosaveError = null;
   setInlineAutosaveStatus('saving', 'Saving...');
-  inlineAutosavePromise = apiCall('/api/study-packs/' + encodeURIComponent(packId), buildStudyPatchOptions(payload, opts)).then(function () {
+  inlineAutosavePromise = patchStudyPack(packId, payload, opts).then(function () {
     var hasPendingInlineChanges = inlineAutoSaveQueued || !!inlineAutoSaveTimer;
     if (selectedPack === savedPack && selectedPackId === packId) {
       if (!hasPendingInlineChanges) {
@@ -7305,9 +7342,17 @@ function flushInlineAutosave(options) {
   });
 }
 
-function buildStudyPatchOptions(payload, options) {
+function patchStudyPack(packId, payload, options) {
   var body = JSON.stringify(payload);
-  return { method: 'PATCH', body: body, keepalive: !!(options && options.keepalive) && new Blob([body]).size <= 60000 };
+  var bytes = new Blob([body]).size;
+  var keepalive = !!(options && options.keepalive) && studyKeepaliveBytesInFlight + bytes <= 60000;
+  // Inline edits and highlights share the browser's outstanding keepalive quota.
+  if (keepalive) studyKeepaliveBytesInFlight += bytes;
+  return Promise.resolve().then(function () {
+    return apiCall('/api/study-packs/' + encodeURIComponent(packId), { method: 'PATCH', body: body, keepalive: keepalive });
+  }).finally(function () {
+    if (keepalive) studyKeepaliveBytesInFlight -= bytes;
+  });
 }
 
 function offerDiscardUnsavedChanges() {
@@ -7322,12 +7367,24 @@ function offerDiscardUnsavedChanges() {
     if (!discard || selectedPack !== pack) return false;
     if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
     inlineAutoSaveQueued = false;
-    inlineAutosaveBaseline = buildCurrentInlineAutosaveSnapshot();
-    inlineAutosaveError = null;
-    pendingHighlightSaves.delete(pack.study_pack_id);
-    highlightSavesInFlight.delete(pack.study_pack_id);
-    setInlineAutosaveStatus('saved', 'Changes discarded');
-    return true;
+    var seq = openPackSeq;
+    var rendering = false;
+    packEditorWrap.inert = true;
+    return apiCall('/api/study-packs/' + encodeURIComponent(pack.study_pack_id)).then(function (data) {
+      if (seq !== openPackSeq || selectedPack !== pack) return false;
+      rendering = true;
+      renderLoadedPack(data, pack.notes_highlights);
+      renderPacks();
+      setInlineAutosaveStatus('saved', 'Changes discarded');
+      return true;
+    }).catch(function () {
+      if (seq !== openPackSeq) return false;
+      if (rendering) clearFailedPackEditor();
+      else showToast('Could not reload this study pack. Your changes are still here.', 'error');
+      return false;
+    }).finally(function () {
+      if (seq === openPackSeq) packEditorWrap.inert = false;
+    });
   }).finally(function () { inlineDiscardPromise = null; });
   return inlineDiscardPromise;
 }
@@ -8745,7 +8802,7 @@ function flushHighlightSync(options) {
     var payload = pendingHighlightSaves.get(packId);
     var cacheSession = highlightCacheSessions.get(packId);
     pendingHighlightSaves.delete(packId);
-    var request = apiCall('/api/study-packs/' + encodeURIComponent(packId), buildStudyPatchOptions({ notes_highlights: payload.ranges.length ? payload : null }, opts)).then(function () {
+    var request = patchStudyPack(packId, { notes_highlights: payload.ranges.length ? payload : null }, opts).then(function () {
       if (!isCurrent() || highlightSavesInFlight.get(packId) !== request) return false;
       if (!pendingHighlightSaves.has(packId)) {
         storeHighlightForPack(packId, payload, false, cacheSession);
@@ -8935,7 +8992,7 @@ function migrateLegacyHighlightsForPack() {
   return migratedPayload;
 }
 
-function reapplyHighlightsForPack() {
+function reapplyHighlightsForPack(alreadySyncingHighlights) {
   if (!notesView || !selectedPackId) return;
   var serverPayload = normalizeClientHighlightPayload(selectedPack && selectedPack.notes_highlights);
   var localPayload = readStructuredHighlightCache();
@@ -8961,7 +9018,9 @@ function reapplyHighlightsForPack() {
     setHighlightStatus(warning ? 'Highlights could not be saved on this device. Keep this tab open until syncing succeeds.' : 'Highlights save to this study pack automatically.', warning);
   }
   resetHighlightHistory(appliedPayload);
-  if (localWins) queueHighlightSync(appliedPayload);
+  var alreadyQueued = (pendingHighlightSaves.has(selectedPackId) || highlightSavesInFlight.has(selectedPackId)) &&
+    payloadFingerprint(alreadySyncingHighlights) === payloadFingerprint(appliedPayload);
+  if (localWins && !alreadyQueued) queueHighlightSync(appliedPayload);
 }
 
 function applyHighlightToSelection() {
