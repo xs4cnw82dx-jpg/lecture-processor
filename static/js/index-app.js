@@ -1325,6 +1325,10 @@ function creationCreditSnapshot() {
 function usesUnifiedCreationCredits() {
     return creationCreditSnapshot()?.scheme === 2;
 }
+function usesLegacyCreationCredits() {
+    const snapshot = creationCreditSnapshot();
+    return snapshot ? snapshot.scheme === 1 : publicCreditConfig?.scheme === 1;
+}
 function creationCreditQuote() {
     const snapshot = creationCreditSnapshot();
     if (!snapshot || snapshot.scheme !== 2 || !creditUtils.quote) return null;
@@ -1360,8 +1364,7 @@ async function loadCreationPublicCredits() {
         if (!response.ok) return;
         publicCreditConfig = creditUtils.parsePublicConfig(await response.json());
         updateSignupCreditGrant();
-        updateModeCreditDisplay();
-        updateProcessButton();
+        updateInterviewOptionsUI();
     } catch (_) { /* Keep account quotes independent of public pricing availability. */ }
 }
 function updateCreditsDisplay() {
@@ -1378,7 +1381,7 @@ function updateCreditsDisplay() {
         refreshStudyHeaderMetrics();
         return;
     }
-    if (!userCredits) { updateModeCreditDisplay(); updateProcessButton(); return; }
+    if (!userCredits) { updateInterviewOptionsUI(); return; }
     const lecture = userCredits.lecture_standard + userCredits.lecture_extended;
     const interview = userCredits.interview_short + userCredits.interview_medium + userCredits.interview_long;
     const total = lecture + userCredits.slides + interview;
@@ -1402,9 +1405,7 @@ function updateCreditsDisplay() {
     if (dropdownLectureCredits) dropdownLectureCredits.textContent = lectureLabel;
     if (dropdownSlidesCredits) dropdownSlidesCredits.textContent = slidesLabel;
     if (dropdownInterviewCredits) dropdownInterviewCredits.textContent = interviewLabel;
-    updateInterviewOptionAvailability();
-    updateModeCostSummary();
-    updateProcessButton();
+    updateInterviewOptionsUI();
     refreshStudyHeaderMetrics();
 }
 function getUnlimitedCredits() {
@@ -1459,7 +1460,8 @@ function updateInterviewOptionAvailability() {
         interviewOptionButtons.forEach(btn => { btn.disabled = false; btn.classList.remove('disabled'); btn.title = ''; btn.setAttribute('aria-disabled', 'false'); });
         return;
     }
-    const slidesCredits = userCredits ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(userCredits.slides || 0)) : Number.POSITIVE_INFINITY;
+    const slidesCredits = creationCreditState()?.snapshot?.scheme === 1 && userCredits
+        ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(userCredits.slides || 0)) : Number.POSITIVE_INFINITY;
     const selectedCount = selectedInterviewFeatures.length;
     interviewOptionButtons.forEach(btn => {
         const feature = btn.dataset.feature;
@@ -1553,7 +1555,8 @@ function setAmountSelection(kind, value) {
     }
 }
 function updateInterviewOptionsUI() {
-    if (userCredits && !usesUnifiedCreationCredits()) {
+    const legacyCredits = creationCreditState()?.snapshot?.scheme === 1 ? userCredits : null;
+    if (legacyCredits) {
         const maxAffordable = hasUnlimitedCredit('slides') ? 2 : Math.max(0, Number(userCredits.slides || 0));
         if (selectedInterviewFeatures.length > maxAffordable) {
             selectedInterviewFeatures = selectedInterviewFeatures.slice(0, maxAffordable);
@@ -1565,15 +1568,17 @@ function updateInterviewOptionsUI() {
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
-    const slidesCredits = userCredits ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(userCredits.slides || 0)) : 0;
+    const slidesCredits = legacyCredits ? (hasUnlimitedCredit('slides') ? Number.POSITIVE_INFINITY : Number(legacyCredits.slides || 0)) : 0;
     if (usesUnifiedCreationCredits()) {
         const extra = creditUtils.quote(creationCreditSnapshot(), [{ action: 'interview_extra', units: selectedInterviewFeatures.length || 1 }]);
         interviewExtraNote.textContent = extra
             ? creationCreditText(selectedInterviewFeatures.length ? 'Selected extras: {credits}.' : 'Optional extras: {credits} each.', { credits: creditUtils.formatCredits(extra.needed) })
             : creationCreditText('Credit cost unavailable.');
-    } else if (!selectedInterviewFeatures.length && userCredits && hasUnlimitedCredit('slides')) {
+    } else if (!usesLegacyCreationCredits()) {
+        interviewExtraNote.textContent = creationCreditText('Credit cost unavailable.');
+    } else if (!selectedInterviewFeatures.length && legacyCredits && hasUnlimitedCredit('slides')) {
         interviewExtraNote.textContent = 'No extras selected. Text extraction extras are available with unlimited credits.';
-    } else if (!selectedInterviewFeatures.length && userCredits && slidesCredits <= 0) {
+    } else if (!selectedInterviewFeatures.length && legacyCredits && slidesCredits <= 0) {
         interviewExtraNote.textContent = 'No extras selected. You currently have 0 text extraction credits, so extras are disabled.';
     } else if (!selectedInterviewFeatures.length) {
         interviewExtraNote.textContent = 'No extras selected. Select one or both options (1 text extraction credit per option).';
@@ -2890,7 +2895,7 @@ function updateUploadEstimatePanel() {
         uploadEstimateMeta.textContent = `Requires PDF or PPTX (max 50 MB). Current upload: ${totalMb.toFixed(1)} MB.`;
     } else {
         const extras = getInterviewExtraCost();
-        uploadEstimateMeta.textContent = usesUnifiedCreationCredits()
+        uploadEstimateMeta.textContent = !usesLegacyCreationCredits()
             ? creationCreditText('Requires audio only (max 500 MB). Selected extras: {count}. Current upload: {size} MB.', { count: extras, size: totalMb.toFixed(1) })
             : `Requires audio only (max 500 MB). Selected extras: ${extras} (${extras} text extraction credits). Current upload: ${totalMb.toFixed(1)} MB.`;
     }
@@ -5012,7 +5017,8 @@ interviewOptionButtons.forEach(btn => {
         if (selectedInterviewFeatures.includes(feature)) {
             selectedInterviewFeatures = selectedInterviewFeatures.filter(item => item !== feature);
         } else {
-            const maxAffordable = usesUnifiedCreationCredits() ? 2 : userCredits ? (hasUnlimitedCredit('slides') ? 2 : Math.max(0, Number(userCredits.slides || 0))) : 2;
+            const maxAffordable = creationCreditState()?.snapshot?.scheme === 1 && userCredits
+                ? (hasUnlimitedCredit('slides') ? 2 : Math.max(0, Number(userCredits.slides || 0))) : 2;
             if (selectedInterviewFeatures.length >= maxAffordable) {
                 showToast('Not enough text extraction credits for more interview extras.', 'info', 2600);
                 updateInterviewOptionsUI();

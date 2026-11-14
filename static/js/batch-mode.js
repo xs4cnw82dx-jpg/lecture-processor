@@ -194,10 +194,17 @@
         rowCost.textContent = rowQuote ? batchCreditText('Row total: {credits}.', { credits: creditUtils.formatCredits(rowQuote.needed) }) : batchCreditText('Credit cost unavailable.');
       }
       var extraNote = row.querySelector('[data-interview-extra-note]');
-      if (unified && extraNote) {
+      if (extraNote) {
         var count = row.querySelectorAll('[data-interview-feature-chip].active').length;
-        var extras = creditUtils.quote(value.snapshot, [{ action: 'interview_extra', units: count || 1 }], { overnight: !isInstantBatch });
-        extraNote.textContent = extras ? batchCreditText(count ? 'Selected extras: {credits}.' : 'Optional extras: {credits} each.', { credits: creditUtils.formatCredits(extras.needed) }) : batchCreditText('Credit cost unavailable.');
+        if (unified) {
+          var extras = creditUtils.quote(value.snapshot, [{ action: 'interview_extra', units: count || 1 }], { overnight: !isInstantBatch });
+          extraNote.textContent = extras ? batchCreditText(count ? 'Selected extras: {credits}.' : 'Optional extras: {credits} each.', { credits: creditUtils.formatCredits(extras.needed) }) : batchCreditText('Credit cost unavailable.');
+        } else if (value && value.snapshot && value.snapshot.scheme === 1) {
+          extraNote.textContent = count ? count + ' extra' + (count === 1 ? '' : 's') + ' selected (' + count + ' text extraction credit' + (count === 1 ? '' : 's') + ').'
+            : 'No extras selected. Select one or both options (1 text extraction credit per option).';
+        } else {
+          extraNote.textContent = batchCreditText('Credit cost unavailable.');
+        }
       }
     });
     if (submitBtn) submitBtn.disabled = pendingStartRequest || startLockedByBatchState || Boolean(problem);
@@ -1227,26 +1234,14 @@
   }
 
   function wireInterviewExtras(rowNode) {
-    var note = rowNode.querySelector('[data-interview-extra-note]');
-    var syncInterviewExtrasNote = function () {
-      var count = rowNode.querySelectorAll('[data-interview-feature-chip].active').length;
-      if (!note) return;
-      if (count <= 0) {
-        note.textContent = 'No extras selected. Select one or both options (1 text extraction credit per option).';
-        return;
-      }
-      note.textContent = count + ' extra' + (count === 1 ? '' : 's') + ' selected (' + count + ' text extraction credit' + (count === 1 ? '' : 's') + ').';
-    };
     Array.prototype.slice.call(rowNode.querySelectorAll('[data-interview-feature-chip]')).forEach(function (chip) {
       chip.addEventListener('click', function () {
         chip.classList.toggle('active');
         chip.setAttribute('aria-pressed', chip.classList.contains('active') ? 'true' : 'false');
-        syncInterviewExtrasNote();
         updateBatchCreditUi();
       });
       chip.setAttribute('aria-pressed', chip.classList.contains('active') ? 'true' : 'false');
     });
-    syncInterviewExtrasNote();
   }
 
   function removeRow(rowNode) {
@@ -1437,7 +1432,7 @@
       '    <button type="button" class="interview-extra-chip" data-interview-feature-chip="summary">Summary (max 1 page)</button>' +
       '    <button type="button" class="interview-extra-chip" data-interview-feature-chip="sections">Structured transcript with headings</button>' +
       '  </div>' +
-      '  <div class="control-note" data-interview-extra-note>No extras selected. Select one or both options (1 text extraction credit per option).</div>' +
+      '  <div class="control-note" data-interview-extra-note>Credit cost unavailable.</div>' +
       '</div>'
     ) : '';
 

@@ -198,6 +198,134 @@ test('selected interview extras survive insufficient balance and changing server
   expect(fixture.browserErrors).toEqual([]);
 });
 
+test('single interview extra pricing stays unknown until a failed profile recovers', async ({ page }) => {
+  const fixture = await install(page, { configError: true, profileError: true });
+  await page.goto('/interview-transcription');
+  await fillSingle(page, 'interview');
+  await page.locator('#advanced-settings-toggle').click();
+  await expect(page.locator('#interview-extra-note')).toBeVisible();
+  await expect(page.locator('#interview-extra-note')).toHaveText('Credit cost unavailable.');
+  await page.locator('[data-feature="summary"]').click();
+  await page.locator('[data-feature="sections"]').click();
+  await expect(page.locator('#interview-extra-note')).toHaveText('Credit cost unavailable.');
+  await expect(page.locator('#upload-estimate-meta')).toHaveText('Requires audio only (max 500 MB). Selected extras: 2. Current upload: 0.0 MB.');
+  await expect(page.locator('#process-button')).toBeDisabled();
+  fixture.state.profileError = false;
+  await refresh(page);
+  await expect(page.locator('#interview-extra-note')).toHaveText('Selected extras: 4 credits.');
+  await expect(page.locator('.interview-option.active')).toHaveCount(2);
+  await expect(page.locator('#process-button')).toBeEnabled();
+  expect(await page.locator('#audio-input').evaluate(input => input.files[0].name)).toBe('keep.mp3');
+});
+
+test('single interview extra pricing updates when public configuration arrives after a failed profile', async ({ page }) => {
+  const fixture = await install(page, { profileError: true });
+  fixture.state.costs.interview_extra = { category: 'slides', instant: 4, overnight: 2 };
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/config', async route => { await held; return route.fallback(); });
+  try {
+    await page.goto('/interview-transcription');
+    await fillSingle(page, 'interview');
+    await page.locator('#advanced-settings-toggle').click();
+    await page.locator('[data-feature="summary"]').click();
+    await page.locator('[data-feature="sections"]').click();
+    await expect(page.locator('#shell-credits-total')).toHaveText('Credits unavailable');
+    release();
+    await expect(page.locator('#mode-credit-cost')).toHaveText('Uses 18 credits.');
+    await expect(page.locator('#interview-extra-note')).toHaveText('Selected extras: 8 credits.');
+    await expect(page.locator('#process-button')).toBeDisabled();
+    fixture.state.profileError = false;
+    await refresh(page);
+    await expect(page.locator('#process-button')).toBeEnabled();
+    await expect(page.locator('.interview-option.active')).toHaveCount(2);
+    expect(await page.locator('#audio-input').evaluate(input => input.files[0].name)).toBe('keep.mp3');
+  } finally { release(); }
+});
+
+test('single interview extra pricing can use public policy while its profile is held', async ({ page }) => {
+  const fixture = await install(page);
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/auth/user', async route => { await held; return route.fallback(); });
+  try {
+    await page.goto('/interview-transcription');
+    await fillSingle(page, 'interview');
+    await page.locator('#advanced-settings-toggle').click();
+    await expect(page.locator('#mode-credit-cost')).toHaveText('Uses 10 credits.');
+    await expect(page.locator('#interview-extra-note')).toHaveText('Optional extras: 2 credits each.');
+    await expect(page.locator('#process-button')).toBeDisabled();
+    release();
+    await expect(page.locator('#process-button')).toBeEnabled();
+    expect(fixture.browserErrors).toEqual([]);
+  } finally { release(); }
+});
+
+test('batch interview extra pricing stays unknown until its profile recovers', async ({ page }) => {
+  const fixture = await install(page, { profileError: true });
+  await page.goto('/batch_mode_interview_transcription');
+  const row = page.locator('.batch-row').first();
+  await page.locator('#batch-title').fill('Keep interview batch');
+  await row.locator('[data-field="audio"]').setInputFiles({ name: 'keep.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3 synthetic') });
+  await expect(row.locator('[data-interview-extra-note]')).toBeVisible();
+  await expect(row.locator('[data-interview-extra-note]')).toHaveText('Credit cost unavailable.');
+  await row.locator('[data-interview-feature-chip="summary"]').click();
+  await row.locator('[data-interview-feature-chip="sections"]').click();
+  await expect(row.locator('[data-interview-extra-note]')).toHaveText('Credit cost unavailable.');
+  await expect(page.locator('#submit-batch-btn')).toBeDisabled();
+  fixture.state.profileError = false;
+  await refresh(page);
+  await expect(row.locator('[data-interview-extra-note]')).toHaveText('Selected extras: 2 credits.');
+  await expect(row.locator('[data-interview-feature-chip].active')).toHaveCount(2);
+  await expect(page.locator('#batch-title')).toHaveValue('Keep interview batch');
+  expect(await row.locator('[data-field="audio"]').evaluate(input => input.files[0].name)).toBe('keep.mp3');
+  await expect(page.locator('#submit-batch-btn')).toBeEnabled();
+  await page.getByRole('switch', { name: 'Instant processing' }).click();
+  await expect(row.locator('[data-interview-extra-note]')).toHaveText('Selected extras: 4 credits.');
+});
+
+test('batch interview extra pricing resets while the next account profile is held', async ({ page }) => {
+  const fixture = await install(page);
+  let release;
+  let requested = false;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/auth/user', async route => {
+    if (route.request().headers().authorization === 'Bearer token-b') { requested = true; await held; }
+    return route.fallback();
+  });
+  try {
+    await page.goto('/instant_batch_mode_interview_transcription');
+    const note = page.locator('[data-interview-extra-note]').first();
+    await expect(note).toHaveText('Optional extras: 2 credits each.');
+    fixture.state.costs.interview_extra = { category: 'slides', instant: 4, overnight: 2 };
+    await page.evaluate(() => window.testAccount.switchTo('b'));
+    await expect.poll(() => requested).toBe(true);
+    await expect(note).toHaveText('Credit cost unavailable.');
+    await expect(page.locator('#submit-batch-btn')).toBeDisabled();
+    release();
+    await expect(note).toHaveText('Optional extras: 4 credits each.');
+    await expect(page.locator('#submit-batch-btn')).toBeEnabled();
+  } finally { release(); }
+});
+
+for (const batch of [false, true]) {
+  test(`${batch ? 'batch' : 'single'} interview extra pricing retains explicit legacy account units`, async ({ page }) => {
+    await install(page, { legacy: true });
+    await page.goto(batch ? '/batch_mode_interview_transcription' : '/interview-transcription');
+    if (!batch) await page.locator('#advanced-settings-toggle').click();
+    await expect(page.locator('#shell-credits-total')).toHaveText('10 credits');
+    const note = page.locator(batch ? '[data-interview-extra-note]' : '#interview-extra-note').first();
+    await expect(note).toBeVisible();
+    await expect(note).toHaveText('No extras selected. Select one or both options (1 text extraction credit per option).');
+    await page.locator(batch ? '[data-interview-feature-chip="summary"]' : '[data-feature="summary"]').first().click();
+    await expect(note).toHaveText(batch ? '1 extra selected (1 text extraction credit).' : 'Selected 1 extra option. This adds 1 text extraction credit.');
+    if (!batch) {
+      await fillSingle(page, 'interview');
+      await expect(page.locator('#upload-estimate-meta')).toContainText('Selected extras: 1 (1 text extraction credits).');
+    }
+  });
+}
+
 for (const [unlimited, balance, total, enabled] of [
   [{ interview: true }, 4, 4, true], [{ slides: true }, 10, 10, true],
   [{ interview: true, slides: true }, 0, 0, true], [{ lecture: true }, 0, 14, false],
