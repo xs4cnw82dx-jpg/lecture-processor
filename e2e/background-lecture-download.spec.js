@@ -18,7 +18,7 @@ async function fixture(page, handlers = {}) {
       return handlers.post ? handlers.post(route, state) : route.fulfill({ status: 202, json: { ok: false, job_id: 'synthetic-job', status: 'queued', step_description: 'Queued synthetic download.' } });
     }
     if (url.pathname === `${endpoint}/synthetic-job/file`) {
-      state.files.push({ token: url.searchParams.get('token'), headers: request.headers() });
+      state.files.push({ url: request.url(), headers: request.headers() });
       return handlers.file ? handlers.file(route, state) : route.fulfill({ contentType: 'video/mp4', headers: { 'content-disposition': 'attachment; filename="Synthetic lecture.mp4"' }, body: 'SYNTHETIC_MEDIA_BYTES' });
     }
     state.polls.push({ path: url.pathname, headers: request.headers() });
@@ -51,7 +51,9 @@ test('a queued download polls before fetching and saving authenticated media byt
   expect(state.posts[0].body).toEqual({ url: sourceUrl, format: 'video' });
   await heldStatus.fulfill({ json: completeJob });
   await expect.poll(() => state.downloads.length).toBe(1);
-  expect(state.files[0].token).toBe('synthetic-file-token');
+  expect(new URL(state.files[0].url).search).toBe('');
+  expect(state.files[0].url).not.toContain('synthetic-file-token');
+  expect(state.files[0].headers['x-lecture-download-token']).toBe('synthetic-file-token');
   for (const request of [...state.posts, ...state.polls, ...state.files]) expect(request.headers.authorization).toBe('Bearer token-a');
   expect(state.downloads[0].suggestedFilename()).toBe('Synthetic lecture.mp4');
   expect(await downloadedText(state.downloads[0])).toBe('SYNTHETIC_MEDIA_BYTES');
@@ -117,7 +119,7 @@ for (const phase of ['post', 'status', 'file', 'blob']) {
         let held = false;
         Response.prototype.blob = function () {
           const reading = readBlob.call(this);
-          if (!held && this.url.includes('/api/tools/lecture-download/') && this.url.includes('/file?')) {
+          if (!held && new URL(this.url).pathname.startsWith('/api/tools/lecture-download/') && new URL(this.url).pathname.endsWith('/file')) {
             held = true;
             return reading.then(blob => new Promise(resolve => { window.releaseLectureBlob = () => resolve(blob); }));
           }
