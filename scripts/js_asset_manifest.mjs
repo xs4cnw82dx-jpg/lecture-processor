@@ -33,6 +33,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/i18n-dynamic-tools.js',
 
   'static/js/book-zip.min.js',
+  'static/js/vendor/dompurify-3.3.2/purify.min.js',
   'static/js/book-model.js',
   'static/js/book-path-editor.js',
   'static/js/book-color-picker.js',
