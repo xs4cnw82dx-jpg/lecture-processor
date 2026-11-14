@@ -25,6 +25,19 @@ _UPLOADS = {}
 _UPLOADS_LOCK = threading.Lock()
 
 
+class PictureUploadBusy(BookError):
+    """An active upload lease keeps removal safely pending."""
+
+
+def _require_attachable_asset(asset, uid, pack_id, *, pending=False):
+    if not asset or asset.get('uid') != uid or asset.get('pack_id') != pack_id:
+        raise BookError('This picture does not belong to this study pack.', 403)
+    if pending or asset.get('deleting'):
+        raise BookError('This picture is being removed; add it again shortly.', 409)
+    if not asset.get('ready'):
+        raise BookError('This picture does not belong to this study pack.', 403)
+
+
 def enabled(runtime, uid):
     if runtime.db is None:
         return False
@@ -76,9 +89,7 @@ def sanitize_cards(runtime, uid, pack_id, items):
             if doc.exists
         }
         for aid in all_ids:
-            asset = assets.get(aid)
-            if not asset or not asset.get('ready') or asset.get('uid') != uid or asset.get('pack_id') != pack_id:
-                raise BookError('This picture does not belong to this study pack.', 403)
+            _require_attachable_asset(assets.get(aid), uid, pack_id)
     for card in cleaned:
         ids = references.get((card['front'], card['back']))
         if ids:
@@ -107,8 +118,7 @@ def update_pack_and_collect_removed(runtime, uid, pack_id, updates):
         next_ids = _card_image_ids(updates.get('flashcards', pack.get('flashcards', [])))
         for aid in sorted(next_ids):
             asset = tx.get('study_images/' + aid)
-            if not asset or not asset.get('ready') or asset.get('deleting') or asset.get('uid') != uid or asset.get('pack_id') != pack_id:
-                raise BookError('This picture does not belong to this study pack.', 403)
+            _require_attachable_asset(asset, uid, pack_id, pending=aid in pack.get(PENDING_PICTURES, []))
         pending = (set(pack.get(PENDING_PICTURES, [])) | _card_image_ids(pack.get('flashcards'))) - next_ids
         tx.put('study_packs/' + pack_id, {**pack, **updates, PENDING_PICTURES: sorted(pending)})
         return sorted(pending)
@@ -198,7 +208,7 @@ def _delete_asset(db, uid, asset, *, account_delete=False):
         return False
     claimed, busy = result
     if busy:
-        raise BookError('Picture upload is finishing. Please retry removal shortly.', 503)
+        raise PictureUploadBusy('Picture upload is finishing. Please retry removal shortly.', 503)
     for field in ('path', 'preview_path'):
         book_storage.request('DELETE', claimed[field])
 
@@ -274,9 +284,12 @@ def save_image(runtime, uid, pack_id, data, name):
                 active.discard(token)
                 if not active:
                     _UPLOADS.pop(aid, None)
-        current = db.get('study_images/' + aid)
-        if current and (current.get('deleting') or (not current.get('ready') and not db.get('study_packs/' + pack_id))):
-            _delete_asset(db, uid, current)
+        try:
+            current = db.get('study_images/' + aid)
+            if current and (current.get('deleting') or (not current.get('ready') and not db.get('study_packs/' + pack_id))):
+                _delete_asset(db, uid, current)
+        except Exception:
+            logging.getLogger(__name__).warning('Could not finish study picture cleanup after upload', exc_info=True)
 
 
 def _save_image(runtime, uid, pack_id, data, name, token, attempt):
