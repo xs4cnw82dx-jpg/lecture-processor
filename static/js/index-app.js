@@ -1987,12 +1987,6 @@ bootstrap.onAuthStateReady(auth, async (user) => {
         updateUIForAuthState(null);
     }
 });
-setInterval(async () => {
-    if (!currentUser) return;
-    idToken = await currentUser.getIdToken(true);
-    if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
-}, 10 * 60 * 1000);
-
 function formatFileSize(bytes) {
     if (!bytes) return '0 Bytes';
     const k = 1024;
