@@ -793,8 +793,14 @@ def cleanup_stale_upload_artifacts(ttl_seconds=None):
 
 def _run_periodic_cleanup():
     """Background thread: periodically evict stale jobs and audio/import tokens."""
+    from lecture_processor.domains.runtime_jobs import recovery as runtime_job_recovery
+
     while True:
         time.sleep(JOB_CLEANUP_INTERVAL_SECONDS)
+        try:
+            runtime_job_recovery.run_periodic_recovery(runtime=_self_runtime())
+        except Exception:
+            logger.warning('Periodic runtime-job recovery failed', exc_info=True)
         try:
             cleanup_old_jobs()
             cleanup_expired_audio_stream_tokens()
@@ -958,46 +964,14 @@ def recover_stale_runtime_jobs():
     return runtime_job_recovery.recover_stale_runtime_jobs(runtime=_self_runtime())
 
 def acquire_runtime_job_recovery_lease(now_ts=None):
-    if db is None:
-        return True
-    lease_collection = str(RUNTIME_JOB_RECOVERY_LEASE_COLLECTION or '').strip()
-    lease_id = str(RUNTIME_JOB_RECOVERY_LEASE_ID or '').strip()
-    if not lease_collection or not lease_id:
-        return True
-    now_ts = float(now_ts if isinstance(now_ts, (int, float)) else time.time())
-    lease_seconds = max(30, min(int(RUNTIME_JOB_RECOVERY_LEASE_SECONDS or 300), 3600))
-    holder_id = str(os.getenv('RENDER_INSTANCE_ID', '') or '').strip() or str(os.getenv('HOSTNAME', '') or '').strip() or f'pid-{os.getpid()}'
-    lease_ref = db.collection(lease_collection).document(lease_id)
-    transaction = db.transaction()
+    from lecture_processor.domains.runtime_jobs import recovery as runtime_job_recovery
 
-    @firestore.transactional
-    def _txn(txn):
-        snapshot = lease_ref.get(transaction=txn)
-        existing = snapshot.to_dict() or {}
-        existing_expires_at = get_timestamp(existing.get('expires_at'))
-        if snapshot.exists and existing_expires_at > now_ts:
-            return False
-        txn.set(lease_ref, {'lease_id': lease_id, 'holder_id': holder_id, 'acquired_at': now_ts, 'expires_at': now_ts + lease_seconds}, merge=True)
-        return True
-    try:
-        return bool(_txn(transaction))
-    except Exception:
-        logger.warning('Could not acquire runtime-job recovery lease; continuing without distributed lock.', exc_info=True)
-        return True
+    return runtime_job_recovery.acquire_runtime_job_recovery_lease(now_ts=now_ts, runtime=_self_runtime())
 
 def run_startup_recovery_once():
-    global RUNTIME_JOB_RECOVERY_DONE
-    with RUNTIME_JOB_RECOVERY_LOCK:
-        if RUNTIME_JOB_RECOVERY_DONE:
-            return
-        RUNTIME_JOB_RECOVERY_DONE = True
-    if not RUNTIME_JOB_RECOVERY_ENABLED:
-        logger.info('Runtime-job recovery disabled via ENABLE_RUNTIME_JOB_RECOVERY.')
-        return
-    if not acquire_runtime_job_recovery_lease():
-        logger.info('Skipping startup runtime-job recovery; lease already held by another instance.')
-        return
-    recover_stale_runtime_jobs()
+    from lecture_processor.domains.runtime_jobs import recovery as runtime_job_recovery
+
+    return runtime_job_recovery.run_startup_recovery_once(runtime=_self_runtime())
 
 def verify_firebase_token(request, *, check_revoked=False, allow_deleting_account=False):
     return auth_service.verify_firebase_token(
@@ -1152,7 +1126,9 @@ def get_client_ip(req=None):
 
 
 def submit_background_job(target, *args, **kwargs):
-    return job_dispatcher.submit(target, *args, **kwargs)
+    from lecture_processor.domains.runtime_jobs import execution
+
+    return execution.submit_job(job_dispatcher, target, *args, execution_runtime=_self_runtime(), **kwargs)
 
 
 def get_background_queue_stats():

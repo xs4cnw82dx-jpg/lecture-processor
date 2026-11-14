@@ -5,6 +5,7 @@ from collections import defaultdict
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.billing import receipts as billing_receipts
+from lecture_processor.domains.runtime_jobs import recovery as runtime_job_recovery
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.study import export as study_export
@@ -35,6 +36,10 @@ def get_status(app_ctx, request, job_id):
         _admin_token, error_response, status = _require_admin_bypass(app_ctx, request)
         if error_response is not None:
             return error_response, status
+    if (getattr(app_ctx, 'RUNTIME_JOB_RECOVERY_ENABLED', False)
+            and runtime_job_recovery._runtime_job_is_stale(job, now_ts=app_ctx.time.time(), runtime=app_ctx)):
+        if runtime_job_recovery.recover_runtime_job_if_stale(job_id, runtime=app_ctx):
+            job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or job
     response = {
         'status': job['status'],
         'step': job['step'],

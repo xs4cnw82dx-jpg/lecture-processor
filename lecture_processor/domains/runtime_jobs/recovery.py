@@ -1,6 +1,7 @@
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
+from lecture_processor.domains.runtime_jobs import execution
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 
 ACTIVE_RUNTIME_JOB_STATUSES = {'queued', 'starting', 'processing'}
@@ -21,7 +22,7 @@ def _runtime_job_recovery_stale_seconds(runtime=None):
         safe_configured = 0
     if safe_configured > 0:
         return max(120, safe_configured)
-    return max(180, int(getattr(resolved_runtime, 'RUNTIME_JOB_RECOVERY_LEASE_SECONDS', 300) or 300) * 2)
+    return 180
 
 
 def _active_job_timestamp(job_data):
@@ -61,7 +62,7 @@ def _runtime_job_recovery_holder_id(runtime=None):
 def _claim_stale_runtime_job(doc, *, now_ts, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     job_id = str(getattr(doc, 'id', '') or '').strip()
-    if not job_id:
+    if not job_id or execution.is_job_active(job_id, runtime=resolved_runtime):
         return None
 
     db = getattr(resolved_runtime, 'db', None)
@@ -86,6 +87,8 @@ def _claim_stale_runtime_job(doc, *, now_ts, runtime=None):
         if not getattr(snapshot, 'exists', False):
             return None
         job_data = snapshot.to_dict() or {}
+        if execution.is_job_active(job_id, runtime=resolved_runtime):
+            return None
         if not _runtime_job_is_stale(job_data, now_ts=now_ts, runtime=resolved_runtime):
             return None
         try:
@@ -134,74 +137,109 @@ def recover_stale_runtime_jobs(runtime=None):
         return 0
 
     for doc in stale_docs:
-        job_id = doc.id
-        job_data = _claim_stale_runtime_job(doc, now_ts=now_ts, runtime=resolved_runtime)
-        if not isinstance(job_data, dict):
-            continue
-        status = str(job_data.get('status', '') or '').lower()
-        if status not in ACTIVE_RUNTIME_JOB_STATUSES:
-            continue
-        uid = str(job_data.get('user_id', '') or '').strip()
-        credit_type = str(job_data.get('credit_deducted', '') or '').strip()
-        already_refunded = bool(job_data.get('credit_refunded', False))
-        if uid and credit_type and (not already_refunded):
-            try:
-                primary_refunded = bool(billing_credits.refund_credit(
-                    uid,
-                    credit_type,
-                    runtime=resolved_runtime,
-                    idempotency_key=f'runtime-job:{job_id}:primary',
-                ))
-            except Exception:
-                primary_refunded = False
-            if primary_refunded:
-                billing_receipts.add_job_credit_refund(job_data, credit_type, 1, runtime=resolved_runtime)
-                job_data['credit_refunded'] = True
-            else:
-                job_data['credit_refund_pending'] = True
-                job_data['credit_refund_error'] = 'runtime_recovery_refund_failed'
-
-        extra_spent = int(job_data.get('interview_features_cost', 0) or 0) + int(job_data.get('study_tools_credit_cost', 0) or 0)
-        extra_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
-        extra_to_refund = max(0, extra_spent - extra_refunded)
-        if uid and extra_to_refund > 0:
-            try:
-                extras_refunded = bool(billing_credits.refund_slides_credits(
-                    uid,
-                    extra_to_refund,
-                    runtime=resolved_runtime,
-                    idempotency_key=f'runtime-job:{job_id}:extras',
-                    idempotency_total=extra_refunded + extra_to_refund,
-                ))
-            except Exception:
-                extras_refunded = False
-            if extras_refunded:
-                job_data['extra_slides_refunded'] = extra_refunded + extra_to_refund
-                billing_receipts.add_job_credit_refund(job_data, 'slides_credits', extra_to_refund, runtime=resolved_runtime)
-                job_data['credit_refunded'] = True
-            else:
-                job_data['extra_slides_refund_pending'] = extra_to_refund
-
-        billing_receipts.ensure_job_billing_receipt(
-            job_data,
-            {credit_type: 1} if credit_type else None,
-            runtime=resolved_runtime,
-        )
-        job_data['status'] = 'error'
-        job_data['step_description'] = 'Interrupted by server restart'
-        if billing_receipts.job_has_refunds(job_data, runtime=resolved_runtime):
-            job_data['error'] = 'Processing was interrupted by a server restart. Your credit has been refunded.'
-        else:
-            job_data['error'] = 'Processing was interrupted by a server restart. Please contact support if a credit was charged.'
-        job_data['finished_at'] = now_ts
-        job_data['job_id'] = job_id
-        runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)
-        resolved_runtime.save_job_log(job_id, job_data, now_ts)
-        recovered += 1
+        if _recover_runtime_job_doc(doc, now_ts=now_ts, runtime=resolved_runtime):
+            recovered += 1
 
     if recovered:
-        resolved_runtime.logger.warning('Recovered %s stale runtime jobs after startup.', recovered)
+        resolved_runtime.logger.warning('Recovered %s stale runtime jobs.', recovered)
     return recovered
+
+
+def _recover_runtime_job_doc(doc, *, now_ts, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    job_id = doc.id
+    job_data = _claim_stale_runtime_job(doc, now_ts=now_ts, runtime=resolved_runtime)
+    if not isinstance(job_data, dict):
+        return False
+    status = str(job_data.get('status', '') or '').lower()
+    if status not in ACTIVE_RUNTIME_JOB_STATUSES:
+        return False
+    uid = str(job_data.get('user_id', '') or '').strip()
+    credit_type = str(job_data.get('credit_deducted', '') or '').strip()
+    already_refunded = bool(job_data.get('credit_refunded', False))
+    if uid and credit_type and (not already_refunded):
+        try:
+            primary_refunded = bool(billing_credits.refund_credit(
+                uid,
+                credit_type,
+                runtime=resolved_runtime,
+                idempotency_key=f'runtime-job:{job_id}:primary',
+            ))
+        except Exception:
+            primary_refunded = False
+        if primary_refunded:
+            billing_receipts.add_job_credit_refund(job_data, credit_type, 1, runtime=resolved_runtime)
+            job_data['credit_refunded'] = True
+        else:
+            job_data['credit_refund_pending'] = True
+            job_data['credit_refund_error'] = 'runtime_recovery_refund_failed'
+
+    extra_spent = int(job_data.get('interview_features_cost', 0) or 0) + int(job_data.get('study_tools_credit_cost', 0) or 0)
+    extra_refunded = int(job_data.get('extra_slides_refunded', 0) or 0)
+    extra_to_refund = max(0, extra_spent - extra_refunded)
+    if uid and extra_to_refund > 0:
+        try:
+            extras_refunded = bool(billing_credits.refund_slides_credits(
+                uid,
+                extra_to_refund,
+                runtime=resolved_runtime,
+                idempotency_key=f'runtime-job:{job_id}:extras',
+                idempotency_total=extra_refunded + extra_to_refund,
+            ))
+        except Exception:
+            extras_refunded = False
+        if extras_refunded:
+            job_data['extra_slides_refunded'] = extra_refunded + extra_to_refund
+            billing_receipts.add_job_credit_refund(job_data, 'slides_credits', extra_to_refund, runtime=resolved_runtime)
+            job_data['credit_refunded'] = True
+        else:
+            job_data['extra_slides_refund_pending'] = extra_to_refund
+
+    billing_receipts.ensure_job_billing_receipt(
+        job_data,
+        {credit_type: 1} if credit_type else None,
+        runtime=resolved_runtime,
+    )
+    job_data['status'] = 'error'
+    job_data['step_description'] = 'Interrupted by server restart'
+    if billing_receipts.job_has_refunds(job_data, runtime=resolved_runtime):
+        job_data['error'] = 'Processing was interrupted by a server restart. Your credit has been refunded.'
+    else:
+        job_data['error'] = 'Processing was interrupted by a server restart. Please contact support if a credit was charged.'
+    job_data['finished_at'] = now_ts
+    job_data['job_id'] = job_id
+    runtime_jobs_store.set_job(job_id, job_data, runtime=resolved_runtime)
+    resolved_runtime.save_job_log(job_id, job_data, now_ts)
+    return True
+
+
+def recover_runtime_job_if_stale(job_id, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not getattr(resolved_runtime, 'RUNTIME_JOB_RECOVERY_ENABLED', False):
+        return False
+    if not job_id or execution.is_job_active(job_id, runtime=resolved_runtime):
+        return False
+    if getattr(resolved_runtime, 'db', None) is None:
+        return False
+    try:
+        doc = resolved_runtime.runtime_jobs_repo.get_doc(
+            resolved_runtime.db, resolved_runtime.RUNTIME_JOBS_COLLECTION, job_id,
+        )
+        if not getattr(doc, 'exists', False):
+            return False
+        return _recover_runtime_job_doc(doc, now_ts=resolved_runtime.time.time(), runtime=resolved_runtime)
+    except Exception:
+        resolved_runtime.logger.warning('Runtime-job status recovery failed for %s', job_id, exc_info=True)
+        return False
+
+
+def run_periodic_recovery(runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    if not getattr(resolved_runtime, 'RUNTIME_JOB_RECOVERY_ENABLED', False):
+        return 0
+    if not acquire_runtime_job_recovery_lease(runtime=resolved_runtime):
+        return 0
+    return recover_stale_runtime_jobs(runtime=resolved_runtime)
 
 
 def acquire_runtime_job_recovery_lease(now_ts=None, runtime=None):
