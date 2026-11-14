@@ -85,8 +85,8 @@ def test_discontinued_gemini_flash_lite_preview_model_is_not_reintroduced():
 def test_render_public_base_url_matches_production_host():
     render_yaml = Path("render.yaml").read_text(encoding="utf-8")
 
-    assert 'value: "https://lecture-processor-1.onrender.com"' in render_yaml
-    assert 'value: "https://lecture-processor.onrender.com"' not in render_yaml
+    assert 'value: "https://lectureprocessor.com"' in render_yaml
+    assert 'value: "https://lecture-processor-1.onrender.com"' not in render_yaml
 
 
 def test_verify_email_allows_student_domain(client):

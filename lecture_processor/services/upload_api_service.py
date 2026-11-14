@@ -832,28 +832,3 @@ def download_docx(app_ctx, request, job_id):
 
 def download_flashcards_csv(app_ctx, request, job_id):
     return upload_runtime_service.download_flashcards_csv(app_ctx, request, job_id)
-
-
-def _estimate_size_bucket(total_mb):
-    return upload_runtime_service._estimate_size_bucket(total_mb)
-
-
-def _duration_percentile(sorted_values, percentile):
-    return upload_runtime_service._duration_percentile(sorted_values, percentile)
-
-
-def _heuristic_estimate_range(mode, total_mb, study_features, interview_features_count):
-    return upload_runtime_service._heuristic_estimate_range(
-        mode,
-        total_mb,
-        study_features,
-        interview_features_count,
-    )
-
-
-def processing_estimate(app_ctx, request):
-    return upload_runtime_service.processing_estimate(app_ctx, request)
-
-
-def processing_averages(app_ctx, request):
-    return upload_runtime_service.processing_averages(app_ctx, request)

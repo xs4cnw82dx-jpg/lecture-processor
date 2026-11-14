@@ -172,15 +172,3 @@ def download_docx(job_id):
 def download_flashcards_csv(job_id):
     runtime = get_runtime()
     return upload_api_service.download_flashcards_csv(runtime, request, job_id)
-
-
-@upload_bp.route('/api/processing-averages')
-def processing_averages():
-    runtime = get_runtime()
-    return upload_api_service.processing_averages(runtime, request)
-
-
-@upload_bp.route('/api/processing-estimate')
-def processing_estimate():
-    runtime = get_runtime()
-    return upload_api_service.processing_estimate(runtime, request)
