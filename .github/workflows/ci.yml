@@ -40,7 +40,7 @@ jobs:
 
       - name: Run full pytest suite
         run: |
-          python -m pytest -q
+          python scripts/run_pytest_isolated.py -q
 
   frontend-checks:
     name: Frontend Checks

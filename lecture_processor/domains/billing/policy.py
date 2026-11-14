@@ -5,12 +5,14 @@ from copy import deepcopy
 
 
 CREDIT_SCHEME_VERSION = 2
-DEFAULT_UNIFIED_CREDITS_ENABLED = False
+DEFAULT_UNIFIED_CREDITS_ENABLED = True
 FREE_SIGNUP_CREDITS = 12
 
 
 def is_unified_enabled(runtime=None):
-    return getattr(runtime, 'UNIFIED_CREDITS_ENABLED', DEFAULT_UNIFIED_CREDITS_ENABLED) is True
+    # The application runtime resolves the deployment default. An unconfigured
+    # caller must not initiate conversion without that explicit runtime setting.
+    return getattr(runtime, 'UNIFIED_CREDITS_ENABLED', False) is True
 
 
 def uses_unified_credits(user_data, runtime=None):

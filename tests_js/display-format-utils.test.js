@@ -30,6 +30,23 @@ test('active interface locale and explicit currency display settings remain auth
   assert.equal(formatter.formatCurrencyFromCents(1699, 'EUR', { currencyDisplay: 'code' }), expected);
 });
 
+test('provider-cost displays preserve four fractional digits in each interface locale', () => {
+  for (const [language, locale] of [['en', 'en-GB'], ['nl', 'nl-NL']]) {
+    const formatter = loadFormatter(language, 'en-GB');
+    const options = { minimumFractionDigits: 4, maximumFractionDigits: 4, currencyDisplay: 'narrowSymbol' };
+    const expected = new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD', ...options }).format(0.1234);
+    assert.equal(formatter.formatCurrencyFromCents(12.34, 'USD', options), expected);
+    assert.equal(formatter.formatCurrencyFromCents(12.34, 'EUR'), new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(0.1234));
+  }
+});
+
+test('invalid fractional precision falls back to the default money precision', () => {
+  const formatter = loadFormatter('nl', 'en-GB');
+  for (const options of [{ minimumFractionDigits: -1 }, { maximumFractionDigits: 200 }, { minimumFractionDigits: 4, maximumFractionDigits: 2 }, { minimumFractionDigits: 1.5 }, { maximumFractionDigits: '4' }]) {
+    assert.equal(formatter.formatCurrencyFromCents(1234, 'EUR', options), '€\u00a012,34');
+  }
+});
+
 test('formatCount handles singular and plural labels', () => {
   assert.equal(displayFormatUtils.formatCount(1, 'card'), '1 card');
   assert.equal(displayFormatUtils.formatCount(2, 'card'), '2 cards');

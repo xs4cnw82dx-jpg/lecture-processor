@@ -51,12 +51,23 @@ async function loginFixture(page, options = {}) {
     const payload = pathname === '/api/verify-email'
       ? { allowed: options.allowed !== false, message: 'This email is not allowed.' }
       : pathname === '/api/auth/user'
-        ? { uid: 'login-student', credits: {}, is_admin: !!options.admin, preferences: { onboarding_completed: true } }
+        ? {
+          uid: 'login-student', email: 'student@gmail.com',
+          ...(options.legacy ? { credits: {
+            lecture_standard: 1, lecture_extended: 0, slides: 2,
+            interview_short: 1, interview_medium: 0, interview_long: 0,
+          } } : { credits_version: 2, credits: 12, credit_costs: {
+            lecture_notes: { category: 'lecture', instant: 8, overnight: 4 },
+          } }),
+          unlimited_credits: { lecture: false, slides: false, interview: false },
+          is_admin: !!options.admin, preferences: { onboarding_completed: true },
+          ...options.profile,
+        }
         : { ok: true, jobs: [], summary: {} };
     await route.fulfill({ status: pathname === '/api/session/login' ? (options.sessionStatus || 200) : 200,
       contentType: 'application/json', body: JSON.stringify(payload) });
   });
-  return { calls, errors, release: (pathname) => {
+  return { calls, errors, pendingPaths: () => pending.map(request => request.pathname), release: (pathname) => {
     for (let index = pending.length - 1; index >= 0; index--) {
       if (!pathname || pending[index].pathname === pathname) pending.splice(index, 1)[0].resolve();
     }
@@ -85,31 +96,46 @@ for (const method of ['email', 'google']) {
       await expect.poll(() => fixture.calls.includes('/api/auth/user')).toBe(true);
       await expect.poll(() => fixture.calls.includes('/api/runtime-jobs/active')).toBe(true);
       expect(fixture.calls.filter((url) => url === '/api/verify-email')).toHaveLength(1);
-      // The shared navigation and processing page each load their profile.
-      expect(fixture.calls.filter((url) => url === '/api/auth/user')).toHaveLength(2);
+      // Navigation and creation share one pending profile request.
+      expect(fixture.calls.filter((url) => url === '/api/auth/user')).toHaveLength(1);
       expect(await page.evaluate(() => window.tokenRefreshes.includes(true))).toBe(false);
       expect(fixture.errors).toEqual([]);
     } finally { fixture.release(); }
   });
 }
 
-test('admin return waits for profile and secure cookie but never study statistics', async ({ page }) => {
-  const fixture = await loginFixture(page, { admin: true, hold: ['/api/auth/user', '/api/study-progress/summary', '/api/session/login'] });
-  await page.route('**/admin/workout', (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Admin destination</h1>' }));
-  try {
-    await submitEmail(page, '/admin/workout');
-    await expect.poll(() => fixture.calls.includes('/api/auth/user')).toBe(true);
-    expect(fixture.calls).not.toContain('/api/session/login');
-    expect(page.url()).toContain('/lecture-notes');
-    fixture.release('/api/auth/user');
-    await expect.poll(() => fixture.calls.includes('/api/session/login')).toBe(true);
-    expect(page.url()).toContain('/lecture-notes');
-    // Release only the cookie; the stats request remains pending.
-    fixture.release('/api/session/login');
-    await expect(page).toHaveURL(/\/admin\/workout$/);
-    expect(fixture.calls.filter((url) => url === '/api/session/login')).toHaveLength(1);
-    expect(fixture.errors).toEqual([]);
-  } finally { fixture.release(); }
+for (const legacy of [false, true]) {
+  test(`${legacy ? 'legacy' : 'unified'} admin return waits for profile and secure cookie but never study statistics`, async ({ page }) => {
+    const fixture = await loginFixture(page, { admin: true, legacy, hold: ['/api/auth/user', '/api/study-progress/summary', '/api/session/login'] });
+    await page.route('**/admin/workout', (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Admin destination</h1>' }));
+    try {
+      await submitEmail(page, '/admin/workout');
+      await expect.poll(() => fixture.calls.includes('/api/auth/user')).toBe(true);
+      expect(fixture.calls).not.toContain('/api/session/login');
+      expect(page.url()).toContain('/lecture-notes');
+      fixture.release('/api/auth/user');
+      await expect.poll(() => fixture.calls.includes('/api/session/login')).toBe(true);
+      await expect.poll(() => fixture.pendingPaths()).toContain('/api/study-progress/summary');
+      expect(page.url()).toContain('/lecture-notes');
+      // Release only the cookie; the stats request remains pending.
+      fixture.release('/api/session/login');
+      await expect(page).toHaveURL(/\/admin\/workout$/);
+      expect(fixture.pendingPaths()).toContain('/api/study-progress/summary');
+      expect(fixture.calls.filter((url) => url === '/api/session/login')).toHaveLength(1);
+      expect(fixture.errors).toEqual([]);
+    } finally { fixture.release(); }
+  });
+}
+
+test('an invalid admin profile cannot create a secure cookie or redirect', async ({ page }) => {
+  const fixture = await loginFixture(page, { admin: true, profile: { credits: {} } });
+  await submitEmail(page, '/admin/workout');
+  await expect(page.locator('#shell-credits-total')).toHaveText('Credits unavailable');
+  await expect(page.locator('#signin-submit')).toBeEnabled();
+  expect(fixture.calls).not.toContain('/api/session/login');
+  expect(page.url()).toContain('/lecture-notes');
+  expect(await page.evaluate(() => sessionStorage.getItem('lectureProcessorAuthReturnUrl'))).toBe('/admin/workout');
+  expect(fixture.errors).toEqual([]);
 });
 
 test('failed admin cookie never redirects', async ({ page }) => {

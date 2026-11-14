@@ -4,6 +4,7 @@ import math
 from urllib.parse import quote
 
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import job_charges, ledger, policy
 from lecture_processor.domains.study import interview_coding
 from lecture_processor.domains.study import interview_coding_runs as coding_runs
@@ -158,8 +159,10 @@ def _coding_state_payload(app_ctx, pack_id, pack, transcript, uid):
     credit_cost = max(1, int(math.ceil(max(1, len(transcript)) / 120000.0))) if transcript.strip() else 0
     user_doc = app_ctx.repositories.users.get_doc(app_ctx.db, uid)
     user = user_doc.to_dict() or {} if user_doc.exists else {}
-    if policy.uses_unified_credits(user, runtime=app_ctx):
+    credit_scheme = 2 if policy.uses_unified_credits(user, runtime=app_ctx) else 1
+    if credit_scheme == 2:
         credit_cost = policy.action_cost('interview_coding', units=credit_cost)
+    charged_credits = 0 if billing_credits.is_unlimited_for_category(user, 'slides', runtime=app_ctx) else credit_cost
     return {
         'pack_id': pack_id,
         'pack_title': str(pack.get('title', '') or ''),
@@ -173,6 +176,8 @@ def _coding_state_payload(app_ctx, pack_id, pack, transcript, uid):
         'palette': interview_coding.CODING_PALETTE,
         'ai_estimate': {
             'credit_cost': credit_cost,
+            'credit_scheme': credit_scheme,
+            'charged_credits': charged_credits,
             'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
             'thinking_level': 'high',
         },

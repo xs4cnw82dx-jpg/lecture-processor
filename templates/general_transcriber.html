@@ -23,7 +23,7 @@
       <section class="reader-grid">
         <article class="shell-panel reader-input-card">
           <h2>Upload Audio</h2>
-          <p class="tool-note">Each run costs 1 interview credit.</p>
+          <p class="tool-note">Check the cost below before you start.</p>
 
           <div class="tool-upload-wrap">
             <div class="tool-upload-zone" id="transcriber-dropzone" role="button" tabindex="0" aria-labelledby="transcriber-dropzone-title" aria-describedby="transcriber-dropzone-helper transcriber-audio-retention-note">
@@ -97,12 +97,12 @@
 
           <div class="run-row">
             <button type="button" class="primary-btn" id="transcriber-run-btn" disabled>Transcribe</button>
-            <span class="credit-note" id="transcriber-credit-note">Interview credits: &mdash;</span>
+            <span class="credit-note" id="transcriber-credit-note" aria-live="polite">Loading credits</span>
           </div>
           <div class="reader-auth-panel" id="transcriber-auth-panel" hidden>
             <div class="reader-auth-copy">
               <strong>Sign in required</strong>
-              <p>Sign in to transcribe audio and use your interview credits.</p>
+              <p>Sign in to transcribe audio with your account credits.</p>
             </div>
             <a class="primary-btn reader-auth-link" id="transcriber-auth-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
           </div>
