@@ -157,13 +157,94 @@ def test_picture_attachment_distinguishes_owned_removal_from_foreign_assets(rete
         asset.update(ready=False, deleting=False)
     before = deepcopy(state.db.data)
     result = update_cards(state, [{'front': 'Question', 'back': 'Answer', 'image_ids': [state.image_id]}])
-    owned_removal = state_name in ('removing', 'pending')
+    if state_name == 'pending':
+        assert response_status(result) == 200
+        assert _payload(result) == {'ok': True}
+        assert state.db.data['study_packs/pack']['picture_cleanup_pending_ids'] == []
+        assert state.db.data['study_packs/pack']['flashcards'][0]['image_ids'] == [state.image_id]
+        assert state.db.data[state.asset_path] == before[state.asset_path]
+        assert state.db.data['book_usage/storage'] == before['book_usage/storage']
+        return
+    owned_removal = state_name == 'removing'
     assert response_status(result) == (409 if owned_removal else 403)
     assert _payload(result)['error'] == (
         'This picture is being removed; add it again shortly.' if owned_removal
         else 'This picture does not belong to this study pack.'
     )
     assert state.db.data == before
+
+
+def test_ready_picture_readopted_before_cleanup_claim_keeps_bytes_and_reservation(retention, monkeypatch):
+    state = retention
+    original_delete = pictures._delete_asset
+    before_files = dict(state.files)
+    before_asset = deepcopy(state.db.data[state.asset_path])
+    reserved = state.db.data['book_usage/storage']['bytes']
+    claims = []
+
+    def readopt_before_claim(db, uid, asset, **kwargs):
+        assert state.db.data['study_packs/pack']['picture_cleanup_pending_ids'] == [state.image_id]
+        assert state.db.data[state.asset_path]['ready'] is True
+        result = update_cards(state, [{'front': 'Restored question', 'back': 'Answer', 'image_ids': [state.image_id]}])
+        assert response_status(result) == 200
+        claimed = original_delete(db, uid, asset, **kwargs)
+        claims.append(claimed)
+        return claimed
+
+    monkeypatch.setattr(pictures, '_delete_asset', readopt_before_claim)
+    assert response_status(update_cards(state, [])) == 200
+    assert claims == [False]
+    assert state.db.data['study_packs/pack']['picture_cleanup_pending_ids'] == []
+    assert state.db.data['study_packs/pack']['flashcards'][0]['image_ids'] == [state.image_id]
+    assert state.db.data[state.asset_path] == before_asset
+    assert state.files == before_files
+    assert state.db.data['book_usage/storage']['bytes'] == reserved
+    assert original_delete(state.db, 'owner', before_asset) is False
+    assert state.files == before_files
+    assert state.db.data['book_usage/storage']['bytes'] == reserved
+
+
+@pytest.mark.parametrize('transition', ['claimed-delete', 'foreign-owner', 'foreign-pack'])
+def test_attachment_rechecks_claim_and_ownership_inside_pack_transaction(retention, monkeypatch, transition):
+    state = retention
+    sanitize = pictures.sanitize_cards
+    storage = pictures.book_storage.request
+    before_files = dict(state.files)
+    reserved = state.db.data['book_usage/storage']['bytes']
+
+    def fail_delete(method, path, *args, **kwargs):
+        if method == 'DELETE':
+            raise BookError('Synthetic storage outage after claim', 503)
+        return storage(method, path, *args, **kwargs)
+
+    def change_after_prevalidation(*args, **kwargs):
+        cleaned = sanitize(*args, **kwargs)
+        _pending(state)
+        if transition == 'claimed-delete':
+            with pytest.raises(BookError, match='Synthetic storage outage'):
+                pictures._delete_asset(state.db, 'owner', state.asset)
+            assert state.db.data[state.asset_path]['delete_started'] is True
+        else:
+            state.db.data[state.asset_path]['uid' if transition == 'foreign-owner' else 'pack_id'] = 'other'
+        return cleaned
+
+    monkeypatch.setattr(pictures.book_storage, 'request', fail_delete)
+    monkeypatch.setattr(pictures, 'sanitize_cards', change_after_prevalidation)
+    cards = [{'front': 'Question', 'back': 'Answer', 'image_ids': [state.image_id]}]
+    result = update_cards(state, cards)
+    status = 409 if transition == 'claimed-delete' else 403
+    assert response_status(result) == status
+    assert _payload(result)['error'] == (
+        'This picture is being removed; add it again shortly.' if transition == 'claimed-delete'
+        else 'This picture does not belong to this study pack.'
+    )
+    with pytest.raises(BookError) as rejected:
+        sanitize(state.runtime, 'owner', 'pack', cards)
+    assert rejected.value.status == status
+    assert state.db.data['study_packs/pack']['flashcards'] == []
+    assert state.db.data['study_packs/pack']['picture_cleanup_pending_ids'] == [state.image_id]
+    assert state.files == before_files
+    assert state.db.data['book_usage/storage']['bytes'] == reserved
 
 
 def test_account_deletion_live_picture_lease_explains_delay_then_finishes_on_retry(retention, core, client, monkeypatch):

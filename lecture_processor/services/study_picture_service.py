@@ -29,10 +29,10 @@ class PictureUploadBusy(BookError):
     """An active upload lease keeps removal safely pending."""
 
 
-def _require_attachable_asset(asset, uid, pack_id, *, pending=False):
+def _require_attachable_asset(asset, uid, pack_id):
     if not asset or asset.get('uid') != uid or asset.get('pack_id') != pack_id:
         raise BookError('This picture does not belong to this study pack.', 403)
-    if pending or asset.get('deleting'):
+    if asset.get('deleting'):
         raise BookError('This picture is being removed; add it again shortly.', 409)
     if not asset.get('ready'):
         raise BookError('This picture does not belong to this study pack.', 403)
@@ -118,7 +118,7 @@ def update_pack_and_collect_removed(runtime, uid, pack_id, updates):
         next_ids = _card_image_ids(updates.get('flashcards', pack.get('flashcards', [])))
         for aid in sorted(next_ids):
             asset = tx.get('study_images/' + aid)
-            _require_attachable_asset(asset, uid, pack_id, pending=aid in pack.get(PENDING_PICTURES, []))
+            _require_attachable_asset(asset, uid, pack_id)
         pending = (set(pack.get(PENDING_PICTURES, [])) | _card_image_ids(pack.get('flashcards'))) - next_ids
         tx.put('study_packs/' + pack_id, {**pack, **updates, PENDING_PICTURES: sorted(pending)})
         return sorted(pending)
