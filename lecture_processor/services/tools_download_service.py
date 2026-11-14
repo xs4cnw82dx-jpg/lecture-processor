@@ -134,7 +134,7 @@ def download_lecture_media(app_ctx, request):
                 raise RuntimeError('Downloaded MP3 is invalid or unsupported.')
 
             zip_path = app_ctx.os.path.abspath(app_ctx.os.path.join(app_ctx.UPLOAD_FOLDER, f'{prefix}_bundle.zip'))
-            with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED) as archive:
                 archive.write(video_path, arcname='lecture-video.mp4')
                 archive.write(audio_path, arcname='lecture-audio.mp3')
             cleanup_paths.append(zip_path)
