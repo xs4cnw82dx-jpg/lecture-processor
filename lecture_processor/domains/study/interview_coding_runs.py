@@ -24,6 +24,10 @@ class RunError(Exception):
         self.status, self.code = status, code
 
 
+class AccountUnavailableRunError(RunError):
+    """The current account state prevents an interview write."""
+
+
 def run_ref(runtime, run_id):
     return runtime.db.collection('interview_ai_coding_runs').document(run_id)
 
@@ -46,11 +50,11 @@ def _validate_target(runtime, transaction, uid, pack_id):
     user_doc = user_ref.get(transaction=transaction)
     user = user_doc.to_dict() or {}
     if not user_doc.exists or str(user.get('account_status', '')).lower() in {'deleting', 'deleted'}:
-        raise RunError('Account is unavailable. New work is blocked.')
+        raise AccountUnavailableRunError('Account is unavailable. New work is blocked.')
     try:
         account_lifecycle.require_account_access(uid, runtime=runtime, transaction=transaction)
     except account_lifecycle.AccountUnavailableError as error:
-        raise RunError('Account is unavailable. New work is blocked.') from error
+        raise AccountUnavailableRunError('Account is unavailable. New work is blocked.') from error
     return pack_ref, pack, user_ref, user
 
 

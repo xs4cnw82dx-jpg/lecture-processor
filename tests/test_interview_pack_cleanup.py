@@ -114,6 +114,51 @@ def test_failed_child_purge_can_retry_after_pack_is_already_removed(pack_cleanup
     assert set(state.store.docs('interview_ai_coding_runs')) == {'other', 'foreign'}
 
 
+@pytest.mark.parametrize('picture_fails', [False, True])
+def test_interview_cleanup_failure_still_attempts_pictures_and_retries_pending_children(pack_cleanup, monkeypatch, picture_fails):
+    state = pack_cleanup
+    state.store.fail_writes.add(('interview_quotations', 'owned'))
+    pictures = {'pending': True, 'fail': picture_fails}
+    attempts = []
+
+    def remove_pictures(runtime, uid, pack_id):
+        assert runtime is state.runtime
+        assert ('study_packs', pack_id) not in state.store.documents
+        attempts.append((uid, pack_id))
+        if pictures['fail']:
+            raise RuntimeError('Synthetic picture cleanup failure')
+        removed = int(pictures['pending'])
+        pictures['pending'] = False
+        return removed
+
+    monkeypatch.setattr(library.study_picture_service, 'delete_for_pack', remove_pictures)
+    first = remove(state)
+    assert status(first) == 503
+    assert first[0] == {
+        'error': 'The study pack was deleted, but interview cleanup is still pending. Please try deleting it again.',
+        'error_code': 'study_pack_cleanup_pending', 'deleted': True,
+    }
+    assert attempts == [('owner', 'pack')]
+    assert pictures['pending'] is picture_fails
+    assert ('interview_quotations', 'owned') in state.store.documents
+
+    state.store.fail_writes.clear()
+    second = remove(state)
+    assert status(second) == (503 if picture_fails else 200)
+    assert attempts == [('owner', 'pack')] * 2
+    assert owned_children(state, 'interview_quotations') == {}
+    assert owned_children(state, 'interview_ai_coding_runs') == {}
+    if picture_fails:
+        assert second[0] == {
+            'error': 'The study pack was deleted, but picture cleanup is still pending. Please try deleting it again.',
+            'error_code': 'study_pack_cleanup_pending', 'deleted': True,
+        }
+        pictures['fail'] = False
+        assert status(remove(state)) == 200
+    assert pictures['pending'] is False
+    assert status(remove(state)) == 404
+
+
 @pytest.mark.parametrize('operation', ['create', 'update'])
 def test_quotation_write_rechecks_pack_after_validation(pack_cleanup, monkeypatch, operation):
     state = pack_cleanup
@@ -331,7 +376,8 @@ def test_delete_between_acceptance_chunks_removes_quotes_but_keeps_committed_cod
 
 
 @pytest.mark.parametrize('operation,changed_target', [
-    ('create', 'account'), ('update', 'account'), ('update', 'quotation_owner'), ('update', 'quotation_pack'),
+    ('create', 'account'), ('update', 'account'), ('create', 'missing_account'), ('update', 'account_status'),
+    ('update', 'quotation_owner'), ('update', 'quotation_pack'),
 ])
 def test_manual_quotation_commit_rechecks_current_authority(pack_cleanup, monkeypatch, operation, changed_target):
     state = pack_cleanup
@@ -342,6 +388,10 @@ def test_manual_quotation_commit_rechecks_current_authority(pack_cleanup, monkey
         codes = original(*args, **kwargs)
         if changed_target == 'account':
             state.store.documents[('account_deletions', 'owner')] = {'status': 'requested'}
+        elif changed_target == 'missing_account':
+            state.store.documents.pop(('users', 'owner'))
+        elif changed_target == 'account_status':
+            state.store.documents[('users', 'owner')]['account_status'] = 'deleting'
         else:
             field, value = ('uid', 'someone-else') if changed_target == 'quotation_owner' else ('pack_id', 'other')
             state.store.documents[('interview_quotations', 'owned')][field] = value
@@ -353,7 +403,10 @@ def test_manual_quotation_commit_rechecks_current_authority(pack_cleanup, monkey
         'start_offset': 0, 'end_offset': 5, 'text': 'Hello', 'code_ids': ['shared-code'], 'comment': 'Edited'})
     result = coding.create_quotation(state.runtime, request, 'pack') if operation == 'create' else coding.update_quotation(
         state.runtime, request, 'pack', 'owned')
-    assert status(result) == (409 if changed_target == 'account' else 403)
+    if changed_target in {'account', 'missing_account', 'account_status'}:
+        assert result == ({'error': 'Account is unavailable.', 'status': 'account_deletion_in_progress'}, 409)
+    else:
+        assert status(result) == 403
     assert state.store.docs('interview_quotations') == changed['quotes']
 
 

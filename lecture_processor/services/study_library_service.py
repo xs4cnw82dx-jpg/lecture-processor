@@ -626,6 +626,7 @@ def delete_study_pack(app_ctx, request, pack_id):
 
 def _cleanup_deleted_pack(app_ctx, uid, pack_id):
     removed = 0
+    pending = None
     for label, cleanup in (
         ('interview', interview_coding_runs.cleanup_deleted_pack),
         ('picture', study_picture_service.delete_for_pack),
@@ -634,12 +635,13 @@ def _cleanup_deleted_pack(app_ctx, uid, pack_id):
             removed += cleanup(app_ctx, uid, pack_id)
         except Exception:
             app_ctx.logger.warning('%s cleanup remains pending after deleting study pack %s', label, pack_id, exc_info=True)
-            return removed, (app_ctx.jsonify({
-                'error': f'The study pack was deleted, but {label} cleanup is still pending. Please try deleting it again.',
-                'error_code': 'study_pack_cleanup_pending',
-                'deleted': True,
-            }), 503)
-    return removed, None
+            if pending is None:
+                pending = (app_ctx.jsonify({
+                    'error': f'The study pack was deleted, but {label} cleanup is still pending. Please try deleting it again.',
+                    'error_code': 'study_pack_cleanup_pending',
+                    'deleted': True,
+                }), 503)
+    return removed, pending
 
 
 def get_study_folders(app_ctx, request):
