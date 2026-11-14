@@ -5,6 +5,7 @@ import os
 from flask import Blueprint, abort, redirect, render_template, request, send_from_directory, url_for
 
 from lecture_processor.domains.auth import session as auth_session
+from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.services import workout_service
 from lecture_processor.domains.shared.tool_catalog import TOOL_CATALOG, TOOL_CATEGORIES, ICONS
@@ -40,7 +41,45 @@ PRICING_CATEGORY_SPECS = (
 )
 
 
+PRICING_ACTION_LABELS = {
+    'lecture_notes': ('Lecture Notes', 'per run'),
+    'slides_extraction': ('Slides Extraction', 'per run'),
+    'interview_transcription': ('Interview Transcription', 'per recording'),
+    'interview_extra': ('Interview extras', 'per selected extra'),
+    'text_combine': ('Text Combine', 'per run'),
+    'audio_transcription': ('Audio Transcription', 'per recording'),
+    'tools_extraction': ('Reader extraction', 'per run'),
+    'tools_transcription': ('General Transcription', 'per recording'),
+    'voice_note': ('Voice Notes transcription', 'per recording'),
+    'regenerate_study_tools': ('Regenerate study tools', 'per generation'),
+    'interview_coding': ('Interview AI coding', 'per 120,000 transcript characters'),
+}
+
+
+def _build_pricing_actions() -> list[dict]:
+    return [
+        {'action': action, 'label': PRICING_ACTION_LABELS.get(action, (action, 'per run'))[0],
+         'unit': PRICING_ACTION_LABELS.get(action, (action, 'per run'))[1], **rates}
+        for action, rates in billing_policy.ACTION_COSTS.items()
+    ]
+
+
 def _build_pricing_catalog(*, runtime) -> list[dict]:
+    if billing_policy.is_unified_enabled(runtime):
+        return [{
+            'key': 'unified', 'title': 'Credits', 'icon': 'notes',
+            'bundles': [
+                {
+                    'id': bundle_id, **bundle,
+                    'credits_total': bundle['credits'],
+                    'credits_label': f"{bundle['credits']} credit" + ('' if bundle['credits'] == 1 else 's'),
+                    'currency': bundle['currency'].upper(),
+                    'featured': bundle.get('badge') == 'best_value',
+                    'price_per_credit_cents': None,
+                }
+                for bundle_id, bundle in billing_policy.CREDIT_BUNDLES.items()
+            ],
+        }]
     catalog = []
     bundles = getattr(runtime, 'CREDIT_BUNDLES', {}) or {}
 
@@ -91,6 +130,8 @@ def _build_pricing_catalog(*, runtime) -> list[dict]:
 def _public_context(*, runtime) -> dict:
     return {
         'legal_contact_email': runtime.LEGAL_CONTACT_EMAIL,
+        'unified_credits_enabled': billing_policy.is_unified_enabled(runtime),
+        'free_signup_credits': billing_policy.FREE_SIGNUP_CREDITS,
     }
 
 
@@ -100,6 +141,8 @@ def _shell_context(*, runtime, page_key: str, show_credits_pill: bool = False) -
         'shell_show_credits_pill': bool(show_credits_pill),
         'study_plan_v2': bool(runtime.STUDY_PLAN_V2),
         'legal_contact_email': runtime.LEGAL_CONTACT_EMAIL,
+        'unified_credits_enabled': billing_policy.is_unified_enabled(runtime),
+        'free_signup_credits': billing_policy.FREE_SIGNUP_CREDITS,
     }
 
 
@@ -469,6 +512,7 @@ def buy_credits_page():
     return render_template(
         'buy_credits.html',
         pricing_catalog=_build_pricing_catalog(runtime=runtime),
+        pricing_actions=_build_pricing_actions(),
         buy_credits_js_asset=runtime.resolve_js_asset('js/buy-credits.js'),
         **_shell_context(runtime=runtime, page_key='buy-credits', show_credits_pill=True),
     )

@@ -44,6 +44,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/auth-utils.js',
   'static/js/calendar.js',
   'static/js/display-format-utils.js',
+  'static/js/credit-utils.js',
   'static/js/download-utils.js',
   'static/js/features.js',
   'static/js/firebase-bootstrap.js',

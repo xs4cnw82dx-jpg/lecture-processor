@@ -217,7 +217,7 @@ test('processing failure keeps sources and supports a successful retry', async (
 
 test('insufficient credits explain the disabled action without starting processing', async ({ page }) => {
   const f = await fixture(page);
-  await page.route('**/api/auth/user', route => route.fulfill({ json: { uid: 'a', preferences: { onboarding_completed: true }, credits: { slides: 0, lecture_standard: 0, interview_short: 0 } } }));
+  await page.route('**/api/auth/user', route => route.fulfill({ json: { uid: 'a', preferences: { onboarding_completed: true }, credits: { slides: 0, lecture_standard: 0, lecture_extended: 0, interview_short: 0, interview_medium: 0, interview_long: 0 } } }));
   let uploads = 0;
   await page.route('**/upload', route => { uploads++; return route.fulfill({ status: 402, json: { error: 'No credits' } }); });
   await page.goto('/slides-extraction');

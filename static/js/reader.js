@@ -4,9 +4,9 @@
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
+  var creditUtils = window.LectureProcessorCreditUtils || {};
+  var creditShell = window.LectureProcessorShell || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
-  var uiCache = window.LectureProcessorUiCache || null;
-  var userCache = window.LectureProcessorUserCache || {};
   var config = window.ReaderConfig || {};
   var sourceType = String(config.source || 'document');
 
@@ -35,6 +35,9 @@
   var downloadBtn = document.getElementById('reader-download-docx-btn');
   var readerToast = document.getElementById('reader-toast');
 
+  window.addEventListener('lp:credits-changed', updateCreditNote);
+  window.addEventListener('lp:language-changed', updateCreditNote);
+
   var currentUser = auth && auth.currentUser ? auth.currentUser : null;
   var authStateResolved = !!currentUser;
   var selectedFiles = [];
@@ -43,14 +46,11 @@
   var lastOutput = '';
   var currentJobId = '';
   var pollTimer = null;
-  var slidesCredits = null;
-  var slidesUnlimited = false;
   var toastTimer = null;
   var dropzoneDragging = false;
-  var CREDITS_CACHE_KEY = 'credits_breakdown';
 
   function getSignedInUser() {
-    return currentUser || (auth && auth.currentUser) || null;
+    return auth ? auth.currentUser : currentUser;
   }
 
   function hasSignedInSession() {
@@ -130,55 +130,50 @@
     }
   }
 
+  function creditText(message, params) {
+    if (window.LectureI18n && typeof window.LectureI18n.t === 'function') return window.LectureI18n.t(message, params);
+    return message.replace(/\{(\w+)\}/g, function (match, key) { return params && params[key] !== undefined ? String(params[key]) : match; });
+  }
+
+  function currentCreditState() {
+    var user = getSignedInUser();
+    var state = creditShell.getCreditState ? creditShell.getCreditState() : null;
+    return user && state && state.uid === user.uid ? state : null;
+  }
+
   function updateCreditNote() {
-    if (slidesCredits === null || slidesCredits === undefined) {
-      creditNote.textContent = 'Text extraction credits: \u2014';
+    if (!creditNote) return;
+    var state = currentCreditState();
+    var snapshot = state && state.snapshot;
+    if (!snapshot) {
+      creditNote.textContent = creditText(!getSignedInUser() ? 'Sign in to see your balance.' : (state && state.status === 'error' ? 'Credits unavailable' : 'Loading credits'));
       return;
     }
-    creditNote.textContent = 'Text extraction credits: ' + (slidesUnlimited ? 'Unlimited' : String(slidesCredits));
-  }
-
-  function readCacheJson(key, fallbackValue) {
-    return typeof userCache.getJson === 'function'
-      ? userCache.getJson(key, fallbackValue, uiCache)
-      : fallbackValue;
-  }
-
-  function writeCacheJson(key, value) {
-    return typeof userCache.setJson === 'function'
-      ? userCache.setJson(key, value, uiCache)
-      : false;
-  }
-
-  function readUserCacheJson(userOrUid, key, fallbackValue) {
-    return typeof userCache.getUserJson === 'function'
-      ? userCache.getUserJson(userOrUid, key, fallbackValue, uiCache)
-      : fallbackValue;
-  }
-
-  function writeUserCacheJson(userOrUid, key, value) {
-    return typeof userCache.setUserJson === 'function'
-      ? userCache.setUserJson(userOrUid, key, value, uiCache)
-      : false;
-  }
-
-  function hydrateCachedCredits(user) {
-    if (!user || !user.uid) {
-      slidesCredits = null;
-      slidesUnlimited = false;
-      updateCreditNote();
+    if (snapshot.scheme === 1) {
+      creditNote.textContent = creditText('Text extraction credits: {balance}', { balance: snapshot.unlimited.slides ? creditText('Unlimited') : String(snapshot.categories.slides) });
       return;
     }
-    var cached = readUserCacheJson(user, CREDITS_CACHE_KEY, null);
-    if (!cached || typeof cached !== 'object') {
-      slidesCredits = null;
-      slidesUnlimited = false;
-      updateCreditNote();
-      return;
-    }
-    slidesCredits = Number(cached.textExtraction || 0);
-    slidesUnlimited = !!(cached.unlimited && cached.unlimited.slides);
-    updateCreditNote();
+    var quote = creditUtils.quote(snapshot, [{ action: 'tools_extraction' }]);
+    var balance = creditUtils.formatCredits(snapshot.balance);
+    creditNote.textContent = !quote ? creditText('Cost unavailable. Your balance is {balance}.', { balance: balance })
+      : (quote.components[0].exempt ? creditText('No credits charged for this tool. Balance: {balance}', { balance: balance })
+        : creditText('Cost: {cost} · Balance: {balance}', { cost: creditUtils.formatCredits(quote.needed), balance: balance }));
+  }
+
+  async function checkCreditQuote() {
+    if (!creditShell.refreshCreditSnapshot) throw new Error(creditText('Could not check the cost. Please try again.'));
+    var state = currentCreditState();
+    if (!state || state.status !== 'ready' || state.source !== 'server') await creditShell.refreshCreditSnapshot();
+    state = currentCreditState();
+    if (!state || state.status !== 'ready' || state.source !== 'server') throw new Error(creditText('Could not check the cost. Please try again.'));
+    if (state.snapshot.scheme !== 2) return;
+    var quote = creditUtils.quote(state.snapshot, [{ action: 'tools_extraction' }]);
+    if (!quote) throw new Error(creditText('Could not check the cost. Please try again.'));
+    if (!quote.sufficient) throw new Error(creditUtils.formatInsufficient({ needed: quote.needed, available: quote.available }));
+  }
+
+  function creditError(payload, fallback) {
+    return (creditUtils.formatInsufficient && creditUtils.formatInsufficient(payload)) || String(payload.error || fallback);
   }
 
   function getQuestionDefault() {
@@ -367,34 +362,8 @@
   }
 
   async function refreshCredits() {
-    var signedInUser = getSignedInUser();
-    if (!signedInUser) {
-      slidesCredits = null;
-      slidesUnlimited = false;
-      updateCreditNote();
-      return;
-    }
-    try {
-      var response = await authFetch('/api/auth/user');
-      if (!response.ok) return;
-      var payload = await response.json();
-      slidesCredits = payload && payload.credits ? Number(payload.credits.slides || 0) : 0;
-      slidesUnlimited = !!(payload && payload.unlimited_credits && payload.unlimited_credits.slides);
-      if (payload && payload.credits) {
-        var lecture = Number(payload.credits.lecture_standard || 0) + Number(payload.credits.lecture_extended || 0);
-        var interview = Number(payload.credits.interview_short || 0) + Number(payload.credits.interview_medium || 0) + Number(payload.credits.interview_long || 0);
-        writeUserCacheJson(signedInUser, CREDITS_CACHE_KEY, {
-          lecture: lecture,
-          textExtraction: slidesCredits,
-          interview: interview,
-          total: lecture + slidesCredits + interview,
-          unlimited: payload.unlimited_credits || {}
-        });
-      }
-      updateCreditNote();
-    } catch (_) {
-      hydrateCachedCredits(signedInUser);
-    }
+    if (creditShell.refreshCredits) await creditShell.refreshCredits();
+    updateCreditNote();
   }
 
   function outputTitle() {
@@ -467,7 +436,7 @@
           schedulePoll(jobId, 1500);
           return;
         }
-        setStatus(String(payload.error || 'Extraction failed.'), 'error');
+        setStatus(creditError(payload, 'Extraction failed.'), 'error');
         finishExtractionRun();
         await refreshCredits();
         return;
@@ -511,7 +480,9 @@
       setStatus('Select at least one file first.', 'error');
       return;
     }
-    startExtractionRun();
+    var session = authClient.captureSession();
+    running = true;
+    updateRunState();
     setStatus('', '');
 
     var formData = new FormData();
@@ -531,10 +502,14 @@
     if (question) formData.append('custom_prompt', question);
 
     try {
+      await checkCreditQuote();
+      session.assertCurrent();
+      startExtractionRun();
       var response = await authFetch('/api/tools/extract', { method: 'POST', body: formData });
       var payload = await response.json().catch(function () { return {}; });
+      session.assertCurrent();
       if (!response.ok) {
-        setStatus(String(payload.error || 'Extraction failed.'), 'error');
+        setStatus(creditError(payload, 'Extraction failed.'), 'error');
         finishExtractionRun();
         await refreshCredits();
         return;
@@ -549,6 +524,7 @@
       finishExtractionRun();
       await refreshCredits();
     } catch (error) {
+      if (!session.isCurrent()) return;
       setStatus(error && error.message ? error.message : 'Extraction failed.', 'error');
       finishExtractionRun();
     }
@@ -642,7 +618,7 @@
   }
 
   setupModeUI();
-  hydrateCachedCredits(getSignedInUser());
+  updateCreditNote();
   updateAuthStateUI();
   updateOutputActionState();
   if (auth && typeof bootstrap.onAuthStateReady === 'function') {
@@ -651,8 +627,7 @@
       currentUser = user || null;
       if (authClient && typeof authClient.clearToken === 'function' && !currentUser) authClient.clearToken();
       if (!currentUser) finishExtractionRun();
-      hydrateCachedCredits(currentUser);
-      refreshCredits();
+      updateCreditNote();
       updateRunState();
       updateOutputActionState();
     });

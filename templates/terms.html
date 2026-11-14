@@ -47,6 +47,10 @@
       <h2 id="4-credits-billing-and-purchases">4. Credits, Billing, and Purchases</h2>
       <ul>
         <li>Certain features require credits.</li>
+        {% if unified_credits_enabled %}
+        <li>Processing tools use one shared credit balance. The selected action and options determine the credit cost displayed before processing.</li>
+        <li>Overnight batch actions use half the corresponding instant credit price. Tools without an overnight option retain their displayed price.</li>
+        {% endif %}
         <li>Credits are purchased through Stripe checkout.</li>
         <li>Payment methods and billing details are handled by Stripe.</li>
         <li>Credits are non-transferable, non-refundable by default, and have no cash value unless required by law.</li>

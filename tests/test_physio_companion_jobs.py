@@ -99,6 +99,10 @@ def test_codex_job_uses_safe_argv_stdin_schema_and_reviewed_context(tmp_path):
     assert 'approval_policy="never"' in process.argv
     assert 'web_search="disabled"' in process.argv
     assert 'shell_environment_policy.inherit="none"' in process.argv
+    # The worker publishes completion before TemporaryDirectory exits.
+    cleanup_deadline = time.monotonic() + 3
+    while process.kwargs["cwd"].exists() and time.monotonic() < cleanup_deadline:
+        time.sleep(0.01)
     assert not process.kwargs["cwd"].exists()
     assert not list(config.runtime_path.iterdir())
     manager.shutdown()

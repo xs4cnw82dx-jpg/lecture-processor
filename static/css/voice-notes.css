@@ -1188,3 +1188,6 @@ body {
 @media (min-width: 1025px) { .voice-page { padding-bottom: 40px; } .voice-bottom-nav { position: static; width: fit-content; max-width: none; margin: 0 0 28px; box-shadow: none; } .voice-nav-btn svg { width: 18px; height: 18px; } }
 @media (max-width: 760px) { .voice-detail-head { flex-direction: column; } .voice-detail-head > div:first-child { width: 100%; } .voice-detail-actions { width: 100%; justify-content: flex-start; } .voice-recorder { padding: 24px 18px; } .voice-nav-btn { flex-direction: column; gap: 4px; font-size: .72rem; padding: 8px 4px; } .voice-note-item { padding: 16px; gap: 10px; } .voice-detail-actions .voice-more-actions { margin-left: auto; } .voice-detail-actions .voice-mini-action { flex: 0 1 auto; min-width: 0; } }
 @media (prefers-reduced-motion: reduce) { .voice-page * { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+#voice-credit-cost { margin-top: 8px; }
+#voice-pending-credit-cost { margin-top: 6px; line-height: 1.5; }

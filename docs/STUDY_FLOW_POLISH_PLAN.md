@@ -25,7 +25,7 @@ Active follow-up to PR #185, deployed at bee9b699. Read with AGENTS.md and the v
 
 Use scripts/run_ui_preview.py and scripts/run_pytest_isolated.py only, synthetic accounts and temporary storage. Never delete real plans, mutate real learning progress, buy credits or upload materials to an AI for QA. Preserve deferred external-service configuration. Inspect desktop/mobile rendering and exercise behavior, not only source contracts. Run meaningful lifecycle, navigation/back, saved-session and ownership regressions; then asset/lint/backend/client/browser checks.
 
-Deferred half-credit customer pricing from the previous round remains pending the user's exact-half versus odd-count rounding preference. It is separate from this task; do not change balances or advertise that discount.
+Customer pricing is now decided: one integer credit balance, with even instant action prices and overnight batch prices at exactly half. Existing balances, purchases and refunds retain their value through the shared credit policy. The interface and rollout are being verified in the billing update.
 
 ## Progress
 

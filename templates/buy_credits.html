@@ -18,7 +18,7 @@
       <section class="credits-heading">
         <span class="credits-eyebrow">Your study workspace</span>
         <h1>Credits for the work you need.</h1>
-        <p>Choose a credit category, then a bundle. Your current balances are available in the header.</p>
+        <p id="buy-credits-intro">{% if unified_credits_enabled %}Choose a bundle for all your study tools. Your credit balance is available in the header.{% else %}Choose a credit category, then a bundle. Your current balances are available in the header.{% endif %}</p>
       </section>
       <section class="shell-panel" id="buy-credits-auth-panel" hidden>
         <h2>Sign in to buy credits</h2>
@@ -26,8 +26,20 @@
         <a class="refresh-history-btn" id="buy-credits-signin-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}">Sign in</a>
       </section>
       <section class="payment-result" id="payment-result" role="status" aria-live="polite" hidden><div><strong id="payment-result-title"></strong><p id="payment-result-message"></p></div><button type="button" id="payment-result-retry" class="refresh-history-btn" hidden>Check again</button></section>
-      <section class="pricing-grid" aria-label="Credit bundles">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
-      <section class="credit-guide" aria-labelledby="credit-guide-title">
+      <section class="pricing-grid" id="credit-bundles" data-credit-scheme="{{ 2 if unified_credits_enabled else 1 }}" aria-label="Credit bundles">{{ render_pricing_catalog(pricing_catalog, variant='page') }}</section>
+      <section class="credit-cost-guide shell-panel" id="credit-cost-guide" aria-labelledby="credit-cost-title"{% if not unified_credits_enabled %} hidden{% endif %}>
+        <span class="credits-eyebrow">Plan your credits</span>
+        <h2 id="credit-cost-title">What each action costs</h2>
+        <p>One balance works across all tools. Overnight prices apply only to the batch actions shown below. Allow up to 24 hours for results.</p>
+        <div class="credit-cost-table-wrap">
+          <table class="credit-cost-table"><caption class="sr-only">Credit costs by action and processing speed</caption>
+            <thead><tr><th scope="col">Action</th><th scope="col"><span class="credit-rate-desktop">Instant credits</span><span class="credit-rate-mobile">Instant</span></th><th scope="col"><span class="credit-rate-desktop">Overnight credits</span><span class="credit-rate-mobile">Overnight</span></th></tr></thead>
+            <tbody>{% for item in pricing_actions %}<tr data-credit-action="{{ item.action }}"><th scope="row">{{ item.label }}<span class="credit-action-unit">{{ item.unit }}</span></th><td data-credit-rate="instant">{{ item.instant }}</td><td data-credit-rate="overnight">{{ item.overnight if item.overnight is not none else '—' }}</td></tr>{% endfor %}</tbody>
+          </table>
+        </div>
+        <p class="credit-cost-footnote">— means this action is available at the instant price only. Unlimited access applies only to its enabled categories.</p>
+      </section>
+      <section class="credit-guide" id="legacy-credit-guide" aria-labelledby="credit-guide-title"{% if unified_credits_enabled %} hidden{% endif %}>
         <div><span class="credits-eyebrow">What a credit covers</span><h2 id="credit-guide-title">Extraction and add-ons, explained.</h2><p>These uses share the same slides extraction / add-on balance.</p><p>For Lecture Notes and Interview Transcription, each recording can be up to 500 MB. Lecture slide files can be up to 50 MB. Credits are charged per run, rather than per minute.</p></div>
         <dl><div><dt>Slides or reader extraction <span>1 credit per run</span></dt><dd>Extract a PDF or PowerPoint in Slides Extraction, or process a document, image collection, or public webpage with a Reader tool.</dd></div><div><dt>Voice Notes study tools <span>1 credit per generation</span></dt><dd>Generate flashcards, practice questions, or both from a saved Voice Note transcript.</dd></div><div><dt>Interview extras <span>1 credit per selected extra</span></dt><dd>Add a concise summary or a transcript organized into sections. Selecting both uses 2 add-on credits, in addition to the interview transcription credit.</dd></div></dl>
       </section>

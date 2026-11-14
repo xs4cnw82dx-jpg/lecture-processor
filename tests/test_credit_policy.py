@@ -5,8 +5,8 @@ import pytest
 from lecture_processor.domains.billing import policy
 
 
-def test_unified_credit_activation_defaults_off_until_the_client_is_ready():
-    assert policy.DEFAULT_UNIFIED_CREDITS_ENABLED is False
+def test_unified_credit_runtime_defaults_on_but_unconfigured_callers_stay_conservative():
+    assert policy.DEFAULT_UNIFIED_CREDITS_ENABLED is True
     assert policy.is_unified_enabled() is False
     assert policy.uses_unified_credits({}) is False
     assert policy.is_unified_enabled(SimpleNamespace(UNIFIED_CREDITS_ENABLED=True)) is True
