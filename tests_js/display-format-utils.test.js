@@ -1,7 +1,34 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 
 const displayFormatUtils = require('../static/js/display-format-utils.js');
+
+function loadFormatter(language, browserLocale, activeLocale) {
+  const window = {
+    document: { documentElement: { lang: language } },
+    navigator: { language: browserLocale, languages: [browserLocale] },
+  };
+  if (activeLocale) window.LectureI18n = { locale: () => activeLocale };
+  vm.runInNewContext(readFileSync(path.join(__dirname, '../static/js/display-format-utils.js'), 'utf8'), { window, Intl });
+  return window.LectureProcessorDisplayFormatUtils;
+}
+
+for (const [language, browserLocale, expectedLocale] of [['en', 'nl-NL', 'en-GB'], ['nl', 'en-GB', 'nl-NL']]) {
+  test(`initial ${language} currency follows the page language with a ${browserLocale} browser`, () => {
+    const formatter = loadFormatter(language, browserLocale);
+    const expected = new Intl.NumberFormat(expectedLocale, { style: 'currency', currency: 'EUR' }).format(9.99);
+    assert.equal(formatter.formatCurrencyFromCents(999, 'EUR'), expected);
+  });
+}
+
+test('active interface locale and explicit currency display settings remain authoritative', () => {
+  const formatter = loadFormatter('en', 'en-GB', 'nl-NL');
+  const expected = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', currencyDisplay: 'code' }).format(16.99);
+  assert.equal(formatter.formatCurrencyFromCents(1699, 'EUR', { currencyDisplay: 'code' }), expected);
+});
 
 test('formatCount handles singular and plural labels', () => {
   assert.equal(displayFormatUtils.formatCount(1, 'card'), '1 card');

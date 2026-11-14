@@ -8,22 +8,9 @@
   }
 
   function buildLocaleList() {
-    var locales = [];
     if (root.LectureI18n) return [root.LectureI18n.locale()];
-    try {
-      if (Array.isArray(root.navigator && root.navigator.languages)) {
-        root.navigator.languages.forEach(function (locale) {
-          var value = String(locale || '').trim();
-          if (value && locales.indexOf(value) < 0) locales.push(value);
-        });
-      }
-      var navigatorLocale = String((root.navigator && root.navigator.language) || '').trim();
-      if (navigatorLocale && locales.indexOf(navigatorLocale) < 0) locales.push(navigatorLocale);
-    } catch (_error) {
-      // Ignore locale probing failures.
-    }
-    if (locales.indexOf('en-GB') < 0) locales.push('en-GB');
-    return locales.length ? locales : ['en-GB'];
+    var pageLanguage = root.document && root.document.documentElement && root.document.documentElement.lang;
+    return [pageLanguage === 'nl' ? 'nl-NL' : 'en-GB'];
   }
 
   function fallbackCurrencyDisplay(amount, code) {
