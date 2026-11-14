@@ -96,8 +96,6 @@ EXPECTED_ROUTES = [
     ('GET', '/api/import-audio-url/<job_id>', 'upload_api.get_audio_import'),
     ('POST', '/api/import-audio-url/release', 'upload_api.release_audio_import'),
     ('POST', '/api/lp-event', 'auth_api.ingest_analytics_event'),
-    ('GET', '/api/processing-averages', 'upload_api.processing_averages'),
-    ('GET', '/api/processing-estimate', 'upload_api.processing_estimate'),
     ('GET', '/api/physio/cases', 'physio_api.list_physio_cases'),
     ('POST', '/api/physio/cases', 'physio_api.create_physio_case'),
     ('PATCH', '/api/physio/cases/<case_id>', 'physio_api.update_physio_case'),
