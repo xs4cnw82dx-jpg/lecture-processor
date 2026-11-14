@@ -72,9 +72,11 @@ test('bundle order follows numeric credits when names and identifiers differ', a
   await expect(page.locator('[data-bundle-id="alpha"] .badge')).toHaveText('Best value');
 });
 
-test('server-rendered bundle labels remain accurate if the catalog refresh fails', async ({ page }) => {
-  const state = await fixture(page, { config: false });
-  await page.goto('/buy_credits');
-  await expectCatalog(page, 'en');
-  expect(state.browserErrors).toEqual([]);
-});
+for (const language of ['en', 'nl']) {
+  test(`server-rendered ${language} bundle labels remain accurate if the catalog refresh fails`, async ({ page }) => {
+    const state = await fixture(page, { config: false, language });
+    await page.goto('/buy_credits');
+    await expectCatalog(page, language);
+    expect(state.browserErrors).toEqual([]);
+  });
+}
