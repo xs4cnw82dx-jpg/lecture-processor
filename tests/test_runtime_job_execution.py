@@ -68,13 +68,14 @@ def test_submit_tracks_named_job_id_before_dispatch_and_preserves_arguments(disp
     else:
         future = core.submit_background_job(target, job_id, runtime=target_runtime)
     assert execution.is_job_active(job_id, runtime=runtime)
-    assert persisted == []
+    assert len(persisted) == 1
+    assert runtime.jobs[job_id]['last_heartbeat_at'] == 1000.0
     dispatcher.run_next()
     assert future.result() == 'done'
     assert calls == [(job_id, target_runtime, True)]
     assert not execution.is_job_active(job_id, runtime=runtime)
     assert runtime.jobs[job_id]['last_heartbeat_at'] == 1000.0
-    assert all(kwargs['changed_fields'] == {'last_heartbeat_at'} for _args, kwargs in persisted)
+    assert all(kwargs['changed_fields'] == {'last_heartbeat_at', 'expires_at_ts'} for _args, kwargs in persisted)
 
 
 def test_cancelled_queued_future_releases_registration(dispatch):
@@ -140,7 +141,7 @@ def test_heartbeat_does_not_create_or_revive_terminal_records(dispatch, status):
     before = {key: dict(value) for key, value in runtime.jobs.items()}
     future = core.submit_background_job(lambda job_id: 'done', 'synthetic-terminal')
     dispatcher.run_next()
-    assert future.result() == 'done'
+    assert future.result() == ('done' if status is None else None)
     assert runtime.jobs == before
     assert persisted == []
     assert not execution.is_job_active('synthetic-terminal')
