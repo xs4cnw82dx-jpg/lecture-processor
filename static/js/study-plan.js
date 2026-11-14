@@ -9,7 +9,11 @@
   var userCache = window.LectureProcessorUserCache || {};
   var uiCache = window.LectureProcessorUiCache || {};
   var ux = window.LectureProcessorUx;
-  var escapeHtml = htmlUtils.escapeHtml || function (value) { return String(value == null ? '' : value); };
+  var escapeHtml = htmlUtils.escapeHtml || function (value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  };
   var CACHE_KEY = 'study_plan_v2_bootstrap';
   var DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
