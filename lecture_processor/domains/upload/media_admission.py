@@ -39,6 +39,8 @@ class _MediaLease:
             self._pool.slot.release()
 
 
+# Each pool has one slot per process. WEB_CONCURRENCY=1 makes this instance-wide;
+# increasing the worker count gives each worker its own independent slots.
 _download_pool = _AdmissionPool()
 _conversion_pool = _AdmissionPool()
 
