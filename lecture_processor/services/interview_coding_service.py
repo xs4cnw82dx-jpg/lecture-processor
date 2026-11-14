@@ -162,7 +162,8 @@ def _coding_state_payload(app_ctx, pack_id, pack, transcript, uid):
     credit_scheme = 2 if policy.uses_unified_credits(user, runtime=app_ctx) else 1
     if credit_scheme == 2:
         credit_cost = policy.action_cost('interview_coding', units=credit_cost)
-    charged_credits = 0 if billing_credits.is_unlimited_for_category(user, 'slides', runtime=app_ctx) else credit_cost
+    category = policy.ACTION_COSTS['interview_coding']['category']
+    charged_credits = 0 if billing_credits.is_unlimited_for_category(user, category, runtime=app_ctx) else credit_cost
     return {
         'pack_id': pack_id,
         'pack_title': str(pack.get('title', '') or ''),

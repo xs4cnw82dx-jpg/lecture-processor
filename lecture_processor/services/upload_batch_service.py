@@ -1187,6 +1187,8 @@ def download_batch_zip(app_ctx, request, batch_id):
         # length and byte-range behavior of the previous in-memory response.
         response.content_length = archive_size
         response.make_conditional(request.environ, accept_ranges=True, complete_length=archive_size)
+        # send_file's FileWrapper closes the spool when the response iterator
+        # closes; call_on_close is only a fallback for other response handling.
         response.call_on_close(archive_file.close)
         return response
     except Exception:
