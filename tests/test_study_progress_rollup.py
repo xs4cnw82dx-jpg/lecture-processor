@@ -105,6 +105,9 @@ class Database:
     def collection(self, name):
         return Query(self, name)
 
+    def document(self, path):
+        return Ref(self, path)
+
     def get_all(self, refs, **kwargs):
         self.get_all_calls.append(len(refs))
         return [ref.get(**kwargs) for ref in reversed(refs)]
