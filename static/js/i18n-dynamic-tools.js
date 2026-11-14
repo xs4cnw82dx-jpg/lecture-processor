@@ -563,6 +563,7 @@
   "Complete set": "Set voltooien",
   "Install Workout on your Home Screen before enabling rest notifications.": "Zet Training op je beginscherm voordat je meldingen voor rustpauzes inschakelt.",
   "Notifications were not enabled.": "Meldingen zijn niet ingeschakeld.",
+  "Loading shared pack...": "Gedeeld pakket laden…",
   "Use your browser menu to install Workout on this device.": "Gebruik het browsermenu om Training op dit apparaat te installeren."
 });
   Object.assign(root.LectureI18nCatalog.en, {
