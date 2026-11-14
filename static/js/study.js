@@ -1581,6 +1581,7 @@ var addPackToPlanBtn = document.getElementById('add-pack-to-plan-btn'), packPlan
 var packGoalsPanel = document.getElementById('pack-goals-panel'), packGoalCard = document.getElementById('pack-goal-card'), packGoalsStatus = document.getElementById('pack-goals-status'), overallDailyGoalInput = document.getElementById('overall-daily-goal-input'), overallDailyGoalDecrease = document.getElementById('overall-daily-goal-decrease'), overallDailyGoalIncrease = document.getElementById('overall-daily-goal-increase'), packDailyGoalInput = document.getElementById('pack-daily-goal-input'), packDailyGoalClear = document.getElementById('pack-daily-goal-clear'), packDailyGoalDecrease = document.getElementById('pack-daily-goal-decrease'), packDailyGoalIncrease = document.getElementById('pack-daily-goal-increase'), packGoalDue = document.getElementById('pack-goal-due'), packGoalUnmastered = document.getElementById('pack-goal-unmastered'), packGoalRecommendation = document.getElementById('pack-goal-recommendation'), packGoalHelper = document.getElementById('pack-goal-helper');
 var createPackBtn = document.getElementById('create-pack-btn'), importPackCsvBtn = document.getElementById('import-pack-csv-btn'), openBuilderBtn = document.getElementById('open-builder-btn'), savePackBtn = document.getElementById('save-pack-btn'), deletePackBtn = document.getElementById('delete-pack-btn'), exportPackNotesBtn = document.getElementById('export-pack-notes-btn'), packShareBtn = document.getElementById('pack-share-btn'), openLearnBtn = document.getElementById('open-learn-btn'), openLearnBtnLabel = document.getElementById('open-learn-btn-label'), packSaveStatus = document.getElementById('pack-save-status');
 var exportMenu = document.getElementById('export-menu'), exportMenuBtn = document.getElementById('export-menu-btn'), exportMenuList = document.getElementById('export-menu-list'), exportPdfSubmenu = document.getElementById('export-pdf-submenu');
+var deleteSelectedPacksBtn = document.getElementById('delete-selected-packs-btn');
 var editorTabs = document.querySelectorAll('.editor-tab:not(#editor-tab-coding)'), codingTab = document.getElementById('editor-tab-coding'), codingPane = document.getElementById('editor-pane-coding'), flashcardCount = document.getElementById('flashcard-count'), questionCount = document.getElementById('question-count'), addFlashcardBtn = document.getElementById('add-flashcard-btn'), addQuestionBtn = document.getElementById('add-question-btn'), flashcardEditorList = document.getElementById('flashcard-editor-list'), questionEditorList = document.getElementById('question-editor-list');
 var codingPreviewCard = document.getElementById('coding-preview-card'), codingPreviewTitle = document.getElementById('coding-preview-title'), codingPreviewStatus = document.getElementById('coding-preview-status'), codingPreviewCodes = document.getElementById('coding-preview-codes'), codingPreviewCodeCount = document.getElementById('coding-preview-code-count'), codingPreviewQuoteCount = document.getElementById('coding-preview-quote-count');
 var codingStatus = document.getElementById('coding-status'), codingShell = document.getElementById('coding-shell'), codingAiPanel = document.getElementById('coding-ai-panel'), codingAiRunBtn = document.getElementById('coding-ai-run-btn'), codingAiAcceptBtn = document.getElementById('coding-ai-accept-btn'), codingAiRejectBtn = document.getElementById('coding-ai-reject-btn'), codingExportPdfBtn = document.getElementById('coding-export-pdf-btn'), codingResetBtn = document.getElementById('coding-reset-btn'), codingCloseBtn = document.getElementById('coding-close-btn'), codingCodePicker = document.getElementById('coding-code-picker'), codingCodePickerButton = document.getElementById('coding-code-picker-button'), codingCodePickerLabel = document.getElementById('coding-code-picker-label'), codingCodePickerSwatch = document.getElementById('coding-code-picker-swatch'), codingCodePickerMenu = document.getElementById('coding-code-picker-menu'), codingCodePickerSearch = document.getElementById('coding-code-picker-search'), codingCodePickerList = document.getElementById('coding-code-picker-list'), codingCommentInput = document.getElementById('coding-comment-input'), codingSelectionSummary = document.getElementById('coding-selection-summary'), codingApplyBtn = document.getElementById('coding-apply-btn'), codingInvivoBtn = document.getElementById('coding-invivo-btn'), codingUndoBtn = document.getElementById('coding-undo-btn'), codingTranscript = document.getElementById('coding-transcript'), codingSearchInput = document.getElementById('coding-search-input'), codingNewCodeBtn = document.getElementById('coding-new-code-btn'), codingCodeList = document.getElementById('coding-code-list'), codingEditName = document.getElementById('coding-edit-name'), codingEditDescription = document.getElementById('coding-edit-description'), codingPalette = document.getElementById('coding-palette'), codingSaveCodeBtn = document.getElementById('coding-save-code-btn'), codingMergeCodeBtn = document.getElementById('coding-merge-code-btn'), codingDeleteCodeBtn = document.getElementById('coding-delete-code-btn'), codingQuoteList = document.getElementById('coding-quote-list');
@@ -4572,9 +4573,11 @@ function syncPackSelectionControls() {
     addSelectedToPlanBtn.hidden = selectedPlanIds.length === 0;
     addSelectedToPlanBtn.textContent = allInPlan ? 'Open Study Plan' : 'Add to Study Plan';
   }
-  if (deletePackBtn) {
-    deletePackBtn.textContent = count > 0 ? 'Delete selected (' + count + ')' : 'Delete Pack';
-    deletePackBtn.setAttribute('aria-label', count > 0 ? 'Delete selected study packs' : 'Delete current study pack');
+  if (deleteSelectedPacksBtn) {
+    deleteSelectedPacksBtn.textContent = window.LectureI18n && typeof window.LectureI18n.t === 'function'
+      ? window.LectureI18n.t('Delete selected ({count})', { count: count })
+      : 'Delete selected (' + count + ')';
+    deleteSelectedPacksBtn.disabled = count === 0;
   }
 }
 
@@ -4636,17 +4639,14 @@ function applyPackSelection(packId, checked, useRange) {
   renderPacks();
 }
 
-function getPackIdsForDelete() {
-  var selectedIds = getSelectedPackIds();
-  if (selectedIds.length) {
-    return selectedIds;
-  }
-  return selectedPackId ? [selectedPackId] : [];
-}
-
 function formatPackDeleteMessage(packIds) {
   if (packIds.length === 1) {
-    return 'Delete this study pack permanently? This cannot be undone.';
+    var pack = (packs || []).find(function (item) { return item.study_pack_id === packIds[0]; });
+    var title = packIds[0] === selectedPackId && packTitle ? packTitle.value.trim() : '';
+    title = title || (pack && pack.title) || 'Untitled pack';
+    return window.LectureI18n && typeof window.LectureI18n.t === 'function'
+      ? window.LectureI18n.t('Delete "{title}" permanently? This cannot be undone.', { title: title })
+      : 'Delete "' + title + '" permanently? This cannot be undone.';
   }
   return 'Delete ' + packIds.length + ' study packs permanently? This cannot be undone.';
 }
@@ -5113,6 +5113,7 @@ function renderPacks() {
 }
 
 function showPackEditor(v) {
+  setExportMenuOpen(false);
   setHidden(packEmpty, !!v);
   packEditorWrap.classList.toggle('visible', v);
   document.getElementById('library-grid').classList.toggle('has-open-pack', !!v);
@@ -5132,6 +5133,16 @@ function updatePrimaryStudyAction() {
 }
 function updatePackSummary() {
   updatePrimaryStudyAction();
+  if (exportMenuBtn) {
+    var packActionsTitle = selectedPack ? (selectedPack.title || 'Untitled pack') : '';
+    var packActionsLabel = 'Pack actions';
+    if (selectedPack) {
+      packActionsLabel = window.LectureI18n && typeof window.LectureI18n.t === 'function'
+        ? window.LectureI18n.t('Pack actions for {title}', { title: packActionsTitle })
+        : 'Pack actions for ' + packActionsTitle;
+    }
+    exportMenuBtn.setAttribute('aria-label', packActionsLabel);
+  }
   if (!selectedPack) {
     packSummary.classList.remove('visible');
     if (packPlanStatus) { packPlanStatus.textContent = 'Not in a study plan'; packPlanStatus.classList.remove('is-in-plan'); }
@@ -7660,16 +7671,16 @@ if (packDailyGoalInput) {
   });
 }
 
-deletePackBtn.addEventListener('click', function () {
-  var packIdsToDelete = getPackIdsForDelete();
+function deleteStudyPacks(packIdsToDelete) {
   if (!packIdsToDelete.length) { showToast('Select a study pack first.', 'error'); return; }
+  var session = authClient && authClient.captureSession ? authClient.captureSession() : null;
   var deletingMultiple = packIdsToDelete.length > 1;
   openConfirmModal(deletingMultiple ? 'Delete Study Packs' : 'Delete Study Pack', formatPackDeleteMessage(packIdsToDelete), deletingMultiple ? 'Delete Packs' : 'Delete Pack').then(function (confirmed) {
-    if (!confirmed) return;
+    if (!confirmed || (session && !session.isCurrent())) return;
     var removedPackIds = packIdsToDelete.slice();
-    var activePackDeleted = removedPackIds.indexOf(selectedPackId) >= 0;
     var deleteChain = removedPackIds.reduce(function (chain, packId) {
       return chain.then(function () {
+        if (session) session.assertCurrent();
         return apiCall('/api/study-packs/' + encodeURIComponent(packId), { method: 'DELETE' });
       });
     }, flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
@@ -7677,16 +7688,30 @@ deletePackBtn.addEventListener('click', function () {
       return flushHighlightSync();
     }));
     deleteChain.then(function () {
+      if (session && !session.isCurrent()) return;
       // Pack deletion also removes its progress and due-count contribution.
       removedPackIds.forEach(removePackLocalCaches);
       clearPackSelection(false);
+      var activePackDeleted = removedPackIds.indexOf(selectedPackId) >= 0;
       if (activePackDeleted) {
         openPackSeq += 1;
         selectedPackId = ''; selectedPack = null; setInlineAutosaveBaseline(null); showPackEditor(false); updatePackSummary();
       }
       return loadData(activePackDeleted ? '' : selectedPackId);
-    }).then(function () { showToast(deletingMultiple ? 'Study packs deleted.' : 'Study pack deleted.'); }).catch(function (e) { showToast(e.message || 'Could not delete study pack.', 'error'); });
+    }).then(function () {
+      if (!session || session.isCurrent()) showToast(deletingMultiple ? 'Study packs deleted.' : 'Study pack deleted.');
+    }).catch(function (e) {
+      if (!session || session.isCurrent()) showToast(e.message || 'Could not delete study pack.', 'error');
+    });
   });
+}
+deletePackBtn.addEventListener('click', function () {
+  setExportMenuOpen(false);
+  exportMenuBtn.focus();
+  deleteStudyPacks(selectedPackId ? [selectedPackId] : []);
+});
+if (deleteSelectedPacksBtn) deleteSelectedPacksBtn.addEventListener('click', function () {
+  deleteStudyPacks(getSelectedPackIds());
 });
 
 var exportAnnotatedNotesBtn = document.getElementById('export-annotated-notes-btn');

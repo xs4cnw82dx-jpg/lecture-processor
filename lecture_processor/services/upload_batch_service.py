@@ -18,7 +18,7 @@ from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
-from lecture_processor.services import upload_batch_support, upload_quota_service, upload_redaction_service
+from lecture_processor.services import media_admission, upload_batch_support, upload_quota_service, upload_redaction_service
 
 
 BATCH_MODES = {'lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'text-combine'}
@@ -488,6 +488,17 @@ def create_batch_job(app_ctx, request, *, instant=False):
                     'charged_credit': '',
                 }
             )
+
+        requires_conversion = any(
+            plan.get('slides_required')
+            and app_ctx.secure_filename(plan['slides_file'].filename).lower().endswith('.pptx')
+            for plan in row_plans
+        )
+        if requires_conversion:
+            media_lease, busy_status = media_admission.try_acquire(uid)
+            if media_lease is None:
+                return media_admission.busy_response(app_ctx, busy_status)
+            resources.register('media_admission', media_lease.release)
 
         credit_error, credit_status = _batch_credit_preflight_error(user, mode, row_plans, runtime=app_ctx)
         if credit_error:
