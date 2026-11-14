@@ -165,8 +165,28 @@
       : false;
   }
 
+  function clearLegacyLearningSessions(uid) {
+    // Only an unambiguous owner prefix is safe to remove without parsing.
+    if (!/^[A-Za-z0-9]+$/.test(uid)) return true;
+    try {
+      var storage = window.localStorage;
+      if (!storage) return false;
+      var prefix = 'learning_session_' + uid + '_', keys = [];
+      for (var i = 0; i < storage.length; i += 1) {
+        var key = storage.key(i);
+        if (typeof key === 'string' && key.indexOf(prefix) === 0) keys.push(key);
+      }
+      var cleared = true;
+      keys.forEach(function (key) {
+        try { if (storage.removeItem(key) === false) cleared = false; } catch (_) { cleared = false; }
+      });
+      return cleared;
+    } catch (_) { return false; }
+  }
+
   function clearUserScopedCaches(userOrUid, options) {
-    var uid = String((userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid) || '').trim();
+    var legacyUid = String((userOrUid && typeof userOrUid === 'object' ? userOrUid.uid : userOrUid) || '');
+    var uid = legacyUid.trim();
     if (!uid) return true;
     authRevision += 1;
     if (creditState.uid === uid || (auth && auth.currentUser && auth.currentUser.uid === uid)) {
@@ -175,7 +195,7 @@
     }
     var preservePending = !!(options && options.preservePending);
     var studyCleared = typeof studyCache.clearUser === 'function' && studyCache.clearUser(uid, { preservePending: preservePending });
-    var detail = { uid: uid, legacyCleared: true, preservePending: preservePending };
+    var detail = { uid: uid, legacyCleared: preservePending || clearLegacyLearningSessions(legacyUid), preservePending: preservePending };
     document.dispatchEvent(new CustomEvent('lectureprocessor:study-cache-cleared', { detail: detail }));
     var accountCleared = typeof userCache.clearUserScope === 'function'
       && userCache.clearUserScope(uid, ACCOUNT_SCOPED_CACHE_KEYS, uiCache, { preserveStudyCache: true });
