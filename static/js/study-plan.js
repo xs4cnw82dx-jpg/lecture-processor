@@ -280,7 +280,7 @@
   function renderHeaderAction() {
     var label = byId('new-study-goal-label');
     if (label) label.textContent = activeGoals().length ? 'New study goal' : 'Set up my plan';
-    byId('clear-study-plan-btn').hidden = !((state.data.goals || []).length || plannedSessions().some(function (session) { return session.status !== 'completed'; }));
+    byId('clear-study-plan-btn').hidden = !(activeGoals().length || plannedSessions().some(function (session) { return session.status !== 'completed'; }));
     byId('schedule-goals-btn').hidden = !activeGoals().length;
     byId('calendar-connections-btn').hidden = !activeGoals().length && !plannedSessions().length;
   }
