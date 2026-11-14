@@ -25,6 +25,37 @@ async function recordScrolls(page) {
   });
 }
 
+test.describe('initial currency language', () => {
+  test.use({ locale: 'nl-NL' });
+
+  test('English bundles and history agree in a Dutch browser without a language change', async ({ page }, testInfo) => {
+    const fixture = await installStudent(page);
+    await page.addInitScript(() => {
+      window.testLanguageChanges = 0;
+      window.addEventListener('lp:language-changed', () => { window.testLanguageChanges += 1; });
+    });
+    await page.route('**/api/user-preferences', route => route.fulfill({ json: { preferences: { interface_language: 'en', theme: 'light' } } }));
+    await page.route('**/api/purchase-history', route => route.fulfill({ json: { purchases: [
+      { bundle_name: 'Example bundle', price_cents: 1699, currency: 'EUR', created_at: 1710000000 },
+    ] } }));
+    await page.goto('/buy_credits');
+    await expect.poll(() => page.evaluate(() => window.LecturePreferences.get().ready)).toBe(true);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.locator('.purchase-row .meta')).toContainText('€16.99');
+    expect(await page.evaluate(() => navigator.language)).toBe('nl-NL');
+    expect(await page.evaluate(() => window.testLanguageChanges)).toBe(0);
+    await expect(page.locator('.price[data-price-cents="999"]').first()).toHaveText('€9.99');
+    for (const width of [1440, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+        await page.screenshot({ path: testInfo.outputPath(`currency-${theme}-${width}.png`), fullPage: true, animations: 'disabled' });
+      }
+    }
+    expect(fixture.browserErrors).toEqual([]);
+  });
+});
+
 test('onboarding languages expose the selected button before and after keyboard selection', async ({ page }) => {
   const fixture = await installStudent(page, { onboarding_completed: false, output_language: 'dutch' });
   await page.goto('/lecture-notes');
