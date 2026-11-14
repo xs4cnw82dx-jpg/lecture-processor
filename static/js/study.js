@@ -3383,7 +3383,7 @@ function saveBuilderPack(closeAfter, options) {
     if (!opts.silent) {
       showToast('Study pack saved.');
     } else if (opts.autoSavedToast) {
-      showToast('Saved.', 'success');
+      showToast(window.LectureI18n ? window.LectureI18n.t('Saved.') : 'Saved.', 'success');
     }
     if (closeAfter) {
       closeBuilderOverlay();
@@ -4250,7 +4250,7 @@ function checkWriteAnswer() {
   if (isCorrect) {
     writeInputEl.className = 'write-input correct-input';
     writeFeedbackEl.className = 'write-feedback visible correct-fb';
-    writeFeedbackEl.textContent = 'Correct!';
+    writeFeedbackEl.textContent = window.LectureI18n ? window.LectureI18n.t('Correct!') : 'Correct!';
   } else {
     writeInputEl.className = 'write-input wrong-input';
     writeFeedbackEl.className = 'write-feedback visible wrong-fb';
