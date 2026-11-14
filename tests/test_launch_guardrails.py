@@ -1844,7 +1844,7 @@ def test_account_delete_failure_after_purge_requires_retry_without_restoring_acc
     assert set_doc_calls[0][0]["account_status"] == "deleting"
     assert len(set_doc_calls) == 1
     assert retry_calls[0]["uid"] == "u-restore"
-    assert "auth delete failed" in retry_calls[0]["reason"]
+    assert retry_calls[0]["reason"] == "Could not completely delete account data"
     assert response.get_json()["status"] == "deletion_retry_required"
 
 

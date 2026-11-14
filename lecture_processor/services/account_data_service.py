@@ -22,6 +22,11 @@ ACCOUNT_EXPORT_JOB_SCOPE = 'account-export'
 ACCOUNT_EXPORT_FILE_TTL_SECONDS = 60 * 60
 
 
+def _record_deletion_warning(app_ctx, warnings_list, context):
+    app_ctx.logger.exception('Account deletion cleanup failed: %s', context)
+    warnings_list.append('Some account data could not be removed. Please try again.')
+
+
 def _require_recent_account_user(app_ctx, request):
     return access_service.require_recent_allowed_user(app_ctx, request)
 
@@ -84,9 +89,9 @@ def export_account_data(app_ctx, request):
             as_attachment=True,
             download_name=filename,
         )
-    except Exception as e:
-        app_ctx.logger.error(f"Error exporting account data for {uid}: {e}")
-        return app_ctx.jsonify({'error': 'Could not export account data'}), 500
+    except Exception:
+        app_ctx.logger.exception('Error exporting account data for %s', uid)
+        return app_ctx.jsonify({'error': 'Could not export account data', 'error_code': 'account_export_failed'}), 500
 
 
 def _build_account_bundle_archive(app_ctx, uid, email, include):
@@ -398,7 +403,9 @@ def get_account_export_status(app_ctx, request, job_id):
     if safe_status == 'completed':
         payload['download_url'] = f'/api/account/exports/{job_id}/download'
     elif safe_status == 'error':
-        payload['error'] = str(job.get('error', '') or 'Could not build export bundle')
+        payload['message'] = 'The export could not be created.'
+        payload['error'] = 'Could not build export bundle'
+        payload['error_code'] = 'account_export_failed'
     return app_ctx.jsonify(payload)
 
 
@@ -513,8 +520,8 @@ def delete_account_data(app_ctx, request):
                     try:
                         doc.reference.delete()
                         deleted_count += 1
-                    except Exception as error:
-                        warnings_list.append(f"Could not delete {collection_name}/{doc.id}: {error}")
+                    except Exception:
+                        _record_deletion_warning(app_ctx, warnings_list, f'delete {collection_name}/{doc.id}')
                 if len(docs) < page_size:
                     break
             deleted[deleted_key or collection_name] = deleted_count
@@ -545,8 +552,8 @@ def delete_account_data(app_ctx, request):
                             merge=True,
                         )
                         anonymized += 1
-                    except Exception as error:
-                        warnings_list.append(f"Could not anonymize purchase {doc.id}: {error}")
+                    except Exception:
+                        _record_deletion_warning(app_ctx, warnings_list, f'anonymize purchase {doc.id}')
                 if len(docs) < page_size:
                     break
             deleted['purchases_anonymized'] = anonymized
@@ -584,13 +591,13 @@ def delete_account_data(app_ctx, request):
                         if getattr(source_ref.get(), 'exists', False):
                             source_ref.delete()
                             deleted_sources += 1
-                    except Exception as error:
-                        warnings_list.append(f"Could not delete study pack source {pack_id}: {error}")
+                    except Exception:
+                        _record_deletion_warning(app_ctx, warnings_list, f'delete study pack source {pack_id}')
                     try:
                         doc.reference.delete()
                         deleted_packs += 1
-                    except Exception as error:
-                        warnings_list.append(f"Could not delete study pack {pack_id}: {error}")
+                    except Exception:
+                        _record_deletion_warning(app_ctx, warnings_list, f'delete study pack {pack_id}')
                 if len(docs) < page_size:
                     break
             deleted['study_packs'] = deleted_packs
@@ -615,8 +622,8 @@ def delete_account_data(app_ctx, request):
                     try:
                         doc.reference.delete()
                         deleted_count += 1
-                    except Exception as error:
-                        warnings_list.append(f"Could not delete runtime job {doc.id}: {error}")
+                    except Exception:
+                        _record_deletion_warning(app_ctx, warnings_list, f'delete runtime job {doc.id}')
                 if len(docs) < page_size:
                     break
             deleted['runtime_jobs'] = deleted_count
@@ -633,21 +640,21 @@ def delete_account_data(app_ctx, request):
                     batch_ids_seen.add(batch_id)
                     try:
                         row_docs = app_ctx.repositories.batches.list_batch_rows(app_ctx.db, batch_id)
-                    except Exception as error:
-                        warnings_list.append(f"Could not list rows for batch {batch_id}: {error}")
+                    except Exception:
+                        _record_deletion_warning(app_ctx, warnings_list, f'list rows for batch {batch_id}')
                         row_docs = []
                     for row_doc in row_docs:
                         batch_row_prefixes.add(f"{batch_id}_{row_doc.id}")
                         try:
                             row_doc.reference.delete()
                             deleted_rows += 1
-                        except Exception as error:
-                            warnings_list.append(f"Could not delete batch row {batch_id}/{row_doc.id}: {error}")
+                        except Exception:
+                            _record_deletion_warning(app_ctx, warnings_list, f'delete batch row {batch_id}/{row_doc.id}')
                     try:
                         doc.reference.delete()
                         deleted_batches += 1
-                    except Exception as error:
-                        warnings_list.append(f"Could not delete batch {batch_id}: {error}")
+                    except Exception:
+                        _record_deletion_warning(app_ctx, warnings_list, f'delete batch {batch_id}')
                 if len(docs) < page_size:
                     break
             deleted['batch_jobs'] = deleted_batches
@@ -704,8 +711,8 @@ def delete_account_data(app_ctx, request):
                 deleted['study_progress_doc'] = 1
             else:
                 deleted['study_progress_doc'] = 0
-        except Exception as error:
-            warnings_list.append(f"Could not delete study progress document: {error}")
+        except Exception:
+            _record_deletion_warning(app_ctx, warnings_list, 'delete study progress document')
             deleted['study_progress_doc'] = 0
 
         remaining = []
@@ -750,14 +757,14 @@ def delete_account_data(app_ctx, request):
             try:
                 if app_ctx.repositories.batches.list_batch_rows(app_ctx.db, batch_id):
                     remaining.append(f'batch_rows:{batch_id}')
-            except Exception as error:
-                warnings_list.append(f"Could not verify batch rows for {batch_id}: {error}")
+            except Exception:
+                _record_deletion_warning(app_ctx, warnings_list, f'verify batch rows for {batch_id}')
                 remaining.append(f'batch_rows:{batch_id}')
         try:
             if getattr(app_ctx.get_study_progress_doc(uid).get(), 'exists', False):
                 remaining.append('study_progress')
-        except Exception as error:
-            warnings_list.append(f"Could not verify study progress deletion: {error}")
+        except Exception:
+            _record_deletion_warning(app_ctx, warnings_list, 'verify study progress deletion')
             remaining.append('study_progress')
         if remaining:
             raise RuntimeError('Account data deletion incomplete: ' + ', '.join(sorted(set(remaining))))
@@ -803,14 +810,14 @@ def delete_account_data(app_ctx, request):
             'deleted': deleted,
             'warnings': warnings_list,
         })
-    except Exception as e:
-        app_ctx.logger.error(f"Error deleting account data for {uid}: {e}")
+    except Exception:
+        app_ctx.logger.exception('Error deleting account data for %s', uid)
         if deletion_started and not destructive_deletion_started and not auth_user_deleted:
             try:
                 account_lifecycle.restore_account_after_failed_deletion(
                     uid,
                     email=email,
-                    reason=str(e),
+                    reason='Could not completely delete account data',
                     runtime=app_ctx,
                     existing_state=original_user_state,
                 )
@@ -820,11 +827,11 @@ def delete_account_data(app_ctx, request):
             account_lifecycle.mark_account_deletion_retry_required(
                 uid,
                 email=email,
-                reason=str(e),
+                reason='Could not completely delete account data',
                 runtime=app_ctx,
             )
         return app_ctx.jsonify({
             'error': 'Could not completely delete account data',
-            'details': str(e),
+            'error_code': 'account_deletion_failed',
             'status': 'deletion_retry_required' if destructive_deletion_started else 'deletion_failed',
         }), 500
