@@ -381,12 +381,34 @@ def refund_runtime_component(job_id, component_id, target_units, *, runtime=None
     return success
 
 
-def public_charge_error(error):
+def _legacy_insufficient_credit_error(error, context):
+    category = {'lecture': 'lecture', 'slides': 'text extraction', 'interview': 'interview'}[error.category]
+    if context == 'batch':
+        message = ('Not enough text extraction credits for interview extras in this batch row.'
+                   if error.action == 'interview_extra'
+                   else f'Not enough {category} credits to start this batch.')
+        return {'error': message}, 400
+    if error.action == 'interview_coding':
+        return {
+            'error': f'Not enough text extraction credits for AI coding. This transcript needs {error.needed} credit(s).',
+            'error_code': 'insufficient_credits',
+        }, 402
+    if error.action == 'interview_extra':
+        return {'error': 'Could not reserve text extraction credits for interview extras. Please try again.'}, 402
+    if error.action == 'regenerate_study_tools':
+        return {'error': 'Could not reserve a text extraction credit.'}, 402
+    return {'error': f'No {category} credits remaining.'}, 402
+
+
+def public_charge_error(error, *, context=''):
     if isinstance(error, account_lifecycle.AccountUnavailableError):
         return {'error': 'This account is unavailable.', 'error_code': 'account_unavailable'}, 409
     if isinstance(error, ledger.InsufficientCredits):
+        if error.credit_scheme == 1:
+            return _legacy_insufficient_credit_error(error, context)
+        credit_word = 'credit' if error.needed == 1 else 'credits'
         return {
-            'error': f'Not enough credits. This needs {error.needed} credits; {error.available} are available.',
+            'error': f'Not enough credits. This needs {error.needed} {credit_word}; {error.available} are available.',
             'error_code': 'insufficient_credits', 'needed': error.needed, 'available': error.available,
         }, 402
     if isinstance(error, ledger.LedgerConflict):

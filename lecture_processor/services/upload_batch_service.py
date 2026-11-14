@@ -815,7 +815,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
             )
         batch_orchestrator.clear_batch_audio_fetch_targets(batch_id, runtime=app_ctx)
         if isinstance(error, (ledger.InsufficientCredits, ledger.LedgerConflict, ledger.LedgerUnavailable)):
-            payload, status = job_charges.public_charge_error(error)
+            payload, status = job_charges.public_charge_error(error, context='batch')
             return app_ctx.jsonify(payload), status
         return app_ctx.jsonify({'error': upload_redaction_service.redact_exception(error, max_chars=500)}), 400
     finally:

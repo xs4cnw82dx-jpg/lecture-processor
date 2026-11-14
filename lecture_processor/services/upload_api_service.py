@@ -619,6 +619,17 @@ def upload_files(app_ctx, request):
             components = {'primary': {'action': 'interview_transcription', 'units': 1}}
             if interview_features_cost > 0:
                 components['extras'] = {'action': 'interview_extra', 'units': interview_features_cost}
+                credit_error, credit_status = job_charges.credit_preflight_error(
+                    user, components,
+                    legacy_checks=[(
+                        'slides', interview_features_cost,
+                        'Not enough text extraction credits for interview extras. '
+                        f'You selected {interview_features_cost} option(s) and need {interview_features_cost} text extraction credits.',
+                    )], runtime=app_ctx,
+                )
+                if credit_error:
+                    _cleanup_upload_files(app_ctx, [audio_path], imported_audio_used=imported_audio_used, imported_audio_path=audio_path)
+                    return app_ctx.jsonify(credit_error), credit_status
             receipt, credit_error, credit_status = job_charges.reserve_runtime_job(
                 uid, job_id, 'interview', components, runtime=app_ctx,
             )

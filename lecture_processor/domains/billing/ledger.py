@@ -31,8 +31,9 @@ class LedgerConflict(RuntimeError):
 class InsufficientCredits(RuntimeError):
     status_code = 402
 
-    def __init__(self, needed, available):
+    def __init__(self, needed, available, *, credit_scheme=2, category='', action=''):
         self.needed, self.available = needed, available
+        self.credit_scheme, self.category, self.action = credit_scheme, category, action
         super().__init__(f'Not enough credits: need {needed}, have {available}.')
 
 
@@ -221,7 +222,10 @@ def _legacy_debit(user, quoted):
         needed = 0 if component['unlimited'] else component['units']
         available = sum(balances[field] for field in fields)
         if available < needed:
-            raise InsufficientCredits(needed, available)
+            raise InsufficientCredits(
+                needed, available, credit_scheme=1,
+                category=component['category'], action=component['action'],
+            )
         remaining, allocations = needed, {}
         for field in fields:
             take = min(remaining, balances[field])
