@@ -50,6 +50,8 @@ def retention(setup, monkeypatch):  # noqa: F811
         get_study_pack_doc=lambda _db, pack_id: PackRef(db, 'study_packs/' + pack_id).get(),
         study_pack_source_doc_ref=lambda _db, pack_id: PackRef(db, 'study_pack_sources/' + pack_id),
         list_study_shares_by_owner_and_entity=lambda *_args, **_kwargs: [],
+        list_interview_ai_coding_runs_by_uid_and_pack=lambda *_args, **_kwargs: [],
+        list_interview_quotations_by_uid_and_pack=lambda *_args, **_kwargs: [],
     ))
     runtime.get_study_card_state_doc = lambda uid, pack_id: PackRef(db, f'study_card_states/{uid}__{pack_id}')
     monkeypatch.setattr(library.study_api_support, 'require_user', lambda *_args: ({'uid': 'owner'}, None, 0))

@@ -14,12 +14,18 @@ ERROR_MESSAGE = 'AI coding could not be completed. Please try again.'
 ERROR_CODE = 'interview_coding_failed'
 # Leave room for Firestore field overhead and a later acceptance plan.
 MAX_RUN_PAYLOAD_BYTES = 750_000
+PACK_CLEANUP_PAGE_SIZE = 50
+PACK_CLEANUP_MAX_PAGES = 20
 
 
 class RunError(Exception):
     def __init__(self, message, status=409, code='interview_coding_unavailable'):
         super().__init__(message)
         self.status, self.code = status, code
+
+
+class AccountUnavailableRunError(RunError):
+    """The current account state prevents an interview write."""
 
 
 def run_ref(runtime, run_id):
@@ -44,11 +50,11 @@ def _validate_target(runtime, transaction, uid, pack_id):
     user_doc = user_ref.get(transaction=transaction)
     user = user_doc.to_dict() or {}
     if not user_doc.exists or str(user.get('account_status', '')).lower() in {'deleting', 'deleted'}:
-        raise RunError('Account is unavailable. New work is blocked.')
+        raise AccountUnavailableRunError('Account is unavailable. New work is blocked.')
     try:
         account_lifecycle.require_account_access(uid, runtime=runtime, transaction=transaction)
     except account_lifecycle.AccountUnavailableError as error:
-        raise RunError('Account is unavailable. New work is blocked.') from error
+        raise AccountUnavailableRunError('Account is unavailable. New work is blocked.') from error
     return pack_ref, pack, user_ref, user
 
 
@@ -263,7 +269,19 @@ def complete_run(runtime, run_id, proposals, *, transcript, existing_codes):
     return result
 
 
-def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
+def _matches_target(run, uid, pack_id):
+    return ((uid is None or run.get('uid') == uid)
+            and (pack_id is None or run.get('pack_id') == pack_id))
+
+
+def _require_deleted_pack(runtime, transaction, pack_id):
+    pack = runtime.repositories.study.study_pack_doc_ref(runtime.db, pack_id).get(transaction=transaction)
+    if pack.exists:
+        raise RunError('Study pack cleanup is still pending. Please try deleting it again.', 503)
+
+
+def fail_run(runtime, run_id, *, orphan=False, now_ts=None, expected_uid=None, expected_pack_id=None,
+             require_deleted_pack=False):
     now = runtime.time.time() if now_ts is None else now_ts
     missing_run_recovered = object()
 
@@ -272,6 +290,10 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
         ref = run_ref(runtime, run_id)
         doc = ref.get(transaction=transaction)
         run = doc.to_dict() or {}
+        if not _matches_target(run, expected_uid, expected_pack_id):
+            return None
+        if require_deleted_pack:
+            _require_deleted_pack(runtime, transaction, expected_pack_id)
         job_ref = _job_ref(runtime, run_id)
         job_doc = job_ref.get(transaction=transaction)
         job = job_doc.to_dict() or {}
@@ -332,8 +354,13 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
         doc = ref.get(transaction=transaction)
         job_ref = _job_ref(runtime, run_id)
         job = job_ref.get(transaction=transaction).to_dict() or {}
-        if not doc.exists or (doc.to_dict() or {}).get('status') != 'refund_pending':
+        current = doc.to_dict() or {}
+        if (not doc.exists or current.get('status') != 'refund_pending'
+                or not _matches_target(current, run.get('uid'), run.get('pack_id'))
+                or not _matches_target(current, expected_uid, expected_pack_id)):
             return False
+        if require_deleted_pack:
+            _require_deleted_pack(runtime, transaction, expected_pack_id)
         if run.get('charge_ref'):
             receipt = run['billing_receipt']
         else:
@@ -350,3 +377,43 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None):
     result = settle(runtime.db.transaction())
     cache_job(runtime, run_id)
     return result
+
+
+def cleanup_deleted_pack(runtime, uid, pack_id):
+    """Drain owned children only after the pack fence, retaining unsettled runs."""
+    repository = runtime.repositories.study
+    removed = 0
+
+    def delete_child(reference, *, is_run):
+        @runtime.firestore.transactional
+        def delete(transaction):
+            _require_deleted_pack(runtime, transaction, pack_id)
+            child = reference.get(transaction=transaction)
+            current = child.to_dict() or {}
+            if not child.exists or not _matches_target(current, uid, pack_id):
+                return 0
+            if is_run and current.get('status') in ACTIVE_STATUSES:
+                raise RunError('Study pack cleanup is still pending. Please try deleting it again.', 503)
+            transaction.delete(reference)
+            return 1
+        return delete(runtime.db.transaction())
+
+    for list_children, is_run in (
+        (repository.list_interview_ai_coding_runs_by_uid_and_pack, True),
+        (repository.list_interview_quotations_by_uid_and_pack, False),
+    ):
+        for _page in range(PACK_CLEANUP_MAX_PAGES):
+            children = list_children(runtime.db, uid, pack_id, limit=PACK_CLEANUP_PAGE_SIZE)
+            if not children:
+                break
+            for child in children:
+                if is_run and (child.to_dict() or {}).get('status') in ACTIVE_STATUSES:
+                    fail_run(runtime, child.id, expected_uid=uid, expected_pack_id=pack_id,
+                             require_deleted_pack=True)
+                removed += delete_child(child.reference, is_run=is_run)
+            if len(children) < PACK_CLEANUP_PAGE_SIZE:
+                break
+        else:
+            if list_children(runtime.db, uid, pack_id, limit=1):
+                raise RunError('Study pack cleanup is still pending. Please try deleting it again.', 503)
+    return removed
