@@ -230,10 +230,10 @@
         await user.getIdToken(true);
       }
       if (!isCurrent()) return false;
-      var response = await authFetch('/api/auth/user');
-      if (!response.ok) return false;
-      await response.json().catch(function () { return {}; });
-      return isCurrent();
+      var shell = window.LectureProcessorShell;
+      if (!shell || typeof shell.refreshCredits !== 'function') return false;
+      var refreshed = await shell.refreshCredits();
+      return isCurrent() && refreshed === true;
     } catch (_) {
       return false;
     }

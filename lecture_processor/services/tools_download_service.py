@@ -11,7 +11,7 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 
-from lecture_processor.services import access_service, upload_batch_support, upload_quota_service
+from lecture_processor.services import access_service, media_admission, upload_batch_support, upload_quota_service
 
 
 def _cleanup_local_paths(app_ctx, paths):
@@ -91,6 +91,9 @@ def download_lecture_media(app_ctx, request):
     quota_reservation = None
     downloaded_paths = []
 
+    media_lease, busy_status = media_admission.try_acquire(uid)
+    if media_lease is None:
+        return media_admission.busy_response(app_ctx, busy_status)
     try:
         quota_reservation, quota_response, quota_status = upload_quota_service.reserve_upload_quota(
             app_ctx,
@@ -176,3 +179,5 @@ def download_lecture_media(app_ctx, request):
         _cleanup_local_paths(app_ctx, cleanup_paths)
         app_ctx.logger.exception('Lecture downloader failed for user %s', uid)
         return app_ctx.jsonify({'error': 'Could not download lecture media right now. Please try again.'}), 500
+    finally:
+        media_lease.release()
