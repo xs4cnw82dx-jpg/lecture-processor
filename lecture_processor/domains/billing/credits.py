@@ -1,5 +1,6 @@
 import hashlib
 
+from lecture_processor.domains.billing import policy
 from lecture_processor.runtime.container import get_runtime
 
 CREDIT_CATEGORIES = ('lecture', 'slides', 'interview')
@@ -99,6 +100,8 @@ def has_category_credit(user_data, category, amount=1, decoded_token=None, runti
 
 def build_credit_payload(user_data, decoded_token=None, runtime=None):
     user = user_data if isinstance(user_data, dict) else {}
+    if user.get('credits_version') == policy.CREDIT_SCHEME_VERSION:
+        return policy._units(user.get('credits'))
     unlimited = effective_unlimited_credits(user, decoded_token=decoded_token, runtime=runtime)
     return {
         'lecture_standard': int(user.get('lecture_credits_standard', 0) or 0),
@@ -114,6 +117,8 @@ def build_credit_payload(user_data, decoded_token=None, runtime=None):
 def build_category_summary(user_data, decoded_token=None, runtime=None):
     user = user_data if isinstance(user_data, dict) else {}
     unlimited = effective_unlimited_credits(user, decoded_token=decoded_token, runtime=runtime)
+    if user.get('credits_version') == policy.CREDIT_SCHEME_VERSION:
+        return {'total': policy._units(user.get('credits')), 'unlimited': unlimited}
     return {
         'lecture': category_credit_total(user, 'lecture'),
         'slides': category_credit_total(user, 'slides'),
@@ -130,7 +135,7 @@ def build_category_summary(user_data, decoded_token=None, runtime=None):
 def build_default_user_data(uid, email, runtime=None):
     runtime = _resolve_runtime(runtime)
     normalized_email = normalize_email(email)
-    return {
+    user = {
         'uid': uid,
         'email': email,
         'email_normalized': normalized_email,
@@ -153,6 +158,10 @@ def build_default_user_data(uid, email, runtime=None):
         'last_delete_failure_at': 0,
         'last_delete_failure_reason': '',
     }
+    if policy.is_unified_enabled(runtime):
+        user.update(dict.fromkeys(policy.LEGACY_FIELD_RATES, 0))
+        user.update(credits=policy.FREE_SIGNUP_CREDITS, credits_version=policy.CREDIT_SCHEME_VERSION)
+    return user
 
 
 def grant_credits_to_user(uid, bundle_id, runtime=None):
@@ -162,15 +171,33 @@ def grant_credits_to_user(uid, bundle_id, runtime=None):
         resolved_runtime.logger.warning("Warning: Unknown bundle_id '%s' in grant_credits_to_user", bundle_id)
         return False
 
+    if policy.is_unified_enabled(resolved_runtime) or not isinstance(bundle.get('credits'), dict):
+        return False
     user_ref = resolved_runtime.users_repo.doc_ref(resolved_runtime.db, uid)
-    user_doc = user_ref.get()
-    if not user_doc.exists:
-        user_ref.set(build_default_user_data(uid, '', runtime=resolved_runtime))
 
-    for credit_key, credit_amount in bundle['credits'].items():
-        user_ref.update({credit_key: resolved_runtime.firestore.Increment(credit_amount)})
-        resolved_runtime.logger.info("Granted %s '%s' credits to user %s.", credit_amount, credit_key, uid)
-    return True
+    @resolved_runtime.firestore.transactional
+    def grant(transaction):
+        snapshot = user_ref.get(transaction=transaction)
+        data = snapshot.to_dict() if snapshot.exists else build_default_user_data(uid, '', runtime=resolved_runtime)
+        if not _legacy_writes_allowed(data, resolved_runtime):
+            return False
+        if snapshot.exists:
+            transaction.update(user_ref, {
+                key: resolved_runtime.firestore.Increment(amount) for key, amount in bundle['credits'].items()
+            })
+        else:
+            for key, amount in bundle['credits'].items():
+                data[key] = data.get(key, 0) + amount
+            transaction.set(user_ref, data)
+        return True
+
+    return grant(resolved_runtime.db.transaction())
+
+
+def _legacy_writes_allowed(user_data, runtime):
+    return (isinstance(user_data, dict)
+            and not policy.uses_unified_credits(user_data, runtime)
+            and str(user_data.get('account_status', '') or '').strip().lower() not in {'deleting', 'deleted'})
 
 
 def deduct_credit(uid, credit_type_primary, credit_type_fallback=None, runtime=None):
@@ -182,7 +209,7 @@ def deduct_credit(uid, credit_type_primary, credit_type_fallback=None, runtime=N
         if not snapshot.exists:
             return None
         data = snapshot.to_dict()
-        if str(data.get('account_status', '') or '').strip().lower() == 'deleting':
+        if not _legacy_writes_allowed(data, resolved_runtime):
             return None
         if is_unlimited_for_credit_type(data, credit_type_primary, runtime=resolved_runtime):
             transaction.update(user_ref, {
@@ -218,7 +245,7 @@ def deduct_interview_credit(uid, runtime=None):
         if not snapshot.exists:
             return None
         data = snapshot.to_dict()
-        if str(data.get('account_status', '') or '').strip().lower() == 'deleting':
+        if not _legacy_writes_allowed(data, resolved_runtime):
             return None
         if is_unlimited_for_category(data, 'interview', runtime=resolved_runtime):
             transaction.update(user_ref, {
@@ -282,6 +309,8 @@ def _apply_idempotent_refund(
         if not getattr(user_snapshot, 'exists', False):
             return False
         user_data = user_snapshot.to_dict() or {}
+        if not _legacy_writes_allowed(user_data, resolved_runtime):
+            return False
         delta = target_amount - previous_amount
         updates = {}
         if not is_unlimited_for_credit_type(user_data, credit_type, runtime=resolved_runtime):
@@ -315,6 +344,34 @@ def _apply_idempotent_refund(
         return False
 
 
+def _refund_legacy_without_journal(uid, credit_type, amount, *, adjust_total_processed, runtime):
+    """Retain old-unit compatibility without racing a concurrent conversion."""
+    try:
+        user_ref = runtime.users_repo.doc_ref(runtime.db, uid)
+
+        @runtime.firestore.transactional
+        def refund(transaction):
+            snapshot = user_ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return False
+            data = snapshot.to_dict() or {}
+            if not _legacy_writes_allowed(data, runtime):
+                return False
+            updates = {}
+            if not is_unlimited_for_credit_type(data, credit_type, runtime=runtime):
+                updates[credit_type] = runtime.firestore.Increment(amount)
+            if adjust_total_processed:
+                updates['total_processed'] = runtime.firestore.Increment(-1)
+            if updates:
+                transaction.update(user_ref, updates)
+            return True
+
+        return bool(refund(runtime.db.transaction()))
+    except Exception:
+        runtime.logger.error('Could not apply legacy credit refund.', exc_info=True)
+        return False
+
+
 def refund_credit(uid, credit_type, runtime=None, *, idempotency_key=''):
     resolved_runtime = _resolve_runtime(runtime)
     if not uid or not credit_type:
@@ -333,38 +390,13 @@ def refund_credit(uid, credit_type, runtime=None, *, idempotency_key=''):
             resolved_runtime.logger.info("Refunded '%s' idempotently for user %s.", credit_type, uid)
         return refunded
 
-    try:
-        user_doc = resolved_runtime.users_repo.get_doc(resolved_runtime.db, uid)
-    except Exception:
-        user_doc = None
-    if user_doc is not None and not getattr(user_doc, 'exists', False):
-        resolved_runtime.logger.warning("Skipping refund for credit '%s' on missing user document: %s", credit_type, uid)
-        return False
-
-    try:
-        data = user_doc.to_dict() if user_doc is not None and getattr(user_doc, 'exists', False) else {}
-        if is_unlimited_for_credit_type(data, credit_type, runtime=resolved_runtime):
-            updates = {'total_processed': resolved_runtime.firestore.Increment(-1)}
-        else:
-            updates = {
-                credit_type: resolved_runtime.firestore.Increment(1),
-                'total_processed': resolved_runtime.firestore.Increment(-1),
-            }
-        resolved_runtime.users_repo.update_doc(resolved_runtime.db, uid, updates)
-        resolved_runtime.logger.info("✅ Refunded 1 '%s' credit to user %s due to processing failure.", credit_type, uid)
-        return True
-    except Exception as error:
-        if 'No document to update' in str(error or ''):
-            resolved_runtime.logger.warning("Skipping refund for credit '%s' on missing user document: %s", credit_type, uid)
-            return False
-        resolved_runtime.logger.error("❌ Failed to refund credit '%s' to user %s: %s", credit_type, uid, error)
-        return False
+    return _refund_legacy_without_journal(uid, credit_type, 1, adjust_total_processed=True, runtime=resolved_runtime)
 
 
 def prepare_slides_debit(user_data, amount, runtime=None):
     """Prepare a debit for an existing transaction after all of its reads."""
     resolved_runtime = _resolve_runtime(runtime)
-    if str(user_data.get('account_status', '') or '').strip().lower() == 'deleting':
+    if not _legacy_writes_allowed(user_data, resolved_runtime):
         return None
     if is_unlimited_for_category(user_data, 'slides', runtime=resolved_runtime):
         return {'last_unlimited_credit_used_at': resolved_runtime.time.time()}, 0
@@ -411,36 +443,4 @@ def refund_slides_credits(uid, amount, runtime=None, *, idempotency_key='', idem
         if refunded:
             resolved_runtime.logger.info('Refunded slides credits idempotently for user %s.', uid)
         return refunded
-    try:
-        user_doc = resolved_runtime.users_repo.get_doc(resolved_runtime.db, uid)
-    except Exception:
-        user_doc = None
-    if user_doc is not None and (not getattr(user_doc, 'exists', False)):
-        resolved_runtime.logger.warning(
-            'Skipping slides credit refund for missing user document: %s (amount=%s)',
-            uid,
-            amount,
-        )
-        return False
-    try:
-        data = user_doc.to_dict() if user_doc is not None and getattr(user_doc, 'exists', False) else {}
-        if is_unlimited_for_category(data, 'slides', runtime=resolved_runtime):
-            resolved_runtime.logger.info("✅ Recorded no-op refund for %s unlimited slides credits to user %s.", amount, uid)
-            return True
-        resolved_runtime.users_repo.update_doc(
-            resolved_runtime.db,
-            uid,
-            {'slides_credits': resolved_runtime.firestore.Increment(amount)},
-        )
-        resolved_runtime.logger.info("✅ Refunded %s slides credits to user %s.", amount, uid)
-        return True
-    except Exception as error:
-        if 'No document to update' in str(error or ''):
-            resolved_runtime.logger.warning(
-                'Skipping slides credit refund for missing user document: %s (amount=%s)',
-                uid,
-                amount,
-            )
-            return False
-        resolved_runtime.logger.error("❌ Failed to refund %s slides credits to user %s: %s", amount, uid, error)
-        return False
+    return _refund_legacy_without_journal(uid, 'slides_credits', amount, adjust_total_processed=False, runtime=resolved_runtime)

@@ -69,12 +69,23 @@ class Query:
     def stream(self, transaction=None):
         if transaction is not None:
             assert not transaction.operations
+
+        def matches(data, condition):
+            field, operator, value = condition
+            actual = data.get(field)
+            if operator == '==':
+                return actual == value
+            if operator == 'in':
+                return actual in value
+            if operator == '>':
+                return actual is not None and actual > value
+            raise AssertionError(f'Unsupported query operator: {operator}')
+
         docs = []
         for (collection, key), data in list(self.state.documents.items()):
             if collection != self.collection:
                 continue
-            if all(data.get(field) == value if op == '==' else data.get(field) in value
-                   for field, op, value in self.filters):
+            if all(matches(data, condition) for condition in self.filters):
                 docs.append(self.document(key).get())
         return iter(docs[:self.maximum])
 
@@ -126,7 +137,7 @@ def coding(monkeypatch):
     state.db = SimpleNamespace(collection=lambda name: Query(state, name), transaction=lambda: Transaction(state))
     state.runtime = SimpleNamespace(
         db=state.db, firestore=SimpleNamespace(transactional=transactional, Increment=Increment),
-        repositories=SimpleNamespace(study=study_repo, runtime_jobs=runtime_jobs_repo), users_repo=users_repo, runtime_jobs_repo=runtime_jobs_repo,
+        repositories=SimpleNamespace(study=study_repo, runtime_jobs=runtime_jobs_repo, users=users_repo), users_repo=users_repo, runtime_jobs_repo=runtime_jobs_repo,
         batch_repo=SimpleNamespace(list_batch_jobs_by_uid_and_statuses=lambda *_args, **_kwargs: []),
         time=SimpleNamespace(time=lambda: state.now), jsonify=lambda payload: payload,
         logger=logging.getLogger('test-coding'), client=object(), jobs={}, JOBS_LOCK=RLock(),
@@ -268,15 +279,15 @@ def test_restart_between_debit_and_dispatch_recovers_once(coding):
 
 def test_failed_refund_stays_recoverable_after_restart(coding, monkeypatch):
     run_id = start(coding)
-    refund = interview_coding_runs.credits.refund_slides_credits
-    monkeypatch.setattr(interview_coding_runs.credits, 'refund_slides_credits', lambda *_args, **_kwargs: False)
+    refund = interview_coding_runs.job_charges.refund_component
+    monkeypatch.setattr(interview_coding_runs.job_charges, 'refund_component', lambda *_args, **_kwargs: False)
     assert interview_coding_runs.fail_run(coding.runtime, run_id) is False
     assert coding.docs('interview_ai_coding_runs')[run_id]['status'] == 'refund_pending'
     assert coding.docs('runtime_jobs')[run_id]['status'] == 'processing'
     assert coding.docs('users')['owner']['slides_credits'] == 9
     coding.runtime.jobs.clear()
     coding.now += 181
-    monkeypatch.setattr(interview_coding_runs.credits, 'refund_slides_credits', refund)
+    monkeypatch.setattr(interview_coding_runs.job_charges, 'refund_component', refund)
     assert recovery.recover_stale_runtime_jobs(runtime=coding.runtime) == 1
     assert coding.docs('interview_ai_coding_runs')[run_id]['status'] == 'failed'
     assert coding.docs('users')['owner']['slides_credits'] == 10
@@ -428,7 +439,11 @@ def test_unlimited_run_records_no_debit_and_never_grants_refund(coding):
     coding.documents[('users', 'owner')]['unlimited_credits'] = {'slides': False}
     interview_coding_runs.fail_run(coding.runtime, run_id)
     assert coding.docs('users')['owner']['slides_credits'] == 10
-    assert not coding.docs('credit_refunds')
+    refunds = list(coding.docs('credit_refunds').values())
+    assert len(refunds) == 1 and refunds[0]['amount'] == 0
+    charges = list(coding.docs('credit_charges').values())
+    assert len(charges) == 1
+    assert charges[0]['charged_credits'] == charges[0]['refunded_credits'] == 0
 
 
 def test_owned_status_checks_run_owner_before_recovery(coding, monkeypatch):
@@ -457,15 +472,15 @@ def test_owned_status_recovers_orphan_and_honors_disabled_recovery(coding, monke
 def test_concurrent_refund_attempts_use_one_credit_ledger(coding, monkeypatch):
     run_id = start(coding)
     entered, release = Event(), Event()
-    original = interview_coding_runs.credits.refund_slides_credits
+    original = interview_coding_runs.job_charges.refund_component
     calls = []
     def held(*args, **kwargs):
-        calls.append(kwargs['idempotency_key'])
+        calls.append(args[3])
         if len(calls) == 1:
             entered.set()
             assert release.wait(5)
         return original(*args, **kwargs)
-    monkeypatch.setattr(interview_coding_runs.credits, 'refund_slides_credits', held)
+    monkeypatch.setattr(interview_coding_runs.job_charges, 'refund_component', held)
     with ThreadPoolExecutor(max_workers=1) as executor:
         first = executor.submit(interview_coding_runs.fail_run, coding.runtime, run_id)
         try:

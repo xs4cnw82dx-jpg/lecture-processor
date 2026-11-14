@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES
+from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES, has_pending_credit_refund
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -16,6 +16,8 @@ def _runtime_job_storage_enabled(runtime=None):
 
 
 def _runtime_job_expiration(job_data, runtime):
+    if has_pending_credit_refund(job_data):
+        return None
     if str(job_data.get('status', '') or '').strip().lower() not in TERMINAL_RUNTIME_JOB_STATUSES:
         return None
     ttl = int(getattr(runtime, 'JOB_TTL_SECONDS', 30 * 60) or (30 * 60))
@@ -61,7 +63,9 @@ def _build_runtime_job_payload(job_id, job_data, runtime=None, changed_fields=No
             payload[field] = _runtime_job_sanitize_value(job_data.get(field), runtime=resolved_runtime)
     # Only lifecycle changes carry a deadline. A delayed heartbeat must not
     # clear an expiry written by a newer terminal update.
-    if changed_fields is None or {'status', 'finished_at', 'expires_at_ts'} & set(changed_fields):
+    if changed_fields is None or {
+        'status', 'finished_at', 'expires_at_ts', 'credit_refund_pending', 'extra_slides_refund_pending',
+    } & set(changed_fields):
         payload['expires_at_ts'] = _runtime_job_expiration(job_data, resolved_runtime)
     return payload
 

@@ -143,7 +143,7 @@ def test_fetch_tools_url_text_uses_ip_bound_fetch_target(monkeypatch):
     assert https_handler.registry.resolve("example.com", 443) == ("93.184.216.34",)
 
 
-def test_runtime_job_refund_receipt_accumulates_primary_and_extra_refunds():
+def test_runtime_job_refund_receipt_accumulates_primary_and_extra_refunds(monkeypatch):
     runtime = SimpleNamespace(
         time=SimpleNamespace(time=lambda: 100.0),
         logger=SimpleNamespace(warning=lambda *_args, **_kwargs: None),
@@ -158,6 +158,9 @@ def test_runtime_job_refund_receipt_accumulates_primary_and_extra_refunds():
         },
         "extra_slides_refunded": 0,
     }
+
+    monkeypatch.setattr(upload_batch_support.runtime_jobs_store, "get_job_snapshot",
+                        lambda *_args, **_kwargs: job_snapshot)
 
     primary_updates = upload_batch_support._record_runtime_job_refund(
         runtime,

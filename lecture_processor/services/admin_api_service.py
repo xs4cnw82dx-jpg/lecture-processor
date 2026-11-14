@@ -1,6 +1,8 @@
 """Business logic handlers for admin APIs."""
 
 from datetime import datetime, timezone
+import hashlib
+import json
 
 try:
     from openpyxl import Workbook
@@ -10,7 +12,9 @@ except Exception:
 from lecture_processor.services import admin_dashboard_service
 from lecture_processor.services import admin_support
 from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.shared import sanitize_excel_cell
 from lecture_processor.domains.study import audio as study_audio
 
@@ -89,6 +93,9 @@ def _find_user_doc_by_email(app_ctx, email):
 
 def _serialize_admin_credit_user(app_ctx, uid, user_data):
     user = dict(user_data or {})
+    unified = billing_policy.uses_unified_credits(user, runtime=app_ctx)
+    if unified:
+        user.update(billing_policy.conversion_updates(user))
     user.setdefault('uid', uid)
     email = str(user.get('email', '') or '').strip()
     email_normalized = _normalize_admin_email(user.get('email_normalized') or email)
@@ -101,8 +108,11 @@ def _serialize_admin_credit_user(app_ctx, uid, user_data):
         'interview_credits_short': int(user.get('interview_credits_short', 0) or 0),
         'interview_credits_medium': int(user.get('interview_credits_medium', 0) or 0),
         'interview_credits_long': int(user.get('interview_credits_long', 0) or 0),
+    } if not unified else {
+        field: _to_non_negative_int(user.get(field, 0))
+        for field in billing_policy.LEGACY_FIELD_RATES
     }
-    return {
+    result = {
         'uid': uid,
         'email': email,
         'email_normalized': email_normalized,
@@ -124,11 +134,17 @@ def _serialize_admin_credit_user(app_ctx, uid, user_data):
         'created_at': user.get('created_at', 0),
         'updated_at': user.get('updated_at', 0),
     }
+    if unified:
+        result['credits'] = _unified_balance(user)
+        result['credits_version'] = 2
+        if 'legacy_credits_snapshot' in user:
+            result['legacy_credits_snapshot'] = user['legacy_credits_snapshot']
+    return result
 
 
 def _serialize_admin_credit_grant(doc):
     data = doc.to_dict() or {}
-    return {
+    result = {
         'id': str(getattr(doc, 'id', '') or data.get('grant_id', '') or ''),
         'action': str(data.get('action', '') or ''),
         'uid': str(data.get('uid', '') or ''),
@@ -146,6 +162,12 @@ def _serialize_admin_credit_grant(doc):
         'source': str(data.get('source', 'admin') or 'admin'),
         'created_at': data.get('created_at', 0),
     }
+    if data.get('credit_scheme') == 2:
+        result['credits'] = data.get('credits', 0)
+        result['credit_scheme'] = 2
+    if data.get('request_ref'):
+        result['request_ref'] = data['request_ref']
+    return result
 
 
 def _serialize_admin_credit_record(grant_id, record):
@@ -189,6 +211,8 @@ def _coerce_admin_credit_amounts(payload):
     category_amounts = {}
     for category in billing_credits.CREDIT_CATEGORIES:
         raw_value = source.get(category, 0)
+        if isinstance(raw_value, (bool, float)):
+            raise ValueError(f'{ADMIN_CREDIT_CATEGORY_LABELS[category]} credits must be a whole number.')
         try:
             amount = int(raw_value or 0)
         except Exception:
@@ -227,7 +251,7 @@ def _admin_actor(decoded_token):
 def _target_is_deleting(user_data):
     user = user_data if isinstance(user_data, dict) else {}
     return (
-        str(user.get('account_status', '') or '').strip().lower() == 'deleting'
+        str(user.get('account_status', '') or '').strip().lower() in {'deleting', 'deleted'}
         or bool(user.get('delete_requested_at', 0))
         or bool(user.get('delete_started_at', 0))
     )
@@ -237,20 +261,126 @@ def _note_from_payload(payload):
     return ' '.join(str((payload if isinstance(payload, dict) else {}).get('note', '') or '').split())[:300]
 
 
-def _commit_admin_credit_batch(app_ctx, user_ref, user_updates, grant_ref, grant_record):
-    try:
-        batch = app_ctx.db.batch()
-        batch.update(user_ref, user_updates)
-        batch.set(grant_ref, grant_record)
-        batch.commit()
-        return
-    except AttributeError as error:
-        if '_document_path' not in str(error):
-            raise
-        # Some local harnesses provide lightweight document refs that cannot
-        # be used with Firestore's WriteBatch. Production refs stay atomic.
-        user_ref.update(user_updates)
-        grant_ref.set(grant_record)
+class _AdminCreditError(ValueError):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
+
+
+def _unified_balance(user):
+    balance = user.get('credits')
+    if type(balance) is not int or balance < 0:
+        raise _AdminCreditError('This account has an invalid credit balance.', 503)
+    return balance
+
+
+def _grant_request_amounts(payload):
+    value = payload.get('credits')
+    if isinstance(value, dict):
+        return _coerce_admin_credit_amounts(payload)
+    if type(value) is not int or value <= 0:
+        raise _AdminCreditError('Credits must be a positive whole number.')
+    if value > ADMIN_CREDIT_GRANT_MAX:
+        raise _AdminCreditError(f'Credits cannot exceed {ADMIN_CREDIT_GRANT_MAX:,} in one grant.')
+    return value
+
+
+def _admin_request_ref(request, payload):
+    values = [payload[key] for key in ('ref', 'request_id') if key in payload]
+    if request.headers.get('Idempotency-Key'):
+        values.append(request.headers['Idempotency-Key'])
+    if not values:
+        return ''
+    if any(not isinstance(value, str) or not value.strip() or len(value) > 200 for value in values):
+        raise _AdminCreditError('The request reference must be a nonempty string of at most 200 characters.')
+    values = [value.strip() for value in values]
+    if len(set(values)) != 1:
+        raise _AdminCreditError('The supplied request references do not match.')
+    return values[0]
+
+
+def _apply_admin_credit_mutation(app_ctx, request, uid, decoded, *, unlimited=False):
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        raise _AdminCreditError('Invalid credit request.')
+    amounts = _coerce_admin_unlimited_updates(payload) if unlimited else _grant_request_amounts(payload)
+    actor = _admin_actor(decoded)
+    note = _note_from_payload(payload)
+    request_ref = _admin_request_ref(request, payload)
+    action = 'set_unlimited' if unlimited else 'grant_credits'
+    fingerprint = hashlib.sha256(json.dumps(
+        {'action': action, 'uid': uid, 'admin_uid': actor['admin_uid'], 'amounts': amounts, 'note': note},
+        sort_keys=True, separators=(',', ':'),
+    ).encode()).hexdigest()
+    grant_id = hashlib.sha256(json.dumps([uid, request_ref]).encode()).hexdigest() if request_ref else str(app_ctx.uuid.uuid4())
+    user_ref = app_ctx.repositories.users.doc_ref(app_ctx.db, uid)
+    grant_ref = app_ctx.repositories.admin_credit_grants.doc_ref(app_ctx.db, grant_id)
+
+    @app_ctx.firestore.transactional
+    def mutate(transaction):
+        account_lifecycle.require_account_access(uid, runtime=app_ctx, transaction=transaction)
+        snapshot = user_ref.get(transaction=transaction)
+        grant_snapshot = grant_ref.get(transaction=transaction)
+        if not snapshot.exists:
+            raise _AdminCreditError('No existing user was found for that id.', 404)
+        user = snapshot.to_dict() or {}
+        user.setdefault('uid', uid)
+        if _target_is_deleting(user):
+            raise _AdminCreditError('This account is being deleted, so credits cannot be changed.', 409)
+        if grant_snapshot.exists:
+            record = grant_snapshot.to_dict() or {}
+            if record.get('request_fingerprint') != fingerprint:
+                raise _AdminCreditError('This request reference was already used for a different credit change.', 409)
+            return user, record
+
+        unified = billing_policy.uses_unified_credits(user, runtime=app_ctx)
+        try:
+            updates = billing_policy.conversion_updates(user) if unified else {}
+        except ValueError as error:
+            raise _AdminCreditError('This account has an invalid credit balance.', 503) from error
+        user.update(updates)
+        before = billing_credits.normalize_unlimited_credits(user.get('unlimited_credits'))
+        after = dict(before)
+        internal_credits = {}
+        categories = {}
+        if unlimited:
+            after.update(amounts)
+            updates['unlimited_credits'] = after
+            if unified:
+                _unified_balance(user)
+        elif unified:
+            if isinstance(amounts, dict):
+                raise _AdminCreditError('This account uses unified credits. Supply a single credit amount.')
+            updates['credits'] = _unified_balance(user) + amounts
+            internal_credits = amounts
+        else:
+            if not isinstance(amounts, dict):
+                raise _AdminCreditError('Unified credits are not enabled for this account.')
+            categories = amounts
+            internal_credits = {ADMIN_CREDIT_FIELDS_BY_CATEGORY[key]: amount for key, amount in amounts.items()}
+            updates.update({field: int(user.get(field, 0) or 0) + amount for field, amount in internal_credits.items()})
+        now_ts = _admin_credit_now(app_ctx)
+        email = str(user.get('email', '') or '').strip()
+        email_normalized = _normalize_admin_email(user.get('email_normalized') or email)
+        if email_normalized and user.get('email_normalized') != email_normalized:
+            updates['email_normalized'] = email_normalized
+        updates['updated_at'] = now_ts
+        user.update(updates)
+        record = {
+            'grant_id': grant_id, 'action': action, 'uid': uid, 'email': email,
+            'email_normalized': email_normalized, **actor, 'credits': internal_credits,
+            'credit_categories': categories, 'unlimited_before': before, 'unlimited_after': after,
+            'note': note, 'price_cents': 0, 'currency': 'eur', 'source': 'admin', 'created_at': now_ts,
+        }
+        if unified:
+            record.update(credit_scheme=2, credits=0 if unlimited else amounts)
+        if request_ref:
+            record.update(request_ref=request_ref, request_fingerprint=fingerprint)
+        transaction.update(user_ref, updates)
+        transaction.set(grant_ref, record)
+        return user, record
+
+    return grant_id, mutate(app_ctx.db.transaction())
 
 
 def _coerce_usd_to_eur(payload):
@@ -682,8 +812,12 @@ def admin_user_search(app_ctx, request):
     if not uid:
         uid = str(getattr(user_doc, 'id', '') or '').strip()
 
+    try:
+        user_payload = _serialize_admin_credit_user(app_ctx, uid, user_data)
+    except (ValueError, TypeError):
+        return app_ctx.jsonify({'error': 'This account has an invalid credit balance.'}), 503
     return app_ctx.jsonify({
-        'user': _serialize_admin_credit_user(app_ctx, uid, user_data),
+        'user': user_payload,
         'recent_grants': _list_admin_credit_grants(app_ctx, email=email, limit=20),
     })
 
@@ -698,158 +832,38 @@ def admin_credit_grants(app_ctx, request):
     return app_ctx.jsonify({'grants': _list_admin_credit_grants(app_ctx, email=email, uid=uid, limit=limit)})
 
 
-def admin_grant_user_credits(app_ctx, request, uid):
+def _admin_credit_mutation_response(app_ctx, request, uid, *, unlimited=False):
     decoded, error_response, status = _require_admin(app_ctx, request)
     if error_response is not None:
         return error_response, status
     safe_uid = str(uid or '').strip()
     if not safe_uid:
         return app_ctx.jsonify({'error': 'Missing user id.'}), 400
-
-    payload = request.get_json(silent=True) or {}
     try:
-        category_amounts = _coerce_admin_credit_amounts(payload)
+        grant_id, (user, record) = _apply_admin_credit_mutation(app_ctx, request, safe_uid, decoded, unlimited=unlimited)
+    except _AdminCreditError as error:
+        return app_ctx.jsonify({'error': str(error)}), error.status
+    except account_lifecycle.AccountUnavailableError as error:
+        status = 503 if str(error) == 'Account state is unavailable.' else 409
+        return app_ctx.jsonify({'error': 'This account is unavailable, so credits cannot be changed.'}), status
     except ValueError as error:
         return app_ctx.jsonify({'error': str(error)}), 400
-
-    grant_id = str(app_ctx.uuid.uuid4())
-    now_ts = _admin_credit_now(app_ctx)
-    actor = _admin_actor(decoded)
-    note = _note_from_payload(payload)
-    user_ref = app_ctx.repositories.users.doc_ref(app_ctx.db, safe_uid)
-    grant_ref = app_ctx.repositories.admin_credit_grants.doc_ref(app_ctx.db, grant_id)
-
-    try:
-        snapshot = user_ref.get()
-        if not snapshot.exists:
-            return app_ctx.jsonify({'error': 'No existing user was found for that id.'}), 404
-        user = snapshot.to_dict() or {}
-        user.setdefault('uid', safe_uid)
-        if _target_is_deleting(user):
-            return app_ctx.jsonify({'error': 'This account is being deleted, so credits cannot be changed.'}), 409
-
-        internal_credits = {
-            ADMIN_CREDIT_FIELDS_BY_CATEGORY[category]: amount
-            for category, amount in category_amounts.items()
-        }
-        updates = {
-            field: app_ctx.firestore.Increment(amount)
-            for field, amount in internal_credits.items()
-        }
-        updates['updated_at'] = now_ts
-
-        email = str(user.get('email', '') or '').strip()
-        email_normalized = _normalize_admin_email(user.get('email_normalized') or email)
-        if email_normalized and user.get('email_normalized') != email_normalized:
-            updates['email_normalized'] = email_normalized
-            user['email_normalized'] = email_normalized
-
-        for field, amount in internal_credits.items():
-            user[field] = int(user.get(field, 0) or 0) + amount
-        user['updated_at'] = now_ts
-
-        record = {
-            'grant_id': grant_id,
-            'action': 'grant_credits',
-            'uid': safe_uid,
-            'email': email,
-            'email_normalized': email_normalized,
-            **actor,
-            'credits': internal_credits,
-            'credit_categories': dict(category_amounts),
-            'unlimited_before': billing_credits.normalize_unlimited_credits(user.get('unlimited_credits')),
-            'unlimited_after': billing_credits.normalize_unlimited_credits(user.get('unlimited_credits')),
-            'note': note,
-            'price_cents': 0,
-            'currency': 'eur',
-            'source': 'admin',
-            'created_at': now_ts,
-        }
-        _commit_admin_credit_batch(app_ctx, user_ref, updates, grant_ref, record)
-        updated_user = user
     except Exception as error:
-        app_ctx.logger.error('Admin credit grant failed for %s: %s', safe_uid, error)
-        return app_ctx.jsonify({'error': 'Could not grant credits right now.'}), 500
-
+        app_ctx.logger.error('Admin credit change failed for %s: %s', safe_uid, error)
+        message = 'Could not update unlimited access right now.' if unlimited else 'Could not grant credits right now.'
+        return app_ctx.jsonify({'error': message}), 500
     return app_ctx.jsonify({
-        'ok': True,
-        'user': _serialize_admin_credit_user(app_ctx, safe_uid, updated_user),
+        'ok': True, 'user': _serialize_admin_credit_user(app_ctx, safe_uid, user),
         'grant': _serialize_admin_credit_record(grant_id, record),
     })
+
+
+def admin_grant_user_credits(app_ctx, request, uid):
+    return _admin_credit_mutation_response(app_ctx, request, uid)
 
 
 def admin_update_user_unlimited(app_ctx, request, uid):
-    decoded, error_response, status = _require_admin(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
-    safe_uid = str(uid or '').strip()
-    if not safe_uid:
-        return app_ctx.jsonify({'error': 'Missing user id.'}), 400
-
-    payload = request.get_json(silent=True) or {}
-    try:
-        unlimited_updates = _coerce_admin_unlimited_updates(payload)
-    except ValueError as error:
-        return app_ctx.jsonify({'error': str(error)}), 400
-
-    grant_id = str(app_ctx.uuid.uuid4())
-    now_ts = _admin_credit_now(app_ctx)
-    actor = _admin_actor(decoded)
-    note = _note_from_payload(payload)
-    user_ref = app_ctx.repositories.users.doc_ref(app_ctx.db, safe_uid)
-    grant_ref = app_ctx.repositories.admin_credit_grants.doc_ref(app_ctx.db, grant_id)
-
-    try:
-        snapshot = user_ref.get()
-        if not snapshot.exists:
-            return app_ctx.jsonify({'error': 'No existing user was found for that id.'}), 404
-        user = snapshot.to_dict() or {}
-        user.setdefault('uid', safe_uid)
-        if _target_is_deleting(user):
-            return app_ctx.jsonify({'error': 'This account is being deleted, so credits cannot be changed.'}), 409
-
-        before = billing_credits.normalize_unlimited_credits(user.get('unlimited_credits'))
-        after = dict(before)
-        after.update(unlimited_updates)
-        updates = {f'unlimited_credits.{category}': bool(value) for category, value in unlimited_updates.items()}
-        updates['updated_at'] = now_ts
-
-        email = str(user.get('email', '') or '').strip()
-        email_normalized = _normalize_admin_email(user.get('email_normalized') or email)
-        if email_normalized and user.get('email_normalized') != email_normalized:
-            updates['email_normalized'] = email_normalized
-            user['email_normalized'] = email_normalized
-
-        user['unlimited_credits'] = after
-        user['updated_at'] = now_ts
-        record = {
-            'grant_id': grant_id,
-            'action': 'set_unlimited',
-            'uid': safe_uid,
-            'email': email,
-            'email_normalized': email_normalized,
-            **actor,
-            'credits': {},
-            'credit_categories': {},
-            'unlimited_before': before,
-            'unlimited_after': after,
-            'note': note,
-            'price_cents': 0,
-            'currency': 'eur',
-            'source': 'admin',
-            'created_at': now_ts,
-        }
-        _commit_admin_credit_batch(app_ctx, user_ref, updates, grant_ref, record)
-        updated_user = user
-    except Exception as error:
-        app_ctx.logger.error('Admin unlimited credit update failed for %s: %s', safe_uid, error)
-        return app_ctx.jsonify({'error': 'Could not update unlimited access right now.'}), 500
-
-    return app_ctx.jsonify({
-        'ok': True,
-        'user': _serialize_admin_credit_user(app_ctx, safe_uid, updated_user),
-        'grant': _serialize_admin_credit_record(grant_id, record),
-    })
+    return _admin_credit_mutation_response(app_ctx, request, uid, unlimited=True)
 
 
 def admin_cleanup_stale_study_audio(app_ctx, request):

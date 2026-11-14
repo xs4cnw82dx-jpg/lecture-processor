@@ -85,6 +85,10 @@ def test_tools_extract_job_redacts_url_and_prompt_from_persisted_metadata(monkey
         lambda job_id, runtime=None, **fields: progress_updates.append((job_id, fields)),
     )
 
+    # The worker starts from an existing legacy runtime admission.
+    monkeypatch.setattr(runtime_jobs_store, 'get_job_snapshot',
+                        lambda *_args, **_kwargs: {'status': 'queued', 'user_id': 'uid-1'})
+
     staged_input = tools_extraction_service._StagedToolInput(
         source_type='url',
         source_url=raw_url,

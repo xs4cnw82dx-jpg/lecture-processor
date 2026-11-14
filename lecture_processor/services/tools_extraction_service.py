@@ -9,6 +9,7 @@ from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -258,8 +259,12 @@ def tools_extract(app_ctx, request):
         )
 
     user = app_ctx.get_or_create_user(uid, email)
-    if not billing_credits.has_category_credit(user, 'slides', runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'No text extraction credits remaining. Please purchase more credits.'}), 402
+    credit_error, credit_status = job_charges.credit_preflight_error(
+        user, {'primary': {'action': 'tools_extraction', 'units': 1}},
+        legacy_checks=[('slides', 1, 'No text extraction credits remaining. Please purchase more credits.')], runtime=app_ctx,
+    )
+    if credit_error:
+        return app_ctx.jsonify(credit_error), credit_status
 
     job_id = str(app_ctx.uuid.uuid4())
     cleanup_paths = ()
@@ -296,13 +301,17 @@ def tools_extract(app_ctx, request):
             app_ctx.cleanup_files(list(cleanup_paths or []), [])
             return app_ctx.jsonify({'error': 'Could not prepare tools extraction input.'}), 400
 
-        deducted_credit = billing_credits.deduct_credit(uid, 'slides_credits', runtime=app_ctx)
-        if not deducted_credit:
+        receipt, credit_error, credit_status = job_charges.reserve_runtime_job(
+            uid, job_id, f'tools-{staged_input.source_type}',
+            {'primary': {'action': 'tools_extraction', 'units': 1}}, job_scope='tools', runtime=app_ctx,
+        )
+        if credit_error:
             app_ctx.cleanup_files(list(cleanup_paths or []), [])
-            return app_ctx.jsonify({'error': 'No text extraction credits remaining.'}), 402
+            return app_ctx.jsonify(credit_error), credit_status
+        deducted_credit = job_charges.primary_credit_type(receipt)
 
         try:
-            runtime_jobs_store.set_job(
+            job_charges.set_admitted_job(
                 job_id,
                 _tools_job_payload(
                     app_ctx,
@@ -354,6 +363,10 @@ def tools_extract(app_ctx, request):
 
 
 def _set_tools_job_progress(app_ctx, job_id: str, *, step: int, description: str, status: str = 'processing', **extra_fields):
+    current = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
+    if current.get('charge_ref'):
+        extra_fields.update(job_charges.receipt_fields(current['billing_receipt']))
+        extra_fields['credit_refunded'] = current.get('refunded_credits', 0) > 0
     runtime_jobs_store.update_job_fields(
         job_id,
         runtime=app_ctx,
@@ -381,6 +394,8 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
     )
 
     try:
+        if not job_charges.begin_runtime_job(job_id, runtime=app_ctx):
+            return
         _set_tools_job_progress(
             app_ctx,
             job_id,
@@ -587,6 +602,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 'prompt_source': prompt_source,
                 'custom_prompt_length': len(custom_prompt),
                 'started_at': started_at_ts,
+                **job_charges.runtime_receipt_fields(job_id, runtime=app_ctx),
             },
             app_ctx.time.time(),
         )
@@ -617,14 +633,19 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
         source_type = staged_input.source_type or 'unknown'
         provider_error_code = ai_provider.classify_provider_error_code(error, runtime=app_ctx)
         app_ctx.logger.exception("Tools extraction failed for user %s source=%s", uid, source_type)
+        refund_settled = False
         if deducted_credit and not refunded_credit:
-            refunded_credit, credit_refund_method = upload_api_service._attempt_credit_refund(
+            refund_settled, credit_refund_method = upload_api_service._attempt_credit_refund(
                 app_ctx,
                 uid,
                 deducted_credit,
                 expected_floor=user_text_credits_before if deducted_credit == 'slides_credits' else None,
                 idempotency_key=f'runtime-job:{job_id}:primary',
             )
+            refunded_credit = refund_settled
+            receipt_fields = job_charges.runtime_receipt_fields(job_id, runtime=app_ctx)
+            if receipt_fields:
+                refunded_credit = receipt_fields['credit_refunded']
         retry_attempts_total = tools_extraction_support.sum_retry_attempts(retry_tracker)
         analytics_events.log_analytics_event(
             'tools_extract_failed',
@@ -676,6 +697,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 'custom_prompt_length': len(staged_input.custom_prompt),
                 'credit_refund_method': credit_refund_method,
                 'started_at': started_at_ts,
+                **job_charges.runtime_receipt_fields(job_id, runtime=app_ctx),
             },
             app_ctx.time.time(),
         )
@@ -694,6 +716,8 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             provider_error_code=provider_error_code,
             retry_attempts=retry_attempts_total,
             credit_refunded=bool(refunded_credit),
+            credit_refund_pending=bool(deducted_credit and not refund_settled),
+            credit_refund_error='credit_refund_failed' if deducted_credit and not refund_settled else '',
             billing_receipt={
                 'charged': {deducted_credit: 1} if deducted_credit else {},
                 'refunded': {deducted_credit: 1} if (deducted_credit and refunded_credit) else {},

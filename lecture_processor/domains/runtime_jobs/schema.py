@@ -11,6 +11,10 @@ from typing import Any, Protocol, TypedDict
 TERMINAL_RUNTIME_JOB_STATUSES = frozenset({'complete', 'completed', 'error'})
 
 
+def has_pending_credit_refund(job_data):
+    return bool(job_data.get('credit_refund_pending') or job_data.get('extra_slides_refund_pending'))
+
+
 class RuntimeJobRecord(TypedDict, total=False):
     job_id: str
     status: str
@@ -36,6 +40,13 @@ class RuntimeJobRecord(TypedDict, total=False):
     prompt_source: str
     custom_prompt_length: int
     billing_receipt: dict[str, Any]
+    credit_scheme: int
+    charge_ref: str
+    charged_credits: int
+    refunded_credits: int
+    credit_admission_state: str
+    credit_refund_pending: bool
+    credit_refund_error: str
     export_path: str
     download_name: str
 
@@ -56,11 +67,14 @@ PERSISTED_RUNTIME_JOB_FIELDS = frozenset({
     'status', 'step', 'step_description', 'total_steps', 'mode', 'job_scope',
     'tool_source_type', 'tool_input_name', 'user_id', 'user_email',
     'credit_deducted', 'credit_refunded', 'credit_refund_method',
+    'credit_refund_pending', 'credit_refund_error',
     'started_at', 'finished_at', 'expires_at_ts', 'result', 'slide_text', 'transcript',
     'flashcards', 'test_questions', 'flashcard_selection', 'question_selection',
     'study_features', 'output_language', 'study_generation_error',
     'study_pack_id', 'study_pack_title', 'folder_id', 'folder_name', 'error',
     'billing_receipt', 'interview_features', 'interview_features_successful',
+    'credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits',
+    'credit_admission_state',
     'interview_summary', 'interview_sections', 'interview_combined',
     'interview_features_cost', 'extra_slides_refunded',
     'extra_slides_refund_pending', 'audio_storage_key', 'notes_audio_map',

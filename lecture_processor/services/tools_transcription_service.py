@@ -5,7 +5,7 @@ from __future__ import annotations
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.analytics import events as analytics_events
-from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -114,8 +114,12 @@ def create_general_transcription(app_ctx, request):
 
     try:
         user = app_ctx.get_or_create_user(uid, email)
-        if not billing_credits.has_category_credit(user, 'interview', runtime=app_ctx):
-            return app_ctx.jsonify({'error': 'No interview credits remaining. Please purchase more credits.'}), 402
+        credit_error, credit_status = job_charges.credit_preflight_error(
+            user, {'primary': {'action': 'tools_transcription', 'units': 1}},
+            legacy_checks=[('interview', 1, 'No interview credits remaining. Please purchase more credits.')], runtime=app_ctx,
+        )
+        if credit_error:
+            return app_ctx.jsonify(credit_error), credit_status
 
         uploaded_audio_file = request.files.get('audio')
         if not uploaded_audio_file or not str(uploaded_audio_file.filename or '').strip():
@@ -168,13 +172,17 @@ def create_general_transcription(app_ctx, request):
             app_ctx.cleanup_files([audio_path], [])
             return ai_unavailable
 
-        deducted_credit = billing_credits.deduct_interview_credit(uid, runtime=app_ctx)
-        if not deducted_credit:
+        receipt, credit_error, credit_status = job_charges.reserve_runtime_job(
+            uid, job_id, 'tools-transcription', {'primary': {'action': 'tools_transcription', 'units': 1}},
+            job_scope='tools', runtime=app_ctx,
+        )
+        if credit_error:
             app_ctx.cleanup_files([audio_path], [])
-            return app_ctx.jsonify({'error': 'No interview credits remaining.'}), 402
+            return app_ctx.jsonify(credit_error), credit_status
+        deducted_credit = job_charges.primary_credit_type(receipt)
 
         try:
-            runtime_jobs_store.set_job(
+            job_charges.set_admitted_job(
                 job_id,
                 {
                     'status': 'queued',
@@ -245,6 +253,8 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
     failed_stage = 'initialization'
 
     try:
+        if not job_charges.begin_runtime_job(job_id, runtime=app_ctx):
+            return
         set_fields(status='processing', step=1, step_description='Preparing audio…')
 
         converted_audio_path, converted = app_ctx.convert_audio_to_mp3_with_ytdlp(audio_path)
@@ -310,24 +320,21 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
         uid = failed_job.get('user_id')
         credit_type = failed_job.get('credit_deducted')
         if credit_type:
-            refunded = bool(billing_credits.refund_credit(
-                uid,
-                credit_type,
-                runtime=app_ctx,
-                idempotency_key=f'runtime-job:{job_id}:primary',
+            refunded = bool(job_charges.refund_component(
+                failed_job, 'primary', 1, f'runtime-job:{job_id}:primary',
+                legacy_credit_type=credit_type, legacy_charged_units=1, processed_count=1, runtime=app_ctx,
             ))
-            failed_job = get_fields()
             if refunded:
                 billing_receipts.add_job_credit_refund(failed_job, credit_type, 1, runtime=app_ctx)
-                failed_job['credit_refunded'] = True
-                failed_job.pop('credit_refund_pending', None)
-                failed_job.pop('credit_refund_error', None)
+                failed_job['credit_refunded'] = failed_job.get('refunded_credits', 0) > 0 if failed_job.get('charge_ref') else True
+                failed_job['credit_refund_pending'] = False
+                failed_job['credit_refund_error'] = ''
             else:
                 failed_job['credit_refunded'] = False
                 failed_job['credit_refund_pending'] = True
                 failed_job['credit_refund_error'] = 'credit_refund_failed'
                 app_ctx.logger.warning('General transcription credit refund failed for job %s and user %s', job_id, uid)
-            runtime_jobs_store.set_job(job_id, failed_job, runtime=app_ctx)
+            job_charges.set_admitted_job(job_id, failed_job, runtime=app_ctx)
     finally:
         app_ctx.cleanup_files(local_paths, gemini_files)
         finished_at = app_ctx.time.time()

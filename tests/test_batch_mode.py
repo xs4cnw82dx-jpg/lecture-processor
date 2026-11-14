@@ -18,6 +18,7 @@ from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 from lecture_processor.services import upload_batch_service
 from tests.runtime_test_support import get_test_core
+from tests.credit_test_support import make_credit_runtime
 
 core = get_test_core()
 
@@ -39,6 +40,24 @@ class _Capture:
     def __init__(self):
         self.batch_payload = None
         self.rows = None
+
+    def load(self, batch_id):
+        self.batch_payload = core.batch_repo.get_batch_job_doc(core.db, batch_id).to_dict()
+        self.rows = [doc.to_dict() for doc in core.batch_repo.list_batch_rows(core.db, batch_id)]
+
+
+def _install_batch_credit_store(monkeypatch, user=None):
+    user = user if user is not None else core.get_or_create_user('u-batch', 'batch@example.com')
+    runtime, store = make_credit_runtime(users={'u-batch': {
+        'uid': 'u-batch', 'account_status': 'active', 'total_processed': 0, **user,
+    }}, unified_enabled=False)
+    monkeypatch.setattr(core, 'db', runtime.db)
+    monkeypatch.setattr(core, 'UNIFIED_CREDITS_ENABLED', False)
+    monkeypatch.setattr(core.firestore, 'transactional', runtime.firestore.transactional)
+    monkeypatch.setattr(core.firestore, 'Increment', runtime.firestore.Increment)
+    monkeypatch.setattr(core, 'get_or_create_user', lambda uid, _email: store.docs('users')[uid])
+    monkeypatch.setattr(core, 'submit_batch_background_job', lambda *_args, **_kwargs: None)
+    return store
 
 
 class _SimpleDocx:
@@ -257,9 +276,9 @@ def test_batch_submit_failure_after_persistence_marks_rows_refunded(allow_accoun
             'preferred_output_language_custom': '',
         },
     )
+    credit_store = _install_batch_credit_store(monkeypatch)
     monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, job_id: (f'{job_id}.pdf', None))
     monkeypatch.setattr(core, 'get_saved_file_size', lambda _path: 1024)
-    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda uid, credit_type, runtime=None: 'slides_credits')
     monkeypatch.setattr(
         core,
         'submit_batch_background_job',
@@ -283,12 +302,17 @@ def test_batch_submit_failure_after_persistence_marks_rows_refunded(allow_accoun
 
     assert response.status_code == 400
     runtime = client.application.extensions['lecture_processor']['runtime']
-    batch_id = next(iter(runtime._BATCH_JOBS_MEMORY))
+    batch_id = next(iter(credit_store.docs('batch_jobs')))
     batch = batch_orchestrator.get_batch(batch_id, runtime=runtime)
     rows = batch_orchestrator.list_batch_rows(batch_id, runtime=runtime)
     assert batch['status'] == 'error'
     assert all(row['status'] == 'error' for row in rows)
     assert all(row['credit_refunded'] is True for row in rows)
+    assert credit_store.docs('users')['u-batch']['slides_credits'] == 2
+    assert credit_store.docs('users')['u-batch']['total_processed'] == 0
+    assert len(credit_store.docs('credit_charges')) == 2
+    assert len(credit_store.docs('credit_refunds')) == 2
+    assert all(item['refunded_credits'] == 1 for item in credit_store.docs('credit_charges').values())
 
 
 def test_batch_create_deduplicates_client_submission_id(allow_account_writes, client, monkeypatch):
@@ -383,17 +407,13 @@ def test_batch_create_slides_only_contract(allow_account_writes, client, monkeyp
             'preferred_output_language_custom': '',
         },
     )
+    credit_store = _install_batch_credit_store(monkeypatch)
 
     monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, _job_id: ('test-slides.pdf', None))
-    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda uid, credit_type, runtime=None: 'slides_credits')
 
     capture = _Capture()
 
-    def _fake_create_batch(batch_payload, rows, runtime=None):
-        capture.batch_payload = dict(batch_payload)
-        capture.rows = list(rows)
 
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
     submitted = {}
     monkeypatch.setattr(
@@ -422,6 +442,7 @@ def test_batch_create_slides_only_contract(allow_account_writes, client, monkeyp
     assert response.status_code == 200
     payload = response.get_json()
     assert payload.get('batch_id')
+    capture.load(payload['batch_id'])
     assert capture.batch_payload is not None
     assert capture.batch_payload.get('mode') == 'slides-only'
     assert capture.batch_payload.get('total_rows') == 2
@@ -435,6 +456,9 @@ def test_batch_create_slides_only_contract(allow_account_writes, client, monkeyp
     assert submitted['func'] is batch_orchestrator.process_batch_job
     submitted_runtime = submitted['kwargs']['runtime']
     assert getattr(submitted_runtime, 'core', submitted_runtime) is core
+    assert credit_store.docs('users')['u-batch']['slides_credits'] == 0
+    assert len(credit_store.docs('credit_charges')) == 2
+    assert all(row['billing_receipt']['charged'] == {'slides_credits': 1} for row in capture.rows)
 
 
 def test_instant_batch_create_accepts_all_modes_with_instant_metadata(allow_account_writes, client, monkeypatch):
@@ -459,20 +483,15 @@ def test_instant_batch_create_accepts_all_modes_with_instant_metadata(allow_acco
             'preferred_output_language_custom': '',
         },
     )
+    credit_store = _install_batch_credit_store(monkeypatch)
     monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, job_id: (f'{job_id}.pdf', None))
     monkeypatch.setattr(core, 'get_saved_file_size', lambda _path: 128)
     monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
-    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda uid, *credit_types, runtime=None: str(credit_types[0]))
-    monkeypatch.setattr(billing_credits, 'deduct_interview_credit', lambda uid, runtime=None: 'interview_credits_short')
-    monkeypatch.setattr(billing_credits, 'deduct_slides_credits', lambda uid, amount, runtime=None: True)
 
     created = []
     submitted = []
 
-    def _fake_create_batch(batch_payload, rows, runtime=None):
-        created.append((dict(batch_payload), list(rows)))
 
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(
         core,
         'submit_batch_background_job',
@@ -543,6 +562,9 @@ def test_instant_batch_create_accepts_all_modes_with_instant_metadata(allow_acco
         data.update(config['files'])
         response = client.post('/api/instant-batch/jobs', data=data, content_type='multipart/form-data')
         assert response.status_code == 200
+        capture = _Capture()
+        capture.load(response.get_json()['batch_id'])
+        created.append((capture.batch_payload, capture.rows))
 
     assert len(created) == 5
     assert len(submitted) == 5
@@ -556,6 +578,13 @@ def test_instant_batch_create_accepts_all_modes_with_instant_metadata(allow_acco
         assert all(row.get('processing_strategy') == 'instant' for row in rows)
         assert all(row.get('billing_mode') == 'instant_batch' for row in rows)
     assert all(item['func'] is instant_batch_orchestrator.process_instant_batch_job for item in submitted)
+    user = credit_store.docs('users')['u-batch']
+    assert user['lecture_credits_standard'] == 16
+    assert user['slides_credits'] == 18
+    assert user['interview_credits_short'] == 16
+    assert user['total_processed'] == 10
+    assert len(credit_store.docs('credit_charges')) == 10
+    assert credit_store.docs('credit_refunds') == {}
 
 
 def test_instant_batch_rejects_more_than_twenty_rows(allow_account_writes, client, monkeypatch):
@@ -590,18 +619,14 @@ def test_batch_create_lecture_notes_preserves_row_study_override_contract(allow_
             'preferred_output_language_custom': '',
         },
     )
+    credit_store = _install_batch_credit_store(monkeypatch)
 
     monkeypatch.setattr(core, 'resolve_uploaded_slides_to_pdf', lambda uploaded_file, _job_id: ('lecture-slides.pdf', None))
     monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
-    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda *args, **kwargs: 'lecture_credits_standard')
 
     capture = _Capture()
 
-    def _fake_create_batch(batch_payload, rows, runtime=None):
-        capture.batch_payload = dict(batch_payload)
-        capture.rows = list(rows)
 
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
 
     rows = [
@@ -639,6 +664,7 @@ def test_batch_create_lecture_notes_preserves_row_study_override_contract(allow_
     )
 
     assert response.status_code == 200
+    capture.load(response.get_json()['batch_id'])
     assert capture.batch_payload is not None
     assert capture.batch_payload.get('mode') == 'lecture-notes'
     assert isinstance(capture.rows, list)
@@ -649,6 +675,9 @@ def test_batch_create_lecture_notes_preserves_row_study_override_contract(allow_
     assert capture.rows[1].get('study_features') == 'both'
     assert capture.rows[1].get('flashcard_selection') == '20'
     assert capture.rows[1].get('question_selection') == '10'
+    assert credit_store.docs('users')['u-batch']['lecture_credits_standard'] == 0
+    assert len(credit_store.docs('credit_charges')) == 2
+    assert all(item['charged'] == {'lecture_credits_standard': 1} for item in credit_store.docs('credit_charges').values())
 
 
 def test_batch_create_interview_accepts_empty_extras_by_default(allow_account_writes, client, monkeypatch):
@@ -671,20 +700,11 @@ def test_batch_create_interview_accepts_empty_extras_by_default(allow_account_wr
             'preferred_output_language_custom': '',
         },
     )
-    monkeypatch.setattr(billing_credits, 'deduct_interview_credit', lambda uid, runtime=None: 'interview_credits_short')
-    monkeypatch.setattr(
-        billing_credits,
-        'deduct_slides_credits',
-        lambda uid, amount, runtime=None: (_ for _ in ()).throw(AssertionError('No extra text credits should be charged for [] extras')),
-    )
+    credit_store = _install_batch_credit_store(monkeypatch)
 
     capture = _Capture()
 
-    def _fake_create_batch(batch_payload, rows, runtime=None):
-        capture.batch_payload = dict(batch_payload)
-        capture.rows = list(rows)
 
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
 
     rows = [
@@ -704,6 +724,7 @@ def test_batch_create_interview_accepts_empty_extras_by_default(allow_account_wr
     )
 
     assert response.status_code == 200
+    capture.load(response.get_json()['batch_id'])
     assert capture.batch_payload is not None
     assert capture.batch_payload.get('mode') == 'interview'
     assert isinstance(capture.rows, list)
@@ -712,6 +733,10 @@ def test_batch_create_interview_accepts_empty_extras_by_default(allow_account_wr
     assert capture.rows[0].get('interview_features_cost') == 0
     assert capture.rows[1].get('interview_features') == []
     assert capture.rows[1].get('interview_features_cost') == 0
+    assert credit_store.docs('users')['u-batch']['interview_credits_short'] == 0
+    assert len(credit_store.docs('credit_charges')) == 2
+    assert all(item['charged'] == {'interview_credits_short': 1} for item in credit_store.docs('credit_charges').values())
+    assert credit_store.docs('users')['u-batch'].get('slides_credits', 0) == 0
 
 
 def test_batch_create_audio_transcription_uses_interview_credits_without_study_tools(allow_account_writes, client, monkeypatch):
@@ -734,26 +759,12 @@ def test_batch_create_audio_transcription_uses_interview_credits_without_study_t
             'preferred_output_language_custom': '',
         },
     )
+    credit_store = _install_batch_credit_store(monkeypatch)
     monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
-    monkeypatch.setattr(billing_credits, 'deduct_interview_credit', lambda uid, runtime=None: 'interview_credits_short')
-    monkeypatch.setattr(
-        billing_credits,
-        'deduct_credit',
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('Audio transcription batches should not charge lecture or slides credits')),
-    )
-    monkeypatch.setattr(
-        billing_credits,
-        'deduct_slides_credits',
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('Audio transcription batches should not charge study-tool credits')),
-    )
 
     capture = _Capture()
 
-    def _fake_create_batch(batch_payload, rows, runtime=None):
-        capture.batch_payload = dict(batch_payload)
-        capture.rows = list(rows)
 
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
 
     rows = [
@@ -782,6 +793,7 @@ def test_batch_create_audio_transcription_uses_interview_credits_without_study_t
     )
 
     assert response.status_code == 200
+    capture.load(response.get_json()['batch_id'])
     assert capture.batch_payload is not None
     assert capture.batch_payload.get('mode') == 'audio-transcription'
     assert capture.batch_payload.get('output_language') == 'Italian'
@@ -795,6 +807,11 @@ def test_batch_create_audio_transcription_uses_interview_credits_without_study_t
     assert capture.rows[0].get('credit_deducted') == 'interview_credits_short'
     assert capture.rows[0].get('source_type') == 'upload'
     assert capture.rows[1].get('study_features') == 'none'
+    assert credit_store.docs('users')['u-batch']['interview_credits_short'] == 0
+    assert len(credit_store.docs('credit_charges')) == 2
+    assert all(item['charged'] == {'interview_credits_short': 1} for item in credit_store.docs('credit_charges').values())
+    assert credit_store.docs('users')['u-batch'].get('slides_credits', 0) == 0
+    assert credit_store.docs('users')['u-batch'].get('lecture_credits_standard', 0) == 0
 
 
 def test_batch_create_text_combine_accepts_mixed_txt_inputs_with_lecture_credits(allow_account_writes, client, monkeypatch):
@@ -815,30 +832,11 @@ def test_batch_create_text_combine_accepts_mixed_txt_inputs_with_lecture_credits
             'preferred_output_language_custom': '',
         },
     )
-    deducted = []
-    monkeypatch.setattr(
-        billing_credits,
-        'deduct_credit',
-        lambda uid, primary, fallback=None, runtime=None: deducted.append((primary, fallback)) or 'lecture_credits_standard',
-    )
-    monkeypatch.setattr(
-        billing_credits,
-        'deduct_interview_credit',
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('Text combine should not charge interview credits')),
-    )
-    monkeypatch.setattr(
-        billing_credits,
-        'deduct_slides_credits',
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('Text combine should not charge text extraction credits')),
-    )
+    credit_store = _install_batch_credit_store(monkeypatch)
 
     capture = _Capture()
 
-    def _fake_create_batch(batch_payload, rows, runtime=None):
-        capture.batch_payload = dict(batch_payload)
-        capture.rows = list(rows)
 
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
 
     rows = [
@@ -864,21 +862,22 @@ def test_batch_create_text_combine_accepts_mixed_txt_inputs_with_lecture_credits
     )
 
     assert response.status_code == 200
+    capture.load(response.get_json()['batch_id'])
     assert capture.batch_payload.get('mode') == 'text-combine'
     assert capture.batch_payload.get('output_language') == 'Dutch'
     assert capture.batch_payload.get('study_defaults', {}).get('study_features') == 'none'
     assert capture.batch_payload.get('export_options') == {'include_combined_docx': True}
-    assert deducted == [
-        ('lecture_credits_standard', 'lecture_credits_extended'),
-        ('lecture_credits_standard', 'lecture_credits_extended'),
-        ('lecture_credits_standard', 'lecture_credits_extended'),
-    ]
     assert [row.get('text_input_mode') for row in capture.rows] == ['both', 'transcript-only', 'slides-only']
     assert [row.get('source_type') for row in capture.rows] == ['text-upload', 'text-upload', 'text-upload']
     assert capture.rows[0].get('slide_text').startswith('Slide één')
     assert capture.rows[0].get('transcript') == 'Transcript één'
     assert capture.rows[0].get('study_features') == 'none'
     assert capture.rows[0].get('credit_deducted') == 'lecture_credits_standard'
+    assert credit_store.docs('users')['u-batch']['lecture_credits_standard'] == 0
+    assert len(credit_store.docs('credit_charges')) == 3
+    assert all(item['charged'] == {'lecture_credits_standard': 1} for item in credit_store.docs('credit_charges').values())
+    assert credit_store.docs('users')['u-batch'].get('interview_credits_short', 0) == 0
+    assert credit_store.docs('users')['u-batch'].get('slides_credits', 0) == 0
 
 
 def test_batch_create_text_combine_rejects_missing_txt_inputs(allow_account_writes, client, monkeypatch):
@@ -1085,6 +1084,7 @@ def test_batch_direct_url_redacts_source_url_and_defers_download(allow_account_w
             'preferred_output_language_custom': '',
         },
     )
+    credit_store = _install_batch_credit_store(monkeypatch)
     monkeypatch.setattr(
         upload_import_audio,
         'validate_video_import_fetch_target',
@@ -1108,14 +1108,9 @@ def test_batch_direct_url_redacts_source_url_and_defers_download(allow_account_w
     monkeypatch.setattr(core, 'file_looks_like_audio', lambda _path: True)
     monkeypatch.setattr(rate_limit_quotas, 'reserve_daily_upload_bytes', lambda uid, byte_count, runtime=None: reserved.append((uid, byte_count)) or (True, 0))
     monkeypatch.setattr(rate_limit_quotas, 'release_daily_upload_bytes', lambda uid, byte_count, runtime=None: released.append((uid, byte_count)) or True)
-    monkeypatch.setattr(billing_credits, 'deduct_credit', lambda *_args, **_kwargs: 'lecture_credits_standard')
     monkeypatch.setattr(batch_orchestrator, 'process_batch_job', lambda _batch_id, runtime=None: None)
 
-    def _fake_create_batch(batch_payload, rows, runtime=None):
-        capture.batch_payload = dict(batch_payload)
-        capture.rows = [dict(row) for row in rows]
 
-    monkeypatch.setattr(batch_orchestrator, 'create_batch_job', _fake_create_batch)
     monkeypatch.setattr(core, 'submit_batch_background_job', lambda target, *args, **kwargs: None)
 
     rows = [
@@ -1135,6 +1130,7 @@ def test_batch_direct_url_redacts_source_url_and_defers_download(allow_account_w
     )
 
     assert response.status_code == 200
+    capture.load(response.get_json()['batch_id'])
     assert capture.rows is not None
     assert capture.rows[0]['source_url'] == 'https://ovp.kaltura.com/[redacted]'
     assert capture.rows[1]['source_url'] == 'https://ovp.kaltura.com/[redacted]'
@@ -1143,6 +1139,9 @@ def test_batch_direct_url_redacts_source_url_and_defers_download(allow_account_w
     assert 'token=' not in json.dumps(capture.rows)
     assert reserved and reserved[0][1] >= core.MAX_AUDIO_UPLOAD_BYTES * 2
     assert downloads == []
+    assert credit_store.docs('users')['u-batch']['lecture_credits_standard'] == 0
+    assert len(credit_store.docs('credit_charges')) == 2
+    assert all(item['charged'] == {'lecture_credits_standard': 1} for item in credit_store.docs('credit_charges').values())
 
 
 def test_batch_worker_downloads_direct_url_and_releases_unused_quota(monkeypatch, tmp_path):
@@ -1737,6 +1736,7 @@ def test_batch_status_contract(client, monkeypatch):
 
 def test_finalize_row_job_log_marks_row_error_when_study_pack_save_fails(monkeypatch):
     _patch_batch_refunds(monkeypatch)
+    credit_store = _install_batch_credit_store(monkeypatch, {'slides_credits': 0, 'total_processed': 1})
     saved_logs = []
     monkeypatch.setattr(batch_orchestrator.ai_pipelines, 'save_study_pack', lambda *_args, **_kwargs: False)
     monkeypatch.setattr(core, 'save_job_log', lambda job_id, job_data, finished_at: saved_logs.append((job_id, dict(job_data), finished_at)))
@@ -1768,6 +1768,10 @@ def test_finalize_row_job_log_marks_row_error_when_study_pack_save_fails(monkeyp
     assert row['credit_refunded'] is True
     assert saved_logs[-1][1]['status'] == 'error'
     assert saved_logs[-1][1]['failed_stage'] == 'study_pack_persistence'
+    assert credit_store.docs('users')['u-batch']['slides_credits'] == 1
+    assert credit_store.docs('users')['u-batch']['total_processed'] == 0
+    assert len(credit_store.docs('credit_refunds')) == 1
+    assert next(iter(credit_store.docs('credit_refunds').values()))['amount'] == 1
 
 
 def test_batch_download_zip_includes_combined_docx_when_enabled(client, monkeypatch):

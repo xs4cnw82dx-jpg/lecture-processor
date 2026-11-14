@@ -1,3 +1,5 @@
+import pytest
+
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.runtime import core
@@ -63,6 +65,67 @@ def test_save_job_log_redacts_sensitive_url_and_prompt(app, monkeypatch):
     assert captured["expires_at_ts"].timestamp() == captured["expires_at"]
 
 
+@pytest.mark.parametrize("scheme", [1, 2])
+def test_job_history_preserves_unified_amounts_without_changing_legacy_records(app, monkeypatch, scheme):
+    captured = {}
+    receipt = {
+        "credit_scheme": scheme,
+        "charge_ref": "runtime-job:job-billing",
+        "charged_credits": 12,
+        "refunded_credits": 2,
+        "charged": {"credits": 12} if scheme == 2 else {"interview_credits_short": 1, "slides_credits": 1},
+        "refunded": {"credits": 2} if scheme == 2 else {"slides_credits": 1},
+        "components": {"extra": {"charged_credits": 2, "refunded_credits": 2}},
+    }
+    monkeypatch.setattr(core.job_logs_repo, "set_job_log", lambda _db, _job_id, payload: captured.update(payload))
+    monkeypatch.setattr(admin_rollups, "increment_job_rollups", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(admin_metrics, "add_admin_visibility_flag", lambda payload: payload)
+    monkeypatch.setattr(core, "log_analytics_event", lambda *_args, **_kwargs: True)
+    with app.app_context():
+        core.save_job_log("job-billing", {
+            "user_id": "u1", "mode": "interview", "status": "complete", "started_at": 10,
+            "credit_scheme": scheme, "charge_ref": receipt["charge_ref"],
+            "charged_credits": 12, "refunded_credits": 2, "billing_receipt": receipt,
+        }, 15)
+
+    if scheme == 1:
+        assert not {"credit_scheme", "charge_ref", "charged_credits", "refunded_credits", "billing_receipt"}.intersection(captured)
+        return
+    assert captured["credit_scheme"] == 2
+    assert captured["charge_ref"] == "runtime-job:job-billing"
+    assert captured["charged_credits"] == 12
+    assert captured["refunded_credits"] == 2
+    assert captured["billing_receipt"] == receipt
+    receipt["components"]["extra"]["refunded_credits"] = 0
+    assert captured["billing_receipt"]["components"]["extra"]["refunded_credits"] == 2
+
+
+def test_refund_history_refresh_does_not_count_the_finished_job_again(app, monkeypatch):
+    history, rollups, events = [], [], []
+    monkeypatch.setattr(core.job_logs_repo, "set_job_log", lambda _db, _job_id, payload: history.append(payload))
+    monkeypatch.setattr(admin_rollups, "increment_job_rollups", lambda payload, **_kwargs: rollups.append(payload))
+    monkeypatch.setattr(admin_metrics, "add_admin_visibility_flag", lambda payload: payload)
+    monkeypatch.setattr(core, "log_analytics_event", lambda event, **_kwargs: events.append(event))
+    job = {"user_id": "u1", "mode": "lecture", "status": "error", "started_at": 10,
+           "credit_scheme": 2, "charge_ref": "runtime-job:retry", "charged_credits": 8,
+           "refunded_credits": 0, "billing_receipt": {"credit_scheme": 2, "charged": {"credits": 8},
+                                                        "refunded": {"credits": 0}}}
+    with app.app_context():
+        core.save_job_log("retry", job, 15)
+        job["refunded_credits"] = 8
+        job["billing_receipt"]["refunded"]["credits"] = 8
+        for _ in range(2):
+            core.save_job_log("retry", job, 15, record_metrics=False)
+
+    assert len(history) == 3
+    assert history[-1]["refunded_credits"] == 8
+    assert history[-1]["credit_refunded"] is True
+    assert history[-1]["finished_at"] == 15
+    assert history[-1]["duration_seconds"] == 5
+    assert len(rollups) == 1
+    assert events == ["processing_failed_backend"]
+
+
 def test_cleanup_stale_upload_artifacts_preserves_active_and_persisted_files(tmp_path, monkeypatch):
     upload_root = tmp_path / "uploads"
     study_audio_root = upload_root / "study_audio"
@@ -122,7 +185,6 @@ def test_runtime_core_does_not_expose_legacy_account_export_helpers():
 
 
 def test_periodic_cleanup_runs_recovery_without_blocking_other_cleanup_on_failure(monkeypatch):
-    import pytest
     from lecture_processor.domains.runtime_jobs import recovery
 
     calls = []

@@ -78,6 +78,7 @@ from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.account import users as account_users
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.shared import parsing as shared_parsing
@@ -485,6 +486,11 @@ def _env_truthy(name, default='0'):
 
 
 BATCH_EMAIL_NOTIFICATIONS_ENABLED = _env_truthy('BATCH_EMAIL_NOTIFICATIONS_ENABLED', '1')
+
+UNIFIED_CREDITS_ENABLED = _env_truthy(
+    'UNIFIED_CREDITS_ENABLED',
+    '1' if billing_policy.DEFAULT_UNIFIED_CREDITS_ENABLED else '0',
+)
 SMTP_HOST = (os.getenv('SMTP_HOST', '') or '').strip()
 SMTP_PORT = safe_int_env('SMTP_PORT', 587, minimum=1, maximum=65535)
 SMTP_USERNAME = (os.getenv('SMTP_USERNAME', '') or '').strip()
@@ -572,7 +578,7 @@ def apply_security_headers(response):
         script_nonce=getattr(g, 'csp_nonce', ''),
     )
 
-CREDIT_BUNDLES = {'lecture_5': {'name': 'Lecture Notes — 5 Pack', 'description': '5 standard lecture credits', 'credits': {'lecture_credits_standard': 5}, 'price_cents': 999, 'currency': 'eur'}, 'lecture_10': {'name': 'Lecture Notes — 10 Pack', 'description': '10 standard lecture credits (best value)', 'credits': {'lecture_credits_standard': 10}, 'price_cents': 1699, 'currency': 'eur'}, 'slides_10': {'name': 'Slides Extraction — 10 Pack', 'description': '10 slides extraction credits', 'credits': {'slides_credits': 10}, 'price_cents': 499, 'currency': 'eur'}, 'slides_25': {'name': 'Slides Extraction — 25 Pack', 'description': '25 slides extraction credits (best value)', 'credits': {'slides_credits': 25}, 'price_cents': 999, 'currency': 'eur'}, 'interview_3': {'name': 'Interview Transcription — 3 Pack', 'description': '3 interview transcription credits', 'credits': {'interview_credits_short': 3}, 'price_cents': 799, 'currency': 'eur'}, 'interview_8': {'name': 'Interview Transcription — 8 Pack', 'description': '8 interview transcription credits (best value)', 'credits': {'interview_credits_short': 8}, 'price_cents': 1799, 'currency': 'eur'}}
+CREDIT_BUNDLES = billing_policy.LEGACY_CHECKOUT_BUNDLES
 
 EMAIL_ALLOWLIST_CONFIG_PATH = os.path.join(PROJECT_ROOT_DIR, 'config', 'allowed_email_domains.json')
 
@@ -682,7 +688,7 @@ PROCESSING_PUBLIC_ERROR_MESSAGE = 'Processing failed. Your credit has been refun
 
 def cleanup_old_jobs():
     """Evict completed/errored jobs older than JOB_TTL_SECONDS to prevent OOM."""
-    from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES
+    from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES, has_pending_credit_refund
     from lecture_processor.services import tools_download_service
 
     tools_download_service.cleanup_expired_downloads(_self_runtime())
@@ -692,6 +698,8 @@ def cleanup_old_jobs():
         for job_id, job in list(jobs.items()):
             status = str(job.get('status', '') or '').strip().lower()
             if status not in TERMINAL_RUNTIME_JOB_STATUSES:
+                continue
+            if has_pending_credit_refund(job):
                 continue
             expires_at = job.get('expires_at_ts')
             if isinstance(expires_at, datetime):
@@ -903,8 +911,8 @@ def _safe_source_url_summary(source_url):
     suffix = '/[redacted]' if parsed.path and parsed.path != '/' else ''
     return f'{scheme}://{host}{suffix}'[:500]
 
-def save_job_log(job_id, job_data, finished_at):
-    """Save a processing job log to Firestore for analytics."""
+def save_job_log(job_id, job_data, finished_at, *, record_metrics=True):
+    """Save job history; settlement refreshes do not count another finished job."""
     try:
         from lecture_processor.domains.admin import metrics as admin_metrics
         from lecture_processor.domains.admin import rollups as admin_rollups
@@ -952,8 +960,15 @@ def save_job_log(job_id, job_data, finished_at):
             'expires_at': expires_at,
             'expires_at_ts': datetime.fromtimestamp(expires_at, tz=timezone.utc),
         }
+        if job_data.get('credit_scheme') == billing_policy.CREDIT_SCHEME_VERSION:
+            for field in ('credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits', 'credit_admission_state'):
+                if field in job_data:
+                    payload[field] = job_data[field]
+            payload['billing_receipt'] = billing_receipts.get_billing_receipt_snapshot(job_data, runtime=_self_runtime())
         payload = admin_metrics.add_admin_visibility_flag(payload)
         job_logs_repo.set_job_log(db, job_id, payload)
+        if not record_metrics:
+            return
         admin_rollups.increment_job_rollups(payload, runtime=app.extensions.get('lecture_processor', {}).get('runtime'))
         status = str(job_data.get('status', '') or '').lower()
         backend_event = 'processing_finished_backend'
