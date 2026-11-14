@@ -6,7 +6,7 @@ import secrets
 import uuid
 
 from flask import g, jsonify, redirect, request, render_template
-from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
+from werkzeug.exceptions import HTTPException, NotFound, RequestEntityTooLarge
 
 from lecture_processor.calendar_observability import redact_calendar_url
 from lecture_processor.runtime.environment import extract_hostname, normalize_public_base_url
@@ -39,8 +39,16 @@ def register_runtime_hooks(app, runtime) -> None:
 
     @app.before_request
     def _redirect_render_pages_to_public_origin():
-        if request.method not in {'GET', 'HEAD'} or request.blueprint != 'pages':
+        if request.method not in {'GET', 'HEAD'}:
             return None
+        if request.blueprint != 'pages':
+            if not isinstance(request.routing_exception, NotFound):
+                return None
+            # Unmatched pages have no blueprint. Keep API/webhook, health,
+            # and asset errors on the origin that received the request.
+            if any(request.path == prefix or request.path.startswith(prefix + '/')
+                   for prefix in ('/api', '/healthz', '/static')):
+                return None
         if request.endpoint in {'pages.service_worker', 'pages.workout_service_worker'}:
             return None
         render_host = extract_hostname(os.environ.get('RENDER_EXTERNAL_HOSTNAME', ''))
@@ -49,6 +57,8 @@ def register_runtime_hooks(app, runtime) -> None:
         if (render_host and public_host and public_host != render_host
                 and extract_hostname(request.host) == render_host):
             target_path = request.full_path if request.query_string else request.path
+            # Browsers cache 301 redirects even after configuration is fixed;
+            # verify PUBLIC_BASE_URL before changing its deployed value.
             return redirect(public_origin + target_path, code=301)
         return None
 

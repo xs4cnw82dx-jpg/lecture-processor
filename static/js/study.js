@@ -138,18 +138,18 @@ const MAX_PINNED_FOLDERS = 5;
 let pinnedFolderIds = [];
 const LAZY_VENDOR_ASSETS = {
   flatpickrCss: {
-    href: 'https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css',
+    href: '/static/js/vendor/flatpickr-4.6.13/flatpickr.min.css',
     integrity: 'sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt'
   },
   flatpickr: {
-    src: 'https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js',
+    src: '/static/js/vendor/flatpickr-4.6.13/flatpickr.min.js',
     integrity: 'sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6'
   },
   marked: {
     src: '/static/js/marked-lite.js'
   },
   papa: {
-    src: 'https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js',
+    src: '/static/js/vendor/papaparse-5.5.3/papaparse.min.js',
     integrity: 'sha384-Jd2/X5FXVKahwaY2nivvw4LfSTg9idSj8yNXWtT4qef0fHSYr6M7M8bJAfbFYoMc'
   }
 };
