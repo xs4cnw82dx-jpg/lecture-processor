@@ -1987,12 +1987,6 @@ bootstrap.onAuthStateReady(auth, async (user) => {
         updateUIForAuthState(null);
     }
 });
-setInterval(async () => {
-    if (!currentUser) return;
-    idToken = await currentUser.getIdToken(true);
-    if (authClient && typeof authClient.setToken === 'function') authClient.setToken(idToken);
-}, 10 * 60 * 1000);
-
 function formatFileSize(bytes) {
     if (!bytes) return '0 Bytes';
     const k = 1024;
@@ -3436,9 +3430,12 @@ async function refreshActiveRuntimeJobs(force) {
     }
 }
 async function pollStatus() {
-    if (!currentJobId) return;
+    const jobId = currentJobId;
+    if (!jobId) return;
+    const session = authClient.captureSession();
+    const isCurrentPoll = () => currentJobId === jobId && session.isCurrent();
     if (pollStartedAt && (Date.now() - pollStartedAt) > POLL_MAX_RUNTIME_MS) {
-        const activeJobId = currentJobId;
+        const activeJobId = jobId;
         resetProcessingSession({ keepProgressVisible: true, keepStatusMessage: true });
         progressStatus.classList.add('error');
         setHidden(progressSpinner, true);
@@ -3448,7 +3445,8 @@ async function pollStatus() {
         return;
     }
     try {
-        const r = await authenticatedFetch(`/status/${currentJobId}`);
+        const r = await authenticatedFetch(`/status/${encodeURIComponent(jobId)}`);
+        if (!isCurrentPoll()) return;
         if (r.status === 401) {
             resetProcessingSession({ keepProgressVisible: true });
             showAuthModal('signin');
@@ -3460,6 +3458,7 @@ async function pollStatus() {
             return;
         }
         const d = await r.json();
+        if (!isCurrentPoll()) return;
         if (d.error && d.status !== 'error') {
             const isRetryableMissing = r.status === 404 && (d.retryable || d.error_code === 'JOB_TEMPORARILY_UNAVAILABLE' || d.job_lost);
             if (isRetryableMissing && pollMissingResponses < 3) {
@@ -3469,7 +3468,7 @@ async function pollStatus() {
                 scheduleNextPoll(waitMs);
                 return;
             }
-            const terminalJobId = currentJobId;
+            const terminalJobId = jobId;
             resetProcessingSession({ keepProgressVisible: true });
             trackEvent('processing_failed', {
                 reason: d.error_code || 'job_not_found',
@@ -3481,7 +3480,7 @@ async function pollStatus() {
         updateProgressStepsForStatus(d);
         updateProgressUI(d.step, d.step_description, d.total_steps);
         cacheActiveRuntimeJob({
-            job_id: currentJobId,
+            job_id: jobId,
             mode: d.mode || currentMode,
             status: d.status,
             step: d.step,
@@ -3496,15 +3495,15 @@ async function pollStatus() {
             setProgressRetryVisible(false);
             pollMissingResponses = 0;
             maybeSendCompletionNotification({
-                job_id: currentJobId,
+                job_id: jobId,
                 mode: d.mode || currentMode,
                 study_pack_title: getStudyPackTitleValue(),
                 study_pack_id: d.study_pack_id || '',
             }, d);
-            removeActiveRuntimeJob(currentJobId);
-            if (currentJobId && trackedTerminalJobId !== currentJobId) {
-                trackedTerminalJobId = currentJobId;
-                trackEvent('processing_completed', { job_id: currentJobId });
+            removeActiveRuntimeJob(jobId);
+            if (trackedTerminalJobId !== jobId) {
+                trackedTerminalJobId = jobId;
+                trackEvent('processing_completed', { job_id: jobId });
             }
             showResults(
                 d.result,
@@ -3523,7 +3522,7 @@ async function pollStatus() {
             );
             fetchUserData();
         } else if (d.status === 'error') {
-            const activeJobId = currentJobId;
+            const activeJobId = jobId;
             maybeSendCompletionNotification({
                 job_id: activeJobId,
                 mode: d.mode || currentMode,
@@ -3547,6 +3546,7 @@ async function pollStatus() {
             scheduleNextPoll(POLL_BASE_MS);
         }
     } catch (e) {
+        if (!isCurrentPoll()) return;
         console.error(e);
         captureClientError(e, 'poll_status');
         pollFailures += 1;

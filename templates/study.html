@@ -65,13 +65,13 @@
         </div>
       </aside>
       <section class="panel library-content">
-        <div class="panel-head library-content-head"><div><span class="panel-title" id="library-location">All study packs</span><span class="library-result-count" id="library-result-count" role="status" aria-live="polite"></span></div><details class="library-pack-tools" data-app-menu><summary aria-label="Pack actions">•••</summary><div class="actions app-menu-panel"><button class="btn danger" id="delete-pack-btn">Delete Pack</button></div></details>
-
+        <div class="panel-head library-content-head"><div><span class="panel-title" id="library-location">All study packs</span><span class="library-result-count" id="library-result-count" role="status" aria-live="polite"></span></div>
         </div>
         <div class="panel-body">
           <div class="pack-selection-bar" id="pack-selection-bar" hidden>
             <span id="pack-selection-count" role="status" aria-live="polite" aria-atomic="true">0 selected</span>
             <button type="button" class="btn primary" id="add-selected-to-plan-btn">Add to Study Plan</button>
+            <button type="button" class="btn danger" id="delete-selected-packs-btn">Delete selected</button>
             <button type="button" class="btn" id="clear-pack-selection-btn">Clear selection</button>
           </div>
           <div class="split">
@@ -188,17 +188,17 @@
                     <button type="button" class="btn" id="export-menu-btn" aria-haspopup="menu" aria-expanded="false"
                       aria-controls="export-menu-list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                      </svg>Export</button>
+                        <circle cx="5" cy="12" r="1"></circle>
+                        <circle cx="12" cy="12" r="1"></circle>
+                        <circle cx="19" cy="12" r="1"></circle>
+                      </svg>Pack actions</button>
                     <div class="export-menu-list" id="export-menu-list" role="menu" inert>                  <button class="export-menu-item" role="menuitem" id="export-pack-notes-btn"><svg viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                       <polyline points="14 2 14 8 20 8"></polyline>
                       <path d="M12 11v6"></path>
                       <polyline points="9 14 12 17 15 14"></polyline>
-                    </svg><span class="export-notes-label-full">Export Lecture Notes</span><span class="export-notes-label-short">Export Notes</span></button>
+                    </svg><strong class="export-notes-label-full">Export Lecture Notes</strong><strong class="export-notes-label-short">Export Notes</strong></button>
                       <button type="button" class="export-menu-item" role="menuitem" id="export-annotated-notes-btn"><strong>Annotated Notes PDF</strong><span>Notes with your highlights</span></button>
                       <button type="button" class="export-menu-item" role="menuitem"
                         data-export-kind="flashcards"><strong>Flashcards CSV</strong><span>Question/answer
@@ -230,6 +230,8 @@
                           data-export-kind="pdf-no-answers"><strong>PDF (without answers)</strong><span>Printable
                             version for self-practice</span></button>
                       </div>
+                      <div class="pack-action-separator" role="separator"></div>
+                      <button type="button" class="export-menu-item pack-delete-action" role="menuitem" id="delete-pack-btn" aria-label="Delete current study pack">Delete pack</button>
                     </div>
                   </div>
 
@@ -309,7 +311,7 @@
                             </div>
                           </div>
                         </div>
-                        <!-- Highlight autosave status intentionally hidden from the visible UI. -->
+                        <p class="notes-highlight-status" id="notes-highlight-status" role="status" aria-live="polite" aria-atomic="true" hidden></p>
                       </div>
                     </div>
                     <div class="notes-view-wrap">

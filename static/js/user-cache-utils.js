@@ -102,17 +102,20 @@
     return setJson(scopedKey, value, uiCache);
   }
 
-  function clearUserScope(userOrUid, keys, uiCache) {
+  function clearUserScope(userOrUid, keys, uiCache, options) {
     var safeUid = normalizeUserId(userOrUid);
     if (!safeUid) return false;
     if (uiCache && typeof uiCache.clearUserScope === 'function') {
-      uiCache.clearUserScope(safeUid);
-      return true;
+      try { return uiCache.clearUserScope(safeUid, options) !== false; } catch (_) { return false; }
     }
+    var success = true;
     (Array.isArray(keys) ? keys : []).forEach(function (key) {
-      remove('user:' + safeUid + ':' + String(key || ''), uiCache);
+      if (options && options.preserveStudyCache && String(key || '').indexOf('study_cache:') === 0) return;
+      try {
+        if (remove('user:' + safeUid + ':' + String(key || ''), uiCache) === false) success = false;
+      } catch (_) { success = false; }
     });
-    return true;
+    return success;
   }
 
   var exported = {

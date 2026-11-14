@@ -623,7 +623,8 @@ def create_batch_job(app_ctx, request, *, instant=False):
             row_id = plan['row_id']
             slides_local_path = ''
             if plan.get('slides_required'):
-                slides_local_path, slides_error = app_ctx.resolve_uploaded_slides_to_pdf(
+                slides_local_path, slides_error = upload_batch_support.stage_uploaded_slides_file(
+                    app_ctx,
                     plan.get('slides_file'),
                     f'{batch_id}_{row_id}',
                 )
@@ -701,6 +702,9 @@ def create_batch_job(app_ctx, request, *, instant=False):
                     'audio_fetch_target_encrypted': plan.get('audio_fetch_target_encrypted', ''),
                     'source_name': f'row-{idx}',
                     'slides_local_path': slides_local_path,
+                    'slides_source_path': slides_local_path,
+                    'slides_conversion_candidates': [],
+                    'slides_conversion_complete': False,
                     'audio_local_path': audio_local_path,
                     'text_input_mode': plan.get('text_input_mode', ''),
                     'slide_text': plan.get('slide_text', ''),

@@ -6,7 +6,7 @@ from lecture_processor.runtime.container import get_runtime
 
 def test_has_sufficient_upload_disk_space_uses_threshold(app, monkeypatch):
     runtime = get_runtime(app)
-    monkeypatch.setattr(runtime, "UPLOAD_FOLDER", "/tmp")
+    monkeypatch.setattr(runtime.core, "UPLOAD_FOLDER", "/tmp")
     monkeypatch.setattr(runtime, "UPLOAD_MIN_FREE_DISK_BYTES", 100)
     monkeypatch.setattr(quotas.os.path, "exists", lambda _path: True)
     monkeypatch.setattr(quotas.shutil, "disk_usage", lambda _path: SimpleNamespace(free=250))

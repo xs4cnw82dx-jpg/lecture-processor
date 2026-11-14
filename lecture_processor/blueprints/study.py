@@ -404,6 +404,12 @@ def accept_interview_ai_coding_run(pack_id, run_id):
     return interview_coding_service.accept_ai_coding_run(runtime, request, pack_id, run_id)
 
 
+@study_bp.route('/api/interview-coding/packs/<pack_id>/ai-runs/<run_id>', methods=['GET'])
+def get_interview_ai_coding_run(pack_id, run_id):
+    runtime = get_runtime()
+    return interview_coding_service.get_ai_coding_run(runtime, request, pack_id, run_id)
+
+
 @study_bp.route('/api/interview-coding/packs/<pack_id>/ai-runs/<run_id>/reject', methods=['POST'])
 def reject_interview_ai_coding_run(pack_id, run_id):
     runtime = get_runtime()

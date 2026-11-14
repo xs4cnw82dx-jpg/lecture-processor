@@ -126,6 +126,18 @@ def tools_lecture_download():
     return upload_api_service.tools_lecture_download(runtime, request)
 
 
+@upload_bp.route('/api/tools/lecture-download/<job_id>', methods=['GET'])
+def get_lecture_download_status(job_id):
+    runtime = get_runtime()
+    return upload_api_service.get_lecture_download_status(runtime, request, job_id)
+
+
+@upload_bp.route('/api/tools/lecture-download/<job_id>/file', methods=['GET'])
+def download_lecture_file(job_id):
+    runtime = get_runtime()
+    return upload_api_service.download_lecture_file(runtime, request, job_id)
+
+
 @upload_bp.route('/api/tools/transcribe', methods=['POST'])
 def tools_transcribe():
     runtime = get_runtime()

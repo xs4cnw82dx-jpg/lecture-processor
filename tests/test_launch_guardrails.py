@@ -594,14 +594,24 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
         "validate_video_import_fetch_target",
         lambda _url, runtime=None: ("https://ovp.kaltura.com/path/index.m3u8", ""),
     )
-    monkeypatch.setattr(
-        core,
-        "download_video_from_video_url",
-        lambda _url, _prefix: (str(video_path), "lecture.mp4", video_path.stat().st_size),
-    )
-    monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda _path: (str(audio_path), True))
     monkeypatch.setattr(core, "get_saved_file_size", lambda path: Path(path).stat().st_size)
     monkeypatch.setattr(core, "file_looks_like_audio", lambda _path: True)
+    monkeypatch.setattr(core, "UPLOAD_FOLDER", str(tmp_path))
+    monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
+    monkeypatch.setattr(rate_limit_quotas, "has_sufficient_upload_disk_space", lambda *_args, **_kwargs: (True, 10**12, 0))
+
+    def download_video(_target, prefix):
+        path = tmp_path / f"{prefix}.mp4"
+        path.write_bytes(video_path.read_bytes())
+        return str(path), path.name, path.stat().st_size
+
+    def convert_audio(path):
+        converted = Path(path).with_suffix('.mp3')
+        converted.write_bytes(audio_path.read_bytes())
+        return str(converted), True
+
+    monkeypatch.setattr(core, "download_video_from_video_url", download_video)
+    monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", convert_audio)
     monkeypatch.setattr(
         tools_download_service.upload_quota_service,
         "reserve_upload_quota",
@@ -625,9 +635,15 @@ def test_tools_lecture_download_returns_zip_for_both_formats(client, monkeypatch
     response = client.post(
         "/api/tools/lecture-download",
         json={"url": "https://ovp.kaltura.com/path/index.m3u8", "format": "both"},
-        headers={"Authorization": "Bearer dev"},
+        headers={"Authorization": "Bearer dev", "Accept": "application/json"},
     )
 
+    assert response.status_code == 202
+    job_id = response.get_json()['job_id']
+    ready = client.get(f'/api/tools/lecture-download/{job_id}', headers={"Authorization": "Bearer dev"}).get_json()
+    assert ready['status'] == 'complete'
+    response = client.get(f'/api/tools/lecture-download/{job_id}/file',
+                          query_string={'token': ready['download_token']}, headers={"Authorization": "Bearer dev"})
     assert response.status_code == 200
     assert response.mimetype == "application/zip"
     archive = zipfile.ZipFile(io.BytesIO(response.data))
@@ -689,7 +705,7 @@ def test_tools_lecture_download_checks_quota_before_fetch(client, monkeypatch):
     response = client.post(
         "/api/tools/lecture-download",
         json={"url": "https://ovp.kaltura.com/path/index.m3u8", "format": "audio"},
-        headers={"Authorization": "Bearer dev"},
+        headers={"Authorization": "Bearer dev", "Accept": "application/json"},
     )
 
     assert response.status_code == 429
@@ -1844,7 +1860,7 @@ def test_account_delete_failure_after_purge_requires_retry_without_restoring_acc
     assert set_doc_calls[0][0]["account_status"] == "deleting"
     assert len(set_doc_calls) == 1
     assert retry_calls[0]["uid"] == "u-restore"
-    assert "auth delete failed" in retry_calls[0]["reason"]
+    assert retry_calls[0]["reason"] == "Could not completely delete account data"
     assert response.get_json()["status"] == "deletion_retry_required"
 
 
