@@ -77,6 +77,7 @@
 
   var currentUserIsAdmin = false;
   var authRevision = 0;
+  var profileRequestRevision = 0;
   var lastSignedInUid = auth && auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
   var authStateResolved = !!(auth && auth.currentUser);
   var authObserverStartedAt = Date.now();
@@ -542,6 +543,14 @@
     });
   }
 
+  function hasValidCreditBalance(payload) {
+    var credits = payload && payload.credits;
+    if (!credits || typeof credits !== 'object' || Array.isArray(credits)) return false;
+    return ['lecture_standard', 'lecture_extended', 'slides', 'interview_short', 'interview_medium', 'interview_long'].every(function (key) {
+      return Number.isSafeInteger(credits[key]) && credits[key] >= 0;
+    });
+  }
+
   function parseCreditBreakdown(payload) {
     var credits = payload && payload.credits ? payload.credits : {};
     var unlimited = payload && payload.unlimited_credits ? payload.unlimited_credits : (credits.unlimited || {});
@@ -730,20 +739,30 @@
   }
 
   async function refreshUserProfile(user) {
-    if (!user) return;
+    if (!user) return false;
+    var revision = authRevision;
+    var requestRevision = ++profileRequestRevision;
+    function isCurrent() {
+      return auth.currentUser === user && authRevision === revision && profileRequestRevision === requestRevision;
+    }
     try {
       var response = await authFetch('/api/auth/user');
       if (!response.ok) throw new Error('Could not load favorites. Reload to try again.');
       var payload = await response.json();
-      if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+      if (!isCurrent()) return false;
       if (!favoriteToolsSaving) {
         favoriteTools = normalizedFavorites((payload.preferences || {}).favorite_tools);
         favoriteToolsReady = true;
         favoriteToolsError = '';
         publishFavoriteTools();
       }
-      var breakdown = parseCreditBreakdown(payload);
       currentUserIsAdmin = !!payload.is_admin;
+      if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
+      if (workoutLink) workoutLink.hidden = !currentUserIsAdmin;
+      setPhysioGroupVisible(true);
+      markActiveNav();
+      if (!hasValidCreditBalance(payload)) return false;
+      var breakdown = parseCreditBreakdown(payload);
       applyCreditBreakdown(breakdown);
       writeUserCacheJson(user, CACHE_KEYS.credits, breakdown);
       var profile = {
@@ -758,13 +777,15 @@
       };
       writeUserCacheJson(user, CACHE_KEYS.profile, profile);
       writeCacheJson(CACHE_KEYS.lastProfile, profile);
-      if (adminBtn) adminBtn.hidden = !currentUserIsAdmin;
-      if (workoutLink) workoutLink.hidden = !currentUserIsAdmin;
-      setPhysioGroupVisible(true);
-      markActiveNav();
+      return true;
     } catch (error) {
-      if (favoriteToolsUid === user.uid) { favoriteToolsError = error.message; publishFavoriteTools(); }
+      if (isCurrent() && favoriteToolsUid === user.uid) { favoriteToolsError = error.message; publishFavoriteTools(); }
+      return false;
     }
+  }
+
+  function refreshCredits() {
+    return refreshUserProfile(auth && auth.currentUser);
   }
 
   function applySignedOutState(userOrUid) {
@@ -1181,6 +1202,7 @@
     setupRoutePrefetch();
     window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
       showToast: showToast,
+      refreshCredits: refreshCredits,
     });
     return;
   }
@@ -1435,5 +1457,6 @@
   setupRoutePrefetch();
   window.LectureProcessorShell = Object.assign({}, window.LectureProcessorShell || {}, {
     showToast: showToast,
+    refreshCredits: refreshCredits,
   });
 })();
