@@ -75,6 +75,7 @@ let collapsedFolderIds = new Set();
 let codingState = null, codingLoading = false, codingWorkspaceOpen = false, selectedCodingCodeId = '', selectedCodingColor = 'teal', codingSelectionRange = null, codingUndoStack = [], codingMergeSourceId = '';
 let codingAutosaveTimer = null, codingAutosaveInFlight = false, codingAutosaveQueued = false, codingEditorLastSavedFingerprint = '';
 let codingSelectionAutoApplyTimer = null, codingAutoApplyInFlight = false, codingAiProgressTimer = null, codingAiProgressStage = -1;
+let codingAcceptAttempt = null, codingLoadSeq = 0;
 const HINT_FADE_DELAY_MS = 10000;
 const NOTES_ICON_IDLE_MS = 5000;
 const HIGHLIGHT_SYNC_DELAY_MS = 450;
@@ -5821,20 +5822,39 @@ function codingApi(path, options) {
   if (!selectedPackId) return Promise.reject(new Error('No interview selected.'));
   return apiCall('/api/interview-coding/packs/' + encodeURIComponent(selectedPackId) + path, options || {});
 }
+function codingRequestContext() {
+  var packId = selectedPackId, packSeq = openPackSeq, user = auth.currentUser;
+  var session = authClient && authClient.captureSession ? authClient.captureSession() : null;
+  return {
+    packId: packId,
+    isCurrent: function () {
+      return selectedPackId === packId && openPackSeq === packSeq && auth.currentUser === user && (!session || session.isCurrent());
+    }
+  };
+}
+function codingAcceptanceInFlight() {
+  return !!(codingAcceptAttempt && codingAcceptAttempt.isCurrent());
+}
+function codingAcceptancePending() {
+  return codingAcceptanceInFlight() || !!(codingState && codingState.latest_run && codingState.latest_run.status === 'accepting');
+}
 function ensureCodingLoaded(force) {
   if (!selectedPack || String(selectedPack.mode || '') !== 'interview' || !codingTranscript) return Promise.resolve(null);
   if (codingState && !force) {
     renderCodingWorkspace();
     return Promise.resolve(codingState);
   }
+  var context = codingRequestContext(), loadSeq = ++codingLoadSeq;
   codingLoading = true;
   setCodingStatus('Loading coding workspace...');
   return codingApi('').then(function (state) {
+    if (!context.isCurrent() || loadSeq !== codingLoadSeq) return null;
     codingState = normalizeCodingState(state);
     codingLoading = false;
     renderCodingWorkspace();
     return codingState;
   }).catch(function (e) {
+    if (!context.isCurrent() || loadSeq !== codingLoadSeq) return null;
     codingLoading = false;
     setCodingStatus(e.message || 'Could not load coding workspace.', 'error');
     throw e;
@@ -5913,7 +5933,8 @@ function renderCodingAiPanel() {
   if (!codingAiPanel) return;
   var latest = codingState && codingState.latest_run ? codingState.latest_run : null;
   var isProgressing = codingAiProgressStage >= 0;
-  if (!isProgressing && !(latest && latest.status === 'draft')) {
+  var isAccepting = codingAcceptancePending();
+  if (!isProgressing && !isAccepting && !(latest && latest.status === 'draft')) {
     codingAiPanel.hidden = true;
     codingAiPanel.className = 'coding-ai-panel';
     if (codingShell) codingShell.classList.remove('has-ai-panel');
@@ -5921,6 +5942,14 @@ function renderCodingAiPanel() {
   }
   codingAiPanel.hidden = false;
   if (codingShell) codingShell.classList.add('has-ai-panel');
+  if (isAccepting) {
+    setSafeInnerHtml(codingAiPanel,
+      '<div class="coding-ai-panel-head"><div><div class="coding-ai-panel-title">Finish applying AI coding</div><div class="coding-ai-panel-sub">Applying this draft has already started. Finish applying to complete the saved codes and quotations.</div></div></div>' +
+      '<div class="coding-ai-panel-actions"><button type="button" class="btn primary" data-ai-draft-action="accept"' + (codingAcceptanceInFlight() ? ' disabled' : '') + '>' + (codingAcceptanceInFlight() ? 'Applying AI draft...' : 'Finish applying') + '</button></div>'
+    );
+    codingAiPanel.querySelector('[data-ai-draft-action="accept"]').addEventListener('click', acceptAiCodingDraft);
+    return;
+  }
   if (isProgressing) {
     var stages = ['Preparing transcript', 'Analyzing interview', 'Finding themes and quotations', 'Building review draft'];
     var safeStage = Math.min(Math.max(codingAiProgressStage, 0), stages.length - 1);
@@ -5996,6 +6025,8 @@ function updateCodingPreview() {
   if (codingPreviewStatus) {
     if (!codingState) {
       codingPreviewStatus.textContent = 'Loading coding summary...';
+    } else if (codingAcceptancePending()) {
+      codingPreviewStatus.textContent = 'Finish applying AI coding in the coding workspace.';
     } else if (hasDraft) {
       codingPreviewStatus.textContent = 'AI draft ready for review in the coding workspace.';
     } else if (codes.length) {
@@ -6049,12 +6080,19 @@ function renderCodingWorkspace() {
   var codeCount = codingState.codes.length;
   var quoteCount = codingState.quotations.length;
   var latest = codingState.latest_run || null;
+  var accepting = codingAcceptancePending(), applying = codingAcceptanceInFlight();
   var draftCount = latest && latest.status === 'draft'
     ? ((latest.proposed_codes || []).length + (latest.proposed_quotations || []).length)
     : 0;
-  setCodingStatus(codeCount + ' codes · ' + quoteCount + ' quotations' + (draftCount ? ' · AI draft ready' : ''), draftCount ? 'draft' : 'ok');
-  if (codingAiAcceptBtn) codingAiAcceptBtn.hidden = !(latest && latest.status === 'draft');
-  if (codingAiRejectBtn) codingAiRejectBtn.hidden = !(latest && latest.status === 'draft');
+  setCodingStatus(accepting ? (applying ? 'Applying AI draft...' : 'Finish applying AI coding') : codeCount + ' codes · ' + quoteCount + ' quotations' + (draftCount ? ' · AI draft ready' : ''), accepting || draftCount ? 'draft' : 'ok');
+  if (codingAiAcceptBtn) {
+    codingAiAcceptBtn.hidden = !accepting && !(latest && latest.status === 'draft');
+    codingAiAcceptBtn.disabled = applying;
+    codingAiAcceptBtn.textContent = accepting ? (applying ? 'Applying AI draft...' : 'Finish applying') : 'Accept Draft';
+  }
+  if (codingAiRejectBtn) codingAiRejectBtn.hidden = accepting || !(latest && latest.status === 'draft');
+  if (codingAiRunBtn) codingAiRunBtn.disabled = codingLoading || accepting;
+  if (codingResetBtn) codingResetBtn.disabled = codingLoading || accepting;
   renderCodingAiPanel();
   renderCodingCodeOptions();
   renderCodingTranscript();
@@ -6536,7 +6574,7 @@ function undoCodingAction() {
   }
 }
 function runAiCoding() {
-  if (!codingState || codingLoading) return;
+  if (!codingState || codingLoading || codingAcceptancePending()) return;
   var estimate = codingState.ai_estimate || {};
   var cost = parseInt(estimate.credit_cost, 10) || 0;
   if (cost <= 0) {
@@ -6549,7 +6587,7 @@ function runAiCoding() {
     'Run AI Coding',
     'primary'
   ).then(function (confirmed) {
-    if (!confirmed) return;
+    if (!confirmed || codingAcceptancePending()) return;
     codingLoading = true;
     startCodingAiProgress();
     if (codingAiRunBtn) codingAiRunBtn.disabled = true;
@@ -6565,23 +6603,36 @@ function runAiCoding() {
     }).finally(function () {
       codingLoading = false;
       stopCodingAiProgress();
-      if (codingAiRunBtn) codingAiRunBtn.disabled = false;
+      if (codingAiRunBtn) codingAiRunBtn.disabled = codingAcceptancePending();
     });
   });
 }
 function acceptAiCodingDraft() {
   var run = codingState && codingState.latest_run;
-  if (!run || run.status !== 'draft') return;
-  setCodingStatus('Applying AI draft...', 'draft');
-  codingApi('/ai-runs/' + encodeURIComponent(run.run_id) + '/accept', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
+  if (!run || (run.status !== 'draft' && run.status !== 'accepting') || codingLoading || codingAcceptanceInFlight() || codingState.pack_id !== selectedPackId) return;
+  var context = codingRequestContext();
+  codingAcceptAttempt = context;
+  codingLoadSeq += 1;
+  run.status = 'accepting';
+  renderCodingWorkspace();
+  apiCall('/api/interview-coding/packs/' + encodeURIComponent(context.packId) + '/ai-runs/' + encodeURIComponent(run.run_id) + '/accept', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
+    if (!context.isCurrent()) return;
+    codingLoadSeq += 1;
+    codingLoading = false;
     codingState = normalizeCodingState(payload.state || {});
-    renderCodingWorkspace();
     showToast('AI coding accepted.');
-  }).catch(function (e) { showToast(e.message || 'Could not accept AI coding.', 'error'); });
+  }).catch(function (e) {
+    if (!context.isCurrent()) return;
+    showToast(e.message || 'Could not accept AI coding.', 'error');
+    return ensureCodingLoaded(true).catch(function () {});
+  }).finally(function () {
+    if (codingAcceptAttempt === context) codingAcceptAttempt = null;
+    if (context.isCurrent()) renderCodingWorkspace();
+  });
 }
 function rejectAiCodingDraft() {
   var run = codingState && codingState.latest_run;
-  if (!run || run.status !== 'draft') return;
+  if (!run || run.status !== 'draft' || codingAcceptancePending()) return;
   setCodingStatus('Rejecting AI draft...', 'draft');
   codingApi('/ai-runs/' + encodeURIComponent(run.run_id) + '/reject', { method: 'POST', body: JSON.stringify({}) }).then(function () {
     return ensureCodingLoaded(true);
@@ -6607,7 +6658,7 @@ function deleteSelectedCodingCode() {
   });
 }
 function resetCodingForCurrentInterview() {
-  if (!codingState || codingLoading) return;
+  if (!codingState || codingLoading || codingAcceptancePending()) return;
   var quotations = Array.isArray(codingState.quotations) ? codingState.quotations.slice() : [];
   var run = codingState.latest_run || null;
   var hasDraft = !!(run && run.status === 'draft');
@@ -6620,7 +6671,7 @@ function resetCodingForCurrentInterview() {
     'Remove all coded quotations from this interview' + (hasDraft ? ' and reject the current AI draft' : '') + '? Your reusable codebook stays available.',
     'Reset Coding'
   ).then(function (confirmed) {
-    if (!confirmed) return;
+    if (!confirmed || codingAcceptancePending()) return;
     codingLoading = true;
     if (codingResetBtn) codingResetBtn.disabled = true;
     setCodingStatus('Resetting interview coding...', 'draft');
@@ -6648,7 +6699,7 @@ function resetCodingForCurrentInterview() {
       ensureCodingLoaded(true).catch(function () {});
     }).finally(function () {
       codingLoading = false;
-      if (codingResetBtn) codingResetBtn.disabled = false;
+      if (codingResetBtn) codingResetBtn.disabled = codingAcceptancePending();
     });
   });
 }
