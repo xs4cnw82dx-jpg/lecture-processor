@@ -559,7 +559,6 @@
   "Disconnect this subscription? Its link will stop working. Also remove the subscribed calendar in your calendar app to clear its saved events.": "Dit abonnement ontkoppelen? De link werkt daarna niet meer. Verwijder de geabonneerde agenda ook in je agenda-app om opgeslagen afspraken te wissen."
 });
   Object.assign(root.LectureI18nCatalog.en, {
-  "Lokale companion controleren…": "Checking local companion…",
   "Companion is bereikbaar — werkruimte wordt geopend.": "Companion is connected — opening workspace.",
   "Companion is nog niet bereikbaar. Start hem lokaal en probeer opnieuw.": "Companion is not connected yet. Start it locally and try again.",
   "CSRF-token kon niet worden geladen.": "The CSRF token could not be loaded.",
@@ -569,7 +568,6 @@
   "Niet verbonden": "Not connected",
   "Alle regio’s": "All regions",
   "Snel van presentatie naar screening, onderzoek, klinische afweging en plan voor": "Move from presentation to screening, examination, clinical reasoning and a plan for",
-  "Klinische startpunten": "Clinical starting points",
   "Physio Knowledge Vault": "Physio Knowledge Vault",
   "Het regioportaal kon niet in de lokale index worden gevonden.": "The region overview could not be found in the local index.",
   "Lokale anatomie- of PDF-bron": "Local anatomy or PDF source",
@@ -592,12 +590,9 @@
   "Codex maakt een bewerkbaar": "Codex is creating an editable",
   "Codex verwerkt de geselecteerde bronnen…": "Codex is processing the selected sources…",
   "Zoektaak gestopt.": "Research task stopped.",
-  "Te beoordelen": "Awaiting review",
   "Alleen bronnen die aan de gekozen regio zijn gekoppeld. Pas koppelingen aan in de bronmetadata.": "Only sources linked to the selected region. Edit links in the source metadata.",
-  "Bekijk en beheer de volledige lokale bronnenbibliotheek.": "Browse and manage your entire local source library.",
   "Niet gekoppeld": "Not linked",
   "Bezig met beoordelen…": "Reviewing…",
-  "Beoordeel duidelijke bronnen": "Review clearly identified sources",
   "Bronmetadata opgeslagen.": "Source metadata saved.",
   "Bronstatus bijgewerkt.": "Source status updated.",
   "Bronkopie verwijderen?": "Delete source copy?",

@@ -103,3 +103,48 @@ test('static template interface copy is catalogued (brand names, formats and sho
   }
   assert.deepEqual([...new Set(missing)], []);
 });
+
+
+test('catalog files register each translation once per language', () => {
+  const owners = new Map();
+  const duplicates = [];
+  let activeFile = '';
+  let catalog;
+  const context = {};
+  context.window = context;
+  Object.defineProperty(context, 'LectureI18nCatalog', {
+    get: () => catalog,
+    set(value) {
+      if (value === catalog) return;
+      catalog = {};
+      for (const [language, entries] of Object.entries(value)) {
+        for (const key of Object.keys(entries)) owners.set(language + ':' + key, activeFile);
+        catalog[language] = new Proxy(entries, {
+          set(target, key, translation) {
+            const identity = language + ':' + key;
+            if (owners.has(identity)) duplicates.push(identity + ' (' + owners.get(identity) + ' → ' + activeFile + ')');
+            owners.set(identity, activeFile);
+            target[key] = translation;
+            return true;
+          },
+        });
+      }
+    },
+  });
+  vm.createContext(context);
+  for (activeFile of ['i18n-catalog.js', 'i18n-dynamic.js', 'i18n-dynamic-learning.js', 'i18n-dynamic-tools.js', 'i18n-supplement.js']) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/js', activeFile), 'utf8'), context);
+  }
+  assert.deepEqual(duplicates, []);
+});
+
+test('reader names retain their displayed translation in each language', () => {
+  const i18n = load('{"language":"nl"}');
+  assert.equal(i18n.t('Document Reader'), 'Documentlezer');
+  assert.equal(i18n.t('Image Reader'), 'Afbeeldingslezer');
+  assert.equal(i18n.t('URL Reader'), 'URL-lezer');
+  i18n.setLanguage('en');
+  assert.equal(i18n.t('Document Reader'), 'Document Reader');
+  assert.equal(i18n.t('Image Reader'), 'Image Reader');
+  assert.equal(i18n.t('URL Reader'), 'URL Reader');
+});
