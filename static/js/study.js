@@ -6750,6 +6750,14 @@ function runAiCoding() {
     apiCall('/api/interview-coding/packs/' + encodeURIComponent(context.packId) + '/ai-runs', { method: 'POST', body: JSON.stringify({}) }).then(function (payload) {
       applyCodingRunPayload(attempt, payload);
     }).catch(function (error) {
+      if (codingRunAttemptIsCurrent(attempt) && error.status >= 400 && error.status < 500) {
+        stopCodingRunPolling();
+        renderCodingRunStatus();
+        var message = error.message || 'Could not start AI coding. Please try again.';
+        setCodingStatus(message, 'error');
+        showToast(message, 'error');
+        return;
+      }
       codingRunRequestFailed(attempt, error);
     }).finally(function () {
       attempt.inFlight = false;

@@ -76,9 +76,11 @@ async function fixture(page, options = {}) {
       const packId = pathname.split('/')[4], state = getState(owner, packId);
       if (pathname.endsWith('/ai-runs') && request.method() === 'POST') {
         posts.push({ owner, packId });
-        state.latest_run = state.latest_run || runFor(owner, packId);
+        const rejectedBeforeStarting = options.postError >= 400 && options.postError < 500;
+        if (!rejectedBeforeStarting) state.latest_run = state.latest_run || runFor(owner, packId);
         if (options.postGate) await options.postGate.promise;
-        if (options.postError) return route.fulfill({ status: options.postError, json: { error: 'Synthetic start response outage' } });
+        if (options.postNetworkError) return route.abort('failed');
+        if (options.postError) return route.fulfill({ status: options.postError, json: { error: options.postErrorMessage || 'Synthetic start response outage' } });
         return route.fulfill({ status: 202, json: envelope(state) });
       }
       if (pathname.endsWith('/accept')) {
@@ -230,6 +232,50 @@ test('a lost start response reconciles the saved run before retrying', async ({ 
   expect(mock.posts).toHaveLength(1);
 });
 
+for (const status of [402, 429]) {
+  for (const previous of ['none', 'accepted', 'failed']) {
+    test(`a definite ${status} start rejection with ${previous} prior run stays retryable without reconciliation`, async ({ page }) => {
+      await page.clock.install();
+      const reason = status === 402 ? 'Not enough credits for AI coding.' : 'Too many AI coding requests. Please try again shortly.';
+      const mock = await fixture(page, {
+        initialStatus: previous === 'none' ? undefined : previous,
+        postError: status, postErrorMessage: reason,
+      });
+      const reads = mock.reads.length;
+      const previousRun = structuredClone(mock.getState().latest_run);
+
+      await startRun(page);
+      await expect.poll(() => mock.posts.length).toBe(1);
+      await page.clock.runFor(1600);
+
+      await expect.soft(page.locator('#toast')).toHaveText(reason, { timeout: 1000 });
+      await expect.soft(page.locator('#toast')).toBeVisible({ timeout: 1000 });
+      await expect.soft(page.locator('#coding-status')).toHaveText(reason, { timeout: 1000 });
+      await expect.soft(page.locator('#coding-ai-run-btn')).toBeEnabled({ timeout: 1000 });
+      expect.soft(mock.reads).toHaveLength(reads);
+      expect.soft(mock.polls).toHaveLength(0);
+      expect.soft((await page.locator('#toast, #coding-status').allTextContents()).join(' ')).not.toContain('has been refunded');
+      expect(mock.getState().latest_run).toEqual(previousRun);
+      expect(mock.posts).toHaveLength(1);
+      expect(mock.browserErrors).toEqual([]);
+    });
+  }
+}
+
+test('a network failure after a durable start reconciles the queued run without another POST', async ({ page }) => {
+  const mock = await fixture(page, { postNetworkError: true });
+  const reads = mock.reads.length;
+
+  await startRun(page);
+  await expect.poll(() => mock.reads.length).toBeGreaterThan(reads);
+  await expect.poll(() => mock.polls.length).toBeGreaterThan(0);
+  await expect(page.locator('#coding-ai-run-btn')).toBeDisabled();
+  mock.getState().latest_run.status = 'draft';
+  await expect(page.locator('#coding-ai-panel')).toContainText('AI draft ready to review');
+  expect(mock.posts).toHaveLength(1);
+  expect(mock.browserErrors).toEqual([]);
+});
+
 async function navigateAway(page, destination) {
   if (destination === 'signout') {
     await page.evaluate(() => window.testAccount.switchTo(null));
@@ -341,6 +387,23 @@ for (const failRead of [false, true]) {
 
 for (const theme of ['light', 'dark']) {
   for (const width of [1440, 375]) {
+    test(`a rejected start remains readable and retryable at ${width}px in ${theme}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 1000 });
+      const reason = 'Too many AI coding requests. Please try again shortly.';
+      const mock = await fixture(page, { initialStatus: 'failed', postError: 429, postErrorMessage: reason });
+      await page.evaluate(value => window.LPTheme.apply({ theme: value }), theme);
+
+      await startRun(page);
+
+      await expect(page.locator('#coding-status')).toHaveText(reason);
+      await expect(page.locator('#coding-status')).toBeInViewport();
+      await expect(page.locator('#coding-ai-run-btn')).toBeEnabled();
+      await expect(page.locator('#coding-close-btn')).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`start-rejected-${theme}-${width}.png`), animations: 'disabled' });
+      expect(mock.browserErrors).toEqual([]);
+    });
+
     test(`pending coding is readable at ${width}px in ${theme}`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 1000 });
       const mock = await fixture(page, { initialStatus: 'processing' });
