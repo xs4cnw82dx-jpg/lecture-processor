@@ -97,6 +97,7 @@ const plannerSessionFromUrl = String(urlParams.get('plan_item_id') || '').trim()
 let dueReviewOnly = urlParams.get('review') === 'due';
 let plannedPickerActive = false;
 let plannedSessionController = null;
+let unavailablePlannedSession = null;
 let learningRestoring = false;
 let learningCacheSession = null;
 let studyCacheEpoch = 0;
@@ -4097,7 +4098,14 @@ async function openPlannedStudy(mode) {
   var cacheEpoch = studyCacheEpoch;
   var uid = auth.currentUser.uid;
   var packId = selectedPackId;
-  var learningId = JSON.stringify([packId, plannerSessionFromUrl]);
+  var sessionId = plannerSessionFromUrl;
+  var learningId = JSON.stringify([packId, sessionId]);
+  function clearPlannedLearningCheckpoint() {
+    clearTimeout(learningCheckpointTimer);
+    learningCheckpointTimer = null;
+    var removed = studyCache ? studyCache.remove(uid, 'learning', learningId) : false;
+    return removeKnownLegacyStudyKey('learning_session_' + uid + '_' + packId + '_' + sessionId, uid, packId) && removed;
+  }
   plannedSessionController = await window.LectureProcessorPlannedStudy.open({
     studyMode: mode, timerMode: timerMode, host: document.getElementById('learn-session-tools'),
     api: apiCall, uid: auth.currentUser.uid, sessionId: plannerSessionFromUrl, pack: selectedPack,
@@ -4112,11 +4120,12 @@ async function openPlannedStudy(mode) {
     onConflict: function (message) { showToast(message, 'error'); },
     onLegacyKey: function (key, value) { registerLegacyStudyKey(key, uid, packId, value); },
     onProgress: function (response) { mergeProgressFromServer(response); hydratePackStatesForKnownPacks(); },
-    onFinish: function () {
-      clearTimeout(learningCheckpointTimer);
-      var removed = studyCache ? studyCache.remove(uid, 'learning', learningId) : false;
-      removed = removeKnownLegacyStudyKey('learning_session_' + uid + '_' + packId + '_' + plannerSessionFromUrl, uid, packId) && removed;
-      return removed;
+    onFinish: clearPlannedLearningCheckpoint,
+    onUnavailable: function (cleared) {
+      unavailablePlannedSession = { uid: uid, packId: packId, sessionId: sessionId, cleared: false };
+      unavailablePlannedSession.cleared = clearPlannedLearningCheckpoint() && cleared;
+      document.getElementById('learn-session-state').textContent = 'Study session unavailable.';
+      return unavailablePlannedSession.cleared;
     },
     getMode: function () { return activeLearnMode; },
     onAvailability: function (available) { document.getElementById('learn-mode-content').inert = !available; if (activeLearnMode === 'match') { if (!available) stopMatchTimer(); else if (!matchRunning && matchMatched < matchTotal) startMatchTimer(matchElapsed); } },
@@ -8817,11 +8826,17 @@ function flushHighlightSync(options) {
     }).catch(function (e) {
       if (!isCurrent() || highlightSavesInFlight.get(packId) !== request) return false;
       if (e.status === 403 || e.status === 404) {
-        pendingHighlightSaves.delete(packId);
-        if (selectedPackId === packId) setHighlightStatus(highlightDeviceSaved.get(packId)
+        if (pendingHighlightSaves.has(packId)) return false;
+        var durable = studyCache && studyCache.get(uid, 'highlights', packId);
+        // Only this exact request can settle its durable revision. A later
+        // local edit or another tab's edit still needs its own response.
+        if (durable && payloadFingerprint(durable) !== payloadFingerprint(payload)) return false;
+        var acknowledged = !!durable && storeHighlightForPack(packId, payload, false, cacheSession);
+        if (!acknowledged) pendingHighlightSaves.set(packId, payload);
+        if (selectedPackId === packId) setHighlightStatus(acknowledged
           ? 'Highlights remain on this device; this pack cannot be updated.'
           : 'Highlights could not be saved on this device. Keep this tab open until syncing succeeds.', true);
-        return false;
+        return acknowledged;
       }
       console.warn('Could not sync note highlights:', e && e.message ? e.message : e);
       // A failed older request must never replace a newer local edit.
@@ -9465,7 +9480,8 @@ function loadLearningCheckpoint() {
 }
 function saveLearningCheckpoint() {
   if (learningRestoring || !auth.currentUser || !selectedPack || !activeLearnMode || !learnStage || !learnStage.classList.contains('visible')) return;
-  if (plannedSessionController && plannedSessionController.isFinished()) return;
+  if (plannedSessionController && (plannedSessionController.isFinished() || plannedSessionController.isUnavailable())) return;
+  if (isUnavailablePlannedSession()) return;
   var saved = loadLearningCheckpoint() || {version:learningContentVersion(),modes:{}};
   saved.lastMode = activeLearnMode;
   saved.modes = saved.modes || {};
@@ -9571,7 +9587,13 @@ function hasPendingStudyPersistence() {
     plannerActivitySyncPromise ||
     (progressSyncController && progressSyncController.isInFlight()) ||
     (plannedSessionController && plannedSessionController.hasPending()) ||
+    (isUnavailablePlannedSession() && !unavailablePlannedSession.cleared) ||
     !studyCache || typeof studyCache.hasPending !== 'function' || studyCache.hasPending(auth.currentUser.uid));
+}
+function isUnavailablePlannedSession() {
+  return !!(unavailablePlannedSession && plannedPickerActive && auth.currentUser &&
+    unavailablePlannedSession.uid === auth.currentUser.uid && unavailablePlannedSession.packId === selectedPackId &&
+    unavailablePlannedSession.sessionId === plannerSessionFromUrl);
 }
 async function flushStudyPersistence() {
   if (!auth.currentUser) return !hasPendingStudyPersistence();

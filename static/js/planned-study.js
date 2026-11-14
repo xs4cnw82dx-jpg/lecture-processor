@@ -13,7 +13,22 @@
     if (options.isCurrentUser && !options.isCurrentUser()) return null;
     var cache = root.LectureProcessorStudyCache;
     var cacheSession = cache ? cache.capture(options.uid) : null;
-    var result = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', {method:'POST',body:'{}'});
+    function clearUnavailableSession(packId) {
+      var cleared = !!(cache && cache.removePlannedSession && cache.removePlannedSession(options.uid, options.sessionId, packId));
+      if (options.onUnavailable) cleared = options.onUnavailable(cleared) !== false && cleared;
+      return cleared;
+    }
+    var result;
+    try {
+      result = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', {method:'POST',body:'{}'});
+    } catch (error) {
+      if (error.status === 404 && (!options.isCurrentUser || options.isCurrentUser())) {
+        if (options.onAvailability) options.onAvailability(false);
+        var cleared = clearUnavailableSession(String((options.pack || {}).study_pack_id || ''));
+        error.message = translate(cleared ? 'Study session unavailable.' : 'Study session unavailable. Device storage could not be cleared.');
+      }
+      throw error;
+    }
     if (options.isCurrentUser && !options.isCurrentUser()) return null;
     var session = result.session;
     if (result.pack && options.onPack) options.onPack(result.pack);
@@ -64,14 +79,15 @@
     run.pending_reviews = run.pending_reviews || [];
     run.retry_done = run.retry_done || [];
     run.run_status = 'paused';
-    var disposed = false, finished = false, syncing = Promise.resolve(), lastTick = Date.now(), lastSync = Date.now();
+    var disposed = false, finished = false, unavailable = false, unavailableCleared = false;
+    var syncing = Promise.resolve(), lastTick = Date.now(), lastSync = Date.now();
     var message = 'Progress saved', finishing = false, slotStopped = run.slot_seconds >= run.duration_seconds;
     var acknowledgedRevision = Number(result.run.checkpoint_revision || 0), deviceSaved = false;
     var host = options.host;
     host.hidden = false;
     host.innerHTML = '<section class="learn-session-tracker" aria-label="Planned study session"><div class="learn-session-toolbar"><div class="learn-session-clock"><strong data-clock>0:00</strong><span data-phase></span></div><div class="learn-session-timer-label"><span>Timer</span><strong data-timer-label></strong></div><button type="button" class="btn" data-pause>Pause</button><button type="button" class="btn" data-finish>Finish session</button></div><div class="learn-session-meta"><span data-targets></span><span data-save role="status" aria-live="polite"></span></div><p class="learn-session-explanation">Pauses when you leave this tab. Timer type stays fixed once started.</p><p class="learn-session-break" data-break hidden>Take a short break. Study controls will return when the next focus period starts.</p></section>';
     var $ = function (selector) { return host.querySelector(selector); };
-    function isCurrent() { return !disposed && (!options.isCurrentUser || options.isCurrentUser()); }
+    function isCurrent() { return !disposed && !unavailable && (!options.isCurrentUser || options.isCurrentUser()); }
     function storeRun() {
       if (!isCurrent() || finished) return false;
       deviceSaved = !!(cache && cache.set(cacheSession, 'planned', run.activity_id, run, {
@@ -89,9 +105,10 @@
       return deviceSaved;
     }
     function hasPending() {
-      return !finished && (run.checkpoint_revision > acknowledgedRevision || !!run.pending_reviews.length);
+      return !finished && !unavailable && (run.checkpoint_revision > acknowledgedRevision || !!run.pending_reviews.length);
     }
     async function flushPending() {
+      if (unavailable) return unavailableCleared && (!options.isCurrentUser || options.isCurrentUser());
       if (!isCurrent()) return false;
       if (finished) return true;
       tick(true); run.run_status = 'paused'; render();
@@ -99,26 +116,38 @@
         await checkpoint();
         await syncing;
         return isCurrent() && !hasPending();
-      } catch (_) { return false; }
+      } catch (_) { return unavailable && unavailableCleared && (!options.isCurrentUser || options.isCurrentUser()); }
     }
     function render() {
       if (disposed) return;
       var phase = utils.timerState(run);
       $('[data-clock]').textContent = clock(phase.phaseRemaining);
-      $('[data-phase]').textContent = translate(finished ? 'Session complete' : run.run_status !== 'active' ? 'Paused' : phase.onBreak ? 'Break' : 'Focus');
+      $('[data-phase]').textContent = translate(unavailable ? 'Session unavailable' : finished ? 'Session complete' : run.run_status !== 'active' ? 'Paused' : phase.onBreak ? 'Break' : 'Focus');
       $('[data-timer-label]').textContent = translate(run.timer_mode === 'pomodoro' ? 'Pomodoro · 25 / 5' : 'Countdown');
       $('[data-pause]').textContent = translate(run.run_status === 'active' ? 'Pause' : 'Continue');
       $('[data-finish]').textContent = translate('Finish session');
-      $('[data-pause]').disabled = finished;
-      $('[data-finish]').disabled = finishing || finished;
+      $('[data-pause]').disabled = finished || unavailable;
+      $('[data-finish]').disabled = finishing || finished || unavailable;
       var count = Object.keys(run.answers || {}).length;
+      $('[data-targets]').hidden = unavailable;
       $('[data-targets]').textContent = translate('{answered} / {total} target answers saved · {minutes} active min · {remaining} in planned slot', {
         answered: count, total: run.queue.filter(function (item) { return item.type !== 'notes'; }).length,
         minutes: Math.floor(run.active_seconds / 60), remaining: clock(phase.remaining)
       });
       $('[data-save]').textContent = translate(message);
-      $('[data-break]').hidden = !phase.onBreak;
-      if (options.onAvailability) options.onAvailability(!finished && run.run_status === 'active' && !phase.onBreak);
+      $('[data-break]').hidden = unavailable || !phase.onBreak;
+      if (options.onAvailability) options.onAvailability(!finished && !unavailable && run.run_status === 'active' && !phase.onBreak);
+    }
+    function markUnavailable(error) {
+      if (error.status !== 404 || !isCurrent() || finished) return false;
+      unavailable = true; run.run_status = 'unavailable'; finishing = false;
+      stopWriters();
+      message = 'This planned session is no longer available. Open Study Plan to choose another session.';
+      render();
+      unavailableCleared = clearUnavailableSession(packId);
+      if (!unavailableCleared) message = 'Study session unavailable. Device storage could not be cleared.';
+      render();
+      return true;
     }
     function checkpoint() {
       if (!isCurrent() || finished) return Promise.resolve(null);
@@ -142,6 +171,7 @@
         render(); return response;
       }).catch(function (error) {
         if (!isCurrent() || finished) throw error;
+        if (markUnavailable(error)) throw error;
         if (error.status === 409) { run.run_status = 'paused'; message = error.message; }
         else message = deviceSaved ? 'Saved on this device · reconnect to sync' : 'Keep this tab open until progress is saved.';
         render(); throw error;
@@ -163,12 +193,16 @@
       if (Date.now() - lastSync >= 15000) checkpoint();
     }
     async function changeMode(mode, timerMode) {
+      if (unavailable) throw new Error(translate('Study session unavailable.'));
       if (!isCurrent() || finished) throw new Error('This session is complete. Open a new session to continue.');
       tick(); run.run_status = 'paused';
       await checkpoint(); // Never switch away from locally unsynced answers.
       if (!isCurrent() || finished) throw new Error('Your account changed. Open the session again.');
-      var response = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', {method:'POST',body:JSON.stringify({study_mode:mode,timer_mode:timerMode || run.timer_mode})});
-      if (disposed || (options.isCurrentUser && !options.isCurrentUser())) throw new Error('Your account changed. Open the session again.');
+      var response;
+      try {
+        response = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', {method:'POST',body:JSON.stringify({study_mode:mode,timer_mode:timerMode || run.timer_mode})});
+      } catch (error) { markUnavailable(error); throw error; }
+      if (!isCurrent()) throw new Error('Your account changed. Open the session again.');
       run = response.run; session = response.session;
       acknowledgedRevision = Number(run.checkpoint_revision || 0);
       run.pending_reviews = []; run.retry_done = run.retry_done || [];
@@ -211,19 +245,27 @@
         cleared = removeLegacyRecord(storageKey + '_conflict') && cleared;
         if (options.onFinish && options.onFinish() === false) cleared = false;
         message = cleared ? 'Session complete · your plan and progress are saved' : 'Session complete · your plan and progress are saved. Device storage could not be cleared.';
-      } catch (error) { message = error.message; }
+      } catch (error) {
+        if (!unavailable && isCurrent() && !markUnavailable(error)) message = error.message;
+      }
       finishing = false; render();
     }
     async function close() {
       if (disposed) return;
-      tick(); run.run_status = 'paused';
-      if (!finished) { try { await checkpoint(); if (isCurrent()) await options.flush(); } catch (_) { /* Local checkpoint is retained. */ } }
+      if (!unavailable) {
+        tick(); run.run_status = 'paused';
+        if (!finished) { try { await checkpoint(); if (isCurrent()) await options.flush(); } catch (_) { /* Local checkpoint is retained. */ } }
+      }
       invalidate();
+    }
+    function stopWriters() {
+      clearInterval(interval); document.removeEventListener('visibilitychange',visibility); window.removeEventListener('online',online); window.removeEventListener('pagehide',pagehide);
     }
     function invalidate() {
       if (disposed) return;
-      run.run_status = 'paused'; disposed = true;
-      clearInterval(interval); document.removeEventListener('visibilitychange',visibility); window.removeEventListener('online',online); window.removeEventListener('pagehide',pagehide);
+      if (!unavailable) run.run_status = 'paused';
+      disposed = true;
+      stopWriters();
       window.removeEventListener('lp:language-changed', render);
       if (active === api) { host.replaceChildren(); host.hidden = true; active = null; }
     }
@@ -246,7 +288,7 @@
     var interval = setInterval(tick,1000);
     document.addEventListener('visibilitychange',visibility); window.addEventListener('online',online); window.addEventListener('pagehide',pagehide);
     window.addEventListener('lp:language-changed', render);
-    var api = {invalidate:invalidate,discard:discard,hasPending:hasPending,flushPending:flushPending,isFinished:function () { return finished; },pause:function () { if (!isCurrent() || finished) return; tick(); run.run_status = 'paused'; checkpoint(); render(); },changeMode:changeMode,record:record,close:close,checkpoint:checkpoint,getRun:function () { return run; }};
+    var api = {invalidate:invalidate,discard:discard,hasPending:hasPending,flushPending:flushPending,isFinished:function () { return finished; },isUnavailable:function () { return unavailable; },pause:function () { if (!isCurrent() || finished) return; tick(); run.run_status = 'paused'; checkpoint(); render(); },changeMode:changeMode,record:record,close:close,checkpoint:checkpoint,getRun:function () { return run; }};
     active = api;
     try { await changeMode(options.studyMode,options.timerMode); } catch (error) { await close(); throw error; }
     return api;
