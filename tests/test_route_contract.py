@@ -150,6 +150,7 @@ EXPECTED_ROUTES = [
     ('POST', '/api/stripe-webhook', 'payments_api.stripe_webhook'),
     ('GET', '/api/interview-coding/packs/<pack_id>', 'study_api.get_interview_coding_state'),
     ('POST', '/api/interview-coding/packs/<pack_id>/ai-runs', 'study_api.start_interview_ai_coding_run'),
+    ('GET', '/api/interview-coding/packs/<pack_id>/ai-runs/<run_id>', 'study_api.get_interview_ai_coding_run'),
     ('POST', '/api/interview-coding/packs/<pack_id>/ai-runs/<run_id>/accept', 'study_api.accept_interview_ai_coding_run'),
     ('POST', '/api/interview-coding/packs/<pack_id>/ai-runs/<run_id>/reject', 'study_api.reject_interview_ai_coding_run'),
     ('POST', '/api/interview-coding/packs/<pack_id>/codes', 'study_api.create_interview_code'),
