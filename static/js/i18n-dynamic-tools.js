@@ -3,6 +3,18 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "AI coding could not finish. Your credit refund is still being processed.": "De AI-codering kon niet worden voltooid. Je credits worden nog teruggestort.",
+  "AI coding failed. Your credit has been refunded.": "De AI-codering is mislukt. Je credits zijn teruggestort.",
+  "AI coding failed. Please try again.": "De AI-codering is mislukt. Probeer het opnieuw.",
+  "Could not check AI coding status.": "De status van de AI-codering kon niet worden gecontroleerd.",
+  "Could not start AI coding. Please try again.": "De AI-codering kon niet worden gestart. Probeer het opnieuw.",
+  "Finishing credit refund": "Terugstorting afronden",
+  "Refund pending": "Terugstorting in behandeling",
+  "Check status": "Status controleren",
+  "Waiting to code interview": "Wachten om het interview te coderen",
+  "Coding interview": "Interview coderen",
+  "Coding draft ready": "Conceptcodering is klaar",
+  "Finalizing coding run": "Codering afronden",
   "Pack actions for {title}": "Pakketacties voor {title}",
   "Delete \"{title}\" permanently? This cannot be undone.": "\"{title}\" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.",
   "Delete selected": "Selectie verwijderen",
