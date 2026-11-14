@@ -77,7 +77,7 @@ def _build_pricing_catalog(*, runtime) -> list[dict]:
                     'featured': bundle.get('badge') == 'best_value',
                     'price_per_credit_cents': None,
                 }
-                for bundle_id, bundle in billing_policy.CREDIT_BUNDLES.items()
+                for bundle_id, bundle in sorted(billing_policy.CREDIT_BUNDLES.items(), key=lambda item: item[1]['credits'])
             ],
         }]
     catalog = []

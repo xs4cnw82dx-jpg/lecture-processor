@@ -27,7 +27,7 @@
         <button type="button" class="bundle-buy-btn unified-bundle{% if bundle.featured %} featured{% endif %}"
           data-bundle-id="{{ bundle.id }}" data-bundle-name="{{ bundle.name }}" data-credits="{{ bundle.credits_total }}"
           data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}" aria-label="Buy {{ bundle.name }}">
-          <span class="badge">{% if bundle.featured %}Best value{% elif bundle.badge == 'semester' %}Semester{% else %}Flexible study{% endif %}</span>
+          <span class="badge">{% if bundle.badge_label %}{{ bundle.badge_label }}{% elif bundle.featured %}Best value{% elif bundle.badge == 'semester' %}Semester{% else %}Flexible study{% endif %}</span>
           <span class="credits">{{ bundle.credits_label }}</span>
           <span class="price" data-price-cents="{{ bundle.price_cents }}" data-currency="{{ bundle.currency }}"></span>
           <span class="meta">One balance for all your study tools.</span>
