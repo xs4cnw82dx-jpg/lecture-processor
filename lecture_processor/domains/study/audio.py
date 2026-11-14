@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 
+from lecture_processor.repositories import study_repo
 from lecture_processor.runtime.container import get_runtime
 
 
@@ -181,6 +182,40 @@ def remove_pack_audio_file(pack, runtime=None):
     except Exception:
         return False
     return False
+
+
+def cleanup_failed_job_audio(job_id, job_data, runtime=None):
+    """Remove this job's audio only after proving no saved pack needs it."""
+    resolved_runtime = _resolve_runtime(runtime)
+    if not isinstance(job_data, dict):
+        return False
+    job_id = str(job_id or '').strip()
+    key = normalize_audio_storage_key(job_data.get('audio_storage_key', ''), runtime=resolved_runtime)
+    if not job_id or not key:
+        return False
+    # persist_audio_for_study_pack writes one file directly under this root.
+    # Never let an unrelated key, nested path, or legacy absolute path expand
+    # the files a failed job can remove.
+    relative_name = key[len(_study_audio_relative_dir(resolved_runtime)) + 1:]
+    if '/' in relative_name or os.path.splitext(relative_name)[0] != job_id:
+        return False
+    try:
+        path = resolve_audio_storage_path_from_key(key, runtime=resolved_runtime)
+        if not path or not os.path.isfile(path):
+            return False
+        db = getattr(resolved_runtime, 'db', None)
+        if db is None:
+            return False
+        pack_ids = (job_data.get('study_pack_id'), job_data.get('voice_note_append_to_pack_id'))
+        if study_repo.has_saved_audio_for_job(db, job_id, key, pack_ids=pack_ids):
+            return False
+        os.remove(path)
+        return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        resolved_runtime.logger.warning('Could not safely clean up audio for job %s', job_id, exc_info=True)
+        return False
 
 
 def persist_audio_for_study_pack(job_id, audio_source_path, runtime=None):

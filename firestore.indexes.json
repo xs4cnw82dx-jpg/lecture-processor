@@ -417,6 +417,12 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "runtime_jobs",
+      "fieldPath": "expires_at_ts",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "job_logs",
       "fieldPath": "expires_at_ts",
       "ttl": true,
