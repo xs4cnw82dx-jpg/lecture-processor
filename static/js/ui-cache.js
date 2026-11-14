@@ -102,7 +102,7 @@
     return remove(toUserKey(safeUid, key));
   }
 
-  function clearUserScope(uid) {
+  function clearUserScope(uid, options) {
     var scope = userScope(uid);
     if (!scope) return false;
     try {
@@ -111,6 +111,7 @@
       for (var i = 0; i < window.localStorage.length; i += 1) {
         var entryKey = window.localStorage.key(i);
         if (entryKey && entryKey.indexOf(prefix) === 0) {
+          if (options && options.preserveStudyCache && entryKey.indexOf(prefix + 'study_cache:') === 0) continue;
           removals.push(entryKey);
         }
       }

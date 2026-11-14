@@ -6,29 +6,96 @@
 
   async function open(options) {
     if (active) await active.close();
+    if (options.isCurrentUser && !options.isCurrentUser()) return null;
+    var cache = root.LectureProcessorStudyCache;
+    var cacheSession = cache ? cache.capture(options.uid) : null;
     var result = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', {method:'POST',body:'{}'});
     if (options.isCurrentUser && !options.isCurrentUser()) return null;
     var session = result.session;
     if (result.pack && options.onPack) options.onPack(result.pack);
     var storageKey = 'planned_run_' + options.uid + '_' + result.run.activity_id;
-    var local; try { local = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch (_) { local = null; }
+    var packId = String((result.pack || options.pack || {}).study_pack_id || result.run.pack_id || '');
+    var local = cache ? cache.get(options.uid, 'planned', result.run.activity_id) : null;
+    var legacy = null, legacyRecords = new Map();
+    function matchingContent(candidate) {
+      return candidate && (!candidate.uid || candidate.uid === options.uid) && (!candidate.pack_id || candidate.pack_id === packId) &&
+        candidate.activity_id === result.run.activity_id && typeof candidate.content_fingerprint === 'string' && !!candidate.content_fingerprint &&
+        candidate.content_fingerprint === result.run.content_fingerprint && candidate.generation === result.run.generation;
+    }
+    function readLegacyRecord(key) {
+      try {
+        var raw = localStorage.getItem(key);
+        var candidate = JSON.parse(raw || 'null');
+        if (!matchingContent(candidate)) return null;
+        legacyRecords.set(key, raw);
+        if (options.onLegacyKey) options.onLegacyKey(key, raw);
+        return candidate;
+      } catch (_) { return null; }
+    }
+    function removeLegacyRecord(key) {
+      if (!legacyRecords.has(key)) return true;
+      try {
+        if (localStorage.getItem(key) === legacyRecords.get(key)) localStorage.removeItem(key);
+        legacyRecords.delete(key);
+        return true;
+      } catch (_) { return false; }
+    }
+    legacy = readLegacyRecord(storageKey);
+    if (!local && matchingContent(legacy)) local = legacy;
     var run = utils.mergeCheckpoint(result.run, local);
-    if (local && run === result.run && (local.pending_reviews || []).length && (local.mode_generation || 0) !== (run.mode_generation || 0)) {
-      try { localStorage.setItem(storageKey + '_conflict',JSON.stringify(local)); } catch (_) { /* Keep the active server mode authoritative. */ }
+    var localPending = local && (Number(local.checkpoint_revision || 0) > Number(result.run.checkpoint_revision || 0) || (local.pending_reviews || []).length);
+    if (matchingContent(local) && run === result.run && localPending && (local.mode_generation || 0) !== (run.mode_generation || 0)) {
+      if (!cache || !cache.set(cacheSession, 'conflict', run.activity_id, local, { packId: packId, pending: true })) {
+        throw new Error('Your earlier unsynced attempt could not be saved on this device. Keep this tab open.');
+      }
       if (options.onConflict) options.onConflict('A newer session mode was opened elsewhere. Your unsynced earlier attempt is kept on this device; review those cards again to save them.');
     }
+    try {
+      var legacyConflict = readLegacyRecord(storageKey + '_conflict');
+      if (matchingContent(legacyConflict) && cache && !cache.get(options.uid, 'conflict', run.activity_id) &&
+          cache.set(cacheSession, 'conflict', run.activity_id, legacyConflict, { packId: packId, pending: true })) {
+        removeLegacyRecord(storageKey + '_conflict');
+      }
+    } catch (_) { /* Retain the legacy copy until a replacement is durable. */ }
     run.pending_reviews = run.pending_reviews || [];
     run.retry_done = run.retry_done || [];
     run.run_status = 'paused';
     var disposed = false, finished = false, syncing = Promise.resolve(), lastTick = Date.now(), lastSync = Date.now();
     var message = 'Progress saved', finishing = false, slotStopped = run.slot_seconds >= run.duration_seconds;
+    var acknowledgedRevision = Number(result.run.checkpoint_revision || 0), deviceSaved = false;
     var host = options.host;
     host.hidden = false;
     host.innerHTML = '<section class="learn-session-tracker" aria-label="Planned study session"><div class="learn-session-toolbar"><div class="learn-session-clock"><strong data-clock>0:00</strong><span data-phase></span></div><div class="learn-session-timer-label"><span>Timer</span><strong data-timer-label></strong></div><button type="button" class="btn" data-pause>Pause</button><button type="button" class="btn" data-finish>Finish session</button></div><div class="learn-session-meta"><span data-targets></span><span data-save role="status" aria-live="polite"></span></div><p class="learn-session-explanation">Pauses when you leave this tab. Timer type stays fixed once started.</p><p class="learn-session-break" data-break hidden>Take a short break. Study controls will return when the next focus period starts.</p></section>';
     var $ = function (selector) { return host.querySelector(selector); };
+    function isCurrent() { return !disposed && (!options.isCurrentUser || options.isCurrentUser()); }
+    function storeRun() {
+      if (!isCurrent() || finished) return false;
+      deviceSaved = !!(cache && cache.set(cacheSession, 'planned', run.activity_id, run, {
+        packId: packId, pending: run.checkpoint_revision > acknowledgedRevision || !!run.pending_reviews.length
+      }));
+      if (deviceSaved && matchingContent(legacy)) {
+        if (removeLegacyRecord(storageKey)) legacy = null;
+      }
+      return deviceSaved;
+    }
     function persist() {
+      if (!isCurrent() || finished) return false;
       run.checkpoint_revision += 1;
-      try { localStorage.setItem(storageKey, JSON.stringify(run)); } catch (_) { message = 'Keep this tab open until progress is saved.'; }
+      if (!storeRun()) message = 'Keep this tab open until progress is saved.';
+      return deviceSaved;
+    }
+    function hasPending() {
+      return !finished && (run.checkpoint_revision > acknowledgedRevision || !!run.pending_reviews.length);
+    }
+    async function flushPending() {
+      if (!isCurrent()) return false;
+      if (finished) return true;
+      tick(true); run.run_status = 'paused'; render();
+      try {
+        await checkpoint();
+        await syncing;
+        return isCurrent() && !hasPending();
+      } catch (_) { return false; }
     }
     function render() {
       if (disposed) return;
@@ -46,32 +113,36 @@
       if (options.onAvailability) options.onAvailability(!finished && run.run_status === 'active' && !phase.onBreak);
     }
     function checkpoint() {
+      if (!isCurrent() || finished) return Promise.resolve(null);
       persist();
       var payload = JSON.parse(JSON.stringify(run));
       message = 'Saving…'; render();
       var job = syncing.catch(function () {}).then(function () {
-        if (disposed || (options.isCurrentUser && !options.isCurrentUser())) throw new Error('Your account changed. Open the session again.');
+        if (!isCurrent() || finished) throw new Error('Your account changed. Open the session again.');
         return options.api('/api/study-plan/runs/' + encodeURIComponent(run.activity_id), {method:'PUT',body:JSON.stringify(payload)});
       }).then(function (response) {
-        if (disposed || (options.isCurrentUser && !options.isCurrentUser())) return response;
+        if (!isCurrent() || finished) return response;
         if (response.run.checkpoint_revision > run.checkpoint_revision) throw Object.assign(new Error('Another tab updated this session. Reopen it to continue with the latest saved progress.'),{status:409});
         (payload.pending_reviews || []).forEach(function (review) {
           if (!run.pending_reviews.some(function (pending) { return pending.key === review.key; })) return;
           run.pending_reviews = run.pending_reviews.filter(function (pending) { return pending.key !== review.key; });
         });
+        acknowledgedRevision = Math.max(acknowledgedRevision, payload.checkpoint_revision);
         if (options.onProgress) options.onProgress(response);
-        try { localStorage.setItem(storageKey, JSON.stringify(run)); } catch (_) { /* Remote checkpoint is durable. */ }
-        message = 'Progress saved'; render(); return response;
+        storeRun();
+        message = run.checkpoint_revision <= acknowledgedRevision ? 'Progress saved' : deviceSaved ? 'Saving…' : 'Keep this tab open until progress is saved.';
+        render(); return response;
       }).catch(function (error) {
+        if (!isCurrent() || finished) throw error;
         if (error.status === 409) { run.run_status = 'paused'; message = error.message; }
-        else message = 'Saved on this device · reconnect to sync';
+        else message = deviceSaved ? 'Saved on this device · reconnect to sync' : 'Keep this tab open until progress is saved.';
         render(); throw error;
       });
       syncing = job; job.catch(function () {}); lastSync = Date.now(); return job;
     }
     function tick(includeHidden) {
       var now = Date.now(), elapsed = Math.floor((now - lastTick) / 1000);
-      if (run.run_status !== 'active' || (document.hidden && !includeHidden) || finished) { lastTick = now; return; }
+      if (!isCurrent() || run.run_status !== 'active' || (document.hidden && !includeHidden) || finished) { lastTick = now; return; }
       if (!elapsed) return;
       lastTick += elapsed * 1000;
       var previous = run.slot_seconds;
@@ -84,16 +155,20 @@
       if (Date.now() - lastSync >= 15000) checkpoint();
     }
     async function changeMode(mode, timerMode) {
+      if (!isCurrent() || finished) throw new Error('This session is complete. Open a new session to continue.');
       tick(); run.run_status = 'paused';
       await checkpoint(); // Never switch away from locally unsynced answers.
+      if (!isCurrent() || finished) throw new Error('Your account changed. Open the session again.');
       var response = await options.api('/api/study-plan/items/' + encodeURIComponent(options.sessionId) + '/run', {method:'POST',body:JSON.stringify({study_mode:mode,timer_mode:timerMode || run.timer_mode})});
       if (disposed || (options.isCurrentUser && !options.isCurrentUser())) throw new Error('Your account changed. Open the session again.');
       run = response.run; session = response.session;
+      acknowledgedRevision = Number(run.checkpoint_revision || 0);
       run.pending_reviews = []; run.retry_done = run.retry_done || [];
       run.run_status = 'active'; lastTick = Date.now(); persist(); render();
       return run;
     }
     function record(id, action) {
+      if (!isCurrent()) return false;
       var item = run.queue.find(function (candidate) { return candidate.id === id; });
       if (!item || item.type === 'notes') return false;
       if (finished || utils.timerState(run).onBreak) { message = finished ? 'This session is complete.' : 'Your break is still running.'; render(); return false; }
@@ -108,37 +183,60 @@
       checkpoint(); return true;
     }
     async function finish() {
-      if (finishing || finished) return;
+      if (!isCurrent() || finishing || finished) return;
       if (!utils.canFinish(run)) { message = 'Finish the remaining planned targets, or study for the rest of your planned slot. Changing mode keeps those targets.'; render(); return; }
       finishing = true; tick(); run.run_status = 'paused';
       try {
         await checkpoint();
+        if (!isCurrent()) return;
         if (await options.flush() === false) throw new Error('Reconnect to sync your card progress before finishing.');
+        if (!isCurrent()) return;
         var response = await options.api('/api/study-plan/items/' + encodeURIComponent(session.id) + '/completion', {method:'POST',body:JSON.stringify({action:'complete',source:'tracked',revision:session.revision})});
-        session = response.session; finished = true; localStorage.removeItem(storageKey); message = 'Session complete · your plan and progress are saved';
+        if (!isCurrent()) return;
+        session = response.session; finished = true;
+        var cleared = !!cache;
+        if (cache) {
+          cleared = cache.remove(options.uid, 'planned', run.activity_id) && cleared;
+          cleared = cache.remove(options.uid, 'conflict', run.activity_id) && cleared;
+        }
+        cleared = removeLegacyRecord(storageKey) && cleared;
+        cleared = removeLegacyRecord(storageKey + '_conflict') && cleared;
+        if (options.onFinish && options.onFinish() === false) cleared = false;
+        message = cleared ? 'Session complete · your plan and progress are saved' : 'Session complete · your plan and progress are saved. Device storage could not be cleared.';
       } catch (error) { message = error.message; }
       finishing = false; render();
     }
     async function close() {
       if (disposed) return;
       tick(); run.run_status = 'paused';
-      if (!finished) { try { await checkpoint(); await options.flush(); } catch (_) { /* Local checkpoint is retained. */ } }
-      disposed = true; clearInterval(interval); document.removeEventListener('visibilitychange',visibility); window.removeEventListener('online',online); window.removeEventListener('pagehide',pagehide);
-      host.replaceChildren(); host.hidden = true; if (active === api) active = null;
+      if (!finished) { try { await checkpoint(); if (isCurrent()) await options.flush(); } catch (_) { /* Local checkpoint is retained. */ } }
+      invalidate();
     }
     function invalidate() {
-      run.run_status = 'paused'; persist(); disposed = true;
+      if (disposed) return;
+      run.run_status = 'paused'; disposed = true;
       clearInterval(interval); document.removeEventListener('visibilitychange',visibility); window.removeEventListener('online',online); window.removeEventListener('pagehide',pagehide);
-      host.replaceChildren(); host.hidden = true; if (active === api) active = null;
+      if (active === api) { host.replaceChildren(); host.hidden = true; active = null; }
     }
-    function visibility() { if (document.hidden) { tick(true); run.run_status = 'paused'; checkpoint(); render(); } }
-    function online() { if (!finished) checkpoint(); }
-    function pagehide() { if (!finished) { tick(true); run.run_status = 'paused'; persist(); } }
-    $('[data-pause]').addEventListener('click',function () { tick(); run.run_status = run.run_status === 'active' ? 'paused' : 'active'; lastTick = Date.now(); checkpoint(); render(); });
+    function discard() {
+      invalidate();
+      var cleared = !!cache;
+      if (cache) {
+        cleared = cache.remove(options.uid, 'planned', run.activity_id) && cleared;
+        cleared = cache.remove(options.uid, 'conflict', run.activity_id) && cleared;
+      }
+      cleared = removeLegacyRecord(storageKey) && cleared;
+      cleared = removeLegacyRecord(storageKey + '_conflict') && cleared;
+      return cleared;
+    }
+    function visibility() { if (isCurrent() && !finished && document.hidden) { tick(true); run.run_status = 'paused'; checkpoint(); render(); } }
+    function online() { if (isCurrent() && !finished) checkpoint(); }
+    function pagehide() { if (isCurrent() && !finished) { tick(true); run.run_status = 'paused'; persist(); } }
+    $('[data-pause]').addEventListener('click',function () { if (!isCurrent() || finished) return; tick(); run.run_status = run.run_status === 'active' ? 'paused' : 'active'; lastTick = Date.now(); checkpoint(); render(); });
     $('[data-finish]').addEventListener('click',finish);
     var interval = setInterval(tick,1000);
     document.addEventListener('visibilitychange',visibility); window.addEventListener('online',online); window.addEventListener('pagehide',pagehide);
-    var api = {invalidate:invalidate,pause:function () { tick(); run.run_status = 'paused'; checkpoint(); render(); },changeMode:changeMode,record:record,close:close,checkpoint:checkpoint,getRun:function () { return run; }};
+    var api = {invalidate:invalidate,discard:discard,hasPending:hasPending,flushPending:flushPending,isFinished:function () { return finished; },pause:function () { if (!isCurrent() || finished) return; tick(); run.run_status = 'paused'; checkpoint(); render(); },changeMode:changeMode,record:record,close:close,checkpoint:checkpoint,getRun:function () { return run; }};
     active = api;
     try { await changeMode(options.studyMode,options.timerMode); } catch (error) { await close(); throw error; }
     return api;

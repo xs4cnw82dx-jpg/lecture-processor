@@ -585,7 +585,13 @@ def update_goal(app_ctx, request, goal_id):
     if _owned_pack_ids(app_ctx, uid, payload['pack_ids']) != set(payload['pack_ids']):
         return app_ctx.jsonify({'error': 'One or more study packs could not be found.'}), 400
     payload.update({'uid': uid, 'revision': int(current.get('revision', 0) or 0) + 1})
-    app_ctx.repositories.planner.set_study_goal(app_ctx.db, uid, safe_id, payload, merge=False)
+    from lecture_processor.repositories import planner_repo as planner_repository
+    try:
+        app_ctx.repositories.planner.set_study_goal_if_revision(
+            app_ctx.db, uid, safe_id, payload, int(current.get('revision', 0) or 0),
+        )
+    except planner_repository.PlannerRevisionConflict:
+        return app_ctx.jsonify({'error': 'This goal changed in another tab.', 'code': 'revision_conflict'}), 409
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(payload)})
 
 

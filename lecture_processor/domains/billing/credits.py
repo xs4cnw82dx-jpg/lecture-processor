@@ -361,6 +361,18 @@ def refund_credit(uid, credit_type, runtime=None, *, idempotency_key=''):
         return False
 
 
+def prepare_slides_debit(user_data, amount, runtime=None):
+    """Prepare a debit for an existing transaction after all of its reads."""
+    resolved_runtime = _resolve_runtime(runtime)
+    if str(user_data.get('account_status', '') or '').strip().lower() == 'deleting':
+        return None
+    if is_unlimited_for_category(user_data, 'slides', runtime=resolved_runtime):
+        return {'last_unlimited_credit_used_at': resolved_runtime.time.time()}, 0
+    if user_data.get('slides_credits', 0) < amount:
+        return None
+    return {'slides_credits': resolved_runtime.firestore.Increment(-amount)}, amount
+
+
 def deduct_slides_credits(uid, amount, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     if amount <= 0:
@@ -371,16 +383,10 @@ def deduct_slides_credits(uid, amount, runtime=None):
         snapshot = user_ref.get(transaction=transaction)
         if not snapshot.exists:
             return False
-        data = snapshot.to_dict()
-        if str(data.get('account_status', '') or '').strip().lower() == 'deleting':
+        debit = prepare_slides_debit(snapshot.to_dict(), amount, runtime=resolved_runtime)
+        if debit is None:
             return False
-        if is_unlimited_for_category(data, 'slides', runtime=resolved_runtime):
-            transaction.update(user_ref, {'last_unlimited_credit_used_at': resolved_runtime.time.time()})
-            return True
-        current = data.get('slides_credits', 0)
-        if current < amount:
-            return False
-        transaction.update(user_ref, {'slides_credits': resolved_runtime.firestore.Increment(-amount)})
+        transaction.update(user_ref, debit[0])
         return True
 
     user_ref = resolved_runtime.users_repo.doc_ref(resolved_runtime.db, uid)

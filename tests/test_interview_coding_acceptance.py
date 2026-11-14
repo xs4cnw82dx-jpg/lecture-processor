@@ -9,6 +9,72 @@ import pytest
 from lecture_processor.services import interview_coding_service as service
 
 
+@pytest.mark.parametrize('cursor', [-1, 999999, True, '0', None])
+def test_invalid_acceptance_cursor_fails_without_writes(coding, cursor):
+    coding.fail_accept = True
+    coding.accept()
+    run = coding.run_ref.get().to_dict()
+    run['acceptance_plan']['next_write'] = cursor
+    coding.run_ref.set(run)
+    before = deepcopy(coding.documents)
+    attempts = 0
+    def bounded_writes(_operations):
+        nonlocal attempts
+        attempts += 1
+        if attempts > 4:
+            raise RuntimeError('Acceptance cursor did not make progress')
+    coding.before_commit = bounded_writes
+    response, status = coding.accept()
+    assert status == 409 and response['error']
+    assert coding.documents == before
+
+
+def test_reserved_provider_ids_do_not_become_firestore_field_names(coding):
+    coding.run_ref.update({
+        'proposed_codes': [{'temp_id': '__parent__', 'name': 'Parent'}, {'temp_id': '__child__', 'name': 'Child', 'parent_temp_id': '__parent__'}],
+        'proposed_quotations': [{'start_offset': 0, 'end_offset': 5, 'text': 'Hello', 'code_refs': ['__child__']}],
+    })
+    def validate_fields(operations):
+        def check(value):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if key.startswith('__') and key.endswith('__'):
+                        raise RuntimeError('Reserved Firestore field name')
+                    check(item)
+            elif isinstance(value, list):
+                for item in value:
+                    check(item)
+        for _ref, payload, _merge in operations:
+            check(payload)
+    coding.before_commit = validate_fields
+    assert coding.accept() == {'ok': True, 'state': {'ready': True}}
+    codes = coding.docs('interview_codes')
+    parent = next(key for key, code in codes.items() if code['name'] == 'Parent')
+    child = next(key for key, code in codes.items() if code['name'] == 'Child')
+    assert codes[child]['parent_code_id'] == parent
+    assert next(iter(coding.docs('interview_quotations').values()))['code_ids'] == [child]
+
+
+def test_oversized_acceptance_plan_does_not_change_draft(coding):
+    coding.run_ref.update({'proposed_codes': [{'temp_id': 'c1', 'name': 'Guidance', 'description': 'x' * 800_000}]})
+    before = deepcopy(coding.documents)
+    response, status = coding.accept()
+    assert status == 409 and response['error']
+    assert coding.documents == before
+
+
+def test_existing_version_one_acceptance_plan_can_resume(coding):
+    coding.fail_accept = True
+    coding.accept()
+    run = coding.run_ref.get().to_dict()
+    plan = run['acceptance_plan']
+    run['acceptance_plan'] = {**plan, 'version': 1, 'code_id_by_ref': {'c1': next(iter(plan['code_id_by_ref'].values()))}}
+    coding.run_ref.set(run)
+    assert coding.accept() == {'ok': True, 'state': {'ready': True}}
+    assert len(coding.docs('interview_codes')) == 1
+    assert len(coding.docs('interview_quotations')) == 1
+
+
 class Snapshot:
     def __init__(self, reference):
         self.reference = reference

@@ -9,7 +9,11 @@
   var userCache = window.LectureProcessorUserCache || {};
   var uiCache = window.LectureProcessorUiCache || {};
   var ux = window.LectureProcessorUx;
-  var escapeHtml = htmlUtils.escapeHtml || function (value) { return String(value == null ? '' : value); };
+  var escapeHtml = htmlUtils.escapeHtml || function (value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  };
   var CACHE_KEY = 'study_plan_v2_bootstrap';
   var DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -276,7 +280,7 @@
   function renderHeaderAction() {
     var label = byId('new-study-goal-label');
     if (label) label.textContent = activeGoals().length ? 'New study goal' : 'Set up my plan';
-    byId('clear-study-plan-btn').hidden = !((state.data.goals || []).length || plannedSessions().some(function (session) { return session.status !== 'completed'; }));
+    byId('clear-study-plan-btn').hidden = !(activeGoals().length || plannedSessions().some(function (session) { return session.status !== 'completed'; }));
     byId('schedule-goals-btn').hidden = !activeGoals().length;
     byId('calendar-connections-btn').hidden = !activeGoals().length && !plannedSessions().length;
   }

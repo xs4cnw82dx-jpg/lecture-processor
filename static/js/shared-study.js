@@ -26,6 +26,7 @@
   const folderNotesViewEl = document.getElementById('shared-folder-notes-view');
   const folderFlashcardsListEl = document.getElementById('shared-folder-flashcards-list');
   const folderQuestionsListEl = document.getElementById('shared-folder-questions-list');
+  let folderPackLoadSeq = 0;
 
   function escapeHtml(value) {
     return String(value || '')
@@ -185,21 +186,15 @@
   }
 
   async function loadFolderPack(packId) {
-    const response = await fetch('/api/shared/' + encodeURIComponent(shareToken) + '/packs/' + encodeURIComponent(packId));
-    const payload = await response.json().catch(function () { return {}; });
-    if (!response.ok) {
-      throw new Error(payload.error || 'Could not load shared pack.');
+    const loadSeq = ++folderPackLoadSeq;
+    if (folderPackPreviewEl) folderPackPreviewEl.hidden = true;
+    if (folderEmptyEl) {
+      folderEmptyEl.hidden = false;
+      folderEmptyEl.innerHTML = emptyStateHtml(
+        'Loading shared pack...',
+        'Loading notes, flashcards, and practice material...'
+      );
     }
-    if (folderEmptyEl) folderEmptyEl.hidden = true;
-    document.getElementById('shared-folder-pack-title').textContent = payload.title || 'Study pack';
-    if (folderPackPreviewEl) folderPackPreviewEl.hidden = false;
-    renderPackPreview(payload, {
-      modeEl: folderPackModeEl,
-      metaEl: folderPackMetaEl,
-      notesEl: folderNotesViewEl,
-      flashcardsEl: folderFlashcardsListEl,
-      questionsEl: folderQuestionsListEl,
-    });
     Array.from(folderPackListEl.querySelectorAll('.item')).forEach(function (item) {
       const isActive = item.dataset.packId === packId;
       item.classList.toggle('active', isActive);
@@ -209,6 +204,40 @@
         item.removeAttribute('aria-current');
       }
     });
+    try {
+      const response = await fetch('/api/shared/' + encodeURIComponent(shareToken) + '/packs/' + encodeURIComponent(packId));
+      const payload = await response.json().catch(function () { return {}; });
+      if (loadSeq !== folderPackLoadSeq) return;
+      if (!response.ok) {
+        throw new Error(payload.error || 'Could not load shared pack.');
+      }
+      document.getElementById('shared-folder-pack-title').textContent = payload.title || 'Study pack';
+      renderPackPreview(payload, {
+        modeEl: folderPackModeEl,
+        metaEl: folderPackMetaEl,
+        notesEl: folderNotesViewEl,
+        flashcardsEl: folderFlashcardsListEl,
+        questionsEl: folderQuestionsListEl,
+      });
+      if (folderEmptyEl) folderEmptyEl.hidden = true;
+      if (folderPackPreviewEl) folderPackPreviewEl.hidden = false;
+    } catch (error) {
+      if (loadSeq !== folderPackLoadSeq || !folderEmptyEl) return;
+      folderEmptyEl.innerHTML = emptyStateHtml(
+        'Could not load shared pack.',
+        error && error.message ? error.message : 'Could not load shared pack.'
+      );
+      const retryButton = document.createElement('button');
+      retryButton.type = 'button';
+      retryButton.className = 'btn secondary';
+      retryButton.textContent = 'Retry';
+      retryButton.addEventListener('click', function () {
+        if (loadSeq === folderPackLoadSeq) loadFolderPack(packId);
+      });
+      const retryActions = document.createElement('div');
+      retryActions.appendChild(retryButton);
+      folderEmptyEl.firstElementChild.appendChild(retryActions);
+    }
   }
 
   function renderFolder(payload) {
@@ -245,18 +274,14 @@
         + '<div class="item-sub">' + escapeHtml(buildMetaLine(pack)) + '</div>'
         + '<div class="item-sub">' + escapeHtml(formatPackCountSummary(pack.flashcards_count, pack.test_questions_count)) + '</div>';
       const activatePack = function () {
-        loadFolderPack(pack.study_pack_id).catch(function (error) {
-          showError(error && error.message ? error.message : 'Could not load shared pack.');
-        });
+        loadFolderPack(pack.study_pack_id);
       };
       item.addEventListener('click', activatePack);
       bindKeyboardActivation(item, activatePack);
       folderPackListEl.appendChild(item);
     });
     if (packs.length) {
-      loadFolderPack(packs[0].study_pack_id).catch(function (error) {
-        showError(error && error.message ? error.message : 'Could not load shared pack.');
-      });
+      loadFolderPack(packs[0].study_pack_id);
     }
   }
 
