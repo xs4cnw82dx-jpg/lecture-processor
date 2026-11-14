@@ -104,7 +104,7 @@ def _is_active_regular_runtime_job(job, uid):
     status = str(job.get('status', '') or '').strip().lower()
     if status not in account_lifecycle.ACTIVE_ACCOUNT_JOB_STATES:
         return False
-    if str(job.get('job_scope', '') or '').strip().lower() in {'tools', 'lecture_download'}:
+    if str(job.get('job_scope', '') or '').strip().lower() in {'tools', 'lecture_download', 'interview-coding'}:
         return False
     return not bool(job.get('is_batch', False))
 
