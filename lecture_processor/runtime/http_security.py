@@ -22,7 +22,6 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str
         "'self'",
         'https://www.gstatic.com',
         'https://apis.google.com',
-        'https://cdn.jsdelivr.net',
         'https://browser.sentry-cdn.com',
     ]
     safe_nonce = str(script_nonce or '').strip()
@@ -41,7 +40,6 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str
         'style-src': [
             "'self'",
             'https://fonts.googleapis.com',
-            'https://cdn.jsdelivr.net',
         ],
         'font-src': [
             "'self'",

@@ -576,6 +576,8 @@ def update_goal(app_ctx, request, goal_id):
     if not snapshot.exists:
         return app_ctx.jsonify({'error': 'Study goal not found.'}), 404
     current = snapshot.to_dict()
+    if current.get('status') == 'archived':
+        return app_ctx.jsonify({'error': 'This goal was deleted. Create a new goal to schedule these packs again.', 'code': 'goal_archived'}), 409
     body = request.get_json(silent=True) or {}
     if 'revision' in body and _safe_revision(body.get('revision')) != _safe_revision(current.get('revision', 0)):
         return app_ctx.jsonify({'error': 'This goal changed in another tab.', 'code': 'revision_conflict', 'goal': _serialize_goal(current)}), 409
