@@ -68,7 +68,7 @@ test('archive, restore, undo and direct links retain results across reloads', as
   await page.getByRole('button', { name: /Needs attention/ }).click();
   await page.locator('.bs-overflow summary').click();
   await page.getByRole('menuitem', { name: 'Archive', exact: true }).click();
-  await expect(page.locator('#batch-dashboard-rows')).toContainText('No matches');
+  await expect(page.locator('#batch-dashboard-rows')).toContainText('Nothing needs attention');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByRole('link', { name: 'View details' })).toBeVisible();
   await page.getByRole('link', { name: 'View details' }).click();
@@ -79,7 +79,7 @@ test('archive, restore, undo and direct links retain results across reloads', as
   await page.goto('/batch_status?view=archived');
   await page.locator('.bs-overflow summary').click();
   await page.getByRole('menuitem', { name: 'Restore', exact: true }).click();
-  await expect(page.locator('#batch-dashboard-rows')).toContainText('No matches');
+  await expect(page.locator('#batch-dashboard-rows')).toContainText('No archived batches');
   expect(f.batches[0].credits_refunded).toBe(2);
   expect(f.browserErrors).toEqual([]);
 });
@@ -293,7 +293,7 @@ test('active, ready, partial and empty layouts keep status and recovery readable
   f.batches.splice(0);
   await page.goto('/batch_status');
   await expect(page.getByRole('heading', { name: 'No batches yet' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Start a batch', exact: true })).toBeVisible();
+  await expect(page.locator('.bs-empty').getByRole('link', { name: 'New batch', exact: true })).toBeVisible();
   await page.screenshot({ path: '/tmp/redesign-secondary-evidence/batch/batch-empty-mobile.png', fullPage: true, animations: 'disabled' });
   expect(f.browserErrors).toEqual([]);
 });

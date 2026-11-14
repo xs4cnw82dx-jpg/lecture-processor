@@ -48,8 +48,21 @@
     document.getElementById('batch-list-limit').textContent = batches.length >= 200 ? 'Latest 200 batches · counts refer to loaded batches' : batches.length + (batches.length === 1 ? ' batch in your workspace' : ' batches in your workspace');
     var html = '';
     if (!visible.length) {
-      var empty = !batches.length && !modeFilter.value && !strategyFilter.value && view === 'all';
-      html = '<div class="bs-empty">' + util.icon(empty ? 'file' : 'check') + '<h2>' + (empty ? 'No batches yet' : 'No matches') + '</h2><p>' + (empty ? 'Your batches will appear here after you start one.' : 'Try another view or clear your filters.') + '</p>' + (empty ? '<a class="bs-button bs-primary" href="/batch_mode">Start a batch</a>' : '<button type="button" class="bs-button" data-dashboard-action="clear">Clear filters</button>') + '</div>';
+      var noBatches = !batches.length;
+      var hasFilters = !!(modeFilter.value || strategyFilter.value);
+      var archivedCount = batches.filter(function (batch) { return batch.archived; }).length;
+      var headings = { all: 'No unarchived batches', active: 'No active batches', completed: 'No completed batches', attention: 'Nothing needs attention', archived: 'No archived batches' };
+      var heading = noBatches ? 'No batches yet' : hasFilters ? 'No matches' : headings[view];
+      var copy = noBatches ? 'Your batches will appear here after you start one.' : hasFilters ? 'Try another view or clear your filters.' : 'Batches will appear here when they match this view.';
+      var actions = '';
+      if (!noBatches && hasFilters) {
+        actions = '<button type="button" class="bs-button" data-dashboard-action="clear">Clear filters</button>';
+      } else {
+        if (noBatches || view === 'all' || view === 'active') actions += '<a class="bs-button bs-primary" href="/batch_mode">New batch</a>';
+        if (archivedCount && view !== 'archived') actions += '<a class="bs-button" href="/batch_status?view=archived">View archived</a>';
+        else if (!noBatches && view !== 'all') actions += '<a class="bs-button" href="/batch_status">View all batches</a>';
+      }
+      html = '<div class="bs-empty">' + util.icon('file') + '<h2>' + heading + '</h2><p>' + copy + '</p>' + (!hasFilters && archivedCount && view !== 'archived' ? '<p><span>Archived batches:</span> <strong>' + archivedCount + '</strong></p>' : '') + '<div class="bs-actions">' + actions + '</div></div>';
     } else visible.forEach(function (b) {
       var batchId = util.escape(b.batch_id), href = util.detailUrl(b.batch_id) + '?return=' + encodeURIComponent(location.pathname + location.search);
       html += '<article class="bs-list-row" role="row" data-id="' + batchId + '"><div role="cell"><a class="bs-batch-title" href="' + util.escape(href) + '">' + util.escape(b.batch_title || b.batch_id) + '</a><p class="bs-muted">' + util.escape(util.mode(b)) + '</p></div><div role="cell">' + util.pill(b.status) + '</div><div role="cell" class="bs-list-progress">' + util.escape(util.progress(b)) + util.progressBar(b) + '</div><div role="cell" class="bs-date">' + util.escape(util.date(b.created_at)) + '</div><div role="cell" class="bs-actions"><a class="bs-button" href="' + util.escape(href) + '">View details</a>' + (b.can_download_zip ? '<button class="bs-button" type="button" data-dashboard-action="zip">Download ZIP</button>' : '') + (util.terminal(b.status) ? '<details class="bs-overflow" data-app-menu><summary aria-label="More actions for ' + util.escape(b.batch_title || b.batch_id) + '">•••</summary><div class="app-menu-panel"><button class="bs-button" type="button" data-dashboard-action="archive">' + (b.archived ? 'Restore' : 'Archive') + '</button></div></details>' : '') + '</div></article>';

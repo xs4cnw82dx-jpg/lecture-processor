@@ -19,6 +19,11 @@
   var authBanner = document.getElementById('dashboard-auth-banner');
   var DASHBOARD_CACHE_KEY = 'dashboard_summary_active_plan_v1';
   var currentUser = null;
+  var loadSequence = 0;
+  var refreshTimer = null;
+  var refreshPending = false;
+  var latestSnapshot = null;
+  var summaryVersion = 0;
   var dueRequest = 0;
   var nextPlannedPack = false;
   var activePlanPackIds = new Set();
@@ -90,6 +95,7 @@
   }
 
   function applySnapshot(snapshot) {
+    latestSnapshot = snapshot;
     if (!snapshot) {
       if (streakEl) streakEl.textContent = '\u2014 days';
       if (dueEl) dueEl.textContent = '\u2014 cards';
@@ -128,6 +134,7 @@
   }
 
   function applySignedOutSnapshot() {
+    latestSnapshot = null;
     if (streakEl) streakEl.textContent = 'Sign in to track';
     if (dueEl) dueEl.textContent = 'Sign in to review';
     if (goalEl) goalEl.textContent = 'Sign in to set goals';
@@ -270,15 +277,22 @@
     });
   }
 
-  async function loadDashboard(user) {
+  async function loadDashboard(user, options) {
+    var background = !!(options && options.background);
+    var sequence = ++loadSequence;
+    var initialSummaryVersion = summaryVersion;
+    function isCurrent() { return currentUser === user && sequence === loadSequence; }
     nextPlannedPack = false;
     activePlanPackIds = new Set();
-    recentPanel.dataset.owner = user ? user.uid : '';
-    recentPanel.open = user ? readUserCacheJson(user, 'dashboard_recent_open', true) !== false : true;
-    dueRequest += 1;
-    document.getElementById('dash-due-panel').hidden = true;
-    document.getElementById('dash-due-list').replaceChildren();
-    document.getElementById('dash-due-open').setAttribute('aria-expanded', 'false');
+    if (dashboardPage) dashboardPage.classList.toggle('is-signed-out', !user);
+    if (!background) {
+      recentPanel.dataset.owner = user ? user.uid : '';
+      recentPanel.open = user ? readUserCacheJson(user, 'dashboard_recent_open', true) !== false : true;
+      dueRequest += 1;
+      document.getElementById('dash-due-panel').hidden = true;
+      document.getElementById('dash-due-list').replaceChildren();
+      document.getElementById('dash-due-open').setAttribute('aria-expanded', 'false');
+    }
     document.getElementById('dash-continue-link').href = '/plan';
     document.getElementById('dash-continue-title').removeAttribute('data-user-content');
     document.getElementById('dash-continue-title').textContent = 'Ready for your next session?';
@@ -297,44 +311,52 @@
     var sessions = [];
     try {
       var token = await user.getIdToken();
+      if (!isCurrent()) return;
       var headers = { Authorization: 'Bearer ' + token };
       var result = await Promise.all([
-        fetchProgressSummary(headers),
-        fetchRecentStudyPacks(headers),
+        fetchProgressSummary(headers).catch(function () { return { ok: false }; }),
+        fetchRecentStudyPacks(headers).catch(function () { return { ok: false }; }),
         fetchUpcomingSessions(token).catch(function () { return { __dashboardLoadFailed: true }; })
       ]);
-      if (currentUser !== user) return;
+      if (!isCurrent()) return;
       var sessionsFailed = !!(result[2] && result[2].__dashboardLoadFailed);
       var packsFailed = !result[1].ok;
       sessions = sessionsFailed ? [] : (Array.isArray(result[2]) ? result[2] : []);
       var snapshot = null;
+      var summaryLoaded = false;
       if (result[0].ok) {
-        var progressPayload = await result[0].json();
-        if (currentUser !== user) return;
+        var progressPayload = await result[0].json().catch(function () { return null; });
+        if (!isCurrent()) return;
         var summary = progressPayload && progressPayload.summary ? progressPayload.summary : progressPayload;
-        if (!summary || typeof summary !== 'object') summary = {};
-        activePlanPackIds = new Set(summary.active_plan_pack_ids || []);
-        snapshot = toSnapshot(summary);
-        persistSnapshot(user, snapshot);
+        if (summary && typeof summary === 'object') {
+          summaryLoaded = true;
+          activePlanPackIds = new Set(summary.active_plan_pack_ids || []);
+          snapshot = toSnapshot(summary);
+          // A local review can finish while the server summary is in flight.
+          if (initialSummaryVersion !== summaryVersion && latestSnapshot) {
+            snapshot = Object.assign({}, latestSnapshot, { due: snapshot.due });
+          }
+          persistSnapshot(user, snapshot);
+        }
       }
       if (snapshot) applySnapshot(snapshot);
       else hydrateCachedSnapshot(user);
       if (sessionsFailed) renderUpcomingSessionsError();
-      else renderUpcomingSessions(user, sessions.filter(function (session) { return activePlanPackIds.has(session.pack_id); }));
+      else renderUpcomingSessions(user, summaryLoaded ? sessions.filter(function (session) { return activePlanPackIds.has(session.pack_id); }) : sessions);
       if (packsFailed) {
         renderRecentPacksError();
       } else {
         var packsPayload = await result[1].json();
-        if (currentUser !== user) return;
+        if (!isCurrent()) return;
         renderRecentPacks(dashboardVisiblePacks((packsPayload && packsPayload.study_packs) || []));
       }
     } catch (_) {
-      if (currentUser !== user) return;
+      if (!isCurrent()) return;
       hydrateCachedSnapshot(user);
       renderUpcomingSessionsError();
       renderRecentPacksError();
     } finally {
-      if (currentUser === user) { bindDashboardRetry(); setDashboardLoading(false); }
+      if (isCurrent()) { bindDashboardRetry(); setDashboardLoading(false); }
     }
   }
 
@@ -358,6 +380,7 @@
       if (currentUser !== user || requestId !== dueRequest) return;
       list.replaceChildren();
       dueEl.textContent = data.due_count + ' card' + (data.due_count === 1 ? '' : 's');
+      if (latestSnapshot) latestSnapshot.due = Number(data.due_count) || 0;
       if (!data.packs || !data.packs.length) {
         message.textContent = 'No cards are due in your active Study Plan. Add packs to your plan to include their scheduled reviews here.';
         list.appendChild(message); return;
@@ -391,9 +414,36 @@
   });
   document.getElementById('dash-due-panel').addEventListener('toggle', function () { document.getElementById('dash-due-open').setAttribute('aria-expanded', String(this.open)); });
 
-  function handleExternalProgressEvent(user) {
-    if (user) loadDashboard(user);
+  function scheduleProgressRefresh() {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = null;
+    if (!currentUser || document.hidden || !refreshPending) return;
+    refreshTimer = window.setTimeout(function () {
+      refreshTimer = null;
+      if (!currentUser || document.hidden) return;
+      refreshPending = false;
+      loadDashboard(currentUser, { background: true });
+    }, 3000);
   }
+
+  function handleExternalProgressEvent(user, payload) {
+    if (!user || !payload || payload.user_id !== user.uid) return;
+    if (payload.summary && typeof payload.summary === 'object') {
+      var snapshot = toSnapshot(payload.summary);
+      // Library summaries count every pack; the Dashboard's due count is scoped.
+      if (!Array.isArray(payload.summary.active_plan_pack_ids)) {
+        snapshot.due = latestSnapshot ? latestSnapshot.due : 0;
+      }
+      summaryVersion += 1;
+      applySnapshot(snapshot);
+      persistSnapshot(user, snapshot);
+      if (payload.type === 'summary') return;
+    }
+    refreshPending = true;
+    scheduleProgressRefresh();
+  }
+
+  document.addEventListener('visibilitychange', scheduleProgressRefresh);
 
   if (progressUtils && typeof progressUtils.subscribeProgressEvent === 'function') {
     progressUtils.subscribeProgressEvent(function (payload) {
@@ -413,6 +463,11 @@
   }
 
   bootstrap.onAuthStateReady(auth, function (user) {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = null;
+    refreshPending = false;
+    summaryVersion = 0;
+    latestSnapshot = null;
     currentUser = user || null;
     loadDashboard(currentUser);
   });

@@ -18,6 +18,7 @@
 .stat-card { display: grid; gap: 9px; min-height: 140px; }
 .stat-label { color: var(--theme-muted, #65718a); font-size: .78rem; font-weight: 650; }
 .stat-value { font-size: clamp(1.3rem, 2.4vw, 2rem); line-height: 1.2; font-weight: 750; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.dashboard-page.is-signed-out .stat-value { color: var(--theme-muted, #65718a); font-size: .875rem; font-weight: 400; letter-spacing: normal; line-height: 1.5; }
 .stat-sub { font-size: .78rem; color: var(--theme-muted, #65718a); line-height: 1.5; }
 .stat-sub a, .section-head a { color: var(--theme-accent-ink, #2558d9); text-decoration: none; }
 .goal-track { display: block; width: 100%; height: 7px; appearance: none; border: 0; border-radius: 99px; overflow: hidden; background: var(--theme-accent-soft, #eaf0ff); }

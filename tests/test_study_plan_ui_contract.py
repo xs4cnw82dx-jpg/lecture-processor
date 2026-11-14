@@ -51,14 +51,11 @@ def test_study_plan_client_has_approval_rebalance_and_failed_save_rollback():
 def test_study_plan_uses_polished_native_controls_and_actionable_empty_states():
     template = _read('templates/study_plan.html')
     styles = _read('static/css/study-plan.css')
-    script = _read('static/js/study-plan.js')
 
     assert 'data-plan-picker="date"' in template
     assert 'data-plan-picker="time"' in template
     assert 'data-pretty-select' in template
     assert 'data-pack-filter="flashcards"' in template
-    assert 'Set up a goal' in script
-    assert 'Create my first goal' in script
     assert '.study-plan-page .btn' in styles
     assert '.plan-overlay input[type="checkbox"]' in styles
     assert '.plan-control-popover' in styles

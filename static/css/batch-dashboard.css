@@ -52,6 +52,7 @@
 .bs-partial { background: var(--theme-warning-soft, #fff4de); color: var(--theme-warning-ink, #97601c); }
 .bs-error { background: var(--theme-danger-soft, #fbecef); color: var(--theme-danger-ink, #aa3b4b); }
 .bs-empty { padding: 54px 24px; text-align: center; color: var(--theme-muted, var(--bs-muted)); }
+.bs-empty .bs-actions { justify-content: center; }
 .bs-empty svg { width: 42px; height: 42px; padding: 10px; border-radius: 12px; background: var(--theme-accent-soft, #eaf0ff); color: var(--theme-accent-ink, var(--bs-blue)); }
 .bs-empty h2, .bs-empty h3 { margin: 14px 0 7px; font-size: 20px; letter-spacing: -.025em; color: var(--theme-ink, var(--bs-ink)); }
 .bs-empty p { margin: 0 auto 20px; max-width: 440px; font-size: 14px; }
