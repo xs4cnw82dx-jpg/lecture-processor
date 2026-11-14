@@ -5,9 +5,6 @@
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lecture Downloader · Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -17,7 +14,7 @@
 <body>
   {% set shell_title = 'Lecture Downloader' %}
   {% include '_app_shell.html' %}
-    <main class="app-shell-page reader-page">
+    <main class="app-shell-page reader-page" id="main-content" tabindex="-1">
       <section class="reader-hero">
         <p class="workspace-eyebrow">Lecture media</p><h1>Lecture Downloader</h1>
         <p>Paste the index.m3u8 playlist URL from a supported lecture recording and download MP4 video, MP3 audio, or a ZIP with both.</p>

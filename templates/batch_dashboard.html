@@ -13,7 +13,7 @@
 <body>
   {% set shell_title = 'Batch Status' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page batch-dashboard-page" data-batch-id="{{ batch_id or '' }}">
+  <main class="app-shell-page batch-dashboard-page" data-batch-id="{{ batch_id or '' }}" id="main-content" tabindex="-1">
     <section class="bs-empty bs-auth" id="batch-dashboard-auth-gate" hidden>
       <h1>Sign in to view your batches</h1>
       <p>Your batch results and progress are linked to your account.</p>

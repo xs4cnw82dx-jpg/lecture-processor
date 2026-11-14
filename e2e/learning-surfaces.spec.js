@@ -55,23 +55,23 @@ test('dashboard and shared material have useful desktop and mobile hierarchy', a
 test('dashboard recent disclosure persists per account and rows are distinct without hover', async ({page}, testInfo) => {
   await fixture(page); await page.goto('/dashboard');
   const panel = page.locator('#dash-recent-packs');
-  await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
+  await expect(page.locator('#main-content')).toHaveAttribute('data-load-state','ready');
   await expect(panel).toHaveAttribute('open','');
   const colors = await page.locator('#dash-packs-list .list-item').first().evaluate(row => ({background:getComputedStyle(row).backgroundColor,border:getComputedStyle(row).borderTopColor}));
   expect(colors.background).not.toBe('rgba(0, 0, 0, 0)'); expect(colors.border).not.toBe('rgba(0, 0, 0, 0)');
   // Navigation must retain the chosen state even before its animation/toggle event finishes.
   await panel.locator('summary').click();
-  await page.reload(); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
+  await page.reload(); await expect(page.locator('#main-content')).toHaveAttribute('data-load-state','ready');
   await expect(panel).not.toHaveAttribute('open','');
   await page.screenshot({path:testInfo.outputPath('dashboard-recent-collapsed.png'),fullPage:true});
   await page.evaluate(()=>localStorage.setItem('dashboard-test-uid','second-account'));
-  await page.reload(); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
+  await page.reload(); await expect(page.locator('#main-content')).toHaveAttribute('data-load-state','ready');
   await expect(panel).toHaveAttribute('open','');
   await page.evaluate(()=>localStorage.removeItem('dashboard-test-uid'));
-  await page.reload(); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
+  await page.reload(); await expect(page.locator('#main-content')).toHaveAttribute('data-load-state','ready');
   await expect(panel).not.toHaveAttribute('open','');
   await panel.locator('summary').click();
-  await page.reload(); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
+  await page.reload(); await expect(page.locator('#main-content')).toHaveAttribute('data-load-state','ready');
   await expect(panel).toHaveAttribute('open','');
   await expect(page.locator('.dashboard-scope')).toHaveText('in your Study Plan');
 });
@@ -79,7 +79,7 @@ test('dashboard recent disclosure persists per account and rows are distinct wit
 test('dashboard does not recommend recent or orphan packs outside the active plan', async ({page}) => {
   await fixture(page);
   await page.route('**/api/study-progress/summary*', route => route.fulfill({json:{active_plan_pack_ids:[],current_streak:4,due_today:0,daily_goal:20,today_progress:12}}));
-  await page.goto('/dashboard'); await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state','ready');
+  await page.goto('/dashboard'); await expect(page.locator('#main-content')).toHaveAttribute('data-load-state','ready');
   await expect(page.locator('#dash-continue-link')).toHaveAttribute('href','/plan');
   await expect(page.locator('#dash-due')).toHaveText('0 cards');
   await expect(page.locator('#dash-sessions-list')).toContainText('Plan your first study session');

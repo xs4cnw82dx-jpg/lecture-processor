@@ -266,9 +266,10 @@
 .overlay-project-field input:focus,
 .overlay-field input:focus,
 .overlay-field textarea:focus {
-  outline: none;
+  outline: 2px solid var(--focus-ring);
   border-color: #2558d9;
   box-shadow: 0 0 0 3px rgba(37, 88, 217, 0.12);
+  outline-offset: 2px;
 }
 
 .overlay-builder-actions,
@@ -596,7 +597,8 @@
 }
 
 .overlay-zoom-controls input:focus {
-  outline: 2px solid rgba(37, 88, 217, 0.28);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .overlay-recording-bar {
@@ -1009,7 +1011,7 @@
 }
 
 [contenteditable='true']:focus {
-  outline: 2px solid var(--overlay-accent, #2558d9);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1457,8 +1459,11 @@
 
 .app-select-item:hover,
 .app-select-item:focus {
-  outline: none;
   background: var(--theme-surface-soft, #f8fafc);
+}
+.app-select-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .app-select-item.active {

@@ -256,7 +256,8 @@
     if (sidebar) {
       sidebar.setAttribute('aria-hidden', sidebarHidden ? 'true' : 'false');
       setElementInert(sidebar, sidebarHidden);
-      sidebar.tabIndex = sidebarHidden ? -1 : 0;
+      if (sidebarHidden) sidebar.setAttribute('tabindex', '-1');
+      else sidebar.removeAttribute('tabindex');
     }
     if (overlay) {
       overlay.setAttribute('aria-hidden', mobile && open ? 'false' : 'true');

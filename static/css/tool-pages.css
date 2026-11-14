@@ -28,9 +28,10 @@
 }
 
 .tool-text-input:focus {
-  outline: none;
+  outline: 2px solid var(--focus-ring);
   border-color: #2558d9;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  outline-offset: 2px;
 }
 
 .choice-grid {
@@ -133,10 +134,11 @@
 }
 
 .tool-upload-zone:focus-visible {
-  outline: none;
+  outline: 2px solid var(--focus-ring);
   border-color: var(--theme-accent-line, #4f72ee);
   background: var(--theme-surface, #ffffff);
   box-shadow: 0 0 0 4px rgba(79, 114, 238, 0.12);
+  outline-offset: 2px;
 }
 
 .tool-upload-zone.drag,
@@ -412,9 +414,10 @@
 }
 
 .language-custom-input:focus {
-  outline: none;
+  outline: 2px solid var(--focus-ring);
   border-color: var(--theme-accent-line, #5a7cff);
   box-shadow: 0 0 0 3px rgba(90, 124, 255, 0.12);
+  outline-offset: 2px;
 }
 
 @media (max-width: 720px) {

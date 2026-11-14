@@ -2662,7 +2662,7 @@ function closeActiveModalFromEscape() {
   if (activeModalOverlay === shareModalOverlay) { closeShareModal(); return; }
   closeModal(activeModalOverlay);
 }
-function openModal(ov) {
+function openModal(ov, initialFocus) {
   if (!ov) return;
   modalStateStack.push({ overlay: ov, restore: document.activeElement });
   ov.classList.add('entering');
@@ -2671,6 +2671,7 @@ function openModal(ov) {
     uxUtils.openModalOverlay(ov, {
       openClass: 'visible',
       containerSelector: '.modal,.setup-modal,.builder-shell',
+      initialFocus: initialFocus,
       onRequestClose: closeActiveModalFromEscape
     });
     requestAnimationFrame(function () {
@@ -2685,7 +2686,8 @@ function openModal(ov) {
     requestAnimationFrame(function () {
       ov.classList.replace('entering', 'visible');
       var focusables = getModalFocusableElements(ov);
-      if (focusables.length) { focusables[0].focus(); }
+      var focusTarget = initialFocus || focusables[0];
+      if (focusTarget) { focusTarget.focus(); }
     });
   });
 }
@@ -3180,7 +3182,7 @@ function openBuilderOverlay(mode, pack) {
   updateShareActionAvailability();
   audioHiddenForBuilder = true;
   updateAudioBarVisibility();
-  openModal(builderOverlay);
+  openModal(builderOverlay, builderTitleInput);
   setBodyScrollLocked(true);
 }
 function closeBuilderOverlay() {
@@ -3839,7 +3841,13 @@ function renderAlgoLane() {
     algoLane.appendChild(s);
   });
 }
-function renderAlgoPresets() { algoPresets.forEach(function (b) { b.classList.toggle('active', b.dataset.preset === sessionAlgoPreset); }); }
+function renderAlgoPresets() {
+  algoPresets.forEach(function (button) {
+    var active = button.dataset.preset === sessionAlgoPreset;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
 function applyAlgoPreset(p) { if (ALGO_PRESETS[p]) { sessionAlgo = ALGO_PRESETS[p].slice(); sessionAlgoPreset = p; renderAlgoLane(); renderAlgoPresets(); saveSessionState(); } }
 function renderSettingsRows() {
   document.querySelectorAll('.setting-row[data-setting]').forEach(function (r) {
@@ -5204,7 +5212,7 @@ function renderFlashcardEditor(hi) {
       showToast('Flashcard deleted.');
     });
   });
-  if (idx >= 0) { var row = flashcardEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); var inp = row.querySelector('input[data-card-field="front"]'); if (inp) { inp.focus(); } } }
+  if (idx >= 0) { var row = flashcardEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row) { row.scrollIntoView({ behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' }); var inp = row.querySelector('input[data-card-field="front"]'); if (inp) { inp.focus(); } } }
 }
 
 /* ── Question editor ── */
@@ -5359,7 +5367,7 @@ function renderQuestionEditor(hi) {
       showToast('Practice question deleted.');
     });
   });
-  if (idx >= 0) { var row2 = questionEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row2) { row2.scrollIntoView({ behavior: 'smooth', block: 'center' }); var ta = row2.querySelector('textarea[data-question-field="question"]'); if (ta) { ta.focus(); } } }
+  if (idx >= 0) { var row2 = questionEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row2) { row2.scrollIntoView({ behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' }); var ta = row2.querySelector('textarea[data-question-field="question"]'); if (ta) { ta.focus(); } } }
 }
 
 /* ── Learn progress bar ── */
@@ -5455,6 +5463,7 @@ function renderFlashcardListView() {
     };
     row.addEventListener('click', activateRow);
     row.addEventListener('keydown', function (event) {
+      if (event.target !== row) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         activateRow();
@@ -6279,7 +6288,7 @@ function focusCodingQuotation(quoteId) {
   renderCodingWorkspace();
   var card = codingQuoteList.querySelector('[data-quote-id="' + cssEscape(quoteId) + '"]');
   if (card && typeof card.scrollIntoView === 'function') {
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    card.scrollIntoView({ behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
     card.classList.add('pulse');
     setTimeout(function () { card.classList.remove('pulse'); }, 900);
   }
@@ -7240,7 +7249,7 @@ function focusNewBuilderItem(list, selector) {
   var rows = list.querySelectorAll('.builder-row');
   var row = rows[rows.length - 1];
   if (!row) return;
-  row.open = true; row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  row.open = true; row.scrollIntoView({ block: 'center', behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth' });
   var input = row.querySelector(selector); if (input) input.focus({ preventScroll: true });
 }
 builderAddCardBtn.addEventListener('click', function () {
@@ -8645,10 +8654,14 @@ function redoHighlightChange() {
 // Toolbar color selection
 if (hlToolbar) {
   hlToolbar.querySelectorAll('.hl-btn[data-hl-color]').forEach(function (btn) {
+    btn.setAttribute('aria-pressed', btn.getAttribute('data-hl-color') === hlActiveColor ? 'true' : 'false');
     btn.addEventListener('click', function () {
       hlActiveColor = btn.getAttribute('data-hl-color') || 'yellow';
-      hlToolbar.querySelectorAll('.hl-btn[data-hl-color]').forEach(function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
+      hlToolbar.querySelectorAll('.hl-btn[data-hl-color]').forEach(function (button) {
+        var active = button === btn;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
     });
   });
 }

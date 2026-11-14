@@ -149,7 +149,8 @@ test('redesigned learning workspace stays readable through library, setup and la
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/study?pack_id=visual');
   await expect(page.locator('#pack-summary-title')).toContainText('Anatomy');
-  expect((await page.locator('.notes-view').boundingBox()).y).toBeLessThan(640);
+  await expect(page.locator('.notes-view h1').first()).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('.notes-view p').first()).toBeInViewport({ ratio: 1 });
   await expectProductControls(page);
   await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('library-desktop.png'), fullPage: true });
   await page.locator('#open-learn-btn').click();

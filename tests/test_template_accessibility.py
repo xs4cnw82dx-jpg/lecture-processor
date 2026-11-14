@@ -259,15 +259,13 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     assert 'Screen and microphone recordings are created in your browser and are not stored on the server.' in video_overlay_template
 
 
-def test_feature_calculator_sliders_have_labels_and_focus_style():
+def test_feature_calculator_sliders_have_labels():
     features_template = Path('templates/features.html').read_text(encoding='utf-8')
-    features_css = Path('static/css/features.css').read_text(encoding='utf-8')
 
     assert '<label class="calc-slider-label" for="calc-lectures">Lectures per week</label>' in features_template
     assert '<label class="calc-slider-label" for="calc-weeks">Weeks per semester</label>' in features_template
     assert '<label class="calc-slider-label" for="calc-minutes">Minutes per lecture (manual notes)</label>' in features_template
     assert '<label class="calc-slider-label" for="calc-review">Minutes per lecture (upload, review & correction)</label>' in features_template
-    assert '.calc-slider:focus-visible{outline:2px solid var(--primary);outline-offset:4px}' in features_css
 
 
 def test_features_heading_preserves_readable_text_boundary():

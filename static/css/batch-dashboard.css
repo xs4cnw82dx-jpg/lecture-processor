@@ -127,7 +127,7 @@
 .bs-toast { --bs-blue: #2558d9; position: fixed; z-index: 1000; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 32px); padding: 12px 16px; background: #17233c; color: white; border-radius: 14px; box-shadow: 0 8px 30px #17203333; font-size: 13px; }
 .bs-toast .bs-button { min-height: 32px; font-size: 12px; padding: 7px 10px; }
 .bs-toast[hidden], .batch-dashboard-page [hidden], #batch-status-panel[hidden], #batch-status-panel [hidden] { display: none !important; }
-.bs-button:focus-visible, .bs-tab:focus-visible, .batch-dashboard-page summary:focus-visible, .batch-dashboard-page a:focus-visible, #batch-status-panel summary:focus-visible, .bs-filters select:focus-visible { outline: 3px solid #2558d944; outline-offset: 3px; }
+.bs-button:focus-visible, .bs-tab:focus-visible, .batch-dashboard-page summary:focus-visible, .batch-dashboard-page a:focus-visible, #batch-status-panel summary:focus-visible, .bs-filters select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .bs-loading { padding: 34px 18px; color: var(--theme-muted, var(--bs-muted)); font-size: 13px; }
 .bs-skeleton { display: block; height: 15px; border-radius: 6px; background: var(--theme-accent-soft, #e7edf6); margin-bottom: 12px; width: 55%; animation: bs-pulse 1.4s ease-in-out infinite; }
 .bs-skeleton:nth-child(2) { width: 80%; height: 55px; }

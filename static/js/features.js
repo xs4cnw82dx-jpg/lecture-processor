@@ -88,7 +88,7 @@
     setTimeout(checkReveal,100);
 
     /* -- Smooth scroll for anchor links -- */
-    document.querySelectorAll('a[href^="#"]').forEach(function(link){
+    document.querySelectorAll('a[href^="#"]:not(.skip-link)').forEach(function(link){
       link.addEventListener('click',function(e){
         var targetId=link.getAttribute('href');
         if(targetId.length<=1)return;

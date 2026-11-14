@@ -20,7 +20,7 @@
 .settings-switch-track > span { display: block; width: 23px; height: 23px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgb(0 0 0 / 18%); transition: transform .24s cubic-bezier(.2,.7,.3,1); }
 .settings-switch input:checked + .settings-switch-track { background: #2856df; border-color: #2856df; }
 .settings-switch input:checked + .settings-switch-track > span { transform: translateX(23px); }
-.settings-switch input:focus-visible + .settings-switch-track { outline: 3px solid var(--theme-accent-ink, #2558d9); outline-offset: 4px; }
+.settings-switch input:focus-visible + .settings-switch-track { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .settings-switch input:disabled { cursor: wait; }
 .settings-controls:disabled .settings-switch-track { opacity: .55; }
 .settings-preview { display: flex; height: 110px; max-width: 400px; margin-top: 24px; border: 1px solid var(--theme-line, #dfe5ef); border-radius: 11px; background: var(--theme-surface-soft, #f5f7fb); overflow: hidden; }

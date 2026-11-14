@@ -55,7 +55,7 @@ async function startMode(page, mode) {
 test('Dashboard names and due card text remain original beside Dutch controls', async ({ page }) => {
   const f = await fixture(page);
   await page.goto('/dashboard');
-  await expect(page.locator('#dashboard-page')).toHaveAttribute('data-load-state', 'ready');
+  await expect(page.locator('#main-content')).toHaveAttribute('data-load-state', 'ready');
   await page.locator('#dash-due-open').click();
   await expect(page.locator('.dashboard-due-cards li')).toHaveText('Save');
   await dutch(page);

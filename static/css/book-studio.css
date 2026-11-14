@@ -150,8 +150,8 @@
   cursor: default;
 }
 .book-app :focus-visible {
-  outline: 3px solid var(--theme-accent-line, var(--primary-light));
-  outline-offset: 3px;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .book-app input:not([type="range"]):not([type="color"]):not([type="checkbox"]),
 .book-app select,
@@ -1297,7 +1297,7 @@
   border: 3px solid white;
   background: var(--primary);
   box-shadow:
-    0 0 0 1px var(--primary-light),
+    0 0 0 1px var(--focus-ring),
     0 2px 5px #3a308326;
 }
 .book-app input[type="range"]::-moz-range-track {
@@ -1311,7 +1311,7 @@
   border: 3px solid white;
   border-radius: 50%;
   background: var(--primary);
-  box-shadow: 0 0 0 1px var(--primary-light);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 .book-app input[type="range"]:disabled {
   cursor: not-allowed;
@@ -1433,8 +1433,8 @@
   margin: 0;
   border: 0;
   border-radius: 0;
-  outline: 2px solid var(--primary);
-  outline-offset: 4px;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
   resize: none;
   box-shadow: none;
   overflow: auto;
@@ -1967,7 +1967,7 @@
   width: 18px;
   height: 18px;
   padding: 0;
-  border: 2px solid var(--primary, var(--theme-accent-line, #4f46e5));
+  border: 2px solid var(--theme-accent-ink, var(--primary, #4f46e5));
   background: var(--theme-surface, #fff);
   border-radius: 50%;
   transform: translate(-50%, -50%);
@@ -1979,7 +1979,7 @@
 }
 .book-path-point:hover, .book-path-point.active { background: var(--theme-accent-soft, #e9e7ff); box-shadow: 0 0 0 4px #6c63ff26; }
 .book-path-point:active { cursor: grabbing; }
-.book-path-point:focus-visible { outline: 3px solid var(--theme-accent-line, #8881ff); outline-offset: 3px; }
+.book-path-point:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .book-path-menu {
   position: fixed;
   z-index: 100;

@@ -118,7 +118,7 @@
 .row-upload-zone:focus,
 .row-upload-zone:focus-within,
 .row-url-input:focus {
-  outline: 2px solid #2558d9;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

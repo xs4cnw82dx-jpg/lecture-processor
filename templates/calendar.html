@@ -9,15 +9,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
 </head>
 <body>
   {% set shell_title = 'Calendar' %}
   {% include '_app_shell.html' %}
-  <main class="app-shell-page page">
+  <main class="app-shell-page page" id="main-content" tabindex="-1">
     <div class="container">
 	      <div class="headline">
 	        <div>

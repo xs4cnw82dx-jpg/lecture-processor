@@ -4,15 +4,13 @@
   <meta charset="UTF-8">
   {% include '_preferences_head.html' %}<meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Features · Lecture Processor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/features.css') }}">
 </head>
 <body>
   {% set public_page = 'features' %}{% include '_public_header.html' %}
-  <main>
+  <main id="main-content" tabindex="-1">
     <section class="feature-hero feature-width">
       <div><p class="feature-eyebrow">Inside Lecture Processor</p><h1>The slides say what.<br><span>The recording explains why.</span></h1><p class="feature-lead">Keep both. Transcribe a lecture recording, extract the text from PDF or PowerPoint slides, and combine them into comprehensive, structured study notes.</p><div class="feature-actions"><a href="/dashboard" class="feature-button primary">Start Studying <span aria-hidden="true">↗</span></a><a href="#capture" class="feature-button">Explore the workflow</a></div></div>
       <div class="source-composition" aria-label="Illustrative example of combining slide text and a recording">

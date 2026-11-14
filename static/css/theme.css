@@ -1,9 +1,10 @@
 /* Shared appearance contract. Component declarations retain their original light
    colors as fallbacks; only these semantic tokens change in dark mode. Artwork,
    uploaded documents, category swatches and export canvases retain their colors. */
-:root { color-scheme: light; }
+:root { color-scheme: light; --focus-ring: #2558d9; }
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --focus-ring: #9bbcff;
   --theme-canvas: #101723;
   --theme-surface: #192333;
   --theme-surface-soft: #202c3e;
@@ -46,7 +47,6 @@ html[data-theme="dark"] {
   scrollbar-color: #536580 var(--theme-canvas);
 }
 html[data-theme="dark"] ::selection { background: #406ab0; color: #fff; }
-html[data-theme="dark"] :focus-visible { outline-color: #9bbcff; }
 html[data-theme="dark"] input::placeholder,
 html[data-theme="dark"] textarea::placeholder { color: #9aaac1; opacity: 1; }
 html[data-theme="dark"] .app-shell-sidebar { border-right: 1px solid #303d51; }

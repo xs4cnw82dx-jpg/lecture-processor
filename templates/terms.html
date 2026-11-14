@@ -8,9 +8,6 @@
   <title>Terms of Service | Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/legal-pages.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
 </head>
 <body>
@@ -24,7 +21,7 @@
       </svg>
       Back to app
     </a>
-    <main class="card">
+    <main class="card" id="main-content" tabindex="-1">
       <h1>Terms of Service</h1>
       <p class="meta">Last updated: {{ last_updated }}</p>
       <div class="notice">

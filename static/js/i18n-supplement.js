@@ -1,6 +1,7 @@
 /* Dutch public, help, legal and administration interface copy. */
 (function (root) {
   Object.assign(root.LectureI18nCatalog.nl, {
+  "Skip to content": "Ga naar inhoud",
   "Lecture Processor Admin": "Lecture Processor-beheer",
   "LECTURE PROCESSOR · ADMINISTRATION": "LECTURE PROCESSOR · BEHEER",
   "Operations overview": "Operationeel overzicht",
