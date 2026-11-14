@@ -199,6 +199,8 @@ EXPECTED_ROUTES = [
     ('POST', '/api/tools/export', 'upload_api.tools_export'),
     ('POST', '/api/tools/extract', 'upload_api.tools_extract'),
     ('POST', '/api/tools/lecture-download', 'upload_api.tools_lecture_download'),
+    ('GET', '/api/tools/lecture-download/<job_id>', 'upload_api.get_lecture_download_status'),
+    ('GET', '/api/tools/lecture-download/<job_id>/file', 'upload_api.download_lecture_file'),
     ('POST', '/api/tools/transcribe', 'upload_api.tools_transcribe'),
     ('GET', '/api/user-preferences', 'auth_api.get_user_preferences'),
     ('PUT', '/api/user-preferences', 'auth_api.update_user_preferences'),

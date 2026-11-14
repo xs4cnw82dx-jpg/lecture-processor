@@ -777,6 +777,18 @@ def tools_lecture_download(app_ctx, request):
     return tools_download_service.download_lecture_media(app_ctx, request)
 
 
+def get_lecture_download_status(app_ctx, request, job_id):
+    from lecture_processor.services import tools_download_service
+
+    return tools_download_service.get_lecture_download_status(app_ctx, request, job_id)
+
+
+def download_lecture_file(app_ctx, request, job_id):
+    from lecture_processor.services import tools_download_service
+
+    return tools_download_service.download_lecture_file(app_ctx, request, job_id)
+
+
 def tools_transcribe(app_ctx, request):
     from lecture_processor.services import tools_transcription_service
 

@@ -32,6 +32,10 @@ def get_status(app_ctx, request, job_id):
                 'job_lost': True,
                 'retryable': True,
             }), 404
+    if job.get('job_scope') == 'lecture_download':
+        from lecture_processor.services import tools_download_service
+
+        return tools_download_service.get_lecture_download_status(app_ctx, request, job_id)
     if job.get('user_id', '') != uid:
         _admin_token, error_response, status = _require_admin_bypass(app_ctx, request)
         if error_response is not None:
@@ -100,7 +104,7 @@ def _is_active_regular_runtime_job(job, uid):
     status = str(job.get('status', '') or '').strip().lower()
     if status not in account_lifecycle.ACTIVE_ACCOUNT_JOB_STATES:
         return False
-    if str(job.get('job_scope', '') or '').strip().lower() == 'tools':
+    if str(job.get('job_scope', '') or '').strip().lower() in {'tools', 'lecture_download'}:
         return False
     return not bool(job.get('is_batch', False))
 
