@@ -255,7 +255,7 @@ def test_audio_retention_warnings_and_download_controls_are_present():
 
     assert 'Audio files are not included in this export.' in app_shell_template
     assert 'Download any audio you need first.' in app_shell_template
-    assert 'does not preserve lecture media on the server' in lecture_downloader_template
+    assert 'Prepared files are available for up to 30 minutes. Keep your downloaded copy.' in lecture_downloader_template
     assert 'Screen and microphone recordings are created in your browser and are not stored on the server.' in video_overlay_template
 
 
