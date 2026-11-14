@@ -1433,7 +1433,7 @@ def _acquire_slide_conversion_lease(row, runtime):
     waited = 0
     while True:
         _require_active_batch(batch_id, runtime=runtime)
-        lease, _busy_status = media_admission.try_acquire(row.get('uid', ''))
+        lease, _busy_status = media_admission.try_acquire_conversion(row.get('uid', ''))
         if lease is not None:
             return lease
         if waited >= BATCH_SLIDE_MEDIA_WAIT_SECONDS:

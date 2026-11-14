@@ -16,7 +16,7 @@ from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits
 from lecture_processor.domains.rate_limit import limiter
 from lecture_processor.domains.upload import import_audio
-from lecture_processor.services import upload_quota_service
+from lecture_processor.services import media_admission, upload_quota_service
 
 
 @pytest.fixture
@@ -163,6 +163,35 @@ def test_failed_download_releases_process_and_account_admission(media_requests, 
     state.failure = ''
     assert state.post('download')[0] == 202
     assert state.post('download', 'other')[0] == 202
+
+
+@pytest.mark.parametrize('released_pool', ['download', 'conversion'])
+def test_operation_pools_keep_independent_account_limits_and_releases(released_pool):
+    acquire = {
+        'download': media_admission.try_acquire,
+        'conversion': media_admission.try_acquire_conversion,
+    }
+    leases = []
+    try:
+        for operation in acquire.values():
+            lease, status = operation('same-owner')
+            assert status == 0
+            assert isinstance(lease, media_admission._MediaLease)
+            leases.append(lease)
+            assert operation('same-owner') == (None, 429)
+            assert operation('another-owner') == (None, 503)
+        lease = leases[0 if released_pool == 'download' else 1]
+        lease.release()
+        lease.release()
+        remaining_pool = 'conversion' if released_pool == 'download' else 'download'
+        assert acquire[remaining_pool]('same-owner') == (None, 429)
+        assert acquire[remaining_pool]('another-owner') == (None, 503)
+        replacement, status = acquire[released_pool]('same-owner')
+        assert status == 0
+        leases.append(replacement)
+    finally:
+        for lease in leases:
+            lease.release()
 
 
 @pytest.mark.parametrize('kind', ['batch', 'instant'])

@@ -232,7 +232,7 @@ def test_conversion_failure_refunds_once_and_releases_files_and_admission(slides
     worker(strategy)(batch_id, runtime=slides.runtime)
     batch.get_batch_status(batch_id, runtime=slides.runtime)
     assert len(slides.refunds) == 1
-    lease, status = media_admission.try_acquire('slide-owner')
+    lease, status = media_admission.try_acquire_conversion('slide-owner')
     assert status == 0
     lease.release()
 
@@ -256,7 +256,7 @@ def test_failed_conversion_checkpoint_keeps_original_and_never_uploads(slides, p
     stored = batch._get_row(batch_id, 'row-1', runtime=slides.runtime)
     assert stored['slides_local_path'] == str(source)
     assert not stored.get('slides_conversion_complete')
-    lease, status = media_admission.try_acquire('slide-owner')
+    lease, status = media_admission.try_acquire_conversion('slide-owner')
     assert status == 0
     lease.release()
 
@@ -302,7 +302,7 @@ def test_invalid_pptx_is_rejected_without_a_worker_or_leftover_file(slides, stra
 @pytest.mark.parametrize('strategy', ['deferred', 'instant'])
 def test_pdf_worker_does_not_need_conversion_admission(slides, strategy):
     batch_id, _rows = seed_batch(slides, strategy=strategy, extension='.pdf')
-    lease, status = media_admission.try_acquire('another-media-owner')
+    lease, status = media_admission.try_acquire_conversion('another-media-owner')
     assert status == 0
     try:
         worker(strategy)(batch_id, runtime=slides.runtime)
@@ -324,7 +324,7 @@ def test_low_disk_space_prevents_conversion_and_refunds_the_worker(slides, monke
     assert len(slides.refunds) == 1
     assert batch._get_batch(batch_id, runtime=slides.runtime)['status'] == 'error'
     assert list(slides.root.iterdir()) == []
-    lease, status = media_admission.try_acquire('slide-owner')
+    lease, status = media_admission.try_acquire_conversion('slide-owner')
     assert status == 0
     lease.release()
 
@@ -346,9 +346,34 @@ def fake_sleep(slides, monkeypatch, callback):
 
 @pytest.mark.parametrize('strategy', ['deferred', 'instant'])
 @pytest.mark.parametrize('owner', ['slide-owner', 'another-media-owner'])
+def test_long_download_does_not_delay_or_refund_slide_conversion(slides, monkeypatch, strategy, owner):
+    batch_id, _rows = seed_batch(slides, strategy=strategy, count=2)
+    # Keep this artificial-clock case about a held download. Real parallel
+    # conversion contention is exercised separately with thread events.
+    monkeypatch.setattr(slides.runtime, 'INSTANT_BATCH_MAX_PARALLEL_ROWS', 1)
+    clock = fake_sleep(slides, monkeypatch, lambda _clock: None)
+    lease, status = media_admission.try_acquire(owner)
+    assert status == 0
+    try:
+        clock.now += batch.BATCH_SLIDE_MEDIA_WAIT_SECONDS + 1
+        worker(strategy)(batch_id, runtime=slides.runtime)
+        assert batch._get_batch(batch_id, runtime=slides.runtime)['status'] == 'complete'
+        assert len(slides.conversions) == len(slides.uploads) == len(slides.saved_packs) == 2
+        assert slides.refunds == []
+        assert clock.sleeps == []
+        remaining, code = media_admission.try_acquire(owner)
+        if remaining:
+            remaining.release()
+        assert code == 429, 'Conversion must not release the held download lease.'
+    finally:
+        lease.release()
+
+
+@pytest.mark.parametrize('strategy', ['deferred', 'instant'])
+@pytest.mark.parametrize('owner', ['slide-owner', 'another-media-owner'])
 def test_worker_waits_for_media_admission_without_early_refund(slides, monkeypatch, strategy, owner):
     batch_id, _rows = seed_batch(slides, strategy=strategy)
-    lease, status = media_admission.try_acquire(owner)
+    lease, status = media_admission.try_acquire_conversion(owner)
     assert status == 0
 
     def release_on_wait(clock):
@@ -378,7 +403,7 @@ def test_admission_wait_has_a_bound_and_refunds_once(slides, monkeypatch, strate
     monkeypatch.setattr(batch, 'BATCH_SLIDE_MEDIA_WAIT_SECONDS', 10, raising=False)
     monkeypatch.setattr(batch, 'BATCH_SLIDE_MEDIA_RETRY_SECONDS', 2, raising=False)
     clock = fake_sleep(slides, monkeypatch, lambda _clock: None)
-    lease, status = media_admission.try_acquire('another-media-owner')
+    lease, status = media_admission.try_acquire_conversion('another-media-owner')
     assert status == 0
     try:
         worker(strategy)(batch_id, runtime=slides.runtime)
@@ -411,7 +436,7 @@ def test_terminal_transition_stops_conversion_or_upload_without_overwriting_deci
 
     lease = None
     if phase == 'waiting':
-        lease, status = media_admission.try_acquire('another-media-owner')
+        lease, status = media_admission.try_acquire_conversion('another-media-owner')
         assert status == 0
         fake_sleep(slides, monkeypatch, lambda _clock: stop_batch())
     else:
@@ -432,7 +457,7 @@ def test_terminal_transition_stops_conversion_or_upload_without_overwriting_deci
     assert slides.refunds == []
     assert slides.saved_packs == []
     assert list(slides.root.iterdir()) == []
-    released, status = media_admission.try_acquire('slide-owner')
+    released, status = media_admission.try_acquire_conversion('slide-owner')
     assert status == 0
     released.release()
 
@@ -442,7 +467,7 @@ def test_parallel_instant_rows_serialize_conversion_instead_of_failing_contentio
     entered, waiting, release = threading.Event(), threading.Event(), threading.Event()
     lock = threading.Lock()
     activity = {'active': 0, 'peak': 0, 'calls': 0}
-    original_acquire = batch.media_admission.try_acquire
+    original_acquire = batch.media_admission.try_acquire_conversion
 
     def observe_admission(uid):
         result = original_acquire(uid)
@@ -466,7 +491,7 @@ def test_parallel_instant_rows_serialize_conversion_instead_of_failing_contentio
             with lock:
                 activity['active'] -= 1
 
-    monkeypatch.setattr(batch.media_admission, 'try_acquire', observe_admission)
+    monkeypatch.setattr(batch.media_admission, 'try_acquire_conversion', observe_admission)
     monkeypatch.setattr(batch, 'BATCH_SLIDE_MEDIA_RETRY_SECONDS', 0.01, raising=False)
     monkeypatch.setattr(batch, 'BATCH_SLIDE_MEDIA_WAIT_SECONDS', 2, raising=False)
     slides.conversion_hook = conversion
