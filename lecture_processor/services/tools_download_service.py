@@ -359,13 +359,17 @@ def download_lecture_file(app_ctx, request, job_id):
     if error is not None:
         return error
     metadata = _download_metadata(job)
-    provided = request.headers.get('X-Lecture-Download-Token')
-    if provided is None:
-        # Keep already-open clients working until the header client is deployed.
-        provided = request.args.get('token', '')
-    provided = str(provided or '')
     expected = str(metadata.get('token', '') or '')
-    if job.get('status') != 'complete' or not expected or not secrets.compare_digest(provided, expected):
+    if job.get('status') != 'complete' or not expected:
+        return app_ctx.jsonify({'error': 'Lecture download not found.'}), 404
+    provided = request.headers.get('X-Lecture-Download-Token')
+    if provided is None and 'token' in request.args:
+        return app_ctx.jsonify({
+            'error': 'Please refresh this page before downloading this file.',
+            'error_code': 'download_page_refresh_required',
+        }), 409
+    provided = str(provided or '')
+    if not secrets.compare_digest(provided, expected):
         return app_ctx.jsonify({'error': 'Lecture download not found.'}), 404
     if float(metadata.get('expires_at', 0) or 0) <= app_ctx.time.time():
         _cleanup_job_files(app_ctx, job_id)
