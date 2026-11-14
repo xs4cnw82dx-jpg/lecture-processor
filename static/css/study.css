@@ -1723,10 +1723,13 @@
     }
 
     .notes-highlight-status {
-      padding: 0 4px;
-      font-size: .78rem;
-      color: var(--theme-muted, var(--gray-500));
-      line-height: 1.45
+      margin: 8px 0 0;
+      padding: 10px 12px;
+      font-size: .85rem;
+      color: var(--theme-ink, #17233c);
+      background: var(--theme-surface-soft, #f6f8fc);
+      border-radius: 8px;
+      line-height: 1.5
     }
 
     .notes-pane-shell:fullscreen .notes-controls,

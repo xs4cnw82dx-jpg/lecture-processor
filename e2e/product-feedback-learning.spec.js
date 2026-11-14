@@ -118,7 +118,7 @@ test('all-new packs remain studyable through every priority preset',async({page}
     if(new URL(route.request().url()).pathname.includes('progress')) { await route.fulfill({contentType:'application/json',body:JSON.stringify({card_states:{flow:{}}})}); return true; } return false;
   }});
   for(const preset of ['balanced','random','lastminute','fixmistakes','hardfirst']) {
-    await page.goto('/study?pack_id=flow');await page.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('learning_session_')).forEach(key=>localStorage.removeItem(key)));await page.locator('#open-learn-btn').click();
+    await page.goto('/study?pack_id=flow');await page.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('learning_session_') || key.startsWith('lp_ui_v2:user:owner:study_cache:learning:')).forEach(key=>localStorage.removeItem(key)));await page.locator('#open-learn-btn').click();
     const testMode=page.locator('#lesson-card-test');if(await testMode.getAttribute('aria-pressed')==='true') await testMode.click();
     await page.locator('[data-setup-pane=algorithm]').click();await page.locator('[data-preset='+preset+']').click();
     await expect(page.locator('.algo-availability')).toContainText('Empty categories are skipped');
@@ -157,7 +157,7 @@ test('Write restores its exact checked answer and Match restores partial pairs a
   await page.locator('#write-input').fill('My saved attempt');
   await page.locator('#write-check-btn').click();
   const feedback=await page.locator('#write-feedback').textContent();
-  await expect.poll(()=>page.evaluate(()=>Object.keys(localStorage).some(key=>key.startsWith('learning_session_')))).toBe(true);
+  await expect(page.locator('#learn-session-state')).toHaveText('Your place is saved on this device');
   await page.locator('#learn-change-mode-btn').click(); // saves synchronously before leaving the viewer
   await page.reload();
   await startMode(page,'write');

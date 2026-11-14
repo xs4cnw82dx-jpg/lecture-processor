@@ -3,6 +3,13 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "Some study progress has not synced. Signing out now will remove it from this device. Sign out anyway?": "Een deel van je studievoortgang is nog niet gesynchroniseerd. Als je nu uitlogt, wordt die van dit apparaat verwijderd. Toch uitloggen?",
+  "Some study data could not be cleared from this device.": "Sommige studiegegevens konden niet van dit apparaat worden gewist.",
+  "Some study data could not be cleared from this browser. Clear site data before sharing this device.": "Sommige studiegegevens konden niet uit deze browser worden gewist. Wis de sitegegevens voordat je dit apparaat deelt.",
+  "Your earlier unsynced attempt could not be saved on this device. Keep this tab open.": "Je eerdere, nog niet gesynchroniseerde poging kon niet op dit apparaat worden opgeslagen. Houd dit tabblad open.",
+  "This session is complete. Open a new session to continue.": "Deze sessie is voltooid. Open een nieuwe sessie om verder te gaan.",
+  "Session complete · your plan and progress are saved. Device storage could not be cleared.": "Sessie voltooid · je planning en voortgang zijn opgeslagen. De apparaatopslag kon niet worden gewist.",
+  "Highlights could not be saved on this device. Keep this tab open until syncing succeeds.": "Markeringen konden niet op dit apparaat worden opgeslagen. Houd dit tabblad open totdat de synchronisatie is gelukt.",
   "AI coding could not finish. Your credit refund is still being processed.": "De AI-codering kon niet worden voltooid. Je credits worden nog teruggestort.",
   "AI coding failed. Your credit has been refunded.": "De AI-codering is mislukt. Je credits zijn teruggestort.",
   "AI coding failed. Please try again.": "De AI-codering is mislukt. Probeer het opnieuw.",
