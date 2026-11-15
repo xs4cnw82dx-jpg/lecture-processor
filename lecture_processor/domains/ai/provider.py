@@ -4,6 +4,9 @@ import time
 
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.ai.providers import gemini
+from lecture_processor.domains.ai.providers.contracts import GenerationResult
+from lecture_processor.domains.ai.providers.errors import ProviderRequestError
+from lecture_processor.domains.ai.providers.usage import finite_cost_usd
 
 try:
     from google.genai import types as genai_types
@@ -38,6 +41,8 @@ def _build_thinking_config(model_name, runtime=None):
 
 def get_provider_status_code(error, runtime=None):
     _ = runtime
+    if isinstance(error, ProviderRequestError):
+        return error.provider_code or error.status_code
     if error is None:
         return None
     for attr in ('status_code', 'code'):
@@ -55,6 +60,8 @@ def get_provider_status_code(error, runtime=None):
 
 
 def classify_provider_error_code(error, runtime=None):
+    if isinstance(error, ProviderRequestError):
+        return error.error_code
     status_code = get_provider_status_code(error, runtime=runtime)
     if status_code:
         return f'HTTP_{status_code}'
@@ -71,6 +78,8 @@ def classify_provider_error_code(error, runtime=None):
 
 
 def is_transient_provider_error(error, runtime=None):
+    if isinstance(error, ProviderRequestError):
+        return error.retryable
     resolved_runtime = _resolve_runtime(runtime)
     status_code = get_provider_status_code(error, runtime=resolved_runtime)
     transient_codes = getattr(resolved_runtime, 'PROVIDER_TRANSIENT_STATUS_CODES', {408, 409, 425, 429, 500, 502, 503, 504})
@@ -181,6 +190,24 @@ class TokenAccumulator:
             input_modality=input_modality,
         )
 
+    def record_result(self, stage_name, result, *, billing_mode='standard', input_modality='text'):
+        if not isinstance(stage_name, str) or not stage_name.strip():
+            raise ValueError('A generation stage name is required.')
+        if stage_name in self.stages:
+            raise ValueError('This generation stage is already recorded.')
+        if not isinstance(result, GenerationResult) or result.provider not in {'gemini', 'fake', 'openrouter'}:
+            raise ValueError('Unsupported generation result provider.')
+        usage = {
+            'input_tokens': result.usage.input_tokens,
+            'output_tokens': result.usage.output_tokens,
+            'total_tokens': result.usage.total_tokens,
+        }
+        if result.provider == 'openrouter':
+            usage.update(provider='openrouter', thinking_tokens=result.usage.thinking_tokens,
+                         cost_usd=result.usage.cost_usd)
+        return self.record_usage(stage_name, usage, model=result.model,
+                                 billing_mode=billing_mode, input_modality=input_modality)
+
     def record_usage(self, stage_name, usage, model=None, billing_mode='standard', input_modality='text'):
         normalized = {
             'input_tokens': int((usage or {}).get('input_tokens', 0) or 0),
@@ -190,6 +217,12 @@ class TokenAccumulator:
             'billing_mode': str(billing_mode or 'standard').strip() or 'standard',
             'input_modality': str(input_modality or 'text').strip() or 'text',
         }
+        if (usage or {}).get('provider') == 'openrouter':
+            normalized['provider'] = 'openrouter'
+            normalized['thinking_tokens'] = max(0, int((usage or {}).get('thinking_tokens', 0) or 0))
+            cost = finite_cost_usd((usage or {}).get('cost_usd'))
+            if cost is not None:
+                normalized['cost_usd'] = cost
         self.stages[stage_name] = normalized
         self.input_total += normalized['input_tokens']
         self.output_total += normalized['output_tokens']

@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-07",
+  "version": "2026-11-15",
   "models": {
     "gemini-3.5-flash-lite": {
       "label": "Gemini 3.5 Flash-Lite (Standard)",
@@ -108,6 +108,54 @@
       "input_text_per_M": 0.25,
       "input_audio_per_M": 0.5,
       "output_per_M": 1.5
+    },
+    "anthropic/claude-haiku-5.5": {
+      "label": "Claude Haiku 5.5 (OpenRouter standard <=100k)",
+      "max_input_tokens": 100000,
+      "input_text_per_M": 0.1,
+      "input_audio_per_M": null,
+      "output_per_M": 0.5,
+      "long_context_model": "anthropic/claude-haiku-5.5-over-100k",
+      "source": "https://openrouter.ai/api/v1/models/anthropic/claude-haiku-5.5/endpoints"
+    },
+    "anthropic/claude-haiku-5.5-over-100k": {
+      "label": "Claude Haiku 5.5 (OpenRouter standard >100k)",
+      "min_input_tokens": 100001,
+      "input_text_per_M": 0.5,
+      "input_audio_per_M": null,
+      "output_per_M": 2.5,
+      "source": "https://openrouter.ai/api/v1/models/anthropic/claude-haiku-5.5/endpoints"
+    },
+    "anthropic/claude-sonnet-5.5": {
+      "label": "Claude Sonnet 5.5 (OpenRouter standard)",
+      "input_text_per_M": 2,
+      "input_audio_per_M": null,
+      "output_per_M": 10,
+      "source": "https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-5.5/endpoints"
+    },
+    "anthropic-batch-reference/claude-haiku-5.5": {
+      "label": "Claude Haiku 5.5 (Anthropic Batch reference <=100k; not OpenRouter)",
+      "max_input_tokens": 100000,
+      "input_text_per_M": 0.05,
+      "input_audio_per_M": null,
+      "output_per_M": 0.25,
+      "long_context_model": "anthropic-batch-reference/claude-haiku-5.5-over-100k",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic-batch-reference/claude-haiku-5.5-over-100k": {
+      "label": "Claude Haiku 5.5 (Anthropic Batch reference >100k; not OpenRouter)",
+      "min_input_tokens": 100001,
+      "input_text_per_M": 0.25,
+      "input_audio_per_M": null,
+      "output_per_M": 1.25,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic-batch-reference/claude-sonnet-5.5": {
+      "label": "Claude Sonnet 5.5 (Anthropic Batch reference; not OpenRouter)",
+      "input_text_per_M": 1,
+      "input_audio_per_M": null,
+      "output_per_M": 5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
     }
   },
   "pricing_table": {
@@ -250,6 +298,30 @@
           }
         ]
       }
+    },
+    "anthropic/claude-haiku-5.5": {
+      "standard": {
+        "tiers": [
+          {
+            "label": "<=100k",
+            "max_input_tokens": 100000,
+            "input_text_per_M": 0.1,
+            "output_per_M": 0.5
+          },
+          {
+            "label": ">100k",
+            "min_input_tokens": 100001,
+            "input_text_per_M": 0.5,
+            "output_per_M": 2.5
+          }
+        ]
+      }
+    },
+    "anthropic/claude-sonnet-5.5": {
+      "standard": {
+        "input_text_per_M": 2,
+        "output_per_M": 10
+      }
     }
   },
   "scenarios": {
@@ -345,12 +417,17 @@
   "sources": {
     "models": "https://ai.google.dev/gemini-api/docs/models",
     "pricing": "https://ai.google.dev/gemini-api/docs/pricing",
-    "thinking": "https://ai.google.dev/gemini-api/docs/thinking"
+    "thinking": "https://ai.google.dev/gemini-api/docs/thinking",
+    "openrouter_models": "https://openrouter.ai/api/v1/models",
+    "anthropic_pricing": "https://platform.claude.com/docs/en/about-claude/pricing"
   },
   "notes": [
     "USD per million tokens; output rates include thinking tokens.",
     "Gemini 3.8 Flash introductory rates end on 2026-12-31; rate_schedule applies the announced 2027-01-01 rates automatically using UTC dates.",
     "Legacy model rates are retained for historical job reports; new scenarios use current runtime models.",
-    "All audio transcription uses Gemini 3.8 Flash with high thinking. Interview summaries and sections use the study model (Gemini 3.5 Flash-Lite)."
+    "All audio transcription uses Gemini 3.8 Flash with high thinking. Interview summaries and sections use the study model (Gemini 3.5 Flash-Lite).",
+    "OpenRouter estimates use the Google Vertex global standard endpoint rates verified on 2026-11-15. Normal requests retain standard rates when scheduled overnight; vendor Batch references are calculator-only and are not OpenRouter Batch prices.",
+    "Haiku estimates use the published <=100,000 / >100,000 prompt-token boundary. OpenRouter metadata names min_prompt_tokens:100000; the exact boundary is ambiguous there. Valid provider-reported request cost takes precedence over the estimate.",
+    "Anthropic Batch references use separately published vendor rates. Output rates already include reasoning tokens; OpenRouter routes do not support audio."
   ]
 }

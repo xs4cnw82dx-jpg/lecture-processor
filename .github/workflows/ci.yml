@@ -112,6 +112,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -c requirements.constraints.txt
 
+      - name: Check production entrypoint in isolation
+        run: python scripts/check_app_startup_isolated.py
+
       - name: Run smoke tests with local app
         run: |
           set -euo pipefail

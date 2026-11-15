@@ -15,3 +15,4 @@ flask-compress==1.23
 cryptography==46.0.5
 openpyxl==3.1.5
 numpy==2.3.5
+openai @ https://files.pythonhosted.org/packages/64/a8/bb76c7356de8ad57f59d5ff993d434df0607f07f08bcc9c9a5c275e399c0/openai-2.54.0-py3-none-any.whl#sha256=89089789197ccdb87f173a03145ed1598d00795220c93e96cf712b1cbf5e5f2b

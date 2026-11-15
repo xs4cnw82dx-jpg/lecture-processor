@@ -29,6 +29,20 @@ def get_gemini_http_timeout_ms(*, request_thread: bool = False, environ=None) ->
     return timeout
 
 
+def get_openrouter_http_timeout_ms(*, request_thread: bool = False, environ=None) -> int:
+    def bounded_timeout(name, default):
+        try:
+            value = int(_env_get(name, str(default), environ=environ))
+        except (TypeError, ValueError):
+            return default
+        return min(value, 3_600_000) if value > 0 else default
+
+    timeout = bounded_timeout('OPENROUTER_HTTP_TIMEOUT_MS', 600_000)
+    if request_thread:
+        return min(timeout, bounded_timeout('OPENROUTER_REQUEST_HTTP_TIMEOUT_MS', 60_000))
+    return timeout
+
+
 def is_render_environment(*, environ=None) -> bool:
     return bool(
         _env_get('RENDER', environ=environ)

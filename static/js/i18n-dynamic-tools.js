@@ -3,6 +3,12 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "Provider reported": "Door aanbieder gerapporteerd",
+  "Rate estimate": "Tariefschatting",
+  "Reported + estimated": "Gerapporteerd + geschat",
+  "{count} selected ({scope})": "{count} geselecteerd ({scope})",
+  "selected manually": "handmatig geselecteerd",
+  "all filtered jobs": "alle gefilterde taken",
   "AI routing": "AI-routering",
   "Configured": "Ingesteld",
   "Review routing configuration": "Controleer de routeringsconfiguratie",

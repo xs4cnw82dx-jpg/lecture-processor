@@ -364,6 +364,16 @@ def admin_export(app_ctx, request):
             unified = any((doc.to_dict() or {}).get('credit_scheme') == 2 for doc in docs)
             if unified:
                 headers += ['credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits']
+            def has_provider_usage(job):
+                usage = job.get('token_usage_by_stage')
+                return (admin_metrics.is_admin_visible_job(job, runtime=app_ctx)
+                        and isinstance(usage, dict)
+                        and any(isinstance(value, dict) and value.get('provider') == 'openrouter'
+                                for value in usage.values()))
+
+            provider_costs = any(has_provider_usage(doc.to_dict() or {}) for doc in docs)
+            if provider_costs:
+                headers += ['cost_source', 'estimated_cost_usd']
             yield headers
             for doc in docs:
                 job = doc.to_dict() or {}
@@ -402,6 +412,9 @@ def admin_export(app_ctx, request):
                 if unified:
                     values = _unified_history_fields(job)
                     row += [values.get(key, '') for key in ('credit_scheme', 'charge_ref', 'charged_credits', 'refunded_credits')]
+                if provider_costs:
+                    row += [cost_info.get('cost_source', 'tariff_estimate'),
+                            round(cost_info.get('estimated_cost_usd', cost_usd), 8)]
                 yield row
             return
 

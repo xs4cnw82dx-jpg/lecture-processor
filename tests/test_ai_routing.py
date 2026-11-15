@@ -8,6 +8,7 @@ import pytest
 from lecture_processor.domains.admin.metrics import build_admin_runtime_checks
 from lecture_processor.domains.ai.providers.routing import (
     AUDIO_STAGES,
+    OPENROUTER_MODELS,
     STAGES,
     Diagnostic,
     Route,
@@ -15,6 +16,7 @@ from lecture_processor.domains.ai.providers.routing import (
     default_models,
     load_routing,
     parse_routing,
+    validate_openrouter_options,
     validate_routing,
 )
 from lecture_processor.runtime.container import get_runtime
@@ -199,3 +201,69 @@ def test_admin_uses_snapshot_without_rereading_config(tmp_path, payload, default
     del runtime.AI_ROUTING_SNAPSHOT
     assert build_admin_runtime_checks(runtime)['ai_routing_valid'] is True
     assert build_admin_runtime_checks(runtime)['ai_routing_warnings'] == []
+
+
+@pytest.mark.parametrize('stage', sorted(STAGES - AUDIO_STAGES))
+@pytest.mark.parametrize('model', sorted(OPENROUTER_MODELS))
+def test_text_routes_accept_only_explicit_supported_policy(stage, model, payload, defaults):
+    options = {'reasoning_effort': 'medium', 'max_output_tokens': 32768}
+    payload[stage] = {'provider': 'openrouter', 'model': model, 'options': options}
+    snapshot = validate_routing(payload, defaults)
+    assert snapshot.routes[stage] == Route('openrouter', model, options)
+    assert all(route == Route('gemini', defaults[key]) for key, route in snapshot.routes.items() if key != stage)
+    options['max_output_tokens'] = 1
+    assert snapshot.routes[stage].options['max_output_tokens'] == 32768
+    with pytest.raises(TypeError):
+        snapshot.routes[stage].options['max_output_tokens'] = 1
+
+
+@pytest.mark.parametrize('model,effort', [(model, effort) for model, efforts in OPENROUTER_MODELS.items()
+                                        for effort in sorted(efforts)])
+@pytest.mark.parametrize('limit', [1, 128000])
+def test_openrouter_options_accept_exact_supported_efforts_and_cap_boundaries(model, effort, limit):
+    assert validate_openrouter_options(model, {'reasoning_effort': effort, 'max_output_tokens': limit}) == {
+        'reasoning_effort': effort, 'max_output_tokens': limit,
+    }
+
+
+@pytest.mark.parametrize('options', [
+    None, [], {}, {'reasoning_effort': 'medium'}, {'max_output_tokens': 32768},
+    *[{'reasoning_effort': 'medium', 'max_output_tokens': limit}
+      for limit in [0, -1, 128001, True, False, 1.0, '32768', None]],
+    *[{'reasoning_effort': effort, 'max_output_tokens': 32768}
+      for effort in ['none', 'MEDIUM', 'synthetic-secret', None, [], {}]],
+    {'reasoning_effort': 'medium', 'max_output_tokens': 32768, 'provider': {'zdr': False}},
+])
+def test_openrouter_bad_options_fall_back_with_fixed_error(options, payload, defaults):
+    model = 'anthropic/claude-sonnet-5.5'
+    payload['notes_merge'] = {'provider': 'openrouter', 'model': model, 'options': options}
+    snapshot = parse_routing(payload, defaults)
+    assert snapshot.routes['notes_merge'] == Route('gemini', defaults['notes_merge'])
+    assert snapshot.diagnostics == (Diagnostic('notes_merge', 'unsupported_options'),)
+    with pytest.raises(ValueError, match=r'^Invalid AI routing configuration\.$'):
+        validate_openrouter_options(model, options)
+
+
+@pytest.mark.parametrize('model', [None, [], {}, 'anthropic/claude-haiku-5.5:free',
+                                   'anthropic/claude-sonnet-5.5\n', 'synthetic-secret'])
+def test_openrouter_model_allowlist_is_exact(model, payload, defaults):
+    options = {'reasoning_effort': 'medium', 'max_output_tokens': 32768}
+    payload['notes_merge'] = {'provider': 'openrouter', 'model': model, 'options': options}
+    snapshot = parse_routing(payload, defaults)
+    assert snapshot.diagnostics == (Diagnostic('notes_merge', 'invalid_model'),)
+    with pytest.raises(ValueError, match=r'^Invalid AI routing configuration\.$'):
+        validate_openrouter_options(model, options)
+
+
+@pytest.mark.parametrize('stage', sorted(AUDIO_STAGES))
+@pytest.mark.parametrize('entry', [
+    {'provider': 'openrouter', 'model': 'anthropic/claude-haiku-5.5',
+     'options': {'reasoning_effort': 'low', 'max_output_tokens': 32768}},
+    {'provider': 'openrouter', 'model': [], 'options': {'endpoint': 'synthetic-secret'}},
+    {'provider': 'unknown', 'extra': True},
+])
+def test_audio_lock_precedes_model_options_and_entry_shape(stage, entry, payload, defaults):
+    payload[stage] = entry
+    snapshot = parse_routing(payload, defaults)
+    assert snapshot.routes[stage] == Route('gemini', defaults[stage])
+    assert snapshot.diagnostics == (Diagnostic(stage, 'audio_lock'),)
