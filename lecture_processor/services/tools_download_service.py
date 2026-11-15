@@ -298,23 +298,33 @@ def download_lecture_media(app_ctx, request):
         runtime_jobs_store.set_job(job_id, {
             'job_id': job_id, 'job_scope': JOB_SCOPE, 'mode': 'lecture-download', 'user_id': uid,
             'status': 'queued', 'step_description': 'Lecture download queued...', 'started_at': app_ctx.time.time(),
-        }, runtime=app_ctx)
+        }, runtime=app_ctx, require_persistence=True)
         future = app_ctx.submit_background_job(
             _run_lecture_download, app_ctx, job_id=job_id, uid=uid, fetch_target=fetch_target,
             requested_format=requested_format, quota_reservation=quota_reservation, media_lease=media_lease,
         )
         submitted = True
         if hasattr(future, 'add_done_callback'):
-            def cancelled(done):
-                if done.cancelled():
-                    try:
+            def completed(done):
+                try:
+                    if done.cancelled():
                         _finish_error(app_ctx, job_id)
                         _cleanup_job_files(app_ctx, job_id)
+                finally:
+                    try:
+                        # The executor may finish before entering the worker.
+                        # A finished worker has already settled these resources.
                         upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
                     finally:
                         media_lease.release()
-            future.add_done_callback(cancelled)
+            future.add_done_callback(completed)
         return app_ctx.jsonify({'ok': False, 'job_id': job_id, 'status': 'queued', 'step_description': 'Lecture download queued...'}), 202
+    except runtime_jobs_store.RuntimeJobPersistenceError:
+        try:
+            runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+        except Exception:
+            app_ctx.logger.warning('Could not clean up lecture download admission %s', job_id, exc_info=True)
+        return app_ctx.jsonify({'error': 'Could not start lecture download right now. Please try again.'}), 503
     except JobQueueFullError:
         _finish_error(app_ctx, job_id)
         return app_ctx.jsonify({'error': 'Lecture download is busy right now. Please wait and try again.'}), 503
