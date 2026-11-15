@@ -8,6 +8,7 @@ from PIL import Image
 import pytest
 
 from lecture_processor.domains.books.model import BookError
+from lecture_processor.domains.study.content_revision import fingerprint
 from lecture_processor.services import account_data_service as accounts
 from lecture_processor.services import study_library_service as library
 from lecture_processor.services import study_picture_service as pictures
@@ -49,8 +50,8 @@ def test_committed_patch_succeeds_and_keeps_picture_cleanup_retryable(retention,
               'cards': {'flashcards': [{'front': 'New question', 'back': 'New answer'}]}}[change]
     response = library.update_study_pack(state.runtime, SimpleNamespace(get_json=lambda **_: fields), 'pack')
     assert response_status(response) == 200
-    assert _payload(response) == {'ok': True}
     pack = state.db.data['study_packs/pack']
+    assert _payload(response) == {'ok': True, 'content_revision': fingerprint(pack)}
     assert all(pack[key] == value for key, value in fields.items())
     assert pack['picture_cleanup_pending_ids'] == [state.image_id]
     assert state.db.data[state.asset_path]['deleting'] is True
@@ -159,7 +160,7 @@ def test_picture_attachment_distinguishes_owned_removal_from_foreign_assets(rete
     result = update_cards(state, [{'front': 'Question', 'back': 'Answer', 'image_ids': [state.image_id]}])
     if state_name == 'pending':
         assert response_status(result) == 200
-        assert _payload(result) == {'ok': True}
+        assert _payload(result) == {'ok': True, 'content_revision': fingerprint(state.db.data['study_packs/pack'])}
         assert state.db.data['study_packs/pack']['picture_cleanup_pending_ids'] == []
         assert state.db.data['study_packs/pack']['flashcards'][0]['image_ids'] == [state.image_id]
         assert state.db.data[state.asset_path] == before[state.asset_path]

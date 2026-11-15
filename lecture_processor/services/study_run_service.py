@@ -7,6 +7,7 @@ import threading
 
 from lecture_processor.services import study_plan_service as plans
 from lecture_processor.domains.account import lifecycle
+from lecture_processor.domains.study.content_revision import fingerprint as fingerprint
 
 _memory_lock = threading.RLock()
 
@@ -27,12 +28,6 @@ def _integer(value, minimum=0, maximum=86400):
         return parsed
     except (TypeError, ValueError, OverflowError):
         raise RunError('Enter a valid whole number.') from None
-
-
-def fingerprint(pack):
-    content = {key: pack.get(key, []) if key != 'notes_markdown' else pack.get(key, '')
-               for key in ('flashcards', 'test_questions', 'notes_markdown')}
-    return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
 def build_queue(pack, state, session, today, all_items=False):

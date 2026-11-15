@@ -1,5 +1,6 @@
 """Study library, folder, share, and public-share routes."""
 
+import re
 import secrets
 from urllib.parse import quote
 
@@ -8,6 +9,7 @@ from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains.study import interview_coding_runs
+from lecture_processor.domains.study.content_revision import CONTENT_FIELDS, fingerprint
 
 from lecture_processor.services import admin_support
 from lecture_processor.services import study_api_support
@@ -17,6 +19,7 @@ from lecture_processor.domains.books.model import BookError
 
 BUILTIN_FOLDER_PARENT_IDS = {'', '__interviews__', '__voice_notes__'}
 MAX_BULK_PACK_MOVE = 100
+CONTENT_REVISION = re.compile(r'[a-f0-9]{64}')
 
 
 def _commit_firestore_mutations(app_ctx, *, updates=None, deletes=None):
@@ -313,7 +316,7 @@ def create_study_pack(app_ctx, request):
             doc_payload['notes_highlights'] = notes_highlights
         doc_ref.set(doc_payload)
 
-        return app_ctx.jsonify({'ok': True, 'study_pack_id': doc_ref.id})
+        return app_ctx.jsonify({'ok': True, 'study_pack_id': doc_ref.id, 'content_revision': fingerprint(doc_payload)})
     except Exception as error:
         app_ctx.logger.error(f"Error creating study pack: {error}")
         return app_ctx.jsonify({'error': 'Could not create study pack'}), 500
@@ -345,6 +348,7 @@ def get_study_pack(app_ctx, request, pack_id):
         source_flags = study_api_support.get_study_pack_source_flags(app_ctx, pack_id)
         return app_ctx.jsonify({
             'study_pack_id': pack_id,
+            'content_revision': fingerprint(pack),
             'title': pack.get('title', ''),
             'mode': pack.get('mode', ''),
             'output_language': pack.get('output_language', 'English'),
@@ -405,7 +409,18 @@ def update_study_pack(app_ctx, request, pack_id):
         pack = doc.to_dict()
         if pack.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
-        audio_storage_key = study_audio.ensure_pack_audio_storage_key(pack_ref, pack, runtime=app_ctx)
+        replaces_content = any(field in payload for field in CONTENT_FIELDS)
+        base_revision = payload.get('base_content_revision') if replaces_content else None
+        if replaces_content and 'base_content_revision' in payload and (
+            not isinstance(base_revision, str) or not CONTENT_REVISION.fullmatch(base_revision)
+        ):
+            return app_ctx.jsonify({
+                'error': 'base_content_revision must be a valid content revision.',
+                'error_code': 'invalid_content_revision',
+            }), 400
+        # Do not hydrate legacy audio metadata before the save's authority and
+        # revision checks: rejected edits must not write or recreate a pack.
+        audio_storage_key = study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx)
         has_audio_file = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
 
         updates = {'updated_at': app_ctx.time.time()}
@@ -449,7 +464,9 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['daily_card_goal'] = daily_card_goal
 
         if 'flashcards' in payload:
-            updates['flashcards'] = study_picture_service.sanitize_cards(app_ctx, uid, pack_id, payload.get('flashcards', []))
+            updates['flashcards'] = study_picture_service.sanitize_cards(
+                app_ctx, uid, pack_id, payload.get('flashcards', []), validate_assets=False,
+            )
             updates['flashcards_count'] = len(updates['flashcards'])
         if 'test_questions' in payload:
             updates['test_questions'] = app_ctx.sanitize_questions(payload.get('test_questions', []), 500)
@@ -476,17 +493,26 @@ def update_study_pack(app_ctx, request, pack_id):
             updates['notes_highlights'] = notes_highlights if notes_highlights_action == 'set' else None
         updates['has_audio_playback'] = has_audio_file
 
-        if 'flashcards' in updates:
-            pending_pictures = study_picture_service.update_pack_and_collect_removed(app_ctx, uid, pack_id, updates)
-        else:
-            pack_ref.update(updates)
-            pending_pictures = pack.get(study_picture_service.PENDING_PICTURES, [])
+        if replaces_content and 'base_content_revision' not in payload:
+            # Stage one permits existing clients. Keep this rollout signal
+            # content-free and outside the retryable transaction.
+            app_ctx.logger.info('Study pack content replacement received without base_content_revision')
+        pending_pictures, content_revision = study_picture_service.update_pack_and_collect_removed(
+            app_ctx, uid, pack_id, updates, base_content_revision=base_revision,
+        )
         if pending_pictures:
             try:
                 study_picture_service.delete_for_pack(app_ctx, uid, pack_id, image_ids=pending_pictures)
             except Exception:
                 app_ctx.logger.warning('Picture cleanup remains pending after saving study pack %s', pack_id, exc_info=True)
-        return app_ctx.jsonify({'ok': True})
+        return app_ctx.jsonify({'ok': True, 'content_revision': content_revision})
+    except study_picture_service.ContentRevisionConflict as error:
+        return app_ctx.jsonify({
+            'error': 'This study pack changed elsewhere. Reload it before saving your changes.',
+            'error_code': 'content_revision_conflict', 'content_revision': error.current_revision,
+        }), 409
+    except account_lifecycle.AccountUnavailableError:
+        return study_api_support.account_unavailable_response(app_ctx)
     except BookError as error:
         return app_ctx.jsonify({'error': str(error)}), error.status
     except Exception as error:

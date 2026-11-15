@@ -11,7 +11,9 @@ import uuid
 
 from flask import jsonify, send_file
 
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.books.model import BookError
+from lecture_processor.domains.study.content_revision import fingerprint
 from lecture_processor.repositories.books_repo import BookStore
 from lecture_processor.repositories import study_repo
 from lecture_processor.services import book_service, book_storage, study_api_support
@@ -27,6 +29,12 @@ _UPLOADS_LOCK = threading.Lock()
 
 class PictureUploadBusy(BookError):
     """An active upload lease keeps removal safely pending."""
+
+
+class ContentRevisionConflict(Exception):
+    def __init__(self, current_revision):
+        super().__init__('Study pack content changed')
+        self.current_revision = current_revision
 
 
 def _require_attachable_asset(asset, uid, pack_id):
@@ -62,7 +70,7 @@ def require_access(runtime, request, pack_id, *, write=False):
     return uid, None
 
 
-def sanitize_cards(runtime, uid, pack_id, items):
+def sanitize_cards(runtime, uid, pack_id, items, *, validate_assets=True):
     """Preserve image references through edits, rejecting foreign or missing assets."""
     cleaned = runtime.sanitize_flashcards(items, 500)
     if not isinstance(items, list):
@@ -80,7 +88,7 @@ def sanitize_cards(runtime, uid, pack_id, items):
         if row:
             references.setdefault((row[0]['front'], row[0]['back']), list(dict.fromkeys(ids)))
     all_ids = {aid for ids in references.values() for aid in ids}
-    if all_ids:
+    if all_ids and validate_assets:
         if not enabled(runtime, uid):
             raise BookError('Pictures are not enabled for this account.', 403)
         assets = {
@@ -105,23 +113,50 @@ def _card_image_ids(cards):
     }
 
 
-def update_pack_and_collect_removed(runtime, uid, pack_id, updates):
-    """Serialize card attachment with image cleanup and retain failed cleanup work."""
+def _require_writable_account(tx, uid):
+    try:
+        user = tx.get('users/' + uid)
+        deletion = tx.get(account_lifecycle.ACCOUNT_DELETIONS_COLLECTION + '/' + uid)
+        if not isinstance(user, dict) or str(user.get('account_status', '')).strip().lower() in {'deleting', 'delete_requested', 'deleted'}:
+            raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
+        if deletion is not None and str(deletion.get('status') or deletion.get('phase') or '').strip().lower() != 'cancelled':
+            raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
+        return user
+    except Exception as error:
+        raise account_lifecycle.AccountUnavailableError('Account is unavailable.') from error
+
+
+def update_pack_and_collect_removed(runtime, uid, pack_id, updates, *, base_content_revision=None):
+    """Fence each pack edit and picture effects in the same atomic commit."""
     db = BookStore(runtime.db)
 
     def update(tx):
         pack = tx.get('study_packs/' + pack_id)
-        if not pack:
-            raise BookError('Study pack not found.', 404)
+        if pack is None:
+            raise BookError('Study pack not found', 404)
         if pack.get('uid') != uid:
             raise BookError('Forbidden', 403)
-        next_ids = _card_image_ids(updates.get('flashcards', pack.get('flashcards', [])))
-        for aid in sorted(next_ids):
-            asset = tx.get('study_images/' + aid)
-            _require_attachable_asset(asset, uid, pack_id)
-        pending = (set(pack.get(PENDING_PICTURES, [])) | _card_image_ids(pack.get('flashcards'))) - next_ids
-        tx.put('study_packs/' + pack_id, {**pack, **updates, PENDING_PICTURES: sorted(pending)})
-        return sorted(pending)
+        user = _require_writable_account(tx, uid)
+        current_revision = fingerprint(pack)
+        if base_content_revision is not None and base_content_revision != current_revision:
+            # An old hash cannot prove unsubmitted fields are unchanged, even
+            # when this request's fields already match after a lost response.
+            raise ContentRevisionConflict(current_revision)
+        pending = set(pack.get(PENDING_PICTURES, []))
+        saved = {**pack, **updates}
+        if 'flashcards' in updates:
+            next_ids = _card_image_ids(updates['flashcards'])
+            if next_ids and user.get('study_pictures_enabled') is not True:
+                raise BookError('Pictures are not enabled for this account.', 403)
+            for aid in sorted(next_ids):
+                asset = tx.get('study_images/' + aid)
+                _require_attachable_asset(asset, uid, pack_id)
+            pending = (pending | _card_image_ids(pack.get('flashcards'))) - next_ids
+            saved[PENDING_PICTURES] = sorted(pending)
+        # All reads, including account and image authority, precede this write.
+        # Merge into this attempt's snapshot so retries retain other fields.
+        tx.put('study_packs/' + pack_id, saved)
+        return sorted(pending), fingerprint(saved)
 
     return db.atomic(update)
 

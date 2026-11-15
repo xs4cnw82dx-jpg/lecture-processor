@@ -20,6 +20,7 @@ from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.services import study_api_support, upload_api_service
 from tests.runtime_test_support import get_test_core
+from tests.credit_test_support import make_credit_runtime
 
 core = get_test_core()
 
@@ -45,6 +46,16 @@ class _StoredDoc:
 
     def to_dict(self):
         return dict(self._store.get(self.id, {}))
+
+
+def _transactional_study_pack(monkeypatch, pack_id, payload):
+    runtime, store = make_credit_runtime(
+        users={payload['uid']: {}}, documents={('study_packs', pack_id): payload},
+    )
+    runtime.db.document = lambda path: runtime.db.collection(path.rsplit('/', 1)[0]).document(path.rsplit('/', 1)[1])
+    monkeypatch.setattr(core, 'db', runtime.db)
+    monkeypatch.setattr('lecture_processor.repositories.books_repo.firestore', runtime.firestore)
+    return store
 
 
 class _StoredRef:
@@ -713,7 +724,7 @@ def test_study_pack_update_clears_stale_audio_flags_when_file_missing(client, mo
     monkeypatch.setattr(core, "STUDY_AUDIO_ROOT", str(tmp_path), raising=False)
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u-audio", "email": "u@example.com"})
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
-    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, pack_id: _StoredRef(store, pack_id))
+    transaction_store = _transactional_study_pack(monkeypatch, 'pack-stale-audio', store['pack-stale-audio'])
 
     response = client.patch(
         "/api/study-packs/pack-stale-audio",
@@ -722,6 +733,7 @@ def test_study_pack_update_clears_stale_audio_flags_when_file_missing(client, mo
     )
 
     assert response.status_code == 200
+    store = transaction_store.docs('study_packs')
     assert store["pack-stale-audio"]["title"] == "Renamed"
     assert store["pack-stale-audio"]["has_audio_playback"] is False
     assert store["pack-stale-audio"]["has_audio_sync"] is False
@@ -1148,21 +1160,8 @@ def test_study_pack_update_round_trips_daily_card_goal_and_notes_highlights(allo
         "notes_highlights": None,
     }
 
-    class _Doc:
-        exists = True
-
-        def to_dict(self):
-            return dict(stored)
-
-    class _DocRef:
-        def get(self):
-            return _Doc()
-
-        def update(self, updates):
-            stored.update(dict(updates))
-
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "study-u4", "email": "u@example.com"})
-    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: _DocRef())
+    transaction_store = _transactional_study_pack(monkeypatch, 'pack-1', stored)
     monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.ensure_pack_audio_storage_key", lambda *_args, **_kwargs: "")
     monkeypatch.setattr("lecture_processor.services.study_library_service.study_audio.get_audio_storage_key_from_pack", lambda *_args, **_kwargs: "")
 
@@ -1180,6 +1179,7 @@ def test_study_pack_update_round_trips_daily_card_goal_and_notes_highlights(allo
     )
 
     assert response.status_code == 200
+    stored = transaction_store.docs('study_packs')['pack-1']
     assert stored["daily_card_goal"] == 40
     assert stored["notes_highlights"] == {
         "base_key": "pack-1:2:7",
