@@ -473,6 +473,8 @@ def start_ai_coding_run(app_ctx, request, pack_id):
     try:
         app_ctx.get_or_create_user(uid, email)
         run_id, created = coding_runs.claim_run(app_ctx, uid, pack_id, credit_cost, email=email)
+    except coding_runs.AccountUnavailableRunError:
+        return study_api_support.account_unavailable_response(app_ctx)
     except coding_runs.RunError as error:
         return app_ctx.jsonify({'error': str(error), 'error_code': error.code}), error.status
     except (ledger.InsufficientCredits, ledger.LedgerConflict, ledger.LedgerUnavailable) as error:
@@ -520,6 +522,8 @@ def get_ai_coding_run(app_ctx, request, pack_id, run_id):
         if getattr(app_ctx, 'RUNTIME_JOB_RECOVERY_ENABLED', False) and not (doc.to_dict() or {}).get('runtime_job_id'):
             try:
                 coding_runs.adopt_legacy_active_run(app_ctx, uid, pack_id, run_id)
+            except coding_runs.AccountUnavailableRunError:
+                return study_api_support.account_unavailable_response(app_ctx)
             except coding_runs.RunError as error:
                 return app_ctx.jsonify({'error': str(error), 'error_code': error.code}), error.status
             except Exception:
