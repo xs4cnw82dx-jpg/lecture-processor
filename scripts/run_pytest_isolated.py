@@ -11,8 +11,11 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.isolated_runtime import force_isolated_provider_environment
+
 
 def main() -> int:
+    force_isolated_provider_environment()
     # Legacy contract fixtures opt out; rollout tests enable their synthetic
     # runtime explicitly. An explicit caller setting still takes precedence.
     os.environ.setdefault('UNIFIED_CREDITS_ENABLED', '0')

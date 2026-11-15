@@ -17,8 +17,28 @@ warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1\\.
 
 def load_local_environment(*, environ=None) -> None:
     source = os.environ if environ is None else environ
+    if is_forced_fake_provider(environ=source):
+        return
     if not source.get('RENDER'):
         load_dotenv()
+
+
+def is_forced_fake_provider(*, environ=None) -> bool:
+    source = os.environ if environ is None else environ
+    forced = str(source.get('LP_FORCE_FAKE_PROVIDER', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
+    if forced and (str(source.get('APP_ENV', '')).strip().lower() != 'test'
+                   or str(source.get('SENTRY_ENVIRONMENT', '')).strip().lower() not in {'', 'test'}
+                   or any(source.get(name) for name in ('RENDER', 'RENDER_SERVICE_ID', 'RENDER_DEPLOY_ID'))):
+        raise RuntimeError('Fake providers require an isolated test environment.')
+    return forced
+
+
+def initialize_ai_client(*, genai_module, logger, environ=None):
+    source = os.environ if environ is None else environ
+    if is_forced_fake_provider(environ=source):
+        from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
+        return FakeGeminiClient()
+    return initialize_gemini_client(source.get('GEMINI_API_KEY', ''), genai_module=genai_module, logger=logger)
 
 
 def configure_logging(log_level: str):

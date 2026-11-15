@@ -1,0 +1,16 @@
+{
+  "slides_extraction": {"provider": "gemini", "model": "gemini-3.5-flash-lite", "options": {}},
+  "notes_merge": {"provider": "gemini", "model": "gemini-3.1-pro-preview", "options": {}},
+  "text_combine": {"provider": "gemini", "model": "gemini-3.1-pro-preview", "options": {}},
+  "study_tools": {"provider": "gemini", "model": "gemini-3.5-flash-lite", "options": {}},
+  "regenerate_study_tools": {"provider": "gemini", "model": "gemini-3.5-flash-lite", "options": {}},
+  "interview_summary": {"provider": "gemini", "model": "gemini-3.5-flash-lite", "options": {}},
+  "interview_sections": {"provider": "gemini", "model": "gemini-3.5-flash-lite", "options": {}},
+  "interview_coding": {"provider": "gemini", "model": "gemini-3.8-flash", "options": {}},
+  "tools_extraction": {"provider": "gemini", "model": "gemini-3.5-flash-lite", "options": {}},
+  "audio_transcription": {"provider": "gemini", "model": "gemini-3.8-flash", "options": {}},
+  "audio_transcription_timestamped": {"provider": "gemini", "model": "gemini-3.8-flash", "options": {}},
+  "interview_transcription": {"provider": "gemini", "model": "gemini-3.8-flash", "options": {}},
+  "voice_note_transcription": {"provider": "gemini", "model": "gemini-3.8-flash", "options": {}},
+  "tools_transcription": {"provider": "gemini", "model": "gemini-3.8-flash", "options": {}}
+}

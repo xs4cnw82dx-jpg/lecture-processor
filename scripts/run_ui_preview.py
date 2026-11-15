@@ -18,8 +18,11 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.isolated_runtime import force_isolated_provider_environment
+
 
 def main() -> None:
+    force_isolated_provider_environment()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=int(os.getenv('PORT', '5123')))
     args = parser.parse_args()

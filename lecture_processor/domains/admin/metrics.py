@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from flask import g
 
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.ai.providers.routing import Diagnostic, RoutingSnapshot
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.runtime import environment as runtime_environment
 
@@ -80,9 +81,16 @@ def build_admin_runtime_checks(runtime=None):
     soffice_available = bool(resolved_runtime.get_soffice_binary())
     ffmpeg_available = bool(resolved_runtime.get_ffmpeg_binary())
     ytdlp_available = bool(resolved_runtime.shutil.which('yt-dlp'))
+    routing = getattr(resolved_runtime, 'AI_ROUTING_SNAPSHOT', None)
+    routing_warnings = () if routing is None else (
+        routing.diagnostics if isinstance(routing, RoutingSnapshot)
+        else (Diagnostic('configuration', 'invalid_config'),)
+    )
     return {
         'firebase_ready': bool(resolved_runtime.db),
         'gemini_ready': bool(resolved_runtime.client),
+        'ai_routing_valid': not routing_warnings,
+        'ai_routing_warnings': [{'stage': item.stage, 'reason': item.reason} for item in routing_warnings],
         'stripe_secret_mode': secret_key_mode,
         'stripe_publishable_mode': publishable_key_mode,
         'stripe_keys_match': stripe_keys_match,
