@@ -463,3 +463,84 @@ test('unavailable storage enumeration fails mutation without erasing the old rec
   assert.equal(cache.clearUser('alice'), false);
   assert.deepEqual([...values], before);
 });
+
+test('planned removal selects only validated current owner, session and pack records', () => {
+  const { cache, values } = fixture(), token = cache.capture('alice');
+  const payload = (id, session = 'session', pack = 'pack', uid = 'alice') => ({ activity_id: id, plan_item_id: session, pack_id: pack, uid });
+  for (const kind of ['planned', 'conflict']) cache.set(token, kind, 'run', payload('run'), { packId: 'pack', pending: true });
+  const preserved = [
+    ['planned', 'other-session', payload('other-session', 'other'), 'pack'],
+    ['conflict', 'other-pack', payload('other-pack', 'session', 'other'), 'other'],
+    ['learning', 'resume', payload('resume'), 'pack'],
+    ['planned', 'wrong-owner', payload('wrong-owner', 'session', 'pack', 'bob'), 'pack'],
+    ['planned', 'invalid-owner', payload('invalid-owner', 'session', 'pack', 0), 'pack'],
+    ['conflict', 'wrong-pack', payload('wrong-pack', 'session', 'other'), 'pack'],
+    ['planned', 'wrong-id', payload('different-id'), 'pack'],
+    ['planned', 'unscoped', { activity_id: 'unscoped', plan_item_id: 'session' }, 'pack'],
+    ['future', 'unknown-kind', payload('unknown-kind'), 'pack'],
+  ];
+  for (const [kind, id, value, packId] of preserved) cache.set(token, kind, id, value, { packId, pending: true });
+  values.set(key('alice', 'conflict', 'malformed'), '{malformed');
+  values.set('planned_run_alice_run_conflict', '{legacy');
+  values.set(key('bob', 'conflict', 'run'), JSON.stringify({ schema: 1, uid: 'bob', kind: 'conflict', id: 'run', pack_id: 'pack', pending: true, updated_at: 1, payload: payload('run', 'session', 'pack', 'bob') }));
+  const before = new Map(values);
+  assert.equal(cache.removePlannedSession('alice', 'session', 'pack'), true);
+  for (const kind of ['planned', 'conflict']) assert.equal(values.has(key('alice', kind, 'run')), false);
+  for (const [name, raw] of before) if (![key('alice', 'planned', 'run'), key('alice', 'conflict', 'run')].includes(name)) assert.equal(values.get(name), raw, name);
+  assert.equal(cache.hasPending('alice'), true);
+});
+
+test('planned removal keeps quarantined and stale generations byte for byte', () => {
+  const { cache, values } = fixture(), token = cache.capture('alice');
+  for (const id of ['quarantined', 'stale']) cache.set(token, 'conflict', id, { activity_id: id, plan_item_id: 'session', pack_id: 'pack' }, { packId: 'pack', pending: true });
+  values.set('lp_study_cache_fence_v1:alice:key:conflict:quarantined', '{broken');
+  values.set('lp_study_cache_fence_v1:alice:key:conflict:stale', JSON.stringify({ schema: 1, version: 'new-generation', retained: [] }));
+  assert.ok(cache.capture('alice'));
+  const before = new Map(values);
+  assert.equal(cache.removePlannedSession('alice', 'session', 'pack'), true);
+  assert.deepEqual(values, before);
+  assert.equal(cache.hasPending('alice'), true);
+});
+
+test('planned removal fences the exact keys against other tabs while preserving another session', () => {
+  const shared = sharedTabs(), first = shared.open(), second = shared.open(), token = second.cache.capture('alice');
+  const payload = { activity_id: 'run', plan_item_id: 'session', pack_id: 'pack' };
+  for (const kind of ['planned', 'conflict']) second.cache.set(token, kind, 'run', payload, { packId: 'pack', pending: true });
+  assert.equal(first.cache.removePlannedSession('alice', 'session', 'pack'), true);
+  for (const kind of ['planned', 'conflict']) assert.equal(second.cache.set(token, kind, 'run', payload, { packId: 'pack', pending: true }), false);
+  assert.equal(second.cache.set(token, 'planned', 'other', { activity_id: 'other', plan_item_id: 'other-session', pack_id: 'pack' }, { packId: 'pack', pending: true }), true);
+  shared.flush();
+  assert.ok(first.cache.get('alice', 'planned', 'other'));
+});
+
+test('planned removal rejects inactive owners and reports storage failures conservatively', () => {
+  const { cache, values, faults } = fixture();
+  cache.set(cache.capture('alice'), 'planned', 'run', { activity_id: 'run', plan_item_id: 'session', pack_id: 'pack' }, { packId: 'pack', pending: true });
+  const before = new Map(values);
+  for (const args of [['bob', 'session', 'pack'], ['alice', '', 'pack'], ['alice', 'session', '']]) assert.equal(cache.removePlannedSession(...args), false);
+  assert.deepEqual(values, before);
+  faults.enumerate = true;
+  assert.equal(cache.removePlannedSession('alice', 'session', 'pack'), false);
+  assert.deepEqual(values, before);
+  faults.enumerate = false;
+  faults.remove.add(key('alice', 'planned', 'run'));
+  assert.equal(cache.removePlannedSession('alice', 'session', 'pack'), false);
+  assert.equal(values.get(key('alice', 'planned', 'run')), before.get(key('alice', 'planned', 'run')));
+});
+
+test('planned removal preserves a record reassigned during enumeration', () => {
+  const shared = sharedTabs(), first = shared.open(), second = shared.open(), token = second.cache.capture('alice');
+  const original = { activity_id: 'run', plan_item_id: 'session', pack_id: 'pack' };
+  second.cache.set(token, 'planned', 'run', original, { packId: 'pack', pending: true });
+  second.cache.set(token, 'learning', 'resume', {}, { packId: 'pack' });
+  let replacement;
+  first.faults.beforeKey = index => {
+    if (index !== 1) return;
+    first.faults.beforeKey = null;
+    second.cache.set(token, 'planned', 'run', { ...original, plan_item_id: 'other-session' }, { packId: 'pack', pending: true });
+    replacement = shared.values.get(key('alice', 'planned', 'run'));
+  };
+  assert.equal(first.cache.removePlannedSession('alice', 'session', 'pack'), false);
+  assert.equal(shared.values.get(key('alice', 'planned', 'run')), replacement);
+  assert.equal(shared.values.has('lp_study_cache_fence_v1:alice:key:planned:run'), false);
+});

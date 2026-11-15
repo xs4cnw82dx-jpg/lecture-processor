@@ -1271,32 +1271,21 @@ def test_study_folder_nesting_and_bulk_pack_move(allow_account_writes, client, m
 def test_interview_coding_state_quote_and_pdf(allow_account_writes, client, monkeypatch):
     from tests.credit_test_support import make_credit_runtime
 
-    billing_runtime, _billing_store = make_credit_runtime(
+    billing_runtime, billing_store = make_credit_runtime(
         users={'coding-u1': {'uid': 'coding-u1', 'slides_credits': 10}}, unified_enabled=False,
     )
     monkeypatch.setattr(core, 'db', billing_runtime.db)
+    monkeypatch.setattr(core, 'firestore', billing_runtime.firestore)
     monkeypatch.setattr(core, 'UNIFIED_CREDITS_ENABLED', False)
     transcript = "00:01 - Speaker A - Patients want clear guidance.\n00:08 - Speaker B - Follow-up feels rushed."
-    pack_store = {
-        "pack-1": {"uid": "coding-u1", "title": "Interview One", "mode": "interview"},
-    }
-    source_store = {
-        "pack-1": {"uid": "coding-u1", "transcript": transcript},
-    }
-    code_store = {}
-    quote_store = {}
-    run_store = {}
+    billing_store.documents.update({
+        ('study_packs', 'pack-1'): {"uid": "coding-u1", "title": "Interview One", "mode": "interview"},
+        ('study_pack_sources', 'pack-1'): {"uid": "coding-u1", "transcript": transcript},
+    })
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "coding-u1", "email": "u@example.com"})
-    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, pack_id: _StoredDoc(pack_id, pack_store) if pack_id in pack_store else _MissingDoc())
-    monkeypatch.setattr(core.study_repo, "get_study_pack_source_doc", lambda _db, pack_id: _StoredDoc(pack_id, source_store) if pack_id in source_store else _MissingDoc())
-    monkeypatch.setattr(core.study_repo, "create_interview_code_doc_ref", lambda _db: _StoredRef(code_store, f"code-{len(code_store) + 1}"))
-    monkeypatch.setattr(core.study_repo, "get_interview_code_doc", lambda _db, code_id: _StoredDoc(code_id, code_store) if code_id in code_store else _MissingDoc())
-    monkeypatch.setattr(core.study_repo, "list_interview_codes_by_uid", lambda _db, _uid, limit=1000: [_StoredDoc(doc_id, code_store) for doc_id in code_store])
-    monkeypatch.setattr(core.study_repo, "create_interview_quotation_doc_ref", lambda _db: _StoredRef(quote_store, f"quote-{len(quote_store) + 1}"))
-    monkeypatch.setattr(core.study_repo, "get_interview_quotation_doc", lambda _db, quote_id: _StoredDoc(quote_id, quote_store) if quote_id in quote_store else _MissingDoc())
-    monkeypatch.setattr(core.study_repo, "list_interview_quotations_by_uid_and_pack", lambda _db, _uid, _pack_id, limit=2000: [_StoredDoc(doc_id, quote_store) for doc_id in quote_store])
-    monkeypatch.setattr(core.study_repo, "list_interview_ai_coding_runs_by_uid_and_pack", lambda _db, _uid, _pack_id, limit=20: [_StoredDoc(doc_id, run_store) for doc_id in run_store])
+    monkeypatch.setattr(core.study_repo, "create_interview_code_doc_ref", lambda db: db.collection('interview_codes').document('code-1'))
+    monkeypatch.setattr(core.study_repo, "create_interview_quotation_doc_ref", lambda db: db.collection('interview_quotations').document('quote-1'))
 
     code_response = client.post(
         "/api/interview-coding/packs/pack-1/codes",
@@ -1314,7 +1303,7 @@ def test_interview_coding_state_quote_and_pdf(allow_account_writes, client, monk
         headers={"Authorization": "Bearer dev"},
     )
     assert quote_response.status_code == 200
-    assert quote_store["quote-1"]["code_ids"] == [code_id]
+    assert billing_store.docs('interview_quotations')["quote-1"]["code_ids"] == [code_id]
 
     state_response = client.get(
         "/api/interview-coding/packs/pack-1",
