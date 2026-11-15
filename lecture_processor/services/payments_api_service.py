@@ -25,7 +25,8 @@ def get_config(app_ctx):
                 'price_cents': bundle['price_cents'],
                 'currency': bundle['currency'],
                 'credits': bundle['credits'],
-                **({'badge': bundle.get('badge', '')} if billing_policy.is_unified_enabled(app_ctx) else {}),
+                **({'badge': bundle.get('badge', ''), 'badge_label': bundle.get('badge_label', '')}
+                   if billing_policy.is_unified_enabled(app_ctx) else {}),
             }
             for bundle_id, bundle in _checkout_bundles(app_ctx).items()
         }

@@ -18,8 +18,8 @@ const costs = {
 };
 const bundles = {
   credits_40: { name: '40 credits', credits: 40, price_cents: 999, currency: 'eur' },
-  credits_80: { name: '80 credits', credits: 80, price_cents: 1699, currency: 'eur', badge: 'best_value' },
-  credits_200: { name: '200 credits', credits: 200, price_cents: 3499, currency: 'eur', badge: 'semester' },
+  credits_80: { name: '80 credits', credits: 80, price_cents: 1699, currency: 'eur', badge: '', badge_label: 'Regular study' },
+  credits_200: { name: '200 credits', credits: 200, price_cents: 3499, currency: 'eur', badge: 'best_value', badge_label: 'Semester · Best value' },
 };
 
 async function buyFixture(page, options = {}) {
@@ -52,7 +52,8 @@ test('buy page uses three configured bundles and all action prices', async ({ pa
   const setup = await buyFixture(page);
   await page.goto('/buy_credits');
   await expect(page.locator('.bundle-buy-btn')).toHaveCount(3);
-  await expect(page.locator('[data-bundle-id="credits_80"] .badge')).toHaveText('Best value');
+  await expect(page.locator('[data-bundle-id="credits_80"] .badge')).toHaveText('Regular study');
+  await expect(page.locator('[data-bundle-id="credits_200"] .badge')).toHaveText('Semester · Best value');
   for (const [action, price] of Object.entries(costs)) {
     const row = page.locator(`[data-credit-action="${action}"]`);
     await expect(row).toBeVisible();

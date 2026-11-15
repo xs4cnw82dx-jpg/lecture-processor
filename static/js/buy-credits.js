@@ -46,7 +46,7 @@
       button.type = 'button';
       button.className = 'bundle-buy-btn unified-bundle' + (bundle.badge === 'best_value' ? ' featured' : '');
       Object.assign(button.dataset, { bundleId: bundle.id, bundleName: formatCredits(bundle.credits), credits: String(bundle.credits), priceCents: String(bundle.price_cents), currency: bundle.currency });
-      [['badge', t(bundle.badge === 'best_value' ? 'Best value' : bundle.badge === 'semester' ? 'Semester' : 'Flexible study')],
+      [['badge', t(bundle.badge_label || (bundle.badge === 'best_value' ? 'Best value' : bundle.badge === 'semester' ? 'Semester' : 'Flexible study'))],
         ['credits', formatCredits(bundle.credits)], ['price', formatPrice(bundle.price_cents, bundle.currency)],
         ['meta', t('One balance for all your study tools.')], ['cta', t('Choose bundle') + ' →']].forEach(function (part) {
         var span = document.createElement('span');
@@ -72,7 +72,8 @@
       var bundles = Object.entries(payload.bundles || {}).filter(function (entry) {
         var bundle = entry[1];
         return bundle && Number.isSafeInteger(bundle.credits) && bundle.credits > 0 && Number.isSafeInteger(bundle.price_cents) && bundle.price_cents >= 0 && typeof bundle.currency === 'string';
-      }).map(function (entry) { return Object.assign({}, entry[1], { id: entry[0] }); });
+      }).map(function (entry) { return Object.assign({}, entry[1], { id: entry[0] }); })
+        .sort(function (left, right) { return left.credits - right.credits; });
       if (bundles.length) {
         unifiedCatalog = bundles;
         renderUnifiedCatalog();

@@ -187,8 +187,18 @@ def test_current_bundles_use_the_unified_balance_and_integer_prices():
         'credits_80': (80, 1699, 'eur'),
         'credits_200': (200, 3499, 'eur'),
     }
-    assert policy.CREDIT_BUNDLES['credits_80']['badge'] == 'best_value'
-    assert policy.CREDIT_BUNDLES['credits_200']['badge'] == 'semester'
+    assert policy.CREDIT_BUNDLES['credits_80']['badge'] == ''
+    assert policy.CREDIT_BUNDLES['credits_200']['badge'] == 'best_value'
+
+
+def test_best_value_bundle_has_the_lowest_price_per_credit():
+    from fractions import Fraction
+
+    bundles = policy.CREDIT_BUNDLES
+    featured = [bundle_id for bundle_id, bundle in bundles.items() if bundle.get('badge') == 'best_value']
+    assert len(featured) == 1
+    price_per_credit = {bundle_id: Fraction(bundle['price_cents'], bundle['credits']) for bundle_id, bundle in bundles.items()}
+    assert price_per_credit[featured[0]] == min(price_per_credit.values())
 
 
 @pytest.mark.parametrize(

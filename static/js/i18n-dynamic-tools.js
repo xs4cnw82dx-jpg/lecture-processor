@@ -57,6 +57,8 @@
   "Choose a bundle for all your study tools. Your credit balance is available in the header.": "Kies een bundel voor al je studietools. Je creditsaldo staat bovenaan.",
   "One balance for all your study tools.": "Eén saldo voor al je studietools.",
   "Flexible study": "Flexibel studeren",
+  "Regular study": "Regelmatig studeren",
+  "Semester · Best value": "Semester · Voordeligste keuze",
   "Plan your credits": "Plan je credits",
   "What each action costs": "Wat elke actie kost",
   "One balance works across all tools. Overnight prices apply only to the batch actions shown below. Allow up to 24 hours for results.": "Eén saldo voor alle tools. Nachtelijke tarieven gelden alleen voor de onderstaande batchacties. Houd rekening met maximaal 24 uur voor de resultaten.",

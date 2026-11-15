@@ -49,11 +49,13 @@ CREDIT_BUNDLES = {
     },
     'credits_80': {
         'name': '80 credits', 'description': '80 credits for your study tools',
-        'credits': 80, 'price_cents': 1699, 'currency': 'eur', 'badge': 'best_value',
+        'credits': 80, 'price_cents': 1699, 'currency': 'eur', 'badge': '',
+        'badge_label': 'Regular study',
     },
     'credits_200': {
         'name': '200 credits', 'description': '200 credits for a semester of study',
-        'credits': 200, 'price_cents': 3499, 'currency': 'eur', 'badge': 'semester',
+        'credits': 200, 'price_cents': 3499, 'currency': 'eur', 'badge': 'best_value',
+        'badge_label': 'Semester · Best value',
     },
 }
 
