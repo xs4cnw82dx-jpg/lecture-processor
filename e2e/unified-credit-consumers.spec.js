@@ -300,6 +300,11 @@ test('explicit logout invalidates profile writers before Firebase sign-out resol
   const profileRelease = deferred();
   const logoutStarted = deferred();
   const logoutRelease = deferred();
+  const signedOut = deferred();
+  await page.exposeFunction('creditTestSignedOut', user => signedOut.resolve(user));
+  await page.evaluate(() => window.testAccount.onAuthStateChanged(user => {
+    if (user === null) window.creditTestSignedOut(user);
+  }));
   setup.state.reply = async route => { profileStarted.resolve(); await profileRelease.promise; return route.fulfill({ json: profile('a', { credits: 99 }) }); };
   await page.route('**/api/session/logout', async route => { logoutStarted.resolve(); await logoutRelease.promise; return route.fulfill({ json: { ok: true } }); });
   await page.evaluate(() => { window.oldCredits = window.LectureProcessorShell.refreshCredits(); });
@@ -316,7 +321,8 @@ test('explicit logout invalidates profile writers before Firebase sign-out resol
   expect(await page.evaluate(() => localStorage.getItem('lp_ui_v2:user:a:credit_snapshot'))).toBeNull();
   await expect(page.locator('#settings-credit-balance')).toHaveText('Sign in to see your balance.');
   logoutRelease.resolve();
-  await expect.poll(() => page.evaluate(() => window.testAccount.currentUser)).toBeNull();
+  expect(await signedOut.promise).toBeNull();
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test('zero remains a valid finite balance and missing prices cannot start an unquoted run', async ({ page }) => {
