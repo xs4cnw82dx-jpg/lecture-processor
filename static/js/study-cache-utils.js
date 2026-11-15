@@ -309,6 +309,32 @@
     } catch (_) { return false; }
   }
 
+  function removePlannedSession(uid, sessionId, packId) {
+    uid = text(uid).trim(); sessionId = text(sessionId); packId = text(packId);
+    if (!uid || uid !== activeUid || !sessionId || !packId) return false;
+    try {
+      var storage = global.localStorage;
+      if (!storage) return false;
+      var entries = readEntries(storage, uid).filter(function (entry) {
+        var record = entry.record, payload = record && record.payload;
+        return record && (record.kind === 'planned' || record.kind === 'conflict') &&
+          record.pack_id === packId && payload && payload.pack_id === packId &&
+          payload.activity_id === record.id && payload.plan_item_id === sessionId &&
+          (payload.uid === undefined || payload.uid === uid) && recordIsCurrent(storage, record);
+      });
+      var cleared = true;
+      entries.forEach(function (entry) {
+        // Recheck the selected bytes before fencing their exact key. Unknown or
+        // quarantined records and other sessions are never selected for removal.
+        if (uid !== activeUid || storage.getItem(entry.key) !== entry.raw || !recordIsCurrent(storage, entry.record)) {
+          cleared = false; return;
+        }
+        if (!remove(uid, entry.record.kind, entry.record.id)) cleared = false;
+      });
+      return cleared;
+    } catch (_) { return false; }
+  }
+
   function clearUser(uid, options) {
     uid = text(uid).trim();
     if (!uid) return false;
@@ -372,7 +398,7 @@
   });
 
   var exported = { activate: activate, capture: capture, get: get, set: set, remove: remove,
-    removePack: removePack, clearUser: clearUser, hasPending: hasPending };
+    removePack: removePack, removePlannedSession: removePlannedSession, clearUser: clearUser, hasPending: hasPending };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
   global.LectureProcessorStudyCache = exported;
 })(typeof window !== 'undefined' ? window : globalThis);
