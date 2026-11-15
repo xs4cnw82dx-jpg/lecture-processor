@@ -5,8 +5,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  playwright-e2e:
-    name: Playwright E2E Smoke
+  playwright-shards:
+    name: Playwright shard (${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     env:
       SENTRY_DSN_BACKEND: ""
@@ -38,20 +42,48 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
-        run: npm run e2e
+        run: npx playwright test --shard=${{ matrix.shard }}/4
 
-      - name: Verify real planner API lifecycle with isolated synthetic data
-        env:
-          PLANNER_STATEFUL_FIXTURE: "1"
-          USE_MINIFIED_JS_ASSETS: "1"
-        run: npx playwright test e2e/planner-stateful.spec.js e2e/study-flow-stateful.spec.js --workers=1
-
-      - name: Upload Playwright report
+      - name: Upload shard Playwright report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: |
             playwright-report
             test-results
           if-no-files-found: ignore
+
+      - name: Verify real planner API lifecycle with isolated synthetic data
+        id: stateful
+        if: matrix.shard == 1
+        env:
+          PLANNER_STATEFUL_FIXTURE: "1"
+          USE_MINIFIED_JS_ASSETS: "1"
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-stateful-report
+        run: npx playwright test e2e/planner-stateful.spec.js e2e/study-flow-stateful.spec.js --workers=1 --output=stateful-test-results
+
+      - name: Upload stateful Playwright report
+        if: always() && matrix.shard == 1 && steps.stateful.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-stateful-report
+          path: |
+            playwright-stateful-report
+            stateful-test-results
+          if-no-files-found: ignore
+
+  playwright-e2e:
+    name: Playwright E2E Smoke
+    if: always()
+    needs: playwright-shards
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every shard to pass
+        env:
+          SHARDS_RESULT: ${{ needs.playwright-shards.result }}
+        run: |
+          if [ "$SHARDS_RESULT" != "success" ]; then
+            echo "Playwright shards did not all succeed: $SHARDS_RESULT" >&2
+            exit 1
+          fi
