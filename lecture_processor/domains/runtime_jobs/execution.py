@@ -120,9 +120,14 @@ def submit_job(dispatcher, target, *args, execution_runtime=None, **kwargs):
         try:
             # Recheck durable state when queued work actually starts. Recovery
             # on another worker may already have finalized the admission.
-            if tracked and not _heartbeat_job(job_id, resolved_runtime):
-                return None
             if tracked:
+                try:
+                    continuing = _heartbeat_job(job_id, resolved_runtime)
+                except Exception:
+                    resolved_runtime.logger.warning('Runtime-job entry heartbeat failed for %s', job_id, exc_info=True)
+                    raise
+                if not continuing:
+                    return None
                 thread = threading.Thread(target=heartbeat_loop, name='lp-job-heartbeat', daemon=True)
                 thread.start()
             return target(*args, **kwargs)
