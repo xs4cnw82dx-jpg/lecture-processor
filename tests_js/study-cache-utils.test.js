@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const edits = require('../static/js/study-edit-utils.js');
 
 const source = fs.readFileSync(require.resolve('../static/js/study-cache-utils.js'), 'utf8');
 const DAY = 24 * 60 * 60 * 1000;
@@ -25,6 +26,21 @@ function fixture() {
   cache.activate('alice');
   return { cache, values, faults, clock, context };
 }
+
+test('an editor successor needs headroom without deleting its previous pending snapshot', () => {
+  const { cache, values } = fixture();
+  const controller = edits.create({ uid: 'alice', packId: 'pack', epoch: 1, baseline: { notes_markdown: '' },
+    revision: 'a'.repeat(64), cache, cacheSession: cache.capture('alice') });
+  const first = { notes_markdown: 'é'.repeat(600000) };
+  assert.equal(controller.persist(first, 'inline'), true);
+  const before = new Map(values), id = controller.state.snapshot.payload.snapshot_id;
+  const second = { notes_markdown: first.notes_markdown + ' latest intent' };
+  assert.equal(controller.persist(second, 'inline'), false);
+  assert.deepEqual(values, before);
+  assert.equal(cache.listPending('alice', 'pack-edit', { packId: 'pack' }).records[0].id, id);
+  assert.equal(controller.delta(second).notes_markdown, second.notes_markdown);
+  assert.equal(controller.state.deviceError, true);
+});
 
 function sharedTabs() {
   const values = new Map(), tabs = [], events = [];
@@ -64,6 +80,37 @@ function sharedTabs() {
     assert.ok(count++ < 1000, 'storage listeners must settle'); events.shift()();
   } } };
 }
+
+test('pending draft discovery is scoped to the active owner, kind and pack', () => {
+  const { cache } = fixture(), token = cache.capture('alice');
+  cache.set(token, 'pack-edit', 'one', { text: 'first' }, { packId: 'pack', pending: true });
+  cache.set(token, 'pack-edit', 'two', { text: 'second' }, { packId: 'pack', pending: true });
+  cache.set(token, 'pack-edit', 'other', {}, { packId: 'other', pending: true });
+  cache.set(token, 'highlights', 'pack', {}, { packId: 'pack', pending: true });
+  cache.set(token, 'pack-edit', 'settled', {}, { packId: 'pack', pending: false });
+  assert.deepEqual(plain(cache.listPending('alice', 'pack-edit', { packId: 'pack' })).records.map(record => record.id).sort(), ['one', 'two']);
+  assert.deepEqual(plain(cache.listPending('bob', 'pack-edit', { packId: 'pack' })), { ok: false, records: [] });
+});
+
+test('draft discovery preserves unknown and quarantined bytes without promoting them', () => {
+  const { cache, values } = fixture(), token = cache.capture('alice');
+  cache.set(token, 'pack-edit', 'quarantined', { text: 'private draft' }, { packId: 'pack', pending: true });
+  values.set('lp_study_cache_fence_v1:alice:key:pack-edit:quarantined', JSON.stringify({ schema: 2, version: 'repair', retained: [], quarantine_pending: true }));
+  values.set(key('alice', 'pack-edit', 'broken'), '{broken');
+  const before = [...values];
+  assert.deepEqual(plain(cache.listPending('alice', 'pack-edit', { packId: 'pack' })), { ok: false, records: [] });
+  assert.deepEqual([...values], before);
+  assert.equal(cache.hasPending('alice'), true);
+});
+
+test('draft discovery reports blocked storage and hides deleted pack generations', () => {
+  const { cache, faults } = fixture();
+  cache.set(cache.capture('alice'), 'pack-edit', 'one', {}, { packId: 'pack', pending: true });
+  cache.removePack('alice', 'pack');
+  assert.deepEqual(plain(cache.listPending('alice', 'pack-edit', { packId: 'pack' })), { ok: true, records: [] });
+  faults.enumerate = true;
+  assert.deepEqual(plain(cache.listPending('alice', 'pack-edit', { packId: 'pack' })), { ok: false, records: [] });
+});
 
 test('another tab cannot recreate a removed pack before storage notifications arrive', () => {
   const shared = sharedTabs(), first = shared.open(), second = shared.open();

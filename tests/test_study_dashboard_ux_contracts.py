@@ -339,14 +339,3 @@ def test_planner_loads_bounded_data_and_has_safe_error_states():
     assert 'packGoalsEmptyEl.innerHTML' not in plan_js
     assert 'var plannerLoadPromise = null;' in plan_js
     assert 'function schedulePlannerRefresh()' in plan_js
-
-
-def test_study_inline_autosave_sends_dirty_fields_only():
-    study_js = _read('static/js/study.js')
-
-    assert 'let inlineAutosaveBaseline = null;' in study_js
-    assert 'function setInlineAutosaveBaseline(pack)' in study_js
-    assert 'function buildInlineAutosavePayload()' in study_js
-    assert 'Object.keys(snapshot).forEach(function (field)' in study_js
-    assert 'return Object.keys(payload).length ? payload : null;' in study_js
-    assert "if (Object.prototype.hasOwnProperty.call(payload, 'flashcards'))" in study_js

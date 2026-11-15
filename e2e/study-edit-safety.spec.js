@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { readFileSync } = require('node:fs');
+const { contentRevision, withContentRevision } = require('./helpers/study-revision-fixture');
 
 function deferred() {
   let resolve;
@@ -67,7 +68,7 @@ async function installLibrary(page, options = {}) {
       const id = `created-${Object.keys(state.packs).length + 1}`;
       state.packs[id] = { ...makePack(id, entry.payload.title), ...structuredClone(entry.payload),
         study_pack_id: id, flashcards_count: entry.payload.flashcards.length, test_questions_count: entry.payload.test_questions.length };
-      payload = { ok: true, study_pack_id: id };
+      payload = { ok: true, study_pack_id: id, content_revision: contentRevision(state.packs[id]) };
     }
     else if (path === '/api/study-packs') payload = { study_packs: Object.values(state.packs), has_more: false };
     else if (/^\/api\/study-packs\/[^/]+$/.test(path)) {
@@ -78,10 +79,10 @@ async function installLibrary(page, options = {}) {
         state.patches.push(entry);
         if (options.beforePatch) await options.beforePatch(id, entry.payload, state);
         Object.assign(pack, structuredClone(entry.payload));
-        payload = { ok: true, study_pack_id: id };
+        payload = { ok: true, study_pack_id: id, content_revision: contentRevision(pack) };
       } else {
         // Capture at request time, as an actual server response would.
-        payload = structuredClone(pack);
+        payload = withContentRevision(structuredClone(pack));
         if (options.beforeGet) await options.beforeGet(id, state);
       }
     } else if (path.includes('study-progress')) payload = { card_states: {}, daily_progress: {} };
@@ -457,7 +458,7 @@ for (const eventName of ['pagehide', 'visibilitychange']) {
   });
 }
 
-test('hidden-page saves send large UTF-8 edits without the keepalive size limit', async ({ page }) => {
+test('oversized hidden-page edits stay recoverable until a foreground save', async ({ page }) => {
   await page.clock.install();
   const state = await installLibrary(page);
   await openInitialPack(page);
@@ -469,6 +470,17 @@ test('hidden-page saves send large UTF-8 edits without the keepalive size limit'
   await page.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: true });
     document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(state.patches).toHaveLength(0);
+  expect(await page.evaluate(() => window.editFixtureFetches.filter(entry => entry.method === 'PATCH'))).toEqual([]);
+  const draft = await page.evaluate(() => window.LectureProcessorStudyCache.listPending('edit-fixture', 'pack-edit', { packId: 'a' }).records);
+  expect(draft).toHaveLength(1);
+  expect(draft[0].payload.changes.flashcards[0].back).toBe(largeText);
+  expect(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    return window.LectureProcessorStudyPersistence.flushPending();
   });
   await expect.poll(() => state.packs.a.flashcards[0].back === largeText).toBe(true);
   const saved = await page.evaluate(() => window.editFixtureFetches
