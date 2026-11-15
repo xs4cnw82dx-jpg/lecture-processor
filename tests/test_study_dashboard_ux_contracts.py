@@ -152,12 +152,9 @@ def test_study_question_option_typing_updates_in_place_without_rerendering_edito
 
 def test_new_builder_has_distinct_unsaved_status_and_compact_mobile_header():
     study_template = _read('templates/study.html')
-    study_js = _read('static/js/study.js')
     study_css = _read('static/css/study.css')
 
     assert 'id="builder-stat-dirty" class="builder-status pending" role="status" aria-live="polite">Not saved yet<' in study_template
-    assert "if (builderMode === 'create' && !builderPackId)" in study_js
-    assert "builderStatDirty.textContent = 'Not saved yet';" in study_js
     assert 'grid-template-rows: auto minmax(0, 1fr)' in study_css
     assert 'overscroll-behavior-inline: contain' in study_css
     assert '.builder-mini-stats .builder-stat:last-child' in study_css

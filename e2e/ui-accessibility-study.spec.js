@@ -76,6 +76,13 @@ for (const fallback of [false, true]) {
     if (fallback) await page.evaluate(() => { window.LectureProcessorUx.openModalOverlay = undefined; });
     await page.locator('#create-pack-btn').click();
     await expect(page.locator('#builder-title-input')).toBeFocused();
+    const status = page.locator('#builder-stat-dirty');
+    await expect(status).toHaveText('Not saved yet');
+    await expect(status).toHaveClass(/pending/);
+    await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
+    await expect(status).toHaveText('Nog niet opgeslagen');
+    await page.evaluate(() => window.LectureI18n.setLanguage('en'));
+    await expect(status).toHaveText('Not saved yet');
     await page.keyboard.press('Enter');
     expect(state.creates).toEqual([]);
     expect(state.errors).toEqual([]);
