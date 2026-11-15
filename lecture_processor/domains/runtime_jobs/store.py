@@ -9,6 +9,10 @@ from lecture_processor.runtime.container import get_runtime
 ACCOUNT_EXPORT_JOB_TTL_SECONDS = 60 * 60
 
 
+class RuntimeJobPersistenceError(RuntimeError):
+    """A required durable runtime-job write did not acknowledge completion."""
+
+
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
@@ -82,20 +86,27 @@ def _build_runtime_job_payload(job_id, job_data, runtime=None, changed_fields=No
     return payload
 
 
-def persist_runtime_job_snapshot(job_id, job_data, runtime=None, changed_fields=None):
+def persist_runtime_job_snapshot(job_id, job_data, runtime=None, changed_fields=None, *, required=False):
     resolved_runtime = _resolve_runtime(runtime)
     if not _runtime_job_storage_enabled(runtime=resolved_runtime) or not job_id:
         return
     try:
+        payload = _build_runtime_job_payload(job_id, job_data, runtime=resolved_runtime, changed_fields=changed_fields)
+        if changed_fields is None:
+            # A full copy may predate a heartbeat or carry an unowned future
+            # value. Explicit heartbeat writes and transactions own liveness.
+            payload.pop('last_heartbeat_at', None)
         resolved_runtime.runtime_jobs_repo.set_doc(
             resolved_runtime.db,
             resolved_runtime.RUNTIME_JOBS_COLLECTION,
             job_id,
-            _build_runtime_job_payload(job_id, job_data, runtime=resolved_runtime, changed_fields=changed_fields),
+            payload,
             merge=True,
         )
-    except Exception:
+    except Exception as error:
         resolved_runtime.logger.warning('Failed to persist runtime job snapshot for %s', job_id, exc_info=True)
+        if required:
+            raise RuntimeJobPersistenceError('Could not persist runtime job snapshot') from error
 
 
 def load_runtime_job_snapshot(job_id, runtime=None):
@@ -194,18 +205,22 @@ def mutate_job(job_id, mutator_fn, runtime=None, changed_fields=None):
     return snapshot
 
 
-def set_job(job_id, value, runtime=None):
+def set_job(job_id, value, runtime=None, *, require_persistence=False):
     resolved_runtime = _resolve_runtime(runtime)
     if isinstance(value, dict):
         value = dict(value)
         value['expires_at_ts'] = _runtime_job_expiration(value, resolved_runtime)
+        if require_persistence:
+            # New unpaid admissions must be acknowledged before becoming
+            # locally visible or eligible for dispatch. Memory mode is kept.
+            persist_runtime_job_snapshot(job_id, value, runtime=resolved_runtime, required=True)
     snapshot = resolved_runtime.job_state_service.set_job(
         job_id,
         value,
         jobs_store=resolved_runtime.jobs,
         lock=resolved_runtime.JOBS_LOCK,
     )
-    if isinstance(snapshot, dict):
+    if isinstance(snapshot, dict) and not require_persistence:
         persist_runtime_job_snapshot(job_id, snapshot, runtime=resolved_runtime)
     return snapshot
 

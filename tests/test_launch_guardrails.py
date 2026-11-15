@@ -682,7 +682,7 @@ def test_tools_lecture_download_rate_limited_returns_retry_after(client, monkeyp
     response = client.post(
         "/api/tools/lecture-download",
         json={"url": "https://ovp.kaltura.com/path/index.m3u8", "format": "audio"},
-        headers={"Authorization": "Bearer dev"},
+        headers={"Authorization": "Bearer dev", "Accept": "application/json"},
     )
 
     assert response.status_code == 429
