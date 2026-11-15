@@ -63,6 +63,7 @@ const audioSpeeds = [0.75, 1, 1.25, 1.5, 2];
 let difficultyFadeTimer = null, keyboardHintFadeTimer = null, notesFullscreenFadeTimer = null;
 let highlightSyncTimer = null;
 const pendingHighlightSaves = new Map(), highlightSavesInFlight = new Map();
+const permanentlyRejectedHighlights = new Map();
 let overallGoalSaveInFlight = false, packGoalSaveInFlight = false;
 let overallGoalAutosaveTimer = null, packGoalAutosaveTimer = null;
 let goalPanelStatusText = 'Synced', goalPanelStatusTone = 'success';
@@ -97,6 +98,7 @@ const plannerSessionFromUrl = String(urlParams.get('plan_item_id') || '').trim()
 let dueReviewOnly = urlParams.get('review') === 'due';
 let plannedPickerActive = false;
 let plannedSessionController = null;
+let unavailablePlannedSession = null;
 let learningRestoring = false;
 let learningCacheSession = null;
 let studyCacheEpoch = 0;
@@ -508,6 +510,7 @@ function removePackLocalCaches(packId) {
   if (!id) { return; }
   var uid = auth.currentUser.uid;
   pendingHighlightSaves.delete(id);
+  permanentlyRejectedHighlights.delete(id);
   highlightSavesInFlight.delete(id);
   highlightCacheSessions.delete(id);
   highlightDeviceSaved.delete(id);
@@ -4097,7 +4100,14 @@ async function openPlannedStudy(mode) {
   var cacheEpoch = studyCacheEpoch;
   var uid = auth.currentUser.uid;
   var packId = selectedPackId;
-  var learningId = JSON.stringify([packId, plannerSessionFromUrl]);
+  var sessionId = plannerSessionFromUrl;
+  var learningId = JSON.stringify([packId, sessionId]);
+  function clearPlannedLearningCheckpoint() {
+    clearTimeout(learningCheckpointTimer);
+    learningCheckpointTimer = null;
+    var removed = studyCache ? studyCache.remove(uid, 'learning', learningId) : false;
+    return removeKnownLegacyStudyKey('learning_session_' + uid + '_' + packId + '_' + sessionId, uid, packId) && removed;
+  }
   plannedSessionController = await window.LectureProcessorPlannedStudy.open({
     studyMode: mode, timerMode: timerMode, host: document.getElementById('learn-session-tools'),
     api: apiCall, uid: auth.currentUser.uid, sessionId: plannerSessionFromUrl, pack: selectedPack,
@@ -4105,6 +4115,8 @@ async function openPlannedStudy(mode) {
     onPack: function (pack) {
       openPackSeq += 1;
       selectedPack = pack; selectedPackId = pack.study_pack_id;
+      packId = selectedPackId;
+      learningId = JSON.stringify([packId, sessionId]);
       captureStudyPackCacheSession();
       syncInlineMetadataInputs();
       setInlineAutosaveBaseline(pack);
@@ -4112,11 +4124,12 @@ async function openPlannedStudy(mode) {
     onConflict: function (message) { showToast(message, 'error'); },
     onLegacyKey: function (key, value) { registerLegacyStudyKey(key, uid, packId, value); },
     onProgress: function (response) { mergeProgressFromServer(response); hydratePackStatesForKnownPacks(); },
-    onFinish: function () {
-      clearTimeout(learningCheckpointTimer);
-      var removed = studyCache ? studyCache.remove(uid, 'learning', learningId) : false;
-      removed = removeKnownLegacyStudyKey('learning_session_' + uid + '_' + packId + '_' + plannerSessionFromUrl, uid, packId) && removed;
-      return removed;
+    onFinish: clearPlannedLearningCheckpoint,
+    onUnavailable: function (cleared) {
+      unavailablePlannedSession = { uid: uid, packId: packId, sessionId: sessionId, cleared: false };
+      unavailablePlannedSession.cleared = clearPlannedLearningCheckpoint() && cleared;
+      document.getElementById('learn-session-state').textContent = 'Study session unavailable.';
+      return unavailablePlannedSession.cleared;
     },
     getMode: function () { return activeLearnMode; },
     onAvailability: function (available) { document.getElementById('learn-mode-content').inert = !available; if (activeLearnMode === 'match') { if (!available) stopMatchTimer(); else if (!matchRunning && matchMatched < matchTotal) startMatchTimer(matchElapsed); } },
@@ -7415,7 +7428,7 @@ document.addEventListener('lectureprocessor:study-cache-cleared', function (even
     clearTimeout(learningCheckpointTimer);
     learningCacheSession = null;
     highlightCacheSessions.clear(); highlightDeviceSaved.clear();
-    pendingHighlightSaves.clear(); highlightSavesInFlight.clear();
+    pendingHighlightSaves.clear(); highlightSavesInFlight.clear(); permanentlyRejectedHighlights.clear();
     if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
     if (progressSyncController) { progressSyncController.reset(); progressSyncController = null; }
     if (plannerActivitySyncTimer) { clearTimeout(plannerActivitySyncTimer); plannerActivitySyncTimer = null; }
@@ -7434,7 +7447,7 @@ bootstrap.onAuthStateReady(auth, function (user) {
     clearTimeout(learningCheckpointTimer);
     learningCacheSession = null;
     highlightCacheSessions.clear(); highlightDeviceSaved.clear();
-    pendingHighlightSaves.clear(); highlightSavesInFlight.clear();
+    pendingHighlightSaves.clear(); highlightSavesInFlight.clear(); permanentlyRejectedHighlights.clear();
     if (progressSyncTimer) { clearTimeout(progressSyncTimer); progressSyncTimer = null; }
     if (progressSyncController) { progressSyncController.reset(); progressSyncController = null; }
     if (plannerActivitySyncTimer) { clearTimeout(plannerActivitySyncTimer); plannerActivitySyncTimer = null; }
@@ -7469,6 +7482,7 @@ bootstrap.onAuthStateReady(auth, function (user) {
     if (highlightSyncTimer) { clearTimeout(highlightSyncTimer); highlightSyncTimer = null; }
     pendingHighlightSaves.clear();
     highlightSavesInFlight.clear();
+    permanentlyRejectedHighlights.clear();
     if (builderOverlay.classList.contains('visible')) {
       markBuilderDirty(false);
       closeBuilderOverlay();
@@ -7770,7 +7784,7 @@ builderExitOverlay.addEventListener('click', function (event) {
 window.addEventListener('beforeunload', function (event) {
   if ((builderDirty && builderOverlay.classList.contains('visible')) || inlineAutoSaving || inlineAutoSaveTimer ||
       (selectedPack && selectedPack.study_pack_id === selectedPackId && buildInlineAutosavePayload()) ||
-      pendingHighlightSaves.size || highlightSavesInFlight.size) {
+      pendingHighlightSaves.size || highlightSavesInFlight.size || hasPermanentlyRejectedHighlights()) {
     event.preventDefault();
     event.returnValue = '';
   }
@@ -8769,10 +8783,22 @@ function persistHighlightPayloadLocally(payload, pending) {
   }
 }
 
-function queueHighlightSync(payload) {
+function getPermanentlyRejectedHighlight(packId) {
+  var rejected = permanentlyRejectedHighlights.get(packId);
+  return rejected && auth.currentUser && rejected.uid === auth.currentUser.uid && rejected.epoch === studyCacheEpoch ? rejected : null;
+}
+
+function hasPermanentlyRejectedHighlights() {
+  return Array.from(permanentlyRejectedHighlights.keys()).some(function (packId) { return !!getPermanentlyRejectedHighlight(packId); });
+}
+
+function queueHighlightSync(payload, fromCache) {
   var safePackId = String(selectedPack && selectedPack.study_pack_id || '');
   if (!safePackId || safePackId !== selectedPackId) return;
   var cloned = cloneHighlightPayload(payload) || { base_key: getHighlightBaseKey(), ranges: [], updated_at: Date.now() / 1000 };
+  var rejected = getPermanentlyRejectedHighlight(safePackId);
+  if (fromCache && rejected && payloadFingerprint(rejected.payload) === payloadFingerprint(cloned)) return;
+  permanentlyRejectedHighlights.delete(safePackId);
   pendingHighlightSaves.set(safePackId, cloned);
   if (selectedPack && selectedPack.study_pack_id === safePackId) {
     selectedPack.notes_highlights = cloned;
@@ -8804,6 +8830,7 @@ function flushHighlightSync(options) {
     pendingHighlightSaves.delete(packId);
     var request = patchStudyPack(packId, { notes_highlights: payload.ranges.length ? payload : null }, opts).then(function () {
       if (!isCurrent() || highlightSavesInFlight.get(packId) !== request) return false;
+      permanentlyRejectedHighlights.delete(packId);
       if (!pendingHighlightSaves.has(packId)) {
         storeHighlightForPack(packId, payload, false, cacheSession);
       }
@@ -8817,11 +8844,23 @@ function flushHighlightSync(options) {
     }).catch(function (e) {
       if (!isCurrent() || highlightSavesInFlight.get(packId) !== request) return false;
       if (e.status === 403 || e.status === 404) {
-        pendingHighlightSaves.delete(packId);
-        if (selectedPackId === packId) setHighlightStatus(highlightDeviceSaved.get(packId)
+        if (pendingHighlightSaves.has(packId)) return false;
+        var durable = studyCache && studyCache.get(uid, 'highlights', packId);
+        // Only this exact request can settle its durable revision. A later
+        // local edit or another tab's edit still needs its own response.
+        var durableMatches = !!durable && payloadFingerprint(durable) === payloadFingerprint(payload);
+        if (durable && !durableMatches) {
+          var durableTime = Number(durable.updated_at), requestTime = Number(payload.updated_at);
+          if (Number.isFinite(durableTime) && Number.isFinite(requestTime) && durableTime > requestTime) return false;
+        }
+        // A failed local write can leave an older or ambiguous durable revision.
+        // Keep this rejected edit pending in memory without changing those bytes.
+        var acknowledged = durableMatches && storeHighlightForPack(packId, payload, false, cacheSession);
+        if (!acknowledged) permanentlyRejectedHighlights.set(packId, { uid: uid, epoch: cacheEpoch, payload: payload });
+        if (selectedPackId === packId) setHighlightStatus(acknowledged
           ? 'Highlights remain on this device; this pack cannot be updated.'
-          : 'Highlights could not be saved on this device. Keep this tab open until syncing succeeds.', true);
-        return false;
+          : 'Highlights could not be saved on this device, and this pack cannot be updated. Closing this tab may lose your changes.', true);
+        return acknowledged;
       }
       console.warn('Could not sync note highlights:', e && e.message ? e.message : e);
       // A failed older request must never replace a newer local edit.
@@ -8842,7 +8881,7 @@ function flushHighlightSync(options) {
     });
     highlightSavesInFlight.set(packId, request);
     return request;
-  })).then(function (results) { return isCurrent() && results.every(function (saved) { return saved !== false; }); });
+  })).then(function (results) { return isCurrent() && !hasPermanentlyRejectedHighlights() && results.every(function (saved) { return saved !== false; }); });
 }
 
 function applyHighlightPayloadToNotes(payload) {
@@ -8987,7 +9026,7 @@ function migrateLegacyHighlightsForPack() {
   var migratedPayload = collectCurrentHighlightPayload();
   renderNotesForSelectedPackBase();
   if (migratedPayload) {
-    queueHighlightSync(migratedPayload);
+    queueHighlightSync(migratedPayload, true);
   }
   return migratedPayload;
 }
@@ -8998,6 +9037,9 @@ function reapplyHighlightsForPack(alreadySyncingHighlights) {
   var localPayload = readStructuredHighlightCache();
   var localWins = !!(localPayload && (!serverPayload || localPayload.updated_at > serverPayload.updated_at));
   var payload = localWins ? localPayload : serverPayload;
+  var rejected = getPermanentlyRejectedHighlight(selectedPackId);
+  if (rejected && (!payload || rejected.payload.updated_at >= payload.updated_at)) payload = rejected.payload;
+  var rejectedPayload = rejected && payloadFingerprint(rejected.payload) === payloadFingerprint(payload);
   var migrated = false;
   if (!payload) {
     payload = migrateLegacyHighlightsForPack();
@@ -9012,6 +9054,8 @@ function reapplyHighlightsForPack(alreadySyncingHighlights) {
     renderNotesForSelectedPackBase();
     clearStructuredHighlightCache();
     setHighlightStatus('Highlights save to this study pack automatically.');
+  } else if (rejectedPayload) {
+    setHighlightStatus('Highlights could not be saved on this device, and this pack cannot be updated. Closing this tab may lose your changes.', true);
   } else {
     var stored = persistHighlightPayloadLocally(appliedPayload, localWins || migrated);
     var warning = !stored && (localWins || migrated);
@@ -9020,7 +9064,7 @@ function reapplyHighlightsForPack(alreadySyncingHighlights) {
   resetHighlightHistory(appliedPayload);
   var alreadyQueued = (pendingHighlightSaves.has(selectedPackId) || highlightSavesInFlight.has(selectedPackId)) &&
     payloadFingerprint(alreadySyncingHighlights) === payloadFingerprint(appliedPayload);
-  if (localWins && !alreadyQueued) queueHighlightSync(appliedPayload);
+  if (localWins && !alreadyQueued) queueHighlightSync(appliedPayload, true);
 }
 
 function applyHighlightToSelection() {
@@ -9465,7 +9509,8 @@ function loadLearningCheckpoint() {
 }
 function saveLearningCheckpoint() {
   if (learningRestoring || !auth.currentUser || !selectedPack || !activeLearnMode || !learnStage || !learnStage.classList.contains('visible')) return;
-  if (plannedSessionController && plannedSessionController.isFinished()) return;
+  if (plannedSessionController && (plannedSessionController.isFinished() || plannedSessionController.isUnavailable())) return;
+  if (isUnavailablePlannedSession()) return;
   var saved = loadLearningCheckpoint() || {version:learningContentVersion(),modes:{}};
   saved.lastMode = activeLearnMode;
   saved.modes = saved.modes || {};
@@ -9567,11 +9612,17 @@ function flushPendingStudyEdits() {
 function hasPendingStudyPersistence() {
   if (!auth.currentUser) return false;
   return !!(learnModeStarting || inlineAutoSaving || buildInlineAutosavePayload() ||
-    pendingHighlightSaves.size || highlightSavesInFlight.size || hasProgressDirty() ||
+    pendingHighlightSaves.size || highlightSavesInFlight.size || hasPermanentlyRejectedHighlights() || hasProgressDirty() ||
     plannerActivitySyncPromise ||
     (progressSyncController && progressSyncController.isInFlight()) ||
     (plannedSessionController && plannedSessionController.hasPending()) ||
+    (isUnavailablePlannedSession() && !unavailablePlannedSession.cleared) ||
     !studyCache || typeof studyCache.hasPending !== 'function' || studyCache.hasPending(auth.currentUser.uid));
+}
+function isUnavailablePlannedSession() {
+  return !!(unavailablePlannedSession && plannedPickerActive && auth.currentUser &&
+    unavailablePlannedSession.uid === auth.currentUser.uid && unavailablePlannedSession.packId === selectedPackId &&
+    unavailablePlannedSession.sessionId === plannerSessionFromUrl);
 }
 async function flushStudyPersistence() {
   if (!auth.currentUser) return !hasPendingStudyPersistence();
