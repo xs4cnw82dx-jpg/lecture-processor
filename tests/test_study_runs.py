@@ -26,6 +26,18 @@ def start(client):
     return response.get_json()['run']
 
 
+def test_planned_run_pack_revision_matches_the_verified_response_snapshot(client, study_plan_runtime):
+    create_session(client, study_plan_runtime)
+    for notes in ('# Initial planned notes', '# Updated planned notes'):
+        study_plan_runtime['pack']['notes_markdown'] = notes
+        response = client.post('/api/study-plan/items/session_run/run', headers=_headers(), json={})
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload['pack']['notes_markdown'] == notes
+        assert payload['pack'].get('content_revision') == study_run_service.fingerprint(payload['pack'])
+        assert payload['pack']['content_revision'] == payload['run']['content_fingerprint']
+
+
 def checkpoint(client, run, answers=None, active_seconds=0):
     # This represents elapsed study time without sleeping in tests.
     run['started_at'] -= 3600

@@ -1,7 +1,48 @@
 const { test, expect } = require('@playwright/test');
 const { createHash } = require('node:crypto');
+const { spawn } = require('node:child_process');
+const { existsSync } = require('node:fs');
+const { createServer } = require('node:net');
 const { installAccountFixture } = require('./helpers/batch-fixture');
 test.describe.configure({ mode: 'parallel' });
+
+async function realPlannedResponse() {
+  const port = await new Promise(resolve => {
+    const server = createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const available = server.address().port;
+      server.close(() => resolve(available));
+    });
+  });
+  const python = existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3';
+  const child = spawn(python, ['scripts/run_ui_preview.py', '--port', String(port)], {
+    cwd: process.cwd(), env: { ...process.env, PLANNER_STATEFUL_FIXTURE: '1' }, stdio: 'ignore',
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const headers = { Authorization: 'Bearer planner-fixture-token', 'Content-Type': 'application/json' };
+  try {
+    await expect.poll(async () => {
+      try { return (await fetch(base + '/')).status; } catch (_) { return 0; }
+    }, { timeout: 15000 }).toBe(200);
+    const created = await fetch(base + '/api/study-plan/items/revision_session', { method: 'PUT', headers, body: JSON.stringify({
+      pack_id: 'fixture_mixed', title: 'Planned content revision', date: new Date().toISOString().slice(0, 10),
+      time: '17:00', duration: 45, planned_outcomes: { flashcards: 4, questions: 2 },
+    }) });
+    expect(created.status).toBe(201);
+    const pack = await fetch(base + '/api/study-packs/fixture_mixed', { headers });
+    const started = await fetch(base + '/api/study-plan/items/revision_session/run', {
+      method: 'POST', headers, body: JSON.stringify({ study_mode: 'flashcards', timer_mode: 'countdown' }),
+    });
+    expect(pack.status).toBe(200); expect(started.status).toBe(200);
+    return { pack: await pack.json(), start: await started.json() };
+  } finally {
+    if (child.exitCode === null) await new Promise(resolve => {
+      const timer = setTimeout(() => child.kill('SIGKILL'), 2000);
+      child.once('exit', () => { clearTimeout(timer); resolve(); });
+      child.kill('SIGTERM');
+    });
+  }
+}
 
 function deferred() {
   let resolve;
@@ -326,6 +367,109 @@ test('a rejected pagehide card draft remains recoverable after reloading the pac
 const draftRecords = page => page.evaluate(() => window.LectureProcessorStudyCache.listPending('a', 'pack-edit', { packId: 'a' }).records);
 const recoverDraft = page => page.locator('#pack-edit-notice [data-edit-action="recover"]').click();
 const reviewDraft = page => page.locator('#pack-edit-notice [data-edit-action="review"]').click();
+
+for (const editor of ['inline cards', 'Builder notes']) {
+  test(`planned session response remains an editable baseline for ${editor}`, async ({ page }) => {
+    const response = await realPlannedResponse();
+    const uid = response.start.run.uid, packId = response.pack.study_pack_id;
+    const patches = [], errors = []; let packGets = 0;
+    let run = structuredClone(response.start.run);
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(uid => {
+      const user = { uid, email: 'planner@example.test', getIdToken: () => Promise.resolve('planner-fixture-token') };
+      const auth = { currentUser: user, setPersistence: () => Promise.resolve(), authStateReady: () => Promise.resolve(),
+        onAuthStateChanged: callback => { queueMicrotask(() => callback(user)); return () => {}; } };
+      const factory = () => auth; factory.Auth = { Persistence: { LOCAL: 'local' } };
+      window.firebase = { app: () => ({}), initializeApp: () => ({}), auth: factory };
+      localStorage.setItem('lp-preferences', JSON.stringify({ language: 'en', theme: 'light' }));
+    }, uid);
+    await page.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
+    await page.route('https://browser.sentry-cdn.com/**', route => route.abort());
+    await page.route('**/api/**', async route => {
+      const request = route.request(), path = new URL(request.url()).pathname;
+      let body = {};
+      if (path === '/api/auth/user') body = { uid, email_verified: true, onboarding_completed: true, allowed: true };
+      else if (path === '/api/user-preferences') body = { preferences: { interface_language: 'en', theme: 'light' } };
+      else if (path === '/api/study-folders') body = { folders: [] };
+      else if (path === '/api/study-plan/membership') body = { pack_ids: [packId] };
+      else if (path === '/api/runtime-jobs/active') body = { jobs: [] };
+      else if (path === '/api/study-packs') body = { study_packs: [response.pack], has_more: false };
+      else if (path === '/api/study-plan/items/revision_session/run') body = response.start;
+      else if (path === '/api/study-plan/runs/' + run.activity_id) {
+        run = { ...run, ...request.postDataJSON() }; body = { run };
+      } else if (path === '/api/study-packs/' + packId) {
+        if (request.method() === 'PATCH') {
+          const payload = request.postDataJSON();
+          const status = payload.base_content_revision === response.start.run.content_fingerprint ? 200 : 409;
+          patches.push({ payload, status });
+          if (status !== 200) return route.fulfill({ status, json: { error: 'Content revision differs.', error_code: 'content_revision_conflict' } });
+          Object.assign(response.pack, payload);
+          body = { ok: true, content_revision: contentRevision(response.pack) };
+        } else { packGets += 1; body = response.pack; }
+      } else if (path.includes('study-progress')) body = { card_states: {}, daily_progress: {}, timezone: 'UTC' };
+      return route.fulfill({ json: body });
+    });
+    await page.goto('/study?pack_id=' + packId + '&mode=learn&plan_item_id=revision_session');
+    await expect(page.locator('#setup-overlay')).toBeVisible();
+    for (const card of await page.locator('.lesson-card[data-lesson]').all()) {
+      if (await card.getAttribute('aria-disabled') === 'true' || (await card.getAttribute('class')).includes('unavailable')) continue;
+      if ((await card.getAttribute('aria-pressed') === 'true') !== (await card.getAttribute('data-lesson') === 'flashcards')) await card.click();
+    }
+    await page.locator('#setup-start-btn').click();
+    await expect(page.locator('#learn-stage')).toHaveClass(/visible/);
+    await page.locator('#learn-back-library-btn').click();
+    await expect(page.locator('#learn-stage')).not.toHaveClass(/visible/);
+    if (editor === 'inline cards') {
+      await openCards(page); await editCard(page, 0, 'Edited after planned learning');
+    } else {
+      await page.locator('#open-builder-btn').click();
+      await page.locator('#builder-notes-input').fill('# Notes edited after planned learning');
+    }
+    await expect.poll(() => patches.length).toBe(1);
+    expect(patches[0].status).toBe(200);
+    expect(patches[0].payload.base_content_revision).toBe(response.start.pack.content_revision);
+    expect(patches[0].payload.base_content_revision).toBe(response.start.run.content_fingerprint);
+    if (editor === 'inline cards') expect(patches[0].payload.flashcards[0].back).toBe('Edited after planned learning');
+    else expect(patches[0].payload.notes_markdown).toBe('# Notes edited after planned learning');
+    await expect(page.locator(editor === 'inline cards' ? '#pack-save-status' : '#builder-stat-dirty')).toHaveText('Saved');
+    await expect(page.locator('#pack-edit-notice')).toBeHidden();
+    await expect(page.locator('#builder-edit-notice')).toBeHidden();
+    expect(packGets).toBe(1);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('an over-limit pending draft collection displays its read warning and preserves every record', async ({ page }) => {
+  const state = makeState(); await installPage(page, state, 'first'); await openPack(page);
+  const before = await page.evaluate(revision => {
+    const cache = window.LectureProcessorStudyCache, token = cache.capture('a');
+    const prefix = 'lp_ui_v2:user:a:study_cache:pack-edit:';
+    const id = crypto.randomUUID();
+    const payload = { schema: 1, pack_id: 'a', editor_session_id: 'other-tab', snapshot_id: id, edit_generation: 1,
+      editor_mode: 'inline', base_content_revision: revision, changes: { notes_markdown: 'Pending synthetic notes' },
+      saved_at: Date.now(), phase: 'pending' };
+    if (!cache.set(token, 'pack-edit', id, payload, { packId: 'a', pending: true })) throw new Error('Synthetic draft setup failed');
+    const seed = JSON.parse(localStorage.getItem(prefix + id));
+    for (let index = 1; index < 51; index += 1) {
+      const next = structuredClone(seed); next.id = crypto.randomUUID(); next.payload.snapshot_id = next.id;
+      next.write_id = crypto.randomUUID(); next.fences.key = '';
+      localStorage.setItem(prefix + next.id, JSON.stringify(next));
+    }
+    const records = Object.keys(localStorage).filter(key => key.startsWith(prefix)).map(key => [key, localStorage.getItem(key)]).sort();
+    if (!records.every(([key]) => cache.get('a', 'pack-edit', key.slice(prefix.length)))) throw new Error('Synthetic draft fences invalid');
+    return { records, result: cache.listPending('a', 'pack-edit', { packId: 'a' }) };
+  }, contentRevision(state.pack));
+  expect(before.records).toHaveLength(51);
+  expect(before.result).toEqual({ ok: false, records: [] });
+  page.once('dialog', dialog => dialog.accept()); await page.reload();
+  await expect(page.locator('#pack-edit-notice')).toContainText('Some device drafts could not be read or cleared. Keep this tab open.');
+  await expect(page.locator('#pack-edit-notice')).toBeVisible();
+  const after = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('lp_ui_v2:user:a:study_cache:pack-edit:'))
+    .map(key => [key, localStorage.getItem(key)]).sort());
+  expect(after).toEqual(before.records);
+  expect(state.patches).toEqual([]);
+  expect(state.errors).toEqual([]);
+});
 
 test('reverting before a held acknowledgement survives pagehide and reload', async ({ page }) => {
   const state = makeState(), reply = deferred();

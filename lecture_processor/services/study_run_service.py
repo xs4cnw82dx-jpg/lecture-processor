@@ -225,6 +225,7 @@ def start_run(app, request, session_id):
         state_doc = app.get_study_card_state_doc(uid, pack_id).get()
         state = (state_doc.to_dict() or {}).get('state', {}) if state_doc.exists else {}
         digest = fingerprint(pack)
+        pack['content_revision'] = digest
         generation = int(session.get('completion_generation', 0))
         run_id = session.get('active_run_id') or 'run_' + hashlib.sha256(f'{session_id}:{generation}'.encode()).hexdigest()[:32]
         today = plans._today_for_timezone(plans._preferences(app, uid)['timezone'])
