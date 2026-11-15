@@ -1,5 +1,4 @@
 const { test, expect } = require('@playwright/test');
-const { readFileSync } = require('node:fs');
 
 async function plannedLibrary(page, { notes = false, chooseMode = 'flashcards', capturePicker = false, timerMode = 'countdown' } = {}) {
   const firebaseStub = `(function () {
@@ -10,7 +9,6 @@ async function plannedLibrary(page, { notes = false, chooseMode = 'flashcards', 
   })();`;
   await page.addInitScript({ content: firebaseStub });
   await page.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ contentType: 'application/javascript', body: firebaseStub }));
-  await page.route('**/static/js/study.min.js*', route => route.fulfill({ contentType: 'application/javascript', body: readFileSync('static/js/study.js', 'utf8') }));
   const pack = { study_pack_id: 'anatomy-pack', title: 'Anatomy 1.2 — Muscles', mode: 'manual', pictures_enabled: true,
     flashcards: notes ? [] : [{ front: 'Where does the sartorius muscle originate?', back: 'Anterior superior iliac spine', image_ids: ['a'.repeat(64)] }, { front: 'What movement does the biceps perform?', back: 'Flexion of the elbow' }],
     flashcards_count: notes ? 0 : 2, test_questions: notes ? [] : [{ question: 'Which movement bends the elbow?', options: ['Flexion', 'Extension'], answer: 'Flexion', explanation: 'Flexion decreases the angle at a joint.' }], test_questions_count: notes ? 0 : 1,

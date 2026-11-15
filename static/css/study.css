@@ -2137,6 +2137,8 @@
     #setup-main-content { display:flex; flex-direction:column; min-height:0; }
     .setup-scroll-body { overflow-y:auto; min-height:0; padding:2px; overscroll-behavior:contain; }
     .setup-footer { padding-top:16px; margin-top:12px; border-top:1px solid var(--theme-line, var(--gray-200)); flex-shrink:0; }
+    .setup-recovery-link { width:100%; min-height:44px; margin-top:8px; }
+    #setup-start-btn:disabled { background:var(--theme-surface-soft, #f3f6ff); border-color:var(--theme-line, #dfe5ef); color:var(--theme-muted, #5d6b86); box-shadow:none; cursor:not-allowed; transform:none; opacity:1; }
     .setup-header,.setup-tabs { flex-shrink:0; }
     .lesson-grid[data-mode-count="3"] { grid-template-columns:1fr; }
     .lesson-grid[data-mode-count="3"] .lesson-card { min-height:85px; }
