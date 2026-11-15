@@ -23,7 +23,7 @@
     </a>
     <main class="card" id="main-content" tabindex="-1">
       <h1>Terms of Service</h1>
-      <p class="meta">Last updated: {{ last_updated }}</p>
+      <p class="meta"><span>Last updated:</span> <time datetime="{{ last_updated_iso }}">{{ last_updated }}</time></p>
       <div class="notice">
         These terms are an operational baseline for a student-run project and should be reviewed by qualified legal counsel before public/commercial release.
       </div>
@@ -71,6 +71,8 @@
         <li>You retain responsibility for uploaded materials and generated outputs associated with your account.</li>
         <li>You grant Lecture Processor and its subprocessors a limited license to process your content solely to provide and secure the service.</li>
       </ul>
+
+      <p>The AI service providers and processing routes used for your content are described in our <a href="/privacy#6-third-party-processors">Privacy Policy.</a></p>
 
       <h2 id="7-ai-output-disclaimer">7. AI Output Disclaimer</h2>
       <p>AI-generated content can be incomplete or inaccurate. You are responsible for verifying study outputs before relying on them for academic or professional use.</p>
