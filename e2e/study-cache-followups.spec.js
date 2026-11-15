@@ -313,8 +313,12 @@ for (const status of [404, 503]) {
     await page.locator('#learn-change-mode-btn').click();
     await startPlanned(page);
     await expect.poll(() => state.requests.filter(entry => entry.path.endsWith('/session_focus/run')).length).toBe(opens + 1);
-    await expect(page.locator('#setup-session-context')).toContainText('Study session unavailable.');
+    await expect(page.locator('#setup-session-context')).toHaveText(status === 404
+      ? 'This planned session is no longer available. Open Study Plan to choose another session.'
+      : 'Study session unavailable.');
     if (status === 404) {
+      await expect(page.locator('#setup-start-btn')).toBeDisabled();
+      await expect(page.locator('#setup-plan-link')).toBeVisible();
       await expect.poll(() => cacheRecord(page, 'a', 'planned', 'run_focus')).toBeNull();
       expect(await cacheRecord(page, 'a', 'conflict', 'run_focus')).toBeNull();
       const writes = state.requests.filter(entry => entry.path.startsWith('/api/study-plan/')).length;
@@ -326,6 +330,8 @@ for (const status of [404, 503]) {
       expect(state.requests.filter(entry => entry.path.startsWith('/api/study-plan/'))).toHaveLength(writes);
       expect(await cacheRecord(page, 'a', 'planned', 'run_focus')).toBeNull();
     } else {
+      await expect(page.locator('#setup-start-btn')).toBeEnabled();
+      await expect(page.locator('#setup-plan-link')).toBeHidden();
       expect(await cacheRecord(page, 'a', 'planned', 'run_focus')).not.toBeNull();
       expect((await cacheRecord(page, 'a', 'conflict', 'run_focus')).pending).toBe(true);
     }

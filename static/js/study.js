@@ -4164,6 +4164,7 @@ async function openPlannedStudy(mode) {
       unavailablePlannedSession = { uid: uid, packId: packId, sessionId: sessionId, cleared: false };
       unavailablePlannedSession.cleared = clearPlannedLearningCheckpoint() && cleared;
       document.getElementById('learn-session-state').textContent = 'Study session unavailable.';
+      renderUnavailableSessionSetup();
       return unavailablePlannedSession.cleared;
     },
     getMode: function () { return activeLearnMode; },
@@ -4172,8 +4173,27 @@ async function openPlannedStudy(mode) {
   });
 }
 function openDirectModePicker() { openSessionSetup(); }
+function renderUnavailableSessionSetup() {
+  var unavailable = isUnavailablePlannedSession();
+  var recovery = document.getElementById('setup-plan-link');
+  if (recovery) recovery.hidden = !unavailable;
+  if (!unavailable) return false;
+  var moveFocus = setupOverlay.classList.contains('visible') &&
+    (document.activeElement === setupStartBtn || modePicker.contains(document.activeElement));
+  hideModePicker();
+  setupStartBtn.disabled = true;
+  var message = 'This planned session is no longer available. Open Study Plan to choose another session.';
+  var context = document.getElementById('setup-session-context');
+  context.textContent = window.LectureI18n ? window.LectureI18n.t(message) : message;
+  if (!unavailablePlannedSession.cleared) {
+    var warning = 'Device storage could not be cleared.';
+    context.appendChild(document.createTextNode(' ' + (window.LectureI18n ? window.LectureI18n.t(warning) : warning)));
+  }
+  if (moveFocus && recovery) recovery.focus();
+  return true;
+}
 async function startSelectedStudyMode(mode) {
-  if (learnModeStarting) return;
+  if (learnModeStarting || renderUnavailableSessionSetup()) return;
   learnModeStarting = true;
   var cacheEpoch = studyCacheEpoch;
   var status = document.getElementById('setup-session-context');
@@ -4186,7 +4206,12 @@ async function startSelectedStudyMode(mode) {
     if (cacheEpoch !== studyCacheEpoch) return;
     closeSessionSetup();
     openLearnStageWithMode(mode, false);
-  } catch (error) { status.textContent = error.message || 'Could not open your session. Please try again.'; showToast(status.textContent, 'error'); }
+  } catch (error) {
+    if (!renderUnavailableSessionSetup()) {
+      status.textContent = error.message || 'Could not open your session. Please try again.';
+      showToast(status.textContent, 'error');
+    }
+  }
   finally { learnModeStarting = false; }
 }
 
@@ -4224,6 +4249,7 @@ function openSessionSetup() {
   renderSettingsRows(); renderAlgoLane(); renderAlgoPresets();
   setupStartBtn.disabled = dueReviewOnly && !orderCardsByAlgo(selectedPack.flashcards || []).length;
   if (setupStartBtn.disabled) context.textContent = 'You’re all caught up. No previously studied cards are due in this pack.';
+  renderUnavailableSessionSetup();
   setSetupPane('lessons');
   openModal(setupOverlay);
 }
@@ -4251,6 +4277,7 @@ document.querySelectorAll('.lesson-card:not(.unavailable)').forEach(function (ca
 modePickerBack.addEventListener('click', hideModePicker);
 
 setupStartBtn.addEventListener('click', function () {
+  if (renderUnavailableSessionSetup()) return;
   saveSessionState();
   var modes = getEnabledModes();
   if (modes.length === 0) {
