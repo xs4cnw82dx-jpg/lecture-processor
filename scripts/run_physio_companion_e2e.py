@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lecture_processor.physio_companion import CompanionConfig, create_companion_app
+from scripts.isolated_runtime import force_isolated_provider_environment
 
 
 OWNER_TOKEN_ENV = "PHYSIO_COMPANION_OWNER_TOKEN"
@@ -107,6 +107,9 @@ De scapula vormt de beweeglijke basis van de schoudergordel. Zie [[Schouder]].
 
 
 def main() -> int:
+    force_isolated_provider_environment()
+    from lecture_processor.physio_companion import CompanionConfig, create_companion_app
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8766)
     args = parser.parse_args()

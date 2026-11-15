@@ -987,6 +987,58 @@ function renderAdminSystemStatus(data) {
         { key: 'ffmpeg_available', label: 'FFmpeg', value: data.runtime_checks && data.runtime_checks.ffmpeg_available },
         { key: 'yt_dlp_available', label: 'yt-dlp', value: data.runtime_checks && data.runtime_checks.yt_dlp_available },
     ]);
+    renderAiRoutingStatus(data.runtime_checks || {});
+}
+
+function renderAiRoutingStatus(checks) {
+    const container = document.getElementById('admin-runtime-checks');
+    if (!container) return;
+    const stages = {
+        configuration: 'Routing configuration', slides_extraction: 'Slides extraction',
+        notes_merge: 'Notes merge', text_combine: 'Text Combine', study_tools: 'Study tools',
+        regenerate_study_tools: 'Regenerate study tools', interview_summary: 'Interview summary',
+        interview_sections: 'Interview sections', interview_coding: 'Interview coding',
+        tools_extraction: 'Tools extraction', audio_transcription: 'Audio transcription',
+        audio_transcription_timestamped: 'Timestamped audio transcription',
+        interview_transcription: 'Interview transcription', voice_note_transcription: 'Voice note transcription',
+        tools_transcription: 'Tools transcription',
+    };
+    const reasons = {
+        file_missing: 'Routing file missing.', file_unreadable: 'Routing file could not be read.',
+        invalid_json: 'Routing JSON is invalid.', invalid_config: 'Routing configuration is invalid.',
+        unknown_stage: 'Unknown routing stage ignored.', missing_stage: 'Stage configuration missing.',
+        invalid_entry: 'Stage configuration is invalid.', unsupported_provider: 'Provider is not supported.',
+        audio_lock: 'Audio must use Gemini.', invalid_model: 'Model identifier is invalid.',
+        unsupported_options: 'Route options are not supported.',
+    };
+    const warnings = Array.isArray(checks.ai_routing_warnings) ? checks.ai_routing_warnings : [];
+    const valid = checks.ai_routing_valid !== false && warnings.length === 0;
+    const row = document.createElement('div');
+    row.className = valid ? 'status-row' : 'status-row ai-routing-warning';
+    row.id = 'admin-ai-routing';
+    const title = document.createElement('dt');
+    title.textContent = 'AI routing';
+    const detail = document.createElement('dd');
+    detail.setAttribute('role', 'status');
+    const summary = document.createElement('span');
+    summary.textContent = valid ? 'Configured' : 'Review routing configuration';
+    detail.appendChild(summary);
+    if (!valid) {
+        const list = document.createElement('ul');
+        list.className = 'status-list';
+        (warnings.length ? warnings : [{}]).forEach((warning) => {
+            const item = document.createElement('li');
+            const stage = document.createElement('span');
+            stage.textContent = Object.hasOwn(stages, warning && warning.stage) ? stages[warning.stage] : stages.configuration;
+            const reason = document.createElement('span');
+            reason.textContent = Object.hasOwn(reasons, warning && warning.reason) ? reasons[warning.reason] : reasons.invalid_config;
+            item.append(stage, document.createTextNode(': '), reason);
+            list.appendChild(item);
+        });
+        detail.appendChild(list);
+    }
+    row.append(title, detail);
+    container.appendChild(row);
 }
 
 function renderModeBreakdown() {

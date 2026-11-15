@@ -124,7 +124,7 @@ jobs:
           }
           trap cleanup EXIT
 
-          python app.py > app.log 2>&1 &
+          python scripts/run_ui_preview.py --port 5000 > app.log 2>&1 &
           APP_PID=$!
 
           ready=0

@@ -2,10 +2,8 @@ import os
 import random
 import time
 
-from flask import has_request_context
-
 from lecture_processor.runtime.container import get_runtime
-from lecture_processor.runtime.environment import get_gemini_http_timeout_ms
+from lecture_processor.domains.ai.providers import gemini
 
 try:
     from google.genai import types as genai_types
@@ -35,15 +33,7 @@ def _safe_int_env(runtime, name, default=0, minimum=1, maximum=100000):
 
 def _build_thinking_config(model_name, runtime=None):
     """Build a ThinkingConfig for the given model based on MODEL_THINKING_POLICY."""
-    resolved_runtime = _resolve_runtime(runtime)
-    policy = getattr(resolved_runtime, 'MODEL_THINKING_POLICY', {}).get(model_name)
-    types_module = _get_types_module(resolved_runtime)
-    if not policy or not types_module or not hasattr(types_module, 'ThinkingConfig'):
-        return None
-    try:
-        return types_module.ThinkingConfig(**policy)
-    except Exception:
-        return None
+    return gemini.build_thinking_config(model_name, _resolve_runtime(runtime))
 
 
 def get_provider_status_code(error, runtime=None):
@@ -218,30 +208,10 @@ class TokenAccumulator:
 def generate_with_policy(model, contents, max_output_tokens=65536, retry_tracker=None, operation_name=None, runtime=None):
     """Unified generation wrapper that applies model-specific thinking config."""
     resolved_runtime = _resolve_runtime(runtime)
-    client = getattr(resolved_runtime, 'client', None)
-    if client is None:
-        raise RuntimeError('Gemini client is not configured.')
-
-    base_config = {'max_output_tokens': max_output_tokens}
-    if has_request_context():
-        base_config['http_options'] = {'timeout': get_gemini_http_timeout_ms(request_thread=True)}
-    thinking = _build_thinking_config(model, runtime=resolved_runtime)
-    if thinking is not None:
-        base_config['thinking_config'] = thinking
-
-    types_module = _get_types_module(resolved_runtime)
-    if types_module and hasattr(types_module, 'GenerateContentConfig'):
-        try:
-            config = types_module.GenerateContentConfig(**base_config)
-        except Exception:
-            base_config.pop('thinking_config', None)
-            config = types_module.GenerateContentConfig(**base_config)
-    else:
-        config = base_config
-
+    prepared = gemini.prepare_native_call(resolved_runtime, model, max_output_tokens)
     return run_with_provider_retry(
         operation_name or f'generate_content:{model}',
-        lambda: client.models.generate_content(model=model, contents=contents, config=config),
+        lambda: gemini.generate_native_once(prepared, model, contents),
         retry_tracker=retry_tracker,
         runtime=resolved_runtime,
     )

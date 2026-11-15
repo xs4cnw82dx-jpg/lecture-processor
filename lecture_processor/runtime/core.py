@@ -75,6 +75,7 @@ from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
+from lecture_processor.domains.ai.providers import routing as ai_routing
 from lecture_processor.domains.account import users as account_users
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
@@ -217,10 +218,7 @@ ALLOWED_AUDIO_MIME_TYPES = {'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a
 
 runtime_bootstrap.ensure_directory(UPLOAD_FOLDER)
 
-GEMINI_API_KEY = (os.getenv('GEMINI_API_KEY', '') or '').strip()
-
-client = runtime_bootstrap.initialize_gemini_client(
-    GEMINI_API_KEY,
+client = runtime_bootstrap.initialize_ai_client(
     genai_module=genai,
     logger=logger,
 )
@@ -1349,6 +1347,10 @@ MODEL_THINKING_POLICY = {
     MODEL_INTEGRATION: {'thinking_level': 'high'},
     MODEL_AUDIO: {'thinking_level': 'high'},
 }
+
+AI_ROUTING_SNAPSHOT = ai_routing.load_routing(
+    Path(PROJECT_ROOT_DIR) / 'config' / 'ai_routing.json', ai_routing.default_models(_self_runtime()),
+)
 
 PROVIDER_RETRY_MAX_ATTEMPTS = safe_int_env('PROVIDER_RETRY_MAX_ATTEMPTS', 3, minimum=1, maximum=6)
 

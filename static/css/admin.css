@@ -173,6 +173,22 @@
             color: var(--theme-ink, var(--text));
             overflow-wrap: anywhere;
         }
+        .status-row.ai-routing-warning {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 8px;
+        }
+        .status-row.ai-routing-warning dd {
+            display: grid;
+            gap: 8px;
+            text-align: left;
+            line-height: 1.45;
+        }
+        .ai-routing-warning .status-list {
+            font-weight: 400;
+        }
+        .ai-routing-warning li > span:first-child {
+            font-weight: 600;
+        }
         .admin-maintenance-card {
             display: grid;
             align-content: start;
