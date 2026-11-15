@@ -1,3 +1,4 @@
+from html.parser import HTMLParser
 from types import SimpleNamespace
 
 import pytest
@@ -5,6 +6,27 @@ import pytest
 from lecture_processor.domains.billing import policy
 from lecture_processor.repositories import purchases_repo
 from lecture_processor.services import payments_api_service
+
+
+def test_server_rendered_bundle_order_does_not_depend_on_catalog_key_order(client, core, monkeypatch):
+    monkeypatch.setattr(core, 'UNIFIED_CREDITS_ENABLED', True)
+    monkeypatch.setattr(policy, 'CREDIT_BUNDLES', dict(reversed(list(policy.CREDIT_BUNDLES.items()))))
+
+    class BundleButtons(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.credits = []
+
+        def handle_starttag(self, tag, attributes):
+            attributes = dict(attributes)
+            if tag == 'button' and 'data-bundle-id' in attributes:
+                self.credits.append(int(attributes['data-credits']))
+
+    response = client.get('/buy_credits')
+    assert response.status_code == 200
+    buttons = BundleButtons()
+    buttons.feed(response.get_data(as_text=True))
+    assert buttons.credits == [40, 80, 200]
 
 
 @pytest.mark.parametrize('enabled', [False, True])
@@ -18,8 +40,10 @@ def test_config_bundle_badges_come_from_the_active_catalog(client, core, monkeyp
     bundles = response.get_json()['bundles']
     if enabled:
         assert bundles['credits_40']['badge'] == 'semester'
-        assert bundles['credits_80']['badge'] == 'best_value'
-        assert bundles['credits_200']['badge'] == 'semester'
+        assert bundles['credits_80']['badge'] == ''
+        assert bundles['credits_80']['badge_label'] == 'Regular study'
+        assert bundles['credits_200']['badge'] == 'best_value'
+        assert bundles['credits_200']['badge_label'] == 'Semester · Best value'
         assert bundles['credits_80']['credits'] == 80
     else:
         assert set(bundles) == set(policy.LEGACY_CHECKOUT_BUNDLES)
