@@ -10,6 +10,7 @@
   "This planned session is no longer available. Open Study Plan to choose another session.": "Deze geplande sessie is niet meer beschikbaar. Open je studieplanning om een andere sessie te kiezen.",
   "Study session unavailable. Device storage could not be cleared.": "Studiesessie niet beschikbaar. De opslag op dit apparaat kon niet worden gewist.",
   "Highlights remain on this device; this pack cannot be updated.": "Je markeringen blijven op dit apparaat staan; dit studiepakket kan niet worden bijgewerkt.",
+  "Highlights could not be saved on this device, and this pack cannot be updated. Closing this tab may lose your changes.": "Je markeringen konden niet op dit apparaat worden opgeslagen en dit studiepakket kan niet worden bijgewerkt. Als je dit tabblad sluit, kun je je wijzigingen verliezen.",
   "Finish session": "Sessie afronden",
   "Break": "Pauze",
   "Planned study session": "Geplande studiesessie",

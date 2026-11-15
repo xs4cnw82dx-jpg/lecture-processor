@@ -83,6 +83,34 @@ async function cacheRecord(page, uid, kind, id) {
   return page.evaluate(({ uid, kind, id }) => JSON.parse(localStorage.getItem(`lp_ui_v2:user:${uid}:study_cache:${kind}:${encodeURIComponent(id)}`) || 'null'), { uid, kind, id });
 }
 
+const rejectedHighlightWarning = 'Highlights could not be saved on this device, and this pack cannot be updated. Closing this tab may lose your changes.';
+const rejectedHighlightWarningNl = 'Je markeringen konden niet op dit apparaat worden opgeslagen en dit studiepakket kan niet worden bijgewerkt. Als je dit tabblad sluit, kun je je wijzigingen verliezen.';
+
+async function blockHighlightStorage(page) {
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    window.restoreHighlightStorage = () => { Storage.prototype.setItem = original; };
+    Storage.prototype.setItem = function (key, value) {
+      if (key.includes(':study_cache:highlights:')) throw new DOMException('Synthetic storage failure', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  });
+}
+
+async function expectRejectedHighlightSignoutWarning(page, state) {
+  expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(false);
+  await page.evaluate(() => { window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('online')); });
+  const dialogs = [];
+  page.once('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
+  await page.locator('#signout-btn').evaluate(button => button.click());
+  await expect.poll(() => dialogs.length).toBe(1);
+  expect(dialogs[0]).toContain('Some study progress has not synced.');
+  await expect(page.locator('#signout-btn')).toBeEnabled();
+  expect(await page.evaluate(() => window.testAccount.currentUser.uid)).toBe('a');
+  expect(state.requests.filter(entry => entry.path === '/api/session/logout')).toEqual([]);
+  expect(state.patches).toHaveLength(1);
+}
+
 async function seedConflicts(page) {
   await page.evaluate(() => {
     const cache = window.LectureProcessorStudyCache, token = cache.capture('a');
@@ -191,6 +219,32 @@ test('a prior account highlight 404 cannot acknowledge retained pending progress
     expect(after.pending).toBe(true);
     expect(after.payload).toEqual(before.payload);
   } finally { held.resolve(); }
+});
+
+test('an older rejected highlight cannot leave false pending after another tab acknowledges a newer edit', async ({ page, context }) => {
+  const first = await fixture(page), held = deferred();
+  first.patchReply = async route => { await held.promise; await route.fulfill({ status: 403, json: { error: 'Pack unavailable.' } }); };
+  const otherPage = await context.newPage();
+  const second = await fixture(otherPage);
+  try {
+    await openPack(page); await highlight(page);
+    await expect.poll(() => first.patches.length).toBe(1);
+    await openPack(otherPage); await highlight(otherPage, 'green');
+    await expect.poll(async () => {
+      const record = await cacheRecord(otherPage, 'a', 'highlights', 'a');
+      return record?.pending === false && record.payload.ranges[0].color === 'green';
+    }).toBe(true);
+    const latest = await cacheRecord(otherPage, 'a', 'highlights', 'a');
+    expect(latest.payload.updated_at).toBeGreaterThan(first.patches[0].data.notes_highlights.updated_at);
+    const response = page.waitForResponse(candidate => candidate.url().endsWith('/api/study-packs/a') && candidate.request().method() === 'PATCH');
+    held.resolve(); await response;
+    await expect.poll(() => page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(false);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(true);
+    expect(await cacheRecord(page, 'a', 'highlights', 'a')).toEqual(latest);
+    await page.waitForTimeout(3100);
+    expect(first.patches).toHaveLength(1);
+    expect(first.errors).toEqual([]); expect(second.errors).toEqual([]);
+  } finally { held.resolve(); await otherPage.close(); }
 });
 
 for (const status of [404, 503]) {
@@ -513,20 +567,181 @@ test('a permanent highlight response preserves pending when its local acknowledg
     await openPack(page); await highlight(page);
     await expect.poll(() => state.patches.length).toBe(1);
     const saved = await cacheRecord(page, 'a', 'highlights', 'a');
-    await page.evaluate(() => {
-      const original = Storage.prototype.setItem;
-      Storage.prototype.setItem = function (key, value) {
-        if (key.includes(':study_cache:highlights:')) throw new DOMException('Synthetic storage failure', 'QuotaExceededError');
-        return original.call(this, key, value);
-      };
-    });
+    await blockHighlightStorage(page);
     held.resolve();
-    await expect(page.locator('#notes-highlight-status')).toContainText('Highlights could not be saved on this device.');
+    await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
     expect(await cacheRecord(page, 'a', 'highlights', 'a')).toEqual(saved);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
+    await page.waitForTimeout(3100);
+    expect(state.patches).toHaveLength(1);
+    await expectRejectedHighlightSignoutWarning(page, state);
+    expect(state.errors).toEqual([]);
+  } finally { held.resolve(); }
+});
+
+for (const status of [403, 404]) test(`a permanent highlight response ${status} with no durable record remains pending without repeated requests`, async ({ page }) => {
+  const state = await fixture(page); state.patchStatus = status;
+  await openPack(page);
+  await blockHighlightStorage(page);
+  await highlight(page);
+  await expect.poll(() => state.patches.length).toBe(1);
+  await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+  expect(await cacheRecord(page, 'a', 'highlights', 'a')).toBeNull();
+  expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
+  await page.waitForTimeout(3100);
+  expect(state.patches).toHaveLength(1);
+  await expectRejectedHighlightSignoutWarning(page, state);
+  expect(state.errors).toEqual([]);
+});
+
+test('a new highlight edit sends one fresh request after permanent rejection and a successful save settles it', async ({ page }) => {
+  const state = await fixture(page); state.patchStatus = 403;
+  await openPack(page); await blockHighlightStorage(page); await highlight(page);
+  await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+  expect(state.patches).toHaveLength(1);
+  await highlight(page, 'green');
+  await expect.poll(() => state.patches.length).toBe(2);
+  await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+  expect(state.patches[1].data.notes_highlights.ranges[0].color).toBe('green');
+  await page.waitForTimeout(3100);
+  expect(state.patches).toHaveLength(2);
+  expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(false);
+  await page.evaluate(() => window.restoreHighlightStorage());
+  state.patchStatus = 200;
+  await highlight(page, 'blue');
+  await expect.poll(() => state.patches.length).toBe(3);
+  await expect.poll(() => page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(false);
+  expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(true);
+  const saved = await cacheRecord(page, 'a', 'highlights', 'a');
+  expect(saved.pending).toBe(false);
+  expect(saved.payload.ranges[0].color).toBe('blue');
+  expect(state.patches).toHaveLength(3);
+  expect(state.errors).toEqual([]);
+});
+
+for (const status of [403, 404]) test(`a rejected highlight ${status} preserves a new unsaved edit over an older acknowledged durable record`, async ({ page }) => {
+  const state = await fixture(page);
+  await openPack(page); await highlight(page);
+  await expect.poll(async () => (await cacheRecord(page, 'a', 'highlights', 'a'))?.pending).toBe(false);
+  const original = await cacheRecord(page, 'a', 'highlights', 'a');
+  expect(state.patches).toHaveLength(1);
+  await blockHighlightStorage(page);
+  state.patchStatus = status;
+  await highlight(page, 'green');
+  await expect.poll(() => state.patches.length).toBe(2);
+  await page.waitForTimeout(3100);
+  expect(state.patches).toHaveLength(2);
+  expect(state.patches[1].data.notes_highlights.ranges[0].color).toBe('green');
+  await expect(page.locator('#notes-view mark[data-hl="green"]')).toHaveCount(1);
+  expect(await cacheRecord(page, 'a', 'highlights', 'a')).toEqual(original);
+  expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
+  expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(false);
+  await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+  const dialogs = [];
+  page.once('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
+  await page.locator('#signout-btn').evaluate(button => button.click());
+  await expect.poll(() => dialogs.length).toBe(1);
+  expect(dialogs[0]).toContain('Some study progress has not synced.');
+  await expect(page.locator('#signout-btn')).toBeEnabled();
+  expect(state.requests.filter(entry => entry.path === '/api/session/logout')).toEqual([]);
+  expect(state.patches).toHaveLength(2);
+  expect(state.errors).toEqual([]);
+});
+
+for (const timestamp of ['equal', 'invalid']) test(`a rejected highlight preserves unsaved work when the durable revision timestamp is ${timestamp}`, async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const state = await fixture(page), held = deferred();
+  try {
+    await openPack(page); await highlight(page);
+    await expect.poll(async () => (await cacheRecord(page, 'a', 'highlights', 'a'))?.pending).toBe(false);
+    const original = await cacheRecord(page, 'a', 'highlights', 'a');
+    await blockHighlightStorage(page);
+    state.patchReply = async route => { await held.promise; await route.fulfill({ status: 403, json: { error: 'Pack unavailable.' } }); };
+    await highlight(page, 'green');
+    await expect.poll(() => state.patches.length).toBe(2);
+    original.payload.updated_at = timestamp === 'equal' ? state.patches[1].data.notes_highlights.updated_at : 'unknown';
+    await page.evaluate(record => {
+      window.restoreHighlightStorage();
+      localStorage.setItem('lp_ui_v2:user:a:study_cache:highlights:a', JSON.stringify(record));
+    }, original);
+    await blockHighlightStorage(page);
+    held.resolve();
+    await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(false);
+    expect(await cacheRecord(page, 'a', 'highlights', 'a')).toEqual(original);
+    await expect(page.locator('#notes-view mark[data-hl="green"]')).toHaveCount(1);
+    await page.locator('#library-back-btn').click();
+    await page.locator('#pack-list [data-pack-id="a"] [data-pack-open]').click();
+    await expect(page.locator('#notes-view mark[data-hl="green"]')).toHaveCount(1);
+    await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+    await page.waitForTimeout(3100);
+    expect(state.patches).toHaveLength(2);
+    expect(state.errors).toEqual([]);
+  } finally { held.resolve(); }
+});
+
+for (const transition of ['account switch', 'sign out', 'same-account cache epoch']) {
+  test(`permanently rejected highlights are cleared after ${transition}`, async ({ page }) => {
+    const state = await fixture(page); state.patchStatus = 403;
+    await openPack(page); await blockHighlightStorage(page); await highlight(page);
+    await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
+    if (transition === 'same-account cache epoch') {
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent('lectureprocessor:study-cache-cleared', { detail: { uid: 'a' } })));
+    } else {
+      await page.evaluate(uid => window.testAccount.switchTo(uid), transition === 'account switch' ? 'b' : null);
+      if (transition === 'account switch') await expect(page.locator('#pack-list')).toContainText('Pack b');
+    }
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(false);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(true);
+    await page.waitForTimeout(3100);
+    expect(state.patches).toHaveLength(1);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+for (const durable of [false, true]) test(`reopening a pack preserves rejected highlights ${durable ? 'with' : 'without'} a durable record without another request`, async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const state = await fixture(page), held = deferred();
+  state.patchReply = async route => { await held.promise; await route.fulfill({ status: 404, json: { error: 'Pack unavailable.' } }); };
+  try {
+    await openPack(page);
+    if (!durable) await blockHighlightStorage(page);
+    await highlight(page);
+    await expect.poll(() => state.patches.length).toBe(1);
+    if (durable) await blockHighlightStorage(page);
+    const original = await cacheRecord(page, 'a', 'highlights', 'a');
+    expect(!!original).toBe(durable);
+    held.resolve();
+    await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+    await page.locator('#library-back-btn').click();
+    await page.locator('#pack-list [data-pack-id="a"] [data-pack-open]').click();
+    await expect(page.locator('#notes-view mark[data-hl="yellow"]')).toHaveCount(1);
+    await expect(page.locator('#notes-highlight-status')).toHaveText(rejectedHighlightWarning);
+    await page.waitForTimeout(3100);
+    expect(state.patches).toHaveLength(1);
+    expect(await cacheRecord(page, 'a', 'highlights', 'a')).toEqual(original);
     expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
     expect(state.errors).toEqual([]);
   } finally { held.resolve(); }
 });
+
+for (const language of ['en', 'nl']) for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
+  test(`the rejected highlight warning stays readable in ${language} at ${width}px in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 375 ? 812 : 1000 });
+    const state = await fixture(page, { language, theme }); state.patchStatus = 404;
+    await openPack(page); await blockHighlightStorage(page); await highlight(page);
+    const warning = page.locator('#notes-highlight-status');
+    await expect(warning).toHaveText(language === 'nl' ? rejectedHighlightWarningNl : rejectedHighlightWarning);
+    await warning.scrollIntoViewIfNeeded();
+    const bounds = await warning.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `/tmp/lp-g1b6b-rejected-visual/${language}-${width}-${theme}.png`, fullPage: false });
+    expect(state.errors).toEqual([]);
+  });
+}
 
 for (const boundary of ['open', 'mode', 'completion']) {
   test(`a late planned ${boundary} 404 preserves both accounts after an identity change`, async ({ page }) => {
