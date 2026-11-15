@@ -334,25 +334,26 @@ def export_account_bundle(app_ctx, request):
     job_id = f'account-export-{secrets.token_urlsafe(18)}'
     download_name = f"lecture-processor-export-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.zip"
     export_path = os.path.join(_account_export_root(app_ctx), f'{job_id}.zip')
-    runtime_jobs_store.set_job(
-        job_id,
-        {
-            'job_id': job_id,
-            'job_scope': ACCOUNT_EXPORT_JOB_SCOPE,
-            'user_id': uid,
-            'user_email': email,
-            'status': 'queued',
-            'step': 0,
-            'total_steps': 2,
-            'step_description': 'Your export is queued…',
-            'started_at': app_ctx.time.time(),
-            'export_path': export_path,
-            'download_name': download_name,
-            'error': '',
-        },
-        runtime=app_ctx,
-    )
     try:
+        runtime_jobs_store.set_job(
+            job_id,
+            {
+                'job_id': job_id,
+                'job_scope': ACCOUNT_EXPORT_JOB_SCOPE,
+                'user_id': uid,
+                'user_email': email,
+                'status': 'queued',
+                'step': 0,
+                'total_steps': 2,
+                'step_description': 'Your export is queued…',
+                'started_at': app_ctx.time.time(),
+                'export_path': export_path,
+                'download_name': download_name,
+                'error': '',
+            },
+            runtime=app_ctx,
+            require_persistence=True,
+        )
         app_ctx.submit_background_job(
             _run_account_bundle_export,
             app_ctx,
@@ -363,6 +364,12 @@ def export_account_bundle(app_ctx, request):
             export_path,
             download_name,
         )
+    except runtime_jobs_store.RuntimeJobPersistenceError:
+        try:
+            runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
+        except Exception:
+            app_ctx.logger.warning('Could not clean up account export admission %s', job_id, exc_info=True)
+        return app_ctx.jsonify({'error': 'Could not start export right now. Please try again.'}), 503
     except JobQueueFullError:
         runtime_jobs_store.delete_job(job_id, runtime=app_ctx)
         return app_ctx.jsonify({'error': 'The export queue is busy. Please try again shortly.'}), 503
