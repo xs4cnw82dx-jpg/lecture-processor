@@ -205,7 +205,14 @@ test('Dutch Builder autosave translates the real Saved. toast and saved-state co
   await expect.poll(() => state.pack.title).toBe('My unchanged English title');
   await expect(page.locator('.toast.visible')).toHaveText('Opgeslagen.');
   await expect(page.locator('#builder-stat-dirty')).toHaveText('Opgeslagen');
-  await expect(page.locator('#builder-title-input')).toHaveValue('My unchanged English title');
+  await language(page, 'en');
+  await expect(page.locator('#builder-stat-dirty')).toHaveText('Saved');
+  await language(page, 'nl');
+  await expect(page.locator('#builder-stat-dirty')).toHaveText('Opgeslagen');
+  await page.locator('#builder-title-input').fill('My second unchanged English title');
+  await expect.poll(() => state.pack.title).toBe('My second unchanged English title');
+  await expect(page.locator('#builder-stat-dirty')).toHaveText('Opgeslagen');
+  await expect(page.locator('#builder-title-input')).toHaveValue('My second unchanged English title');
   expect(state.errors).toEqual([]);
 });
 

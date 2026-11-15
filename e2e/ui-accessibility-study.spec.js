@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { readFileSync } = require('node:fs');
+const { withContentRevision } = require('./helpers/study-revision-fixture');
 
 async function installStudy(page) {
   const state = { creates: [], errors: [] };
@@ -41,7 +42,7 @@ async function installStudy(page) {
       payload = { study_packs: [pack], has_more: false };
     } else if (path === '/api/study-packs/accessible') {
       if (request.method() === 'PATCH') Object.assign(pack, request.postDataJSON());
-      payload = pack;
+      payload = withContentRevision(pack);
     } else if (path.includes('study-progress')) payload = { card_states: {}, daily_progress: {} };
     await route.fulfill({ json: payload });
   });

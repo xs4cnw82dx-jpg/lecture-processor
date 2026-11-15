@@ -3055,21 +3055,21 @@ function updateBuilderDirtyIndicator() {
     return;
   }
   if (builderAutoSaving) {
-    builderStatDirty.textContent = 'Saving...';
+    builderStatDirty.textContent = editText('Saving...');
     builderStatDirty.className = 'builder-status saving';
     return;
   }
   if (builderMode === 'create' && !builderPackId) {
-    builderStatDirty.textContent = 'Not saved yet';
+    builderStatDirty.textContent = editText('Not saved yet');
     builderStatDirty.className = 'builder-status pending';
     return;
   }
   if (builderDirty) {
-    builderStatDirty.textContent = 'Auto-save pending';
+    builderStatDirty.textContent = editText('Auto-save pending');
     builderStatDirty.className = 'builder-status pending';
     return;
   }
-  builderStatDirty.textContent = 'Saved';
+  builderStatDirty.textContent = editText('Saved');
   builderStatDirty.className = 'builder-status saved';
 }
 function scheduleBuilderAutoSave() {

@@ -1,8 +1,9 @@
 const { test, expect } = require('@playwright/test');
 const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { existsSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
 const { createServer } = require('node:net');
+const { resolve } = require('node:path');
 const { installAccountFixture } = require('./helpers/batch-fixture');
 test.describe.configure({ mode: 'parallel' });
 
@@ -51,6 +52,19 @@ function deferred() {
 }
 
 const contentFields = ['notes_markdown', 'flashcards', 'test_questions'];
+// The isolated preview uses source scripts unless this flag selects built assets.
+const useMinifiedStudy = ['1', 'true', 'yes', 'on'].includes((process.env.USE_MINIFIED_JS_ASSETS || '').trim().toLowerCase());
+const expectedStudyPath = `/static/js/study${useMinifiedStudy ? '.min' : ''}.js`;
+const expectedStudyHash = createHash('sha256').update(readFileSync(resolve(__dirname, '..', '.' + expectedStudyPath))).digest('hex');
+
+async function expectStudyAssets(state) {
+  const assets = await Promise.all(state.assets);
+  expect(assets.length).toBeGreaterThan(0);
+  for (const asset of assets) expect(asset).toMatchObject({
+    path: expectedStudyPath, status: 200, type: 'script', sha256: expectedStudyHash,
+  });
+  return assets;
+}
 
 function contentRevision(pack) {
   return createHash('sha256').update(JSON.stringify(contentFields.map(field => pack[field]))).digest('hex');
@@ -76,7 +90,12 @@ async function installPage(page, state, tab, preferences = { language: 'en', the
   await page.addInitScript(preferences => localStorage.setItem('lp-preferences', JSON.stringify(preferences)), preferences);
   page.on('pageerror', error => state.errors.push(error.message));
   page.on('response', response => {
-    if (new URL(response.url()).pathname === '/static/js/study.min.js') state.assets.push(tab);
+    const path = new URL(response.url()).pathname;
+    if (path !== '/static/js/study.js' && path !== '/static/js/study.min.js') return;
+    state.assets.push(response.body().then(body => ({
+      tab, path, status: response.status(), type: response.request().resourceType(),
+      sha256: createHash('sha256').update(body).digest('hex'),
+    }), error => ({ tab, path, error: error.message })));
   });
   await page.route('https://cdn.jsdelivr.net/**', route => route.abort());
   await page.route('https://browser.sentry-cdn.com/**', route => route.abort());
@@ -185,7 +204,7 @@ async function twoEditors(page, context, state) {
   const other = await context.newPage();
   await Promise.all([installPage(page, state, 'first'), installPage(other, state, 'second')]);
   await Promise.all([openPack(page), openPack(other)]);
-  expect(state.assets.sort()).toEqual(['first', 'second']);
+  expect((await expectStudyAssets(state)).map(asset => asset.tab).sort()).toEqual(['first', 'second']);
   return other;
 }
 
@@ -945,6 +964,6 @@ for (const language of ['en', 'nl']) for (const width of [1440, 375]) for (const
     await expectBuilderNoticeToFit(page);
     await page.screenshot({ path: testInfo.outputPath('builder-storage-failure.png'), animations: 'disabled' });
     expect(state.errors).toEqual([]);
-    expect(state.assets.length).toBeGreaterThan(0);
+    await expectStudyAssets(state);
   });
 }
