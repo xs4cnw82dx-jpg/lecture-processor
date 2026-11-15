@@ -2,7 +2,9 @@
 
 import pytest
 
+from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.runtime_jobs import store
+from tests.test_processing_credit_admission import PRIMARY, runtime_fixture
 from tests.test_runtime_job_retention import retention_state as retention_state
 
 
@@ -57,3 +59,18 @@ def test_memory_only_full_snapshot_keeps_its_heartbeat(retention_state):
     assert snapshot['last_heartbeat_at'] == state.now
     assert store.get_job_snapshot('job', runtime=state.runtime)['last_heartbeat_at'] == state.now
     assert state.writes == []
+
+
+def test_paid_admission_and_worker_start_transactions_keep_their_heartbeats():
+    runtime, durable = runtime_fixture()
+    job_charges.admit_runtime_job('owner', 'paid', 'lecture-notes', PRIMARY, runtime=runtime)
+    assert durable.docs('runtime_jobs')['paid']['last_heartbeat_at'] == durable.now
+
+    durable.now += 35
+    job_charges.set_admitted_job('paid', {'user_id': 'owner', 'status': 'queued'}, runtime=runtime)
+    assert durable.docs('runtime_jobs')['paid']['last_heartbeat_at'] == durable.now
+
+    durable.now += 35
+    assert job_charges.begin_runtime_job('paid', runtime=runtime) is True
+    assert durable.docs('runtime_jobs')['paid']['last_heartbeat_at'] == durable.now
+    assert durable.docs('users')['owner']['credits'] == 92

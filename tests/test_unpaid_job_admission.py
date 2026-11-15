@@ -10,6 +10,7 @@ from lecture_processor.runtime.job_dispatcher import BoundedJobDispatcher
 from lecture_processor.services import account_data_service, media_admission, upload_quota_service
 from tests.credit_test_support import make_credit_runtime
 from tests.test_background_lecture_download import downloads as downloads
+from tests.test_runtime_job_retention import retention_state as retention_state
 
 
 @pytest.fixture
@@ -176,6 +177,29 @@ def test_ordinary_partial_snapshot_failure_keeps_existing_best_effort_behavior(m
     # Progress snapshots are not a new admission and must not interrupt work.
     store.persist_runtime_job_snapshot('job', {'status': 'processing', 'step_description': 'Working'},
                                        runtime=runtime, changed_fields={'step_description'})
+
+
+@pytest.mark.parametrize('operation', ['set', 'update'])
+def test_existing_paid_job_keeps_default_local_updates_when_persistence_fails(retention_state, monkeypatch, operation):
+    state = retention_state
+    before = store.set_job('paid', {
+        'status': 'processing', 'credit_scheme': 2, 'charged_credits': 8,
+        'billing_receipt': {'charge_ref': 'runtime-job:paid', 'charged_credits': 8},
+    }, runtime=state.runtime)
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError('Synthetic progress write failure')
+
+    monkeypatch.setattr(state.runtime.runtime_jobs_repo, 'set_doc', fail_write)
+    if operation == 'set':
+        updated = store.set_job('paid', dict(before, status='complete'), runtime=state.runtime)
+    else:
+        updated = store.update_job_fields('paid', status='complete', runtime=state.runtime)
+
+    assert updated['status'] == state.runtime.jobs['paid']['status'] == 'complete'
+    assert updated['billing_receipt'] == before['billing_receipt']
+    assert state.documents['paid']['status'] == 'processing'
+    assert state.deleted == []
 
 
 @pytest.fixture
