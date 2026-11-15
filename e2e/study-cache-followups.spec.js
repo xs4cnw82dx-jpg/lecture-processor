@@ -16,7 +16,7 @@ function pack(id) {
     flashcards_count: 1, test_questions_count: 0, flashcards: [{ front: 'Prompt', back: 'Answer' }], test_questions: [] };
 }
 
-async function fixture(page) {
+async function fixture(page, preferences = { language: 'en', theme: 'light' }) {
   const account = await installAccountFixture(page);
   const state = { requests: [], patches: [], openStatus: 200, checkpointStatus: 200, patchStatus: 200, patchReply: null,
     session: { id: 'session_focus', title: 'Planned session', pack_id: 'a', duration: 45, status: 'planned', revision: 1 },
@@ -26,7 +26,7 @@ async function fixture(page) {
       active_seconds: 0, slot_seconds: 0, notes_seconds: 0, duration_seconds: 2700,
       timer_mode: 'countdown', run_status: 'paused', checkpoint_revision: 0 },
     packs: { a: pack('a'), b: pack('b') }, errors: account.browserErrors };
-  await page.addInitScript(() => localStorage.setItem('lp-preferences', JSON.stringify({ language: 'en', theme: 'light' })));
+  await page.addInitScript(preferences => localStorage.setItem('lp-preferences', JSON.stringify(preferences)), preferences);
   await page.route('**/api/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     const uid = request.headers().authorization === 'Bearer token-b' ? 'b' : 'a';
@@ -34,14 +34,14 @@ async function fixture(page) {
     state.requests.push(entry);
     if (path === '/api/auth/user') return route.fallback();
     let payload = {};
-    if (path === '/api/user-preferences') payload = { preferences: { interface_language: 'en', theme: 'light' } };
+    if (path === '/api/user-preferences') payload = { preferences: { interface_language: preferences.language, theme: preferences.theme } };
     else if (path === '/api/study-packs') payload = { study_packs: [state.packs[uid]], has_more: false };
     else if (path === '/api/study-folders') payload = { folders: [] };
     else if (path === '/api/study-plan/membership') payload = { pack_ids: [] };
     else if (path === '/api/runtime-jobs/active') payload = { jobs: [] };
     else if (path === '/api/study-plan/items/session_focus/run') {
       if (state.openStatus !== 200) return route.fulfill({ status: state.openStatus, json: { error: 'Study session unavailable.' } });
-      payload = { session: state.session, run: state.run };
+      payload = { session: state.session, run: state.run, ...(state.returnedPack ? { pack: state.returnedPack } : {}) };
     } else if (path === '/api/study-plan/runs/run_focus') {
       if (state.checkpointStatus !== 200) return route.fulfill({ status: state.checkpointStatus, json: { error: 'Study session unavailable.' } });
       state.run = { ...state.run, ...entry.data };
@@ -443,3 +443,151 @@ test.describe('additional cache boundaries', () => {
     } finally { held.resolve(); }
   });
 });
+
+
+test('a missing session cleans the returned pack resume and preserves the originally selected pack', async ({ page }) => {
+  const state = await fixture(page);
+  state.returnedPack = pack('returned');
+  state.session.pack_id = 'returned'; state.run.pack_id = 'returned';
+  await page.goto('/study?pack_id=a&mode=learn&plan_item_id=session_focus');
+  await expect(page.locator('#setup-overlay')).toBeVisible();
+  const oldId = JSON.stringify(['a', 'session_focus']), currentId = JSON.stringify(['returned', 'session_focus']);
+  await page.evaluate(oldId => {
+    const cache = window.LectureProcessorStudyCache;
+    cache.set(cache.capture('a'), 'learning', oldId, { version: 'old-pack-resume', modes: {} }, { packId: 'a' });
+  }, oldId);
+  const original = await cacheRecord(page, 'a', 'learning', oldId);
+  await startPlanned(page);
+  await expect(page.locator('[data-pause]')).toHaveText('Pause');
+  await expect.poll(() => cacheRecord(page, 'a', 'learning', currentId)).not.toBeNull();
+  state.checkpointStatus = 404;
+  await page.locator('[data-pause]').click();
+  await expect(page.locator('[data-phase]')).toHaveText('Session unavailable');
+  await expect.poll(() => cacheRecord(page, 'a', 'learning', currentId)).toBeNull();
+  expect(await cacheRecord(page, 'a', 'learning', oldId)).toEqual(original);
+  await page.evaluate(() => { window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('online')); });
+  await page.waitForTimeout(500);
+  expect(await cacheRecord(page, 'a', 'learning', currentId)).toBeNull();
+  expect(await cacheRecord(page, 'a', 'learning', oldId)).toEqual(original);
+  expect(await cacheRecord(page, 'a', 'planned', 'run_focus')).toBeNull();
+  expect(state.errors).toEqual([]);
+});
+
+for (const boundary of ['open', 'checkpoint']) {
+  test(`a planned ${boundary} 404 with failed storage cleanup stays stopped and reports pending device work`, async ({ page }) => {
+    const state = await fixture(page);
+    await page.goto('/study?pack_id=a&mode=learn&plan_item_id=session_focus');
+    if (boundary === 'checkpoint') {
+      await startPlanned(page);
+      await expect(page.locator('[data-pause]')).toHaveText('Pause');
+    } else await expect(page.locator('#setup-overlay')).toBeVisible();
+    await seedConflicts(page);
+    await page.evaluate(() => window.LectureProcessorStudyCache.remove('a', 'conflict', 'run_other'));
+    await page.evaluate(() => {
+      const original = Storage.prototype.removeItem;
+      Storage.prototype.removeItem = function (key) {
+        if (key.includes(':study_cache:')) throw new DOMException('Synthetic storage failure', 'SecurityError');
+        return original.call(this, key);
+      };
+    });
+    if (boundary === 'checkpoint') { state.checkpointStatus = 404; await page.locator('[data-pause]').click(); }
+    else { state.openStatus = 404; await startPlanned(page); }
+    await expect(page.locator(boundary === 'checkpoint' ? '[data-save]' : '#setup-session-context')).toContainText('Device storage could not be cleared.');
+    const retained = await cacheRecord(page, 'a', 'conflict', 'run_focus');
+    expect(retained).not.toBeNull();
+    const requests = state.requests.filter(entry => entry.path.startsWith('/api/study-plan/')).length;
+    await page.evaluate(() => { window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('online')); });
+    await page.waitForTimeout(500);
+    expect(await cacheRecord(page, 'a', 'conflict', 'run_focus')).toEqual(retained);
+    expect(state.requests.filter(entry => entry.path.startsWith('/api/study-plan/'))).toHaveLength(requests);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.flushPending())).toBe(false);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+test('a permanent highlight response preserves pending when its local acknowledgement cannot be stored', async ({ page }) => {
+  const state = await fixture(page), held = deferred();
+  state.patchReply = async route => { await held.promise; await route.fulfill({ status: 403, json: { error: 'Pack unavailable.' } }); };
+  try {
+    await openPack(page); await highlight(page);
+    await expect.poll(() => state.patches.length).toBe(1);
+    const saved = await cacheRecord(page, 'a', 'highlights', 'a');
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key.includes(':study_cache:highlights:')) throw new DOMException('Synthetic storage failure', 'QuotaExceededError');
+        return original.call(this, key, value);
+      };
+    });
+    held.resolve();
+    await expect(page.locator('#notes-highlight-status')).toContainText('Highlights could not be saved on this device.');
+    expect(await cacheRecord(page, 'a', 'highlights', 'a')).toEqual(saved);
+    expect(await page.evaluate(() => window.LectureProcessorStudyPersistence.hasPending())).toBe(true);
+    expect(state.errors).toEqual([]);
+  } finally { held.resolve(); }
+});
+
+for (const boundary of ['open', 'mode', 'completion']) {
+  test(`a late planned ${boundary} 404 preserves both accounts after an identity change`, async ({ page }) => {
+    const state = await fixture(page), held = deferred(), entered = deferred();
+    try {
+      await page.goto('/study?pack_id=a&mode=learn&plan_item_id=session_focus');
+      if (boundary !== 'open') {
+        await startPlanned(page); await expect(page.locator('[data-pause]')).toHaveText('Pause');
+        if (boundary === 'completion') {
+          await page.locator('#learn-f-flip').click();
+          await page.locator('[data-review-action="good"]').click();
+          await expect.poll(() => Object.keys(state.run.answers).length).toBe(1);
+        }
+      } else await expect(page.locator('#setup-overlay')).toBeVisible();
+      await seedConflicts(page);
+      const path = boundary === 'completion' ? '/api/study-plan/items/session_focus/completion' : '/api/study-plan/items/session_focus/run';
+      await page.route(`**${path}`, async route => {
+        entered.resolve(); await held.promise;
+        await route.fulfill({ status: 404, json: { error: 'Study session unavailable.' } });
+      });
+      if (boundary === 'completion') await page.locator('[data-finish]').click();
+      else { if (boundary === 'mode') await page.locator('#learn-change-mode-btn').click(); await startPlanned(page); }
+      await entered.promise;
+      const previous = await cacheRecord(page, 'a', 'conflict', 'run_focus');
+      await page.evaluate(() => window.testAccount.switchTo('b'));
+      await expect(page.locator('#pack-list')).toContainText('Pack b');
+      await page.evaluate(() => {
+        const cache = window.LectureProcessorStudyCache;
+        cache.set(cache.capture('b'), 'conflict', 'run_focus', { activity_id: 'run_focus', plan_item_id: 'session_focus', pack_id: 'b', uid: 'b' }, { packId: 'b', pending: true });
+      });
+      const next = await cacheRecord(page, 'b', 'conflict', 'run_focus');
+      const response = page.waitForResponse(candidate => candidate.url().endsWith(path));
+      held.resolve(); await response; await page.waitForTimeout(250);
+      expect((await cacheRecord(page, 'a', 'conflict', 'run_focus')).payload).toEqual(previous.payload);
+      expect(await cacheRecord(page, 'b', 'conflict', 'run_focus')).toEqual(next);
+      expect(state.errors).toEqual([]);
+    } finally { held.resolve(); }
+  });
+}
+
+
+for (const language of ['en', 'nl']) for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
+  test(`the unavailable planned tracker stays readable in ${language} at ${width}px in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 375 ? 812 : 1000 });
+    const state = await fixture(page, { language, theme });
+    await page.goto('/study?pack_id=a&mode=learn&plan_item_id=session_focus');
+    await startPlanned(page);
+    await expect(page.locator('[data-pause]')).toHaveText(language === 'nl' ? 'Pauzeren' : 'Pause');
+    state.checkpointStatus = 404;
+    await page.locator('[data-pause]').click();
+    await expect(page.locator('[data-phase]')).toHaveText(language === 'nl' ? 'Sessie niet beschikbaar' : 'Session unavailable');
+    await expect(page.locator('[data-save]')).toContainText(language === 'nl' ? 'Deze geplande sessie is niet meer beschikbaar.' : 'This planned session is no longer available.');
+    await expect(page.locator('[data-pause]')).toBeDisabled();
+    await expect(page.locator('[data-finish]')).toBeDisabled();
+    await expect(page.locator('[data-targets]')).toBeHidden();
+    expect(await page.locator('#learn-mode-content').evaluate(node => node.inert)).toBe(true);
+    await expect(page.locator('#learn-stage')).toHaveCSS('opacity', '1');
+    const bounds = await page.locator('.learn-session-tracker').boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `/tmp/lp-g1b6b-visual/${language}-${width}-${theme}.png`, fullPage: false });
+    expect(state.errors).toEqual([]);
+  });
+}

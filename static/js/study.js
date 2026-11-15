@@ -4113,6 +4113,8 @@ async function openPlannedStudy(mode) {
     onPack: function (pack) {
       openPackSeq += 1;
       selectedPack = pack; selectedPackId = pack.study_pack_id;
+      packId = selectedPackId;
+      learningId = JSON.stringify([packId, sessionId]);
       captureStudyPackCacheSession();
       syncInlineMetadataInputs();
       setInlineAutosaveBaseline(pack);
