@@ -202,6 +202,26 @@
     } catch (_) { return null; }
   }
 
+  function listPending(uid, kind, options) {
+    try {
+      uid = text(uid).trim();
+      var packId = text(options && options.packId), storage = global.localStorage;
+      if (!uid || uid !== activeUid || !text(kind) || !storage) return { ok: false, records: [] };
+      var entries = readEntries(storage, uid), records = [], ok = true;
+      entries.forEach(function (entry) {
+        var record = entry.record;
+        if (!record) { ok = false; return; }
+        if (record.kind !== kind || record.pack_id !== packId || !record.pending) return;
+        var state = recordState(storage, record);
+        if (state === 'quarantined') { ok = false; return; }
+        if (state === 'current') records.push({ id: record.id, payload: record.payload, updated_at: record.updated_at });
+      });
+      if (records.length > MAX_RECORDS) return { ok: false, records: [] };
+      records.sort(function (left, right) { return right.updated_at - left.updated_at; });
+      return { ok: ok, records: records };
+    } catch (_) { return { ok: false, records: [] }; }
+  }
+
   function set(token, kind, id, payload, options) {
     try {
       var owner = token && tokens.get(token);
@@ -397,7 +417,7 @@
     } catch (_) { /* A later read or write checks the durable fence again. */ }
   });
 
-  var exported = { activate: activate, capture: capture, get: get, set: set, remove: remove,
+  var exported = { activate: activate, capture: capture, get: get, listPending: listPending, set: set, remove: remove,
     removePack: removePack, removePlannedSession: removePlannedSession, clearUser: clearUser, hasPending: hasPending };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
   global.LectureProcessorStudyCache = exported;

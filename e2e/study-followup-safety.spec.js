@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { installAccountFixture } = require('./helpers/batch-fixture');
+const { contentRevision, withContentRevision } = require('./helpers/study-revision-fixture');
 
 test.use({ timezoneId: 'UTC' });
 
@@ -92,8 +93,8 @@ async function installStudy(page, options = {}) {
       if (entry.method === 'PATCH') {
         state.patches.push(entry);
         Object.assign(state.packs[id], structuredClone(entry.payload));
-        body = { ok: true, study_pack_id: id };
-      } else body = structuredClone(state.packs[id]);
+        body = { ok: true, study_pack_id: id, content_revision: contentRevision(state.packs[id]) };
+      } else body = withContentRevision(structuredClone(state.packs[id]));
     } else if (path.includes('study-progress')) {
       if (entry.method === 'PUT') state.progress.push(entry.payload);
       body = { card_states: {}, daily_progress: {}, timezone: options.progressTimezone || 'UTC' };

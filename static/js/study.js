@@ -8,6 +8,7 @@ const downloadUtils = window.LectureProcessorDownload || {};
 const topbarUtils = window.LectureProcessorTopbar || {};
 const uiCache = window.LectureProcessorUiCache || null;
 const studyCache = window.LectureProcessorStudyCache || null;
+const studyEdits = window.LectureProcessorStudyEdits;
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const studyLibraryUtils = window.LectureProcessorStudyLibraryUtils || {};
 const studyAudioUtils = window.LectureProcessorStudyAudio || {};
@@ -43,6 +44,10 @@ let inlineAutoSaveTimer = null, inlineAutoSaving = false, inlineAutoSaveQueued =
 let inlineAutosaveBaseline = null;
 let inlineAutosavePromise = null;
 let inlineAutosaveError = null, inlineDiscardPromise = null;
+let packEditController = null, packEditDraftTimer = null, packEditReview = null;
+let packEditRecoveryRecords = [], packEditRecoverySources = [];
+let packEditRecoveryError = false;
+let packEditRenderBackup = null, packEditRenderError = false;
 let learnFlashcardIndex = 0, learnFlashcardFlipped = false, learnQuestionIndex = 0, learnScore = 0, learnAnswered = false;
 let activeLearnMode = ''; // 'flashcards','test','write','match','notes'
 let orderedFlashcards = [];
@@ -1730,6 +1735,18 @@ function applyStudySignedOutState() {
   libraryRefreshPending = false;
   libraryRefreshInFlight = null;
   inlineAutosaveError = null;
+  inlineAutoSaving = false; inlineAutosavePromise = null; inlineAutoSaveQueued = false;
+  packEditController = null; packEditReview = null;
+  packEditRecoveryRecords = []; packEditRecoverySources = [];
+  packEditRecoveryError = false;
+  packEditRenderBackup = null; packEditRenderError = false;
+  packEditorWrap.classList.remove('pack-edit-render-failed');
+  clearTimeout(packEditDraftTimer); packEditDraftTimer = null;
+  clearBuilderAutoSaveTimer(); builderAutoSaveQueued = false;
+  if (builderOverlay.classList.contains('visible')) closeModal(builderOverlay);
+  builderDraft = null; builderPackId = ''; builderDirty = false;
+  var reviewOverlay = document.getElementById('pack-edit-review-overlay');
+  if (reviewOverlay && reviewOverlay.classList.contains('visible')) closeModal(reviewOverlay);
   if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
   packEditorWrap.inert = false;
   if (window.StudyPictures) window.StudyPictures.clear();
@@ -2713,6 +2730,7 @@ function getModalFocusableElements(overlay) {
 }
 function closeActiveModalFromEscape() {
   if (!activeModalOverlay) return;
+  if (activeModalOverlay.id === 'pack-edit-review-overlay') { closePackEditReview(); return; }
   if (activeModalOverlay === builderOverlay) { handleBuilderExitRequest(); return; }
   if (activeModalOverlay === setupOverlay) { closeSessionSetup(); return; }
   if (activeModalOverlay === folderModalOverlay) { closeFolderModal(); return; }
@@ -3031,22 +3049,27 @@ function clearBuilderAutoSaveTimer() {
 }
 function updateBuilderDirtyIndicator() {
   if (!builderStatDirty) return;
+  if (builderMode === 'edit' && hasBlockedPackEdits()) {
+    builderStatDirty.textContent = editText('Changes need review');
+    builderStatDirty.className = 'builder-status error';
+    return;
+  }
   if (builderAutoSaving) {
-    builderStatDirty.textContent = 'Saving...';
+    builderStatDirty.textContent = editText('Saving...');
     builderStatDirty.className = 'builder-status saving';
     return;
   }
   if (builderMode === 'create' && !builderPackId) {
-    builderStatDirty.textContent = 'Not saved yet';
+    builderStatDirty.textContent = editText('Not saved yet');
     builderStatDirty.className = 'builder-status pending';
     return;
   }
   if (builderDirty) {
-    builderStatDirty.textContent = 'Auto-save pending';
+    builderStatDirty.textContent = editText('Auto-save pending');
     builderStatDirty.className = 'builder-status pending';
     return;
   }
-  builderStatDirty.textContent = 'Saved';
+  builderStatDirty.textContent = editText('Saved');
   builderStatDirty.className = 'builder-status saved';
 }
 function scheduleBuilderAutoSave() {
@@ -3062,9 +3085,11 @@ function scheduleBuilderAutoSave() {
     if (!builderDirty || builderMode !== 'edit' || !builderDraft) { return; }
     if (!builderOverlay.classList.contains('visible')) { return; }
     builderAutoSaving = true;
+    var controller = packEditController, draft = builderDraft;
     updateBuilderDirtyIndicator();
     saveBuilderPack(false, { silent: true, refreshAfterSave: false, skipAutoSave: true, autoSavedToast: true })
       .finally(function () {
+        if (!isCurrentPackEdit(controller) || builderDraft !== draft) return;
         builderAutoSaving = false;
         updateBuilderDirtyIndicator();
         if (builderAutoSaveQueued) {
@@ -3077,6 +3102,7 @@ function scheduleBuilderAutoSave() {
 function markBuilderDirty(value, options) {
   var opts = options || {};
   builderDirty = (value !== false);
+  if (builderDirty && builderMode === 'edit') queuePackEditDraft();
   if (!builderDirty) {
     builderAutoSaveQueued = false;
     clearBuilderAutoSaveTimer();
@@ -3207,9 +3233,16 @@ function getDefaultManualPackFolderId() {
   return selectedFolderId && !isBuiltInFolderId(selectedFolderId) ? selectedFolderId : '';
 }
 function openBuilderOverlay(mode, pack) {
-  var inlineSnapshot = selectedPack && selectedPack.study_pack_id === selectedPackId ? buildCurrentInlineAutosaveSnapshot() : null;
-  if (inlineSnapshot && (!pack || pack === selectedPack)) pack = Object.assign({}, selectedPack, inlineSnapshot);
-  flushInlineAutosave();
+  var controller = packEditController;
+  var uid = auth.currentUser && auth.currentUser.uid, epoch = studyCacheEpoch, seq = openPackSeq;
+  return flushInlineAutosave().then(function (saved) {
+    if (!saved || !auth.currentUser || auth.currentUser.uid !== uid || studyCacheEpoch !== epoch || seq !== openPackSeq ||
+      (controller && !isCurrentPackEdit(controller))) return false;
+    openBuilderOverlayReady(mode, mode === 'create' ? pack : selectedPack);
+    return true;
+  });
+}
+function openBuilderOverlayReady(mode, pack) {
   var openingCreate = (mode === 'create');
   revealDeferredStudyLibraryShell();
   builderMode = openingCreate ? 'create' : 'edit';
@@ -3243,6 +3276,7 @@ function openBuilderOverlay(mode, pack) {
   updateAudioBarVisibility();
   openModal(builderOverlay, builderTitleInput);
   setBodyScrollLocked(true);
+  renderPackEditNotice();
 }
 function closeBuilderOverlay() {
   builderAutoSaving = false;
@@ -3281,8 +3315,8 @@ function handleBuilderExitRequest() {
       return;
     }
     if (choice === 'discard') {
-      markBuilderDirty(false);
-      closeBuilderOverlay();
+      if (builderMode === 'edit') discardPackEditDrafts().then(function (discarded) { if (discarded) closeBuilderOverlay(); });
+      else { markBuilderDirty(false); closeBuilderOverlay(); }
     }
   });
 }
@@ -3352,7 +3386,8 @@ function openCsvImportBuilder() {
     showToast('Please sign in first.', 'error');
     return;
   }
-  openBuilderOverlay('create', null);
+  openBuilderOverlay('create', null).then(function (opened) {
+  if (!opened) return;
   setBuilderPane('import');
   if (builderImportType) {
     builderImportType.value = 'flashcards';
@@ -3365,53 +3400,53 @@ function openCsvImportBuilder() {
       }
     }, 0);
   }
+  });
 }
 function saveBuilderPack(closeAfter, options) {
   if (!builderDraft) { return Promise.resolve(); }
   var opts = options || {};
+  var controller = packEditController, draft = builderDraft;
+  if (builderMode === 'edit') {
+    clearBuilderAutoSaveTimer(); builderAutoSaveQueued = false;
+    return flushInlineAutosave({ showNoChangesToast: !opts.silent }).then(function (saved) {
+      if (!isCurrentPackEdit(controller) || builderDraft !== draft) return false;
+      updatePackEditStatus();
+      if (saved && !packEditPending()) {
+        syncInlineMetadataInputs(); resetInlineEditorViews(); renderNotesForSelectedPackBase(); setEditorPane(activeEditorPane);
+        if (closeAfter) closeBuilderOverlay();
+      }
+      return saved;
+    });
+  }
   var payload = getBuilderPayload();
   if (!payload.title) {
     payload.title = 'Untitled pack';
   }
   clearBuilderAutoSaveTimer();
   builderAutoSaveQueued = false;
-  var request = flushInlineAutosave({ allowDiscard: true }).then(function (saved) {
-    if (!saved) throw new Error('Save the open pack before saving builder changes.');
-    return builderMode === 'create'
-      ? apiCall('/api/study-packs', { method: 'POST', body: JSON.stringify(payload) })
-      : apiCall('/api/study-packs/' + encodeURIComponent(builderPackId || selectedPackId), { method: 'PATCH', body: JSON.stringify(payload) });
-  });
+  var uid = auth.currentUser && auth.currentUser.uid, epoch = studyCacheEpoch;
+  function current() { return auth.currentUser && auth.currentUser.uid === uid && studyCacheEpoch === epoch && builderDraft === draft; }
+  var request = apiCall('/api/study-packs', { method: 'POST', body: JSON.stringify(payload) });
   return request.then(function (response) {
-    if (builderMode === 'create' && response && response.study_pack_id) {
-      builderPackId = response.study_pack_id;
-      builderMode = 'edit';
-    }
-    if (opts.refreshAfterSave === false) {
-      if (selectedPack && selectedPackId && (builderPackId || selectedPackId) === selectedPackId) {
-        selectedPack = Object.assign({}, selectedPack, payload, { study_pack_id: selectedPackId });
-        syncInlineMetadataInputs();
-        setInlineAutosaveBaseline(selectedPack);
-        resetInlineEditorViews();
-        setEditorPane(activeEditorPane);
-      }
-      return null;
-    }
-    return loadData(builderPackId || selectedPackId);
-  }).then(function () {
-    markBuilderDirty(false, { skipAutoSave: true });
+    if (!current() || !response || !response.study_pack_id) return false;
+    builderPackId = response.study_pack_id; builderMode = 'edit'; selectedPackId = builderPackId;
+    renderLoadedPack(Object.assign({}, payload, response, { mode: 'manual' }));
+    packs.push(Object.assign({}, selectedPack)); renderPacks();
+    updatePackEditStatus();
     updateShareActionAvailability();
     if (!opts.silent) {
       showToast('Study pack saved.');
     } else if (opts.autoSavedToast) {
       showToast(window.LectureI18n ? window.LectureI18n.t('Saved.') : 'Saved.', 'success');
     }
-    if (closeAfter) {
+    if (closeAfter && !packEditPending()) {
       closeBuilderOverlay();
     } else {
       builderBrandSub.textContent = 'Editing ' + ((builderDraft && builderDraft.title) || 'Untitled pack');
     }
     return true;
   }).catch(function (e) {
+    if (!current()) return false;
     if (!opts.silent) {
       showToast(e.message || 'Could not save builder changes.', 'error');
     }
@@ -5826,6 +5861,8 @@ function saveFolderFromModal() {
 
 /* ── Open pack ── */
 function clearFailedPackEditor() {
+  packEditController = null; packEditReview = null;
+  clearTimeout(packEditDraftTimer); packEditDraftTimer = null;
   selectedPack = null;
   selectedPackId = '';
   inlineAutosaveBaseline = null;
@@ -5870,6 +5907,7 @@ function renderLoadedPack(data, alreadySyncingHighlights) {
   initAudioForSelectedPack();
   setEditorPane(getContentPreferredEditorPane(selectedPack, activeEditorPane));
   updateShareActionAvailability();
+  discoverPackEditDrafts();
 }
 
 function openPack(packId) {
@@ -7207,6 +7245,13 @@ function buildCurrentInlineAutosaveSnapshot() {
 
 function setInlineAutosaveBaseline(pack) {
   inlineAutosaveBaseline = pack ? normalizeInlineAutosaveSnapshot(pack) : null;
+  packEditController = pack && auth.currentUser && studyEdits ? studyEdits.create({
+    uid: auth.currentUser.uid, epoch: studyCacheEpoch, packId: String(pack.study_pack_id || ''),
+    baseline: inlineAutosaveBaseline, revision: pack.content_revision,
+    cache: studyCache, cacheSession: studyCache && studyCache.capture(auth.currentUser.uid),
+  }) : null;
+  packEditRecoveryRecords = []; packEditRecoverySources = [];
+  packEditRecoveryError = false;
   inlineAutosaveError = null;
   setInlineAutosaveStatus('saved', 'Saved');
 }
@@ -7229,19 +7274,13 @@ function setInlineAutosaveStatus(state, message) {
   packSaveStatus.textContent = String(message || 'Saved');
 }
 
-function mergeInlineAutosaveBaseline(payload) {
-  if (!payload || typeof payload !== 'object') return;
-  if (!inlineAutosaveBaseline) {
-    inlineAutosaveBaseline = {};
-  }
-  Object.keys(payload).forEach(function (field) {
-    inlineAutosaveBaseline[field] = cloneInlineAutosaveValue(payload[field]);
-  });
-}
-
 function buildInlineAutosavePayload() {
-  var snapshot = buildCurrentInlineAutosaveSnapshot();
+  var snapshot = currentPackEditSnapshot();
   if (!snapshot) return null;
+  if (packEditController) {
+    var changes = packEditController.delta(snapshot);
+    return Object.keys(changes).length ? changes : null;
+  }
   if (!inlineAutosaveBaseline) {
     return snapshot;
   }
@@ -7254,91 +7293,329 @@ function buildInlineAutosavePayload() {
   return Object.keys(payload).length ? payload : null;
 }
 
+function currentPackEditSnapshot() {
+  if (packEditRenderBackup) return studyEdits.clone(packEditRenderBackup.snapshot);
+  if (builderMode === 'edit' && builderDraft && builderPackId === selectedPackId && builderOverlay.classList.contains('visible')) {
+    return normalizeInlineAutosaveSnapshot(getBuilderPayload());
+  }
+  return buildCurrentInlineAutosaveSnapshot();
+}
+function isCurrentPackEdit(controller) {
+  return !!(controller && packEditController === controller && auth.currentUser &&
+    auth.currentUser.uid === controller.state.uid && studyCacheEpoch === controller.state.epoch &&
+    selectedPack && selectedPack.study_pack_id === controller.state.packId && selectedPackId === controller.state.packId);
+}
+function packEditMode() {
+  if (packEditRenderBackup) return packEditRenderBackup.mode;
+  return builderDraft && builderMode === 'edit' && builderOverlay.classList.contains('visible') ? 'builder' : 'inline';
+}
+function persistCurrentPackDraft() {
+  if (packEditDraftTimer) { clearTimeout(packEditDraftTimer); packEditDraftTimer = null; }
+  if (!isCurrentPackEdit(packEditController)) return false;
+  var stored = packEditController.persist(currentPackEditSnapshot(), packEditMode());
+  renderPackEditNotice();
+  return stored;
+}
+function queuePackEditDraft() {
+  if (!isCurrentPackEdit(packEditController)) return;
+  packEditController.state.generation += 1;
+  clearTimeout(packEditDraftTimer);
+  packEditDraftTimer = setTimeout(persistCurrentPackDraft, 120);
+}
+function hasBlockedPackEdits() {
+  return !!(packEditController && (packEditController.state.conflict || packEditController.state.blocked));
+}
+function packEditPending() {
+  return hasBlockedPackEdits() || !!buildInlineAutosavePayload() ||
+    packEditRecoveryError || !!(packEditController && packEditController.state.deviceError);
+}
+function editText(message) { return window.LectureI18n ? window.LectureI18n.t(message) : message; }
+function discoverPackEditDrafts() {
+  var controller = packEditController;
+  if (!isCurrentPackEdit(controller) || !studyCache) return;
+  var discovered = studyCache.listPending(controller.state.uid, 'pack-edit', { packId: controller.state.packId });
+  packEditRecoveryError = !discovered.ok;
+  packEditRecoveryRecords = discovered.records.filter(function (record) {
+    if (!studyEdits.validDraft(record.payload, controller.state.packId, record.id)) { packEditRecoveryError = true; return false; }
+    return record.payload.editor_session_id !== controller.state.id && packEditRecoverySources.indexOf(record.id) === -1;
+  });
+  renderPackEditNotice();
+}
+function renderPackEditNotice() {
+  var controller = packEditController, ui = window.LectureProcessorStudyEditUI;
+  if (!ui) return;
+  var messages = [], blocked = hasBlockedPackEdits();
+  if (blocked) messages.push(controller.state.conflict
+    ? 'This pack changed elsewhere. Review your changes before saving.'
+    : 'These changes could not be verified. Review them before saving.');
+  if (controller && controller.state.deviceError) messages.push('Your latest changes could not be saved on this device. Keep this tab open.');
+  else if (blocked && controller.state.snapshot) messages.push('Your changes are kept on this device.');
+  if (packEditRecoveryError) messages.push('Some device drafts could not be read or cleared. Keep this tab open.');
+  if (packEditRenderError) messages.push(typeof packEditRenderError === 'string' ? packEditRenderError
+    : 'The editor could not be displayed. Your draft is still here. Review it to try again.');
+  ['pack-edit-notice', 'builder-edit-notice'].forEach(function (id) {
+    ui.notice(document.getElementById(id), { messages: messages, blocked: blocked, records: packEditRecoveryRecords,
+      onReview: openPackEditReview, onDiscard: function () { discardPackEditDrafts(); },
+      onRecover: recoverPackEditDraft, onDiscardRecord: discardPackEditDrafts });
+  });
+}
+function removePackEditSnapshots(uid, ids) {
+  var failed = [];
+  ids.forEach(function (id) { if (!studyCache || !studyCache.remove(uid, 'pack-edit', id)) failed.push(id); });
+  packEditRecoveryError = !!failed.length;
+  return failed;
+}
+function clearRecoveredPackDrafts(controller) {
+  if (!isCurrentPackEdit(controller)) return;
+  packEditRecoverySources = removePackEditSnapshots(controller.state.uid, packEditRecoverySources);
+}
+function applyPackEditSnapshot(snapshot, mode) {
+  Object.assign(selectedPack, studyEdits.clone(snapshot));
+  syncInlineMetadataInputs(); resetInlineEditorViews(); renderNotesForSelectedPackBase();
+  setEditorPane(activeEditorPane); updatePackSummary();
+  if (mode === 'builder') openBuilderOverlayReady('edit', selectedPack);
+}
+function adoptReviewedPack(action, options) {
+  var rollbackController = options && options.rollbackController;
+  var previous = { controller: packEditController, pack: selectedPack, snapshot: currentPackEditSnapshot(), mode: packEditMode(),
+    records: packEditRecoveryRecords.slice(), sources: packEditRecoverySources.slice(), recoveryError: packEditRecoveryError,
+    controllerState: rollbackController ? studyEdits.clone(packEditController.state) : null };
+  try {
+    action();
+    packEditRenderBackup = null; packEditRenderError = false;
+    packEditorWrap.classList.remove('pack-edit-render-failed');
+    return true;
+  } catch (_) {
+    selectedPack = previous.pack; packEditController = previous.controller;
+    if (rollbackController) {
+      // restore() mutates the controller's closure-owned state. Keep its
+      // identity while rolling back the candidate recovery in full.
+      Object.keys(packEditController.state).forEach(function (key) {
+        if (!Object.prototype.hasOwnProperty.call(previous.controllerState, key)) delete packEditController.state[key];
+      });
+      Object.assign(packEditController.state, previous.controllerState);
+    }
+    inlineAutosaveBaseline = previous.controller.state.baseline;
+    packEditRecoveryRecords = previous.records; packEditRecoverySources = previous.sources;
+    packEditRecoveryError = previous.recoveryError;
+    if (!rollbackController) packEditController.state.blocked = true;
+    packEditRenderError = rollbackController ? 'The draft could not be displayed. Try recovering it again.' : true;
+    // Keep a memory copy even when device storage and rendering both fail.
+    packEditRenderBackup = previous;
+    try {
+      applyPackEditSnapshot(previous.snapshot, previous.mode);
+      packEditRenderBackup = null;
+    } catch (_) {
+      if (builderOverlay.classList.contains('visible')) closeModal(builderOverlay);
+      packEditorWrap.classList.add('pack-edit-render-failed');
+    }
+    // A failed recovery has not adopted any draft. Keep the original record
+    // untouched, including when local storage cannot accept another write.
+    if (!rollbackController) packEditController.persist(previous.snapshot, previous.mode);
+    updatePackEditStatus();
+    return false;
+  }
+}
+function recoverPackEditDraft(id) {
+  var controller = packEditController;
+  if (!isCurrentPackEdit(controller) || inlineAutoSaving || buildInlineAutosavePayload() || hasBlockedPackEdits()) {
+    showToast(editText('Save or review your current changes before recovering another draft.'), 'error'); return;
+  }
+  var record = packEditRecoveryRecords.find(function (item) { return item.id === id; });
+  if (!record) return;
+  var discovered = studyCache.listPending(controller.state.uid, 'pack-edit', { packId: controller.state.packId });
+  var current = discovered.records.find(function (item) { return item.id === id; });
+  if (!discovered.ok || !current || inlineAutosaveValueChanged(current.payload, record.payload)) {
+    discoverPackEditDrafts(); return;
+  }
+  var recovered = false;
+  if (!adoptReviewedPack(function () {
+    var snapshot = controller.restore(record.payload, record.id);
+    if (!snapshot) return;
+    packEditRecoverySources.push(id);
+    packEditRecoveryRecords = packEditRecoveryRecords.filter(function (item) { return item.id !== id; });
+    applyPackEditSnapshot(snapshot, record.payload.editor_mode);
+    recovered = true;
+  }, { rollbackController: true }) || !recovered) return;
+  persistCurrentPackDraft(); updatePackEditStatus();
+}
+function discardPackEditDrafts(recordId, options) {
+  var controller = packEditController;
+  if (!isCurrentPackEdit(controller) || inlineAutoSaving) return Promise.resolve(false);
+  var opts = options || {}, mode = packEditMode(), generation = controller.state.generation;
+  persistCurrentPackDraft();
+  if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
+  clearBuilderAutoSaveTimer();
+  controller.state.discarding = true;
+  var cancelled = false;
+  var ids = recordId ? [recordId] : controller.pendingIds().concat(packEditRecoverySources);
+  return openConfirmModal(opts.title || editText('Discard local changes?'),
+    opts.message || editText('Your local changes will be removed after the saved pack has loaded.'),
+    opts.label || editText('Discard local changes')).then(function (confirmed) {
+    cancelled = !confirmed;
+    if (!confirmed || !isCurrentPackEdit(controller) || generation !== controller.state.generation || inlineAutoSaving || controller.state.request) return false;
+    return apiCall('/api/study-packs/' + encodeURIComponent(controller.state.packId)).then(function (data) {
+      if (!isCurrentPackEdit(controller) || generation !== controller.state.generation || inlineAutoSaving || controller.state.request) return false;
+      if (!recordId) {
+        if (!adoptReviewedPack(function () {
+          renderLoadedPack(data, selectedPack.notes_highlights);
+          if (mode === 'builder') openBuilderOverlayReady('edit', selectedPack);
+        })) return false;
+      }
+      var failed = removePackEditSnapshots(controller.state.uid, ids);
+      discoverPackEditDrafts(); packEditRecoveryError = packEditRecoveryError || !!failed.length;
+      updatePackEditStatus();
+      return !failed.length;
+    }).catch(function () {
+      if (isCurrentPackEdit(controller)) showToast('Could not reload this study pack. Your changes are still here.', 'error');
+      return false;
+    });
+  }).finally(function () {
+    controller.state.discarding = false;
+    if (cancelled && isCurrentPackEdit(controller) && buildInlineAutosavePayload()) {
+      if (mode === 'builder') scheduleBuilderAutoSave();
+      else queueInlineAutosave();
+    }
+  });
+}
+function closePackEditReview() {
+  packEditReview = null;
+  closeModal(document.getElementById('pack-edit-review-overlay'));
+  var notice = document.getElementById(packEditMode() === 'builder' ? 'builder-edit-notice' : 'pack-edit-notice');
+  var review = notice && notice.querySelector('[data-edit-action="review"]');
+  if (review) review.focus();
+}
+function openPackEditReview() {
+  var controller = packEditController;
+  if (!isCurrentPackEdit(controller) || inlineAutoSaving) return Promise.resolve(false);
+  persistCurrentPackDraft();
+  if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
+  clearBuilderAutoSaveTimer();
+  var context = { controller: controller, generation: controller.state.generation, mode: packEditMode(),
+    draft: studyEdits.clone(currentPackEditSnapshot()), fields: Object.keys(controller.delta(currentPackEditSnapshot())), choices: {} };
+  packEditReview = context;
+  var overlay = document.getElementById('pack-edit-review-overlay'), message = document.getElementById('pack-edit-review-message');
+  var save = document.getElementById('pack-edit-review-save'), fields = document.getElementById('pack-edit-review-fields');
+  fields.replaceChildren(); save.disabled = true; message.textContent = editText('Loading the saved version…');
+  if (activeModalOverlay !== overlay) openModal(overlay, document.getElementById('pack-edit-review-close'));
+  return apiCall('/api/study-packs/' + encodeURIComponent(controller.state.packId)).then(function (data) {
+    if (packEditReview !== context || !isCurrentPackEdit(controller)) return false;
+    if (context.generation !== controller.state.generation) throw new Error('changed');
+    if (!studyEdits.validRevision(data.content_revision)) throw new Error('unavailable');
+    context.savedPack = data; context.saved = normalizeInlineAutosaveSnapshot(data);
+    message.textContent = editText('Compare both versions. Choose the sections to keep from your draft. A chosen section replaces the saved section.');
+    window.LectureProcessorStudyEditUI.review(fields, { fields: context.fields, saved: context.saved, draft: context.draft,
+      packId: controller.state.packId, folderName: getFolderNameById,
+      onChoose: function (field, chosen) { if (packEditReview === context) context.choices[field] = chosen; } });
+    save.disabled = false; return true;
+  }).catch(function () {
+    if (packEditReview === context && isCurrentPackEdit(controller)) message.textContent = editText('The saved version could not be loaded. Your draft is unchanged. Close this review and try again.');
+    return false;
+  });
+}
+function saveReviewedPackEdits() {
+  var context = packEditReview;
+  if (!context || !context.savedPack || !isCurrentPackEdit(context.controller) || inlineAutoSaving || context.controller.state.request) return;
+  if (context.generation !== context.controller.state.generation) { openPackEditReview(); return; }
+  var sources = context.controller.pendingIds().concat(packEditRecoverySources);
+  var chosen = studyEdits.clone(context.saved);
+  context.fields.forEach(function (field) { if (context.choices[field]) chosen[field] = studyEdits.clone(context.draft[field]); });
+  closePackEditReview();
+  if (!adoptReviewedPack(function () {
+    setInlineAutosaveBaseline(context.savedPack);
+    selectedPack = Object.assign({}, selectedPack, { content_revision: context.savedPack.content_revision });
+    packEditRecoverySources = sources;
+    applyPackEditSnapshot(chosen, context.mode);
+  })) return;
+  persistCurrentPackDraft(); discoverPackEditDrafts();
+  if (!buildInlineAutosavePayload()) { clearRecoveredPackDrafts(packEditController); updatePackEditStatus(); return; }
+  flushInlineAutosave();
+}
+function updatePackEditStatus() {
+  if (hasBlockedPackEdits()) setInlineAutosaveStatus('error', editText('Changes need review'));
+  else if (inlineAutosaveError) setInlineAutosaveStatus('error', 'Save failed');
+  else if (buildInlineAutosavePayload()) setInlineAutosaveStatus('pending', 'Auto-save pending');
+  else setInlineAutosaveStatus('saved', 'Saved');
+  if (builderMode === 'edit' && builderDraft) {
+    builderDirty = packEditPending();
+    updateBuilderDirtyIndicator();
+  }
+  renderPackEditNotice();
+}
 function runInlineAutosaveNow(options) {
-  var opts = options || {};
+  var opts = options || {}, controller = packEditController;
   if (!selectedPackId || !selectedPack || !token) return Promise.resolve(true);
-  var packId = String(selectedPack.study_pack_id || '');
-  if (!packId || packId !== selectedPackId) return Promise.resolve(true);
+  if (!isCurrentPackEdit(controller)) return Promise.resolve(false);
+  if (packEditReview && packEditReview.controller === controller) return Promise.resolve(false);
+  if (controller.state.discarding) return Promise.resolve(false);
   if (inlineAutoSaving) {
     inlineAutoSaveQueued = true;
-    setInlineAutosaveStatus('pending', 'Auto-save pending');
-    return inlineAutosavePromise.then(function (saved) {
-      return saved ? runInlineAutosaveNow(opts) : false;
-    });
+    return inlineAutosavePromise.then(function (saved) { return saved && isCurrentPackEdit(controller) ? runInlineAutosaveNow(opts) : false; });
   }
-  var savedPack = selectedPack;
-  var payload = buildInlineAutosavePayload();
-  if (!payload) {
-    if (opts.showNoChangesToast) {
-      showToast('No changes to save.', 'success');
-    }
-    setInlineAutosaveStatus('saved', 'Saved');
-    return Promise.resolve(true);
+  if (opts.showNoChangesToast && hasBlockedPackEdits()) {
+    openPackEditReview();
+    return Promise.resolve(false);
   }
-  inlineAutoSaving = true;
-  inlineAutosaveError = null;
+  var snapshot = currentPackEditSnapshot(), mode = packEditMode();
+  var request = controller.prepare(snapshot, mode);
+  if (!request) {
+    updatePackEditStatus();
+    return Promise.resolve(!packEditPending());
+  }
+  // A large lifecycle payload remains a durable draft; a normal fetch is not
+  // an unload-safe substitute for the shared keepalive budget.
+  if (opts.keepalive && studyKeepaliveBytesInFlight + new Blob([JSON.stringify(request.payload)]).size > 60000) {
+    controller.reject(request, {});
+    updatePackEditStatus();
+    return Promise.resolve(false);
+  }
+  var packId = controller.state.packId, savedPack = selectedPack;
+  inlineAutoSaving = true; inlineAutosaveError = null;
   setInlineAutosaveStatus('saving', 'Saving...');
-  inlineAutosavePromise = patchStudyPack(packId, payload, opts).then(function () {
-    var hasPendingInlineChanges = inlineAutoSaveQueued || !!inlineAutoSaveTimer;
-    if (selectedPack === savedPack && selectedPackId === packId) {
-      if (!hasPendingInlineChanges) {
-        if (Object.prototype.hasOwnProperty.call(payload, 'title')) selectedPack.title = payload.title;
-        if (Object.prototype.hasOwnProperty.call(payload, 'folder_id')) {
-          selectedPack.folder_id = payload.folder_id;
-          selectedPack.folder_name = getFolderNameById(payload.folder_id || '');
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, 'course')) selectedPack.course = payload.course;
-        if (Object.prototype.hasOwnProperty.call(payload, 'subject')) selectedPack.subject = payload.subject;
-        if (Object.prototype.hasOwnProperty.call(payload, 'semester')) selectedPack.semester = payload.semester;
-        if (Object.prototype.hasOwnProperty.call(payload, 'block')) selectedPack.block = payload.block;
-        if (Object.prototype.hasOwnProperty.call(payload, 'notes_markdown')) selectedPack.notes_markdown = payload.notes_markdown;
-        if (Object.prototype.hasOwnProperty.call(payload, 'flashcards')) {
-          payload.flashcards.forEach(function (card, index) { Object.assign(selectedPack.flashcards[index], card); });
-        }
-        if (Object.prototype.hasOwnProperty.call(payload, 'test_questions')) selectedPack.test_questions = payload.test_questions;
-      }
-      selectedPack.updated_at = Date.now() / 1000;
-      updatePackSummary();
-      mergeInlineAutosaveBaseline(payload);
+  inlineAutosavePromise = patchStudyPack(packId, request.payload, opts).then(function (response) {
+    if (!isCurrentPackEdit(controller)) return false;
+    if (!controller.acknowledge(request, response)) {
+      inlineAutosaveError = { pack: savedPack, error: { status: 409, message: editText('Reload this pack to verify your saved changes.') } };
+      controller.persist(currentPackEditSnapshot(), mode);
+      return false;
     }
+    var latest = currentPackEditSnapshot();
+    studyEdits.fields.forEach(function (field) {
+      if ((mode === 'builder' || !['flashcards', 'test_questions', 'notes_markdown'].includes(field)) &&
+        Object.prototype.hasOwnProperty.call(request.payload, field) &&
+        !inlineAutosaveValueChanged(latest[field], request.snapshot[field])) selectedPack[field] = cloneInlineAutosaveValue(request.payload[field]);
+    });
+    if (studyEdits.hasContent(request.payload)) selectedPack.content_revision = controller.state.revision;
+    selectedPack.updated_at = Date.now() / 1000;
+    inlineAutosaveBaseline = controller.state.baseline;
     packs = (packs || []).map(function (pack) {
       if (String(pack.study_pack_id || '') !== packId) return pack;
-      var packUpdate = {};
-      ['title', 'course', 'subject', 'semester', 'block'].forEach(function (field) {
-        if (Object.prototype.hasOwnProperty.call(payload, field)) {
-          packUpdate[field] = payload[field];
-        }
+      var update = {};
+      ['title', 'course', 'subject', 'semester', 'block', 'folder_id'].forEach(function (field) {
+        if (Object.prototype.hasOwnProperty.call(request.payload, field)) update[field] = request.payload[field];
       });
-      if (Object.prototype.hasOwnProperty.call(payload, 'folder_id')) {
-        packUpdate.folder_id = payload.folder_id;
-        packUpdate.folder_name = getFolderNameById(payload.folder_id || '');
-      }
-      if (Object.prototype.hasOwnProperty.call(payload, 'flashcards')) {
-        packUpdate.flashcards_count = payload.flashcards.length;
-      }
-      if (Object.prototype.hasOwnProperty.call(payload, 'test_questions')) {
-        packUpdate.test_questions_count = payload.test_questions.length;
-      }
-      return Object.assign({}, pack, packUpdate);
+      if (Object.prototype.hasOwnProperty.call(update, 'folder_id')) update.folder_name = getFolderNameById(update.folder_id);
+      if (request.payload.flashcards) update.flashcards_count = request.payload.flashcards.length;
+      if (request.payload.test_questions) update.test_questions_count = request.payload.test_questions.length;
+      return Object.assign({}, pack, update);
     });
-    renderPacks();
-    if (selectedPack === savedPack && selectedPackId === packId) {
-      var pending = !!buildInlineAutosavePayload();
-      setInlineAutosaveStatus(pending ? 'pending' : 'saved', pending ? 'Auto-save pending' : 'Saved');
-      if (!opts.keepalive) showToast('Saved successfully.', 'success');
-    }
-    return true;
-  }).catch(function (e) {
-    if (selectedPack === savedPack && selectedPackId === packId) {
-      inlineAutosaveError = { pack: savedPack, error: e };
-      setInlineAutosaveStatus('error', 'Save failed');
-      showToast(e.message || 'Could not save study pack.', 'error');
-    }
+    controller.persist(latest, mode);
+    if (!Object.keys(controller.delta(latest)).length && !controller.state.conflict && !controller.state.blocked) clearRecoveredPackDrafts(controller);
+    updatePackSummary(); renderPacks();
+    if (!opts.keepalive && !packEditPending()) showToast('Saved successfully.', 'success');
+    return !hasBlockedPackEdits();
+  }).catch(function (error) {
+    if (!isCurrentPackEdit(controller)) return false;
+    controller.reject(request, error);
+    inlineAutosaveError = { pack: savedPack, error: error };
+    controller.persist(currentPackEditSnapshot(), mode);
+    setInlineAutosaveStatus('error', 'Save failed');
+    if (!opts.keepalive && !controller.state.conflict) showToast(error.message || 'Could not save study pack.', 'error');
     return false;
   }).finally(function () {
-    inlineAutoSaving = false;
-    inlineAutosavePromise = null;
-    inlineAutoSaveQueued = false;
+    if (!isCurrentPackEdit(controller)) return;
+    inlineAutoSaving = false; inlineAutosavePromise = null; inlineAutoSaveQueued = false;
+    updatePackEditStatus();
   });
   return inlineAutosavePromise;
 }
@@ -7373,42 +7650,20 @@ function offerDiscardUnsavedChanges() {
   var status = Number(failure && failure.error && failure.error.status);
   if (!failure || failure.pack !== selectedPack || !Number.isFinite(status) || status < 400 || status >= 500 || [401, 408, 429].indexOf(status) >= 0) return Promise.resolve(false);
   if (inlineDiscardPromise) return inlineDiscardPromise;
-  var pack = failure.pack;
-  inlineDiscardPromise = openConfirmModal('Unable to save changes',
-    'This change could not be saved: ' + (failure.error.message || 'The request was rejected.') + ' Discard it and continue?',
-    'Discard and continue').then(function (discard) {
-    if (!discard || selectedPack !== pack) return false;
-    if (inlineAutoSaveTimer) { clearTimeout(inlineAutoSaveTimer); inlineAutoSaveTimer = null; }
-    inlineAutoSaveQueued = false;
-    var seq = openPackSeq;
-    var rendering = false;
-    packEditorWrap.inert = true;
-    return apiCall('/api/study-packs/' + encodeURIComponent(pack.study_pack_id)).then(function (data) {
-      if (seq !== openPackSeq || selectedPack !== pack) return false;
-      rendering = true;
-      renderLoadedPack(data, pack.notes_highlights);
-      renderPacks();
-      setInlineAutosaveStatus('saved', 'Changes discarded');
-      return true;
-    }).catch(function () {
-      if (seq !== openPackSeq) return false;
-      if (rendering) clearFailedPackEditor();
-      else showToast('Could not reload this study pack. Your changes are still here.', 'error');
-      return false;
-    }).finally(function () {
-      if (seq === openPackSeq) packEditorWrap.inert = false;
-    });
-  }).finally(function () { inlineDiscardPromise = null; });
+  inlineDiscardPromise = discardPackEditDrafts(null, { title: 'Unable to save changes',
+    message: 'This change could not be saved: ' + (failure.error.message || 'The request was rejected.') + ' Discard it and continue?',
+    label: 'Discard and continue' }).finally(function () { inlineDiscardPromise = null; });
   return inlineDiscardPromise;
 }
 
 function queueInlineAutosave() {
   if (!selectedPackId || !selectedPack || !token) return;
+  queuePackEditDraft();
   if (inlineAutoSaveTimer) {
     clearTimeout(inlineAutoSaveTimer);
     inlineAutoSaveTimer = null;
   }
-  setInlineAutosaveStatus('pending', 'Auto-save pending');
+  updatePackEditStatus();
   inlineAutoSaveTimer = setTimeout(function () {
     inlineAutoSaveTimer = null;
     runInlineAutosaveNow();
@@ -7783,7 +8038,7 @@ builderExitOverlay.addEventListener('click', function (event) {
 });
 window.addEventListener('beforeunload', function (event) {
   if ((builderDirty && builderOverlay.classList.contains('visible')) || inlineAutoSaving || inlineAutoSaveTimer ||
-      (selectedPack && selectedPack.study_pack_id === selectedPackId && buildInlineAutosavePayload()) ||
+      (selectedPack && selectedPack.study_pack_id === selectedPackId && packEditPending()) || packEditRecoveryRecords.length ||
       pendingHighlightSaves.size || highlightSavesInFlight.size || hasPermanentlyRejectedHighlights()) {
     event.preventDefault();
     event.returnValue = '';
@@ -9605,13 +9860,14 @@ learnStage.addEventListener('click',scheduleLearningCheckpoint);
 learnStage.addEventListener('input',saveLearningCheckpoint);
 learnStage.addEventListener('scroll',scheduleLearningCheckpoint,true);
 function flushPendingStudyEdits() {
+  persistCurrentPackDraft();
   flushInlineAutosave({ keepalive: true });
   flushHighlightSync({ keepalive: true });
   saveLearningCheckpoint();
 }
 function hasPendingStudyPersistence() {
   if (!auth.currentUser) return false;
-  return !!(learnModeStarting || inlineAutoSaving || buildInlineAutosavePayload() ||
+  return !!(learnModeStarting || inlineAutoSaving || packEditPending() || (builderDirty && builderOverlay.classList.contains('visible')) ||
     pendingHighlightSaves.size || highlightSavesInFlight.size || hasPermanentlyRejectedHighlights() || hasProgressDirty() ||
     plannerActivitySyncPromise ||
     (progressSyncController && progressSyncController.isInFlight()) ||
@@ -9659,5 +9915,8 @@ async function flushStudyPersistence() {
   } catch (_) { return false; }
 }
 window.LectureProcessorStudyPersistence = { flushPending: flushStudyPersistence, hasPending: hasPendingStudyPersistence };
+document.getElementById('pack-edit-review-close').addEventListener('click', closePackEditReview);
+document.getElementById('pack-edit-review-cancel').addEventListener('click', closePackEditReview);
+document.getElementById('pack-edit-review-save').addEventListener('click', saveReviewedPackEdits);
 window.addEventListener('pagehide', flushPendingStudyEdits);
 document.addEventListener('visibilitychange',function () { if (document.hidden) { flushPendingStudyEdits(); stopMatchTimer(); } else if (activeLearnMode === 'match' && learnStage.classList.contains('visible') && matchMatched < matchTotal && !matchRunning && (!plannedSessionController || plannedSessionController.getRun().run_status === 'active')) startMatchTimer(matchElapsed); });

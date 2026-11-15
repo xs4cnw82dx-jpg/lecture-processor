@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { readFileSync } = require('node:fs');
+const { contentRevision, withContentRevision } = require('./helpers/study-revision-fixture');
 
 const NOTES = '# Synthetic notes\n\nA steady heartbeat supports healthy circulation.';
 const HIGHLIGHT_TEXT = 'A steady heartbeat supports healthy circulation.';
@@ -47,8 +48,8 @@ async function installStudy(page, options = {}) {
         const patch = request.postDataJSON();
         state.patches.push(patch);
         Object.assign(state.pack, structuredClone(patch));
-        payload = { ok: true, study_pack_id: 'synthetic' };
-      } else payload = structuredClone(state.pack);
+        payload = { ok: true, study_pack_id: 'synthetic', content_revision: contentRevision(state.pack) };
+      } else payload = withContentRevision(structuredClone(state.pack));
     } else if (path.includes('study-progress')) {
       if (request.method() === 'PUT') state.progress.push(request.postDataJSON());
       payload = { card_states: {}, daily_progress: {} };

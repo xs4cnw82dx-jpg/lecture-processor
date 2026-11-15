@@ -18,6 +18,22 @@
   </div>
 </div>
 
+<!-- Review local edits against the saved pack without replacing either draft. -->
+<div class="modal-overlay pack-edit-review" id="pack-edit-review-overlay" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pack-edit-review-title">
+    <div class="modal-head">
+      <h2 class="modal-title" id="pack-edit-review-title">Review changes</h2>
+      <button class="btn" id="pack-edit-review-close" type="button" aria-label="Close review">×</button>
+    </div>
+    <p id="pack-edit-review-message" class="modal-message" role="status"></p>
+    <div id="pack-edit-review-fields"></div>
+    <div class="actions pack-edit-review-actions">
+      <button class="btn" id="pack-edit-review-cancel" type="button">Keep editing my draft</button>
+      <button class="btn primary" id="pack-edit-review-save" type="button">Save reviewed changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- Folder Modal -->
 <div class="modal-overlay" id="folder-modal-overlay" aria-hidden="true">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title">

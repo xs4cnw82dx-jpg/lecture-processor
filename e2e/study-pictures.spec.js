@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { contentRevision, withContentRevision } = require('./helpers/study-revision-fixture');
 
 const imageId = 'a'.repeat(64);
 const secondId = 'b'.repeat(64);
@@ -28,8 +29,8 @@ async function library(page, enabled = true) {
       expect(request.headers().authorization).toBe('Bearer test-token');
       return route.fulfill({ contentType: 'image/png', body: png });
     } else if (path === '/api/study-packs/anatomy-pack') {
-      if (request.method() === 'PATCH') { const data = request.postDataJSON(); saves.push(data); Object.assign(pack, data); body = { ok: true }; }
-      else body = pack;
+      if (request.method() === 'PATCH') { const data = request.postDataJSON(); saves.push(data); Object.assign(pack, data); body = { ok: true, content_revision: contentRevision(pack) }; }
+      else body = withContentRevision(pack);
     } else if (path === '/api/study-packs') body = { study_packs: [pack], has_more: false };
     else if (path === '/api/study-folders') body = { folders: [] };
     else if (path === '/api/auth/user') body = { uid: 'owner', email: 'student@example.com', email_verified: true, onboarding_completed: true, allowed: true };

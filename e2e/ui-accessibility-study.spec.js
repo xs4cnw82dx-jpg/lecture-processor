@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { readFileSync } = require('node:fs');
+const { withContentRevision } = require('./helpers/study-revision-fixture');
 
 async function installStudy(page) {
   const state = { creates: [], errors: [] };
@@ -41,7 +42,7 @@ async function installStudy(page) {
       payload = { study_packs: [pack], has_more: false };
     } else if (path === '/api/study-packs/accessible') {
       if (request.method() === 'PATCH') Object.assign(pack, request.postDataJSON());
-      payload = pack;
+      payload = withContentRevision(pack);
     } else if (path.includes('study-progress')) payload = { card_states: {}, daily_progress: {} };
     await route.fulfill({ json: payload });
   });
@@ -75,6 +76,13 @@ for (const fallback of [false, true]) {
     if (fallback) await page.evaluate(() => { window.LectureProcessorUx.openModalOverlay = undefined; });
     await page.locator('#create-pack-btn').click();
     await expect(page.locator('#builder-title-input')).toBeFocused();
+    const status = page.locator('#builder-stat-dirty');
+    await expect(status).toHaveText('Not saved yet');
+    await expect(status).toHaveClass(/pending/);
+    await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
+    await expect(status).toHaveText('Nog niet opgeslagen');
+    await page.evaluate(() => window.LectureI18n.setLanguage('en'));
+    await expect(status).toHaveText('Not saved yet');
     await page.keyboard.press('Enter');
     expect(state.creates).toEqual([]);
     expect(state.errors).toEqual([]);

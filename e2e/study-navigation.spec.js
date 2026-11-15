@@ -1,9 +1,6 @@
 const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
-const { readFileSync } = require('node:fs');
-test.beforeEach(async ({ page }) => {
-  await page.route('**/static/js/study.min.js*', route => route.fulfill({ contentType: 'application/javascript', body: readFileSync('static/js/study.js', 'utf8') }));
-});
+const { withContentRevision } = require('./helpers/study-revision-fixture');
 
 async function installLibrary(page, options = {}) {
   const firebaseStub = `(function () {
@@ -30,7 +27,7 @@ async function installLibrary(page, options = {}) {
       const pack = packs.find(item => item.study_pack_id === path.split('/').pop());
       if (pack) {
         if (request.method() === 'PATCH') Object.assign(pack, request.postDataJSON());
-        body = pack;
+        body = withContentRevision(pack);
       }
     }
     else if (path === '/api/auth/user') body = { uid: 'owner', email_verified: true, onboarding_completed: true, allowed: true };

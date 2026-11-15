@@ -6220,3 +6220,38 @@
 .builder-info-icon { width:20px; height:20px; flex:none; vertical-align:middle; margin-right:8px; }
 .builder-ai-import-instructions ol { padding-left:22px; }
 .builder-ai-import-instructions li + li { margin-top:5px; }
+/* Pack draft recovery stays beside the editor and inside its review dialog. */
+.pack-edit-notice { margin: 0 0 20px; padding: 18px 20px; border: 1px solid var(--theme-accent-line, #c9d6ee); border-radius: 14px; background: var(--theme-surface-soft, #f6f8fc); color: var(--theme-ink, #17233c); }
+.pack-edit-notice[hidden] { display: none; }
+.pack-edit-render-failed > :not(.pack-edit-notice) { display: none !important; }
+.pack-edit-notice p { margin: 0 0 10px; font-size: 14px; line-height: 1.6; }
+.pack-edit-notice p:first-child { font-weight: 600; }
+.pack-edit-notice p:last-child { margin-bottom: 0; }
+.pack-edit-notice .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.builder-rail .pack-edit-notice { min-width: 0; }
+.builder-rail .pack-edit-notice .actions .btn { width: 100%; white-space: normal; }
+.pack-edit-draft-select { display: block; width: 100%; max-width: 520px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--control-border, #aab6c9); border-radius: 8px; color: inherit; background: var(--theme-surface, #fff); font: inherit; }
+.pack-edit-review.modal-overlay { z-index: 14500; }
+.pack-edit-review .modal { display: flex; flex-direction: column; width: min(960px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: hidden; }
+.pack-edit-review .modal-head, .pack-edit-review .modal-message { flex-shrink: 0; }
+#pack-edit-review-fields { min-height: 0; overflow-y: auto; }
+.pack-edit-review-field { margin: 20px 0 26px; }
+.pack-edit-review-field h3 { margin: 0 0 12px; font-size: 18px; }
+.pack-edit-review-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pack-edit-review-version { min-width: 0; border: 1px solid var(--theme-line, #dfe5ef); border-radius: 10px; overflow: hidden; }
+.pack-edit-review-version h4 { margin: 0; padding: 12px 16px; font-size: 14px; background: var(--theme-surface-soft, #f6f8fc); }
+.pack-edit-preview { max-height: 280px; overflow: auto; padding: 16px; overflow-wrap: anywhere; }
+.pack-edit-preview pre { margin: 0; font: inherit; white-space: pre-wrap; line-height: 1.65; }
+.pack-edit-preview p { margin: 8px 0; line-height: 1.6; }
+.pack-edit-preview-item + .pack-edit-preview-item { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--theme-line, #dfe5ef); }
+.pack-edit-review-choice { display: flex; gap: 10px; align-items: center; min-height: 44px; margin-bottom: 12px; cursor: pointer; font-weight: 600; }
+.pack-edit-review-choice input { width: 20px; height: 20px; flex: 0 0 auto; }
+.pack-edit-review-choice input:not(:checked) { border-color: var(--theme-muted-strong, var(--theme-muted, #65718a)); }
+.pack-edit-review-actions { flex-shrink: 0; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 16px 0 0; background: var(--theme-surface, #fff); }
+@media (max-width: 600px) {
+  .pack-edit-notice { padding: 16px; }
+  .library-pack-detail #pack-save-status.error { grid-column: 1 / -1; justify-self: start; margin-left: 0; white-space: normal; }
+  .pack-edit-notice .actions .btn, .pack-edit-review-actions .btn { width: 100%; white-space: normal; }
+  .pack-edit-review-columns { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .pack-edit-review .modal { padding: 20px 16px; max-height: calc(100dvh - 24px); }
+}
