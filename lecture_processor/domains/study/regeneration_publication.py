@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.runtime_jobs import store
-from lecture_processor.domains.study import content_revision
+from lecture_processor.domains.study import content_revision, picture_refs
 
 
 @dataclass(frozen=True)
@@ -157,13 +157,32 @@ def publish(job_id, pack_id, uid, expected_fingerprint, fallback_text, pack_upda
                     or current.get('credit_admission_state') != 'running'
                     or journal.get('refund_started') or journal.get('refunded_credits')):
                 raise PublicationRejected('Regeneration charge is no longer available')
-        transaction.update(pack_ref, pack_updates)
+        updates = dict(pack_updates)
+        if 'flashcards' in updates:
+            next_ids = picture_refs._card_image_ids(updates['flashcards'])
+            pending = (set(current_pack.get(picture_refs.PENDING_PICTURES, []))
+                       | picture_refs._card_image_ids(current_pack.get('flashcards'))) - next_ids
+            updates[picture_refs.PENDING_PICTURES] = sorted(pending)
+        transaction.update(pack_ref, updates)
         job = _write_job(transaction, job_ref, job_id, current, {
             **completion_fields, 'status': 'complete', 'study_pack_id': pack_id,
         }, runtime)
         return Outcome('complete', job)
 
     return commit(runtime.db.transaction())
+
+
+def cleanup_pictures(pack_id, uid, *, runtime):
+    """Retry durable picture removals only after canonical job completion."""
+    try:
+        current_pack = _read(runtime.study_repo.study_pack_doc_ref(runtime.db, pack_id))
+        if not current_pack or current_pack.get('uid') != uid:
+            return
+        pending = current_pack.get(picture_refs.PENDING_PICTURES)
+        if pending:
+            runtime.delete_study_pack_pictures(uid, pack_id, image_ids=pending)
+    except Exception:
+        runtime.logger.warning('Picture cleanup remains pending after regenerating study pack %s', pack_id, exc_info=True)
 
 
 def resolve_failure(job_id, pack_id, uid, failure_fields, *, runtime):

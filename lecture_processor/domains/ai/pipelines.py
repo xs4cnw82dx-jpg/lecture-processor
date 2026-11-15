@@ -1139,6 +1139,8 @@ def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
         outcome = regeneration_publication.settle(job_id, pack_id, uid, outcome, runtime=resolved_runtime)
     finally:
         if outcome is not None:
+            if outcome.state == 'complete':
+                regeneration_publication.cleanup_pictures(pack_id, uid, runtime=resolved_runtime)
             regeneration_publication.cache(job_id, outcome, runtime=resolved_runtime)
             final_job = outcome.job
             if (started or resumed) and final_job and final_job.get('status') in {'complete', 'error'}:
