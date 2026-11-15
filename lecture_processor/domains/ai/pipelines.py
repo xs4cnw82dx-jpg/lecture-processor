@@ -7,6 +7,7 @@ from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import audio as study_audio
+from lecture_processor.domains.study import content_revision, regeneration_publication
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.runtime.container import get_runtime
 
@@ -1012,30 +1013,44 @@ def process_voice_note(job_id, audio_path, runtime=None):
 
 def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=resolved_runtime, **fields)
     get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=resolved_runtime) or {}
     tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
     retry_tracker = {}
     failed_stage = 'initialization'
+    uid = ''
+    outcome = None
+    started = resumed = False
 
     try:
-        if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
+        uid = str(get_fields().get('user_id', '') or '').strip()
+        outcome = regeneration_publication.start(job_id, pack_id, uid, runtime=resolved_runtime)
+        if outcome.state == 'refund':
+            resumed = True
+            outcome = regeneration_publication.settle(job_id, pack_id, uid, outcome, runtime=resolved_runtime)
             return
-        set_fields(status='processing', step=1, step_description='Refreshing study tools...')
-        job_data = get_fields()
-        uid = str(job_data.get('user_id', '') or '').strip()
+        if outcome.state != 'running':
+            return
+        started = True
+        regeneration_publication.cache(job_id, outcome, runtime=resolved_runtime)
+        job_data = outcome.job
         pack_doc = resolved_runtime.study_repo.get_study_pack_doc(resolved_runtime.db, pack_id)
         if not getattr(pack_doc, 'exists', False):
             raise RuntimeError('Study pack not found.')
         pack = pack_doc.to_dict() or {}
         if str(pack.get('uid', '') or '').strip() != uid:
             raise RuntimeError('Study pack is not owned by this user.')
+        expected_fingerprint = content_revision.fingerprint(pack)
 
+        fallback_text = None
         source_text = str(pack.get('notes_markdown', '') or '').strip()
         if not source_text:
             source_doc = resolved_runtime.study_repo.get_study_pack_source_doc(resolved_runtime.db, pack_id)
             if getattr(source_doc, 'exists', False):
-                source_text = str((source_doc.to_dict() or {}).get('transcript', '') or '').strip()
+                source = source_doc.to_dict() or {}
+                if source.get('uid') != uid:
+                    raise RuntimeError('Study source is not owned by this user.')
+                source_text = str(source.get('transcript', '') or '').strip()
+                fallback_text = source_text
         if not source_text:
             raise ValueError('No notes or transcript available for study-tool generation.')
 
@@ -1099,33 +1114,38 @@ def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
         else:
             test_questions = pack.get('test_questions') or []
         updates['study_features'] = 'both' if flashcards and test_questions else ('flashcards' if flashcards else 'test')
-        pack_doc.reference.update(updates)
-        set_fields(
-            status='complete',
-            step=1,
-            step_description='Complete!',
-            flashcards=flashcards,
-            test_questions=test_questions,
-            study_generation_error=study_error,
-            study_pack_id=pack_id,
+        outcome = regeneration_publication.publish(
+            job_id, pack_id, uid, expected_fingerprint, fallback_text, updates, {
+                'step': 1, 'step_description': 'Complete!',
+                'flashcards': flashcards, 'test_questions': test_questions,
+                'study_generation_error': study_error,
+                'finished_at': resolved_runtime.time.time(),
+                'retry_attempts': sum((int(v or 0) for v in retry_tracker.values())),
+                **tokens.as_dict(),
+            }, runtime=resolved_runtime,
         )
     except Exception as error:
         resolved_runtime.logger.exception('Study-tool regeneration failed for job %s', job_id)
-        set_fields(
-            status='error',
-            error=resolved_runtime.PROCESSING_PUBLIC_ERROR_MESSAGE,
-            failed_stage=failed_stage,
-            retry_attempts=sum((int(v or 0) for v in retry_tracker.values())),
-            provider_error_code=ai_provider.classify_provider_error_code(error, runtime=resolved_runtime),
+        outcome = regeneration_publication.resolve_failure(
+            job_id, pack_id, uid, {
+                'error': resolved_runtime.PROCESSING_PUBLIC_ERROR_MESSAGE,
+                'failed_stage': failed_stage,
+                'retry_attempts': sum((int(v or 0) for v in retry_tracker.values())),
+                'provider_error_code': ai_provider.classify_provider_error_code(error, runtime=resolved_runtime),
+                'finished_at': resolved_runtime.time.time(),
+                **tokens.as_dict(),
+            }, runtime=resolved_runtime,
         )
-        failed_job = get_fields()
-        _refund_extra_slides(job_id, failed_job, failed_job.get('user_id'), 1, runtime=resolved_runtime)
+        outcome = regeneration_publication.settle(job_id, pack_id, uid, outcome, runtime=resolved_runtime)
     finally:
-        finished_at = resolved_runtime.time.time()
-        set_fields(
-            finished_at=finished_at,
-            retry_attempts=sum((int(v or 0) for v in retry_tracker.values())),
-            **tokens.as_dict(),
-        )
-        final_job = get_fields()
-        resolved_runtime.save_job_log(job_id, final_job, finished_at)
+        if outcome is not None:
+            regeneration_publication.cache(job_id, outcome, runtime=resolved_runtime)
+            final_job = outcome.job
+            if (started or resumed) and final_job and final_job.get('status') in {'complete', 'error'}:
+                try:
+                    resolved_runtime.save_job_log(
+                        job_id, final_job, final_job.get('finished_at') or resolved_runtime.time.time(),
+                        record_metrics=started,
+                    )
+                except Exception:
+                    resolved_runtime.logger.warning('Regeneration log unavailable for %s', job_id, exc_info=True)
