@@ -1,6 +1,7 @@
 """Runtime status and download handlers for upload-related APIs."""
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.domains.ai.providers.usage_view import public_stage_usage
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import recovery as runtime_job_recovery
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -75,7 +76,7 @@ def get_status(app_ctx, request, job_id):
         response['token_input_total'] = int(job.get('token_input_total', 0) or 0)
         response['token_output_total'] = int(job.get('token_output_total', 0) or 0)
         response['token_total'] = int(job.get('token_total', 0) or 0)
-        response['token_usage_by_stage'] = job.get('token_usage_by_stage', {})
+        response['token_usage_by_stage'] = public_stage_usage(job.get('token_usage_by_stage'))
         if job.get('mode') == 'lecture-notes':
             response['slide_text'] = job.get('slide_text')
             response['transcript'] = job.get('transcript')

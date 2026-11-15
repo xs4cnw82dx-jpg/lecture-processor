@@ -4,6 +4,7 @@ import math
 from urllib.parse import quote
 
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai.providers.usage_view import public_stage_usage
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import job_charges, ledger, policy
 from lecture_processor.domains.study import interview_coding
@@ -72,7 +73,7 @@ def _serialize_run_doc(doc):
         'credit_refunded': bool(payload.get('credit_refunded', False)),
         'warning': str(payload.get('warning', '') or ''),
         'credit_cost': int(payload.get('credit_cost', 0) or 0),
-        'token_usage_by_stage': payload.get('token_usage_by_stage', {}) if isinstance(payload.get('token_usage_by_stage', {}), dict) else {},
+        'token_usage_by_stage': public_stage_usage(payload.get('token_usage_by_stage')),
         'created_at': float(payload.get('created_at', 0) or 0),
         'updated_at': float(payload.get('updated_at', 0) or 0),
     }
