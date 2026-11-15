@@ -102,7 +102,7 @@ def test_cleanup_failure_preserves_completion_and_can_resume_without_regeneratio
     assert state.store.docs('book_usage')['storage']['bytes'] == 1260
     assert not state.store.docs('credit_refunds')
     monkeypatch.setattr(pictures.book_storage, 'request', images.request)
-    monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', lambda *_args, **_kwargs: pytest.fail('No second generation'))
+    monkeypatch.setattr(pipelines.study_generation.factory, 'open_provider_session', lambda *_args, **_kwargs: pytest.fail('No second generation'))
     pipelines.regenerate_study_tools_for_pack('regenerate', 'pack', runtime=state.runtime)
 
     assert canonical_job(state)['status'] == 'complete'
@@ -165,7 +165,7 @@ def test_interrupted_cleanup_retries_without_releasing_budget_early(background, 
     assert not state.store.docs('credit_refunds')
     state.store.documents[('study_images', REMOVED)]['upload_leases'] = {}
     monkeypatch.setattr(pictures.book_storage, 'request', images.request)
-    monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', lambda *_args, **_kwargs: pytest.fail('No second generation'))
+    monkeypatch.setattr(pipelines.study_generation.factory, 'open_provider_session', lambda *_args, **_kwargs: pytest.fail('No second generation'))
     pipelines.regenerate_study_tools_for_pack('regenerate', 'pack', runtime=state.runtime)
 
     assert set(state.store.docs('study_images')) == {KEPT}
@@ -205,7 +205,7 @@ def test_committed_publication_lost_ack_keeps_removal_retryable(background, monk
         assert pack(state)['picture_cleanup_pending_ids'] == [REMOVED, OLDER]
         assert state.store.docs('book_usage')['storage']['bytes'] == 1260
         state.store.fail_reads.clear()
-        monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', lambda *_args, **_kwargs: pytest.fail('No second generation'))
+        monkeypatch.setattr(pipelines.study_generation.factory, 'open_provider_session', lambda *_args, **_kwargs: pytest.fail('No second generation'))
         pipelines.regenerate_study_tools_for_pack('regenerate', 'pack', runtime=state.runtime)
     assert set(state.store.docs('study_images')) == {KEPT}
     assert state.store.docs('book_usage')['storage']['bytes'] == 1020

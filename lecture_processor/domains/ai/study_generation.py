@@ -2,22 +2,15 @@ import json
 import re
 
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai.providers import factory
+from lecture_processor.domains.ai.providers.contracts import TextPart
 from lecture_processor.runtime.container import get_runtime
-
-try:
-    from google.genai import types as genai_types
-except Exception:
-    genai_types = None
 
 
 def _resolve_runtime(runtime=None):
     if runtime is not None:
         return runtime
     return get_runtime()
-
-
-def _get_types_module(runtime):
-    return getattr(runtime, 'types', None) or genai_types
 
 
 def resolve_auto_amount(kind, source_text, runtime=None):
@@ -184,14 +177,6 @@ def sanitize_questions(items, max_items, runtime=None):
     return cleaned
 
 
-def _build_user_content(prompt, runtime=None):
-    resolved_runtime = _resolve_runtime(runtime)
-    types_module = _get_types_module(resolved_runtime)
-    if types_module and hasattr(types_module, 'Content') and hasattr(types_module, 'Part'):
-        return [types_module.Content(role='user', parts=[types_module.Part.from_text(text=prompt)])]
-    return [prompt]
-
-
 def generate_study_materials(
     source_text,
     flashcard_selection,
@@ -201,6 +186,9 @@ def generate_study_materials(
     retry_tracker=None,
     runtime=None,
     include_usage=False,
+    *,
+    provider_session=None,
+    stage='study_tools',
 ):
     resolved_runtime = _resolve_runtime(runtime)
     empty_usage = {
@@ -228,6 +216,7 @@ def generate_study_materials(
 
     max_source_text_len = 120000
     was_truncated = len(source_text) > max_source_text_len
+    session = provider_session
 
     try:
         prompt = resolved_runtime.PROMPT_STUDY_TEMPLATE.format(
@@ -236,28 +225,18 @@ def generate_study_materials(
             output_language=output_language,
             source_text=source_text[:max_source_text_len],
         )
-        response = ai_provider.generate_with_policy(
-            resolved_runtime.MODEL_STUDY,
-            _build_user_content(prompt, runtime=resolved_runtime),
+        if session is None:
+            session = factory.open_provider_session(resolved_runtime)
+        response = session.generate(
+            stage,
+            [TextPart(prompt)],
             max_output_tokens=32768,
             retry_tracker=retry_tracker,
             operation_name='study_materials_generation',
-            runtime=resolved_runtime,
         )
-        usage = ai_provider.extract_token_usage(response, runtime=resolved_runtime)
-        usage_payload = {
-            'token_usage_by_stage': {
-                'study_materials_generation': {
-                    **usage,
-                    'model': resolved_runtime.MODEL_STUDY,
-                    'billing_mode': 'standard',
-                    'input_modality': 'text',
-                }
-            },
-            'token_input_total': int(usage.get('input_tokens', 0) or 0),
-            'token_output_total': int(usage.get('output_tokens', 0) or 0),
-            'token_total': int(usage.get('total_tokens', 0) or 0),
-        }
+        tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
+        tokens.record_result('study_materials_generation', response)
+        usage_payload = tokens.as_dict()
         parsed = extract_json_payload(getattr(response, 'text', ''), runtime=resolved_runtime)
         if not isinstance(parsed, dict):
             if include_usage:
@@ -292,6 +271,9 @@ def generate_study_materials(
         if include_usage:
             return ([], [], error_message, empty_usage)
         return ([], [], error_message)
+    finally:
+        if provider_session is None and session is not None:
+            session.close()
 
 
 def generate_interview_enhancements(
@@ -301,6 +283,8 @@ def generate_interview_enhancements(
     retry_tracker=None,
     runtime=None,
     include_usage=False,
+    *,
+    provider_session=None,
 ):
     resolved_runtime = _resolve_runtime(runtime)
     summary_text = None
@@ -310,67 +294,56 @@ def generate_interview_enhancements(
     input_total = 0
     output_total = 0
     total_tokens = 0
+    session = provider_session
 
-    for feature in selected_features:
-        try:
-            if feature == 'summary':
-                prompt = resolved_runtime.PROMPT_INTERVIEW_SUMMARY.format(
+    try:
+        for feature in selected_features:
+            try:
+                if feature == 'summary':
+                    template = resolved_runtime.PROMPT_INTERVIEW_SUMMARY
+                    stage, operation, cap = 'interview_summary', 'interview_summary_generation', 8192
+                elif feature == 'sections':
+                    template = resolved_runtime.PROMPT_INTERVIEW_SECTIONED
+                    stage, operation, cap = 'interview_sections', 'interview_sections_generation', 32768
+                else:
+                    continue
+                prompt = template.format(
                     transcript=transcript_text[:120000],
                     output_language=output_language,
                 )
-                response = ai_provider.generate_with_optional_thinking(
-                    resolved_runtime.MODEL_STUDY,
-                    prompt,
-                    max_output_tokens=8192,
+                if session is None:
+                    session = factory.open_provider_session(resolved_runtime)
+                response = session.generate(
+                    stage,
+                    [TextPart(prompt)],
+                    max_output_tokens=cap,
                     retry_tracker=retry_tracker,
-                    operation_name='interview_summary_generation',
-                    runtime=resolved_runtime,
+                    operation_name=operation,
                 )
-                usage = ai_provider.extract_token_usage(response, runtime=resolved_runtime)
-                usage_by_stage['interview_summary_generation'] = {
-                    **usage,
-                    'model': resolved_runtime.MODEL_STUDY,
-                    'billing_mode': 'standard',
-                    'input_modality': 'text',
-                }
+                # Repeated features keep their last stage entry and count every result.
+                tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
+                usage = tokens.record_result(operation, response)
+                usage_by_stage[operation] = usage
                 input_total += int(usage.get('input_tokens', 0) or 0)
                 output_total += int(usage.get('output_tokens', 0) or 0)
                 total_tokens += int(usage.get('total_tokens', 0) or 0)
-                summary_text = (getattr(response, 'text', '') or '').strip()
-                if not summary_text:
-                    errors.append('Summary generation returned empty output.')
-            elif feature == 'sections':
-                prompt = resolved_runtime.PROMPT_INTERVIEW_SECTIONED.format(
-                    transcript=transcript_text[:120000],
-                    output_language=output_language,
-                )
-                response = ai_provider.generate_with_optional_thinking(
-                    resolved_runtime.MODEL_STUDY,
-                    prompt,
-                    max_output_tokens=32768,
-                    retry_tracker=retry_tracker,
-                    operation_name='interview_sections_generation',
-                    runtime=resolved_runtime,
-                )
-                usage = ai_provider.extract_token_usage(response, runtime=resolved_runtime)
-                usage_by_stage['interview_sections_generation'] = {
-                    **usage,
-                    'model': resolved_runtime.MODEL_STUDY,
-                    'billing_mode': 'standard',
-                    'input_modality': 'text',
-                }
-                input_total += int(usage.get('input_tokens', 0) or 0)
-                output_total += int(usage.get('output_tokens', 0) or 0)
-                total_tokens += int(usage.get('total_tokens', 0) or 0)
-                sectioned_text = (getattr(response, 'text', '') or '').strip()
-                if not sectioned_text:
-                    errors.append('Sectioned transcript generation returned empty output.')
-        except Exception:
-            resolved_runtime.logger.exception('Interview enhancement generation failed for feature %s', feature)
-            if feature == 'summary':
-                errors.append('Could not generate the interview summary. Please try again.')
-            else:
-                errors.append('Could not generate the structured transcript. Please try again.')
+                if feature == 'summary':
+                    summary_text = (getattr(response, 'text', '') or '').strip()
+                    if not summary_text:
+                        errors.append('Summary generation returned empty output.')
+                else:
+                    sectioned_text = (getattr(response, 'text', '') or '').strip()
+                    if not sectioned_text:
+                        errors.append('Sectioned transcript generation returned empty output.')
+            except Exception:
+                resolved_runtime.logger.exception('Interview enhancement generation failed for feature %s', feature)
+                if feature == 'summary':
+                    errors.append('Could not generate the interview summary. Please try again.')
+                else:
+                    errors.append('Could not generate the structured transcript. Please try again.')
+    finally:
+        if provider_session is None and session is not None:
+            session.close()
 
     successful = []
     if summary_text:

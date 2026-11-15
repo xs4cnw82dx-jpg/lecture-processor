@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from lecture_processor.domains.ai import pipelines
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.runtime_jobs.schema import PERSISTED_RUNTIME_JOB_FIELDS
 from lecture_processor.repositories import runtime_jobs_repo, study_repo
@@ -93,12 +94,10 @@ def regeneration(monkeypatch):
         def generate(*_args, **_kwargs):
             if isinstance(response, Exception):
                 raise response
-            return SimpleNamespace(
-                text=response,
-                usage_metadata=SimpleNamespace(prompt_token_count=12, candidates_token_count=8, total_token_count=20),
-            )
+            return GenerationResult(response, None, Usage(12, 8, 20), 'gemini', runtime.MODEL_STUDY)
 
-        monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', generate)
+        monkeypatch.setattr(pipelines.study_generation.factory, 'open_provider_session',
+                            lambda _runtime: SimpleNamespace(generate=generate, close=lambda: None))
         pipelines.regenerate_study_tools_for_pack('synthetic-job', 'synthetic-pack', runtime=runtime)
         state['pack'] = credit_store.docs('study_packs')['synthetic-pack']
         state['job'] = credit_store.docs('runtime_jobs')['synthetic-job']

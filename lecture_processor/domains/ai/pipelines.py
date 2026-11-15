@@ -1064,6 +1064,7 @@ def regenerate_study_tools_for_pack(job_id, pack_id, runtime=None):
             retry_tracker=retry_tracker,
             runtime=resolved_runtime,
             include_usage=True,
+            stage='regenerate_study_tools',
         )
         for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
             tokens.record_usage(

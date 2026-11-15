@@ -32,6 +32,8 @@ def block_network(monkeypatch):
 
 
 def session_for(runtime, monkeypatch, *, route=None, stage=STAGE, forced=False):
+    monkeypatch.setenv('APP_ENV', 'test')
+    monkeypatch.setenv('SENTRY_ENVIRONMENT', 'test')
     monkeypatch.setenv('LP_FORCE_FAKE_PROVIDER', '1' if forced else '0')
     return factory.ProviderSession(runtime, routes=RoutingSnapshot({stage: route or Route('gemini', MODEL)}))
 
