@@ -1814,6 +1814,13 @@ def persist_audio_for_study_pack(job_id, audio_source_path):
         logger.warning(f'⚠️ Could not persist audio for study pack {job_id}: {e}')
         return ''
 
+def delete_study_pack_pictures(uid, pack_id, *, image_ids):
+    from lecture_processor.services import study_picture_service
+
+    if image_ids is None:
+        raise ValueError('Picture ids are required for subset cleanup.')
+    return study_picture_service.delete_for_pack(sys.modules[__name__], uid, pack_id, image_ids=image_ids)
+
 def markdown_to_docx(markdown_text, title='Document'):
     from lecture_processor.domains.study import export as study_export
 

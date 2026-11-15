@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
-import re
 import threading
 import time
 import uuid
@@ -14,13 +13,12 @@ from flask import jsonify, send_file
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.books.model import BookError
 from lecture_processor.domains.study.content_revision import fingerprint
+from lecture_processor.domains.study.picture_refs import IMAGE_ID, PENDING_PICTURES, _card_image_ids
 from lecture_processor.repositories.books_repo import BookStore
 from lecture_processor.repositories import study_repo
 from lecture_processor.services import book_service, book_storage, study_api_support
 
 MAX_CARD_IMAGES = 8
-IMAGE_ID = re.compile(r'^[a-f0-9]{64}$')
-PENDING_PICTURES = 'picture_cleanup_pending_ids'
 UPLOAD_LEASE_SECONDS = 180
 UPLOAD_HEARTBEAT_SECONDS = 30
 _UPLOADS = {}
@@ -103,14 +101,6 @@ def sanitize_cards(runtime, uid, pack_id, items, *, validate_assets=True):
         if ids:
             card['image_ids'] = ids
     return cleaned
-
-
-def _card_image_ids(cards):
-    return {
-        aid for card in (cards if isinstance(cards, list) else []) if isinstance(card, dict)
-        for aid in (card.get('image_ids') if isinstance(card.get('image_ids'), list) else [])
-        if isinstance(aid, str) and IMAGE_ID.fullmatch(aid)
-    }
 
 
 def _require_writable_account(tx, uid):
