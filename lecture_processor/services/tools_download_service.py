@@ -34,15 +34,16 @@ def _artifact_path(app_ctx, job_id, path):
     return app_ctx.os.path.realpath(candidate)
 
 
-def _cleanup_job_files(app_ctx, job_id, keep_path=''):
+def _cleanup_job_files(app_ctx, job_id, keep_path='', *, filenames=None):
     root = app_ctx.os.path.realpath(app_ctx.UPLOAD_FOLDER)
     if not app_ctx.os.path.isdir(root):
         return
-    try:
-        filenames = app_ctx.os.listdir(root)
-    except OSError:
-        app_ctx.logger.warning('Could not inspect lecture download artifacts for %s', job_id, exc_info=True)
-        return
+    if filenames is None:
+        try:
+            filenames = app_ctx.os.listdir(root)
+        except OSError:
+            app_ctx.logger.warning('Could not inspect lecture download artifacts for %s', job_id, exc_info=True)
+            return
     for filename in filenames:
         if not filename.startswith(f'{job_id}_'):
             continue
@@ -77,47 +78,65 @@ def _download_metadata(job):
 def cleanup_expired_downloads(app_ctx):
     """Periodic cleanup also handles failed jobs recovered after a restart."""
     with app_ctx.JOBS_LOCK:
-        jobs = {job_id: dict(job) for job_id, job in app_ctx.jobs.items() if job.get('job_scope') == JOB_SCOPE}
+        jobs = {job_id: dict(job) for job_id, job in app_ctx.jobs.items()}
     now = app_ctx.time.time()
     # Completed jobs need not be loaded after a restart. Find only our old
     # artifacts, then check their durable job before cleaning; another process
     # may still own a live download during a deployment overlap.
     root = app_ctx.os.path.realpath(app_ctx.UPLOAD_FOLDER)
-    if app_ctx.os.path.isdir(root):
-        try:
-            filenames = app_ctx.os.listdir(root)
-        except OSError:
-            app_ctx.logger.warning('Could not inspect expired lecture downloads', exc_info=True)
-            filenames = []
-        for filename in filenames:
-            job_id, separator, _suffix = filename.partition('_tooldownload')
-            if not separator or job_id in jobs:
-                continue
+    if not app_ctx.os.path.isdir(root):
+        return
+    try:
+        filenames = app_ctx.os.listdir(root)
+    except OSError:
+        app_ctx.logger.warning('Could not inspect expired lecture downloads', exc_info=True)
+        return
+    files_by_job = {}
+    for filename in filenames:
+        job_id, separator, _suffix = filename.partition('_')
+        if separator:
+            files_by_job.setdefault(job_id, []).append(filename)
+
+    for job_id, job_files in files_by_job.items():
+        job = jobs.get(job_id)
+        if job is None:
             try:
                 if str(app_ctx.uuid.UUID(job_id)) != job_id:
                     continue
-                path = _artifact_path(app_ctx, job_id, app_ctx.os.path.join(root, filename))
-                if not path or app_ctx.os.path.getmtime(path) + DOWNLOAD_TTL_SECONDS > now:
+                expired_artifact = False
+                for filename in job_files:
+                    if not filename.startswith(f'{job_id}_tooldownload'):
+                        continue
+                    path = _artifact_path(app_ctx, job_id, app_ctx.os.path.join(root, filename))
+                    if not path:
+                        continue
+                    try:
+                        expired_artifact = app_ctx.os.path.getmtime(path) + DOWNLOAD_TTL_SECONDS <= now
+                    except FileNotFoundError:
+                        continue
+                    if expired_artifact:
+                        break
+                if not expired_artifact:
                     continue
-                job = None
                 if app_ctx.db is not None:
                     doc = app_ctx.repositories.runtime_jobs.get_doc(app_ctx.db, app_ctx.RUNTIME_JOBS_COLLECTION, job_id)
                     if doc.exists:
                         job = doc.to_dict() or {}
-                        if job.get('job_scope') != JOB_SCOPE:
-                            continue
-                jobs[job_id] = job or {'status': 'error'}
+                if job is None:
+                    job = {'job_scope': JOB_SCOPE, 'status': 'error'}
             except (ValueError, FileNotFoundError):
                 continue
             except Exception:
                 app_ctx.logger.warning('Could not inspect expired lecture download %s', job_id, exc_info=True)
-    for job_id, job in jobs.items():
+                continue
+        if job.get('job_scope') != JOB_SCOPE:
+            continue
         if job.get('status') in _ACTIVE_STATUSES:
             continue
         metadata = _download_metadata(job)
         if job.get('status') == 'complete' and float(metadata.get('expires_at', 0) or 0) > now:
             continue
-        _cleanup_job_files(app_ctx, job_id)
+        _cleanup_job_files(app_ctx, job_id, filenames=job_files)
 
 
 def _set_active_job_fields(app_ctx, job_id, **fields):
@@ -237,6 +256,8 @@ def download_lecture_media(app_ctx, request):
     allowed_account, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
     if not allowed_account:
         return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
+    if 'application/json' not in str(request.headers.get('Accept', '')).lower():
+        return app_ctx.jsonify({'error': 'Please refresh this page before starting a download.'}), 409
     allowed, retry_after = rate_limiter.check_rate_limit(
         key=f"lecture_download:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
         limit=app_ctx.VIDEO_IMPORT_RATE_LIMIT_MAX_REQUESTS,
@@ -254,8 +275,6 @@ def download_lecture_media(app_ctx, request):
     fetch_target, error_message = upload_import_audio.validate_video_import_fetch_target(payload.get('url', ''), runtime=app_ctx)
     if not fetch_target:
         return app_ctx.jsonify({'error': error_message}), 400
-    if 'application/json' not in str(request.headers.get('Accept', '')).lower():
-        return app_ctx.jsonify({'error': 'Please refresh this page before starting a download.'}), 409
     cleanup_expired_downloads(app_ctx)
     media_lease, busy_status = media_admission.try_acquire(uid)
     if media_lease is None:
