@@ -37,6 +37,24 @@ DIAGNOSTIC_REASONS = frozenset({
 })
 _MODEL = re.compile(r'gemini-[A-Za-z0-9][A-Za-z0-9._-]{0,119}\Z')
 _INVALID_CONFIG = 'Invalid AI routing configuration.'
+OPENROUTER_MAX_OUTPUT_TOKENS = 128000
+OPENROUTER_MODELS = MappingProxyType({
+    'anthropic/claude-haiku-5.5': frozenset({'none', 'low', 'medium', 'high', 'xhigh', 'max'}),
+    'anthropic/claude-sonnet-5.5': frozenset({'low', 'medium', 'high', 'xhigh', 'max'}),
+})
+
+
+def validate_openrouter_options(model, options):
+    """Return an immutable policy copy, or reject it with a content-free error."""
+    if (not isinstance(model, str) or model not in OPENROUTER_MODELS
+            or not isinstance(options, Mapping)
+            or set(options) != {'reasoning_effort', 'max_output_tokens'}):
+        raise ValueError(_INVALID_CONFIG)
+    effort, limit = options['reasoning_effort'], options['max_output_tokens']
+    if (not isinstance(effort, str) or effort not in OPENROUTER_MODELS[model]
+            or type(limit) is not int or not 0 < limit <= OPENROUTER_MAX_OUTPUT_TOKENS):
+        raise ValueError(_INVALID_CONFIG)
+    return MappingProxyType({'reasoning_effort': effort, 'max_output_tokens': limit})
 
 
 @dataclass(frozen=True)
@@ -46,10 +64,13 @@ class Route:
     options: Mapping = field(default_factory=dict)
 
     def __post_init__(self):
-        # Route options cannot override the model's native thinking policy.
-        if not isinstance(self.options, Mapping) or self.options:
+        if self.provider == 'openrouter':
+            options = validate_openrouter_options(self.model, self.options)
+        elif not isinstance(self.options, Mapping) or self.options:
             raise ValueError(_INVALID_CONFIG)
-        object.__setattr__(self, 'options', MappingProxyType({}))
+        else:
+            options = MappingProxyType({})
+        object.__setattr__(self, 'options', options)
 
 
 @dataclass(frozen=True)
@@ -107,17 +128,23 @@ def parse_routing(payload, defaults):
             reason = 'invalid_entry'
         elif stage in AUDIO_STAGES and entry.get('provider') != 'gemini':
             reason = 'audio_lock'
-        elif entry.get('provider') != 'gemini':
+        elif entry.get('provider') not in ('gemini', 'openrouter'):
             reason = 'unsupported_provider'
         elif set(entry) != {'provider', 'model', 'options'}:
             reason = 'invalid_entry'
-        elif not isinstance(entry['model'], str) or not _MODEL.fullmatch(entry['model']):
+        elif (not isinstance(entry['model'], str)
+              or (entry['provider'] == 'gemini' and not _MODEL.fullmatch(entry['model']))
+              or (entry['provider'] == 'openrouter' and entry['model'] not in OPENROUTER_MODELS)):
             reason = 'invalid_model'
-        elif not isinstance(entry['options'], dict) or entry['options']:
+        elif not isinstance(entry['options'], dict):
             reason = 'unsupported_options'
         else:
-            routes[stage] = Route('gemini', entry['model'])
-            continue
+            try:
+                routes[stage] = Route(entry['provider'], entry['model'], entry['options'])
+            except ValueError:
+                reason = 'unsupported_options'
+            else:
+                continue
         diagnostics.append(Diagnostic(stage, reason))
     return RoutingSnapshot(routes, diagnostics)
 

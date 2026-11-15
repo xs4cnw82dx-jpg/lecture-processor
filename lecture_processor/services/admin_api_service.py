@@ -12,6 +12,7 @@ except Exception:
 from lecture_processor.services import admin_dashboard_service
 from lecture_processor.services import admin_support
 from lecture_processor.domains.admin import metrics as admin_metrics
+from lecture_processor.domains.ai.providers.usage import combine_cost_sources
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import policy as billing_policy
@@ -562,36 +563,41 @@ def _build_cost_analysis_payload(app_ctx, normalized_filters):
             'cost_eur': round(job_cost_eur, 8),
             'missing_stage_usage': bool(cost_info.get('missing_stage_usage', False)),
         }
+        if 'cost_source' in cost_info:
+            job_row.update(cost_source=cost_info['cost_source'],
+                           estimated_cost_usd=round(cost_info['estimated_cost_usd'], 8))
         job_rows.append(job_row)
 
         for stage in cost_info.get('stages', []) or []:
-            stage_rows.append(
-                {
-                    'job_id': job_row['job_id'],
-                    'stage': str(stage.get('stage', '') or ''),
-                    'model': str(stage.get('model', '') or ''),
-                    'tier': str(stage.get('tier', '') or ''),
-                    'billing_mode': str(stage.get('billing_mode', '') or ''),
-                    'input_modality': str(stage.get('input_modality', '') or ''),
-                    'input_tokens': _to_non_negative_int(stage.get('input_tokens', 0)),
-                    'output_tokens': _to_non_negative_int(stage.get('output_tokens', 0)),
-                    'total_tokens': _to_non_negative_int(stage.get('total_tokens', 0)),
-                    'input_rate_per_million': float(stage.get('input_rate_per_million', 0.0) or 0.0),
-                    'output_rate_per_million': float(stage.get('output_rate_per_million', 0.0) or 0.0),
-                    'cost_input_usd': float(stage.get('cost_input_usd', 0.0) or 0.0),
-                    'cost_output_usd': float(stage.get('cost_output_usd', 0.0) or 0.0),
-                    'cost_usd': float(stage.get('cost_usd', 0.0) or 0.0),
-                    'cost_eur': float(stage.get('cost_usd', 0.0) or 0.0) * usd_to_eur,
-                    'matched_pricing': bool(stage.get('matched_pricing', False)),
-                }
-            )
+            stage_row = {
+                'job_id': job_row['job_id'],
+                'stage': str(stage.get('stage', '') or ''),
+                'model': str(stage.get('model', '') or ''),
+                'tier': str(stage.get('tier', '') or ''),
+                'billing_mode': str(stage.get('billing_mode', '') or ''),
+                'input_modality': str(stage.get('input_modality', '') or ''),
+                'input_tokens': _to_non_negative_int(stage.get('input_tokens', 0)),
+                'output_tokens': _to_non_negative_int(stage.get('output_tokens', 0)),
+                'total_tokens': _to_non_negative_int(stage.get('total_tokens', 0)),
+                'input_rate_per_million': float(stage.get('input_rate_per_million', 0.0) or 0.0),
+                'output_rate_per_million': float(stage.get('output_rate_per_million', 0.0) or 0.0),
+                'cost_input_usd': float(stage.get('cost_input_usd', 0.0) or 0.0),
+                'cost_output_usd': float(stage.get('cost_output_usd', 0.0) or 0.0),
+                'cost_usd': float(stage.get('cost_usd', 0.0) or 0.0),
+                'cost_eur': float(stage.get('cost_usd', 0.0) or 0.0) * usd_to_eur,
+                'matched_pricing': bool(stage.get('matched_pricing', False)),
+            }
+            if 'cost_source' in stage:
+                for key in ('provider', 'thinking_tokens', 'cost_source', 'estimated_cost_usd', 'cost_components_source'):
+                    stage_row[key] = stage[key]
+            stage_rows.append(stage_row)
 
         sum_input_tokens += job_input
         sum_output_tokens += job_output
         sum_total_tokens += job_total
         sum_cost_usd += job_cost_usd
 
-    return {
+    analysis = {
         'filters': {
             'period': window['period'],
             'window_start': window['start'],
@@ -617,6 +623,12 @@ def _build_cost_analysis_payload(app_ctx, normalized_filters):
         'jobs': job_rows,
         'stages': stage_rows,
     }
+    if any('cost_source' in row for row in job_rows):
+        analysis['summary'].update(
+            cost_source=combine_cost_sources(row.get('cost_source', 'tariff_estimate') for row in job_rows),
+            estimated_cost_usd_total=round(sum(row.get('estimated_cost_usd', row['cost_usd']) for row in job_rows), 8),
+        )
+    return analysis
 
 
 def admin_overview(app_ctx, request):
@@ -668,6 +680,7 @@ def admin_cost_analysis_export(app_ctx, request):
     workbook = Workbook()
     summary_sheet = workbook.active
     summary_sheet.title = 'Summary'
+    provider_costs = 'cost_source' in analysis.get('summary', {})
 
     summary_rows = [
         ['Pricing version', analysis.get('pricing_version', '')],
@@ -688,6 +701,11 @@ def admin_cost_analysis_export(app_ctx, request):
         ['Cost total (USD)', float((analysis.get('summary') or {}).get('cost_usd_total', 0.0) or 0.0)],
         ['Cost total (EUR)', float((analysis.get('summary') or {}).get('cost_eur_total', 0.0) or 0.0)],
     ]
+    if provider_costs:
+        summary_rows.extend([
+            ['Cost source', analysis['summary']['cost_source']],
+            ['Estimated cost total (USD)', analysis['summary']['estimated_cost_usd_total']],
+        ])
     for row in summary_rows:
         summary_sheet.append([sanitize_excel_cell(value) for value in row])
 
@@ -710,7 +728,7 @@ def admin_cost_analysis_export(app_ctx, request):
             'cost_usd',
             'cost_eur',
             'missing_stage_usage',
-        ]
+        ] + (['cost_source', 'estimated_cost_usd'] if provider_costs else [])
     )
     for job in analysis.get('jobs', []) or []:
         jobs_sheet.append(
@@ -731,7 +749,8 @@ def admin_cost_analysis_export(app_ctx, request):
                 sanitize_excel_cell(float(job.get('cost_usd', 0.0) or 0.0)),
                 sanitize_excel_cell(float(job.get('cost_eur', 0.0) or 0.0)),
                 sanitize_excel_cell(bool(job.get('missing_stage_usage', False))),
-            ]
+            ] + ([sanitize_excel_cell(job.get('cost_source', 'tariff_estimate')),
+                  sanitize_excel_cell(job.get('estimated_cost_usd', job['cost_usd']))] if provider_costs else [])
         )
 
     stages_sheet = workbook.create_sheet('Stage Breakdown')
@@ -748,12 +767,13 @@ def admin_cost_analysis_export(app_ctx, request):
             'total_tokens',
             'input_rate_per_million_usd',
             'output_rate_per_million_usd',
-            'cost_input_usd',
-            'cost_output_usd',
+            'estimated_input_cost_usd' if provider_costs else 'cost_input_usd',
+            'estimated_output_cost_usd' if provider_costs else 'cost_output_usd',
             'cost_usd',
             'cost_eur',
             'matched_pricing',
-        ]
+        ] + (['provider', 'thinking_tokens', 'cost_source', 'estimated_cost_usd', 'cost_components_source']
+             if provider_costs else [])
     )
     for stage in analysis.get('stages', []) or []:
         stages_sheet.append(
@@ -774,7 +794,11 @@ def admin_cost_analysis_export(app_ctx, request):
                 sanitize_excel_cell(float(stage.get('cost_usd', 0.0) or 0.0)),
                 sanitize_excel_cell(float(stage.get('cost_eur', 0.0) or 0.0)),
                 sanitize_excel_cell(bool(stage.get('matched_pricing', False))),
-            ]
+            ] + ([sanitize_excel_cell(stage.get('provider', '')),
+                  sanitize_excel_cell(stage.get('thinking_tokens')),
+                  sanitize_excel_cell(stage.get('cost_source', 'tariff_estimate')),
+                  sanitize_excel_cell(stage.get('estimated_cost_usd', stage['cost_usd'])),
+                  'tariff_estimate'] if provider_costs else [])
         )
 
     output = app_ctx.io.BytesIO()

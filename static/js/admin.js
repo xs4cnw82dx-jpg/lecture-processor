@@ -1712,6 +1712,7 @@ function recalcCalculatorCosts() {
     if (!calcStageGrid) return;
     const models = getCalculatorModels();
     const rows = calcStageGrid.querySelectorAll('.calc-stage-card[data-stage]');
+    const stageCosts = new Map();
     let totalInputCost = 0;
     let totalOutputCost = 0;
     let totalCost = 0;
@@ -1731,6 +1732,7 @@ function recalcCalculatorCosts() {
         const inputCost = (inputTokens / 1_000_000) * inputRate;
         const outputCost = (outputTokens / 1_000_000) * outputRate;
         const stageCost = inputCost + outputCost;
+        stageCosts.set(row, stageCost);
 
         const modelCell = row.querySelector('.calc-stage-model');
         if (modelCell) {
@@ -1786,12 +1788,10 @@ function recalcCalculatorCosts() {
     }
     if (calcBreakEven) calcBreakEven.textContent = formatEur(breakEvenEur);
 
-    rows.forEach((row) => {
-        const stageCostText = row.querySelector('.cost-stage');
+    stageCosts.forEach((stageCost, row) => {
         const shareCell = row.querySelector('.cost-share');
-        if (!stageCostText || !shareCell) return;
-        const numeric = numberOrZero(String(stageCostText.textContent || '').replace(/[^0-9.-]/g, ''));
-        shareCell.textContent = totalCost > 0 ? formatPercent((numeric / totalCost) * 100) : '0.0%';
+        if (!shareCell) return;
+        shareCell.textContent = totalCost > 0 ? formatPercent((stageCost / totalCost) * 100) : '0.0%';
     });
 }
 
@@ -1969,6 +1969,24 @@ function formatInteger(value) {
     return Math.round(num).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'));
 }
 
+function analyzerCostSourceLabel(source) {
+    switch (source) {
+    case 'provider_reported': return adminT('Provider reported');
+    case 'tariff_estimate': return adminT('Rate estimate');
+    case 'mixed': return adminT('Reported + estimated');
+    default: return '';
+    }
+}
+
+function appendAnalyzerCostSource(parent, source, className = '') {
+    const label = analyzerCostSourceLabel(source);
+    if (!label) return;
+    const detail = document.createElement('span');
+    detail.className = `analyzer-cost-source ${className}`.trim();
+    detail.textContent = label;
+    parent.appendChild(detail);
+}
+
 function recomputeAnalyzerSummary() {
     const payload = analyzerPayload || {};
     const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
@@ -1995,6 +2013,12 @@ function recomputeAnalyzerSummary() {
     if (analyzerSelectionMeta) {
         const scopeLabel = analyzerSelectedIds.size > 0 ? 'selected manually' : 'all filtered jobs';
         analyzerSelectionMeta.textContent = `${selectedRows.length} selected (${scopeLabel})`;
+        if (selectedRows.some(job => analyzerCostSourceLabel(job.cost_source))) {
+            const sources = new Set(selectedRows.map(job => analyzerCostSourceLabel(job.cost_source) ? job.cost_source : 'tariff_estimate'));
+            const source = sources.size > 1 || sources.has('mixed') ? 'mixed' : sources.values().next().value;
+            analyzerSelectionMeta.textContent = `${adminT('{count} selected ({scope})', { count: selectedRows.length, scope: adminT(scopeLabel) })} · `;
+            appendAnalyzerCostSource(analyzerSelectionMeta, source);
+        }
     }
 }
 
@@ -2049,6 +2073,10 @@ function renderActualCostJobs() {
         totalTd.textContent = formatInteger(job.token_total || 0);
         const usdTd = document.createElement('td');
         usdTd.textContent = formatUsd(Number(job.cost_usd || 0));
+        if (analyzerCostSourceLabel(job.cost_source)) {
+            usdTd.appendChild(document.createElement('br'));
+            appendAnalyzerCostSource(usdTd, job.cost_source, 'calc-stage-model-label');
+        }
         const eurTd = document.createElement('td');
         eurTd.textContent = formatEur(Number(job.cost_eur || 0));
         tr.appendChild(selectTd);

@@ -1,8 +1,9 @@
 """Workflow-local generation selected from an immutable routing snapshot."""
 from pathlib import Path
 
+from .contracts import AudioPart
 from .gemini import GeminiProvider
-from .routing import STAGES, default_models, load_routing
+from .routing import AUDIO_STAGES, STAGES, default_models, load_routing, validate_openrouter_options
 
 
 class _ClientRuntime:
@@ -24,7 +25,7 @@ class ProviderSession:
             root = Path(getattr(runtime, 'PROJECT_ROOT_DIR', Path(__file__).resolve().parents[4]))
             self.routes = load_routing(root / 'config' / 'ai_routing.json', default_models(runtime))
         self._forced = is_forced_fake_provider()
-        self._adapter = None
+        self._adapters = {}
         self._closed = False
 
     def generate(self, stage, parts, *, schema=None, max_output_tokens=65536,
@@ -34,28 +35,44 @@ class ProviderSession:
         if not isinstance(stage, str) or stage not in STAGES or stage not in self.routes.routes:
             raise ValueError('Unknown generation stage.')
         route = self.routes.routes[stage]
-        # This release deliberately registers Gemini only. A key cannot enable a route.
-        if route.provider != 'gemini':
+        if stage in AUDIO_STAGES and route.provider != 'gemini':
+            raise ValueError('Audio generation requires Gemini.')
+        if route.provider not in {'gemini', 'openrouter'}:
             raise ValueError('Unsupported generation provider.')
-        if self._adapter is None:
+        options = None
+        if route.provider == 'openrouter':
+            options = validate_openrouter_options(route.model, route.options)
+            if type(max_output_tokens) is not int or max_output_tokens <= 0:
+                raise ValueError('Invalid generation output limit.')
+            max_output_tokens = min(max_output_tokens, options['max_output_tokens'])
+            parts = tuple(parts)
+            if any(isinstance(part, AudioPart) for part in parts):
+                raise ValueError('Audio generation requires Gemini.')
+        if route.provider not in self._adapters:
             if self._forced:
                 from .fake import FakeGeminiClient, FakeProvider
                 client = getattr(self.runtime, 'client', None)
                 if not isinstance(client, FakeGeminiClient):
                     client = FakeGeminiClient()
-                self._adapter = FakeProvider(_ClientRuntime(self.runtime, client))
+                adapter = FakeProvider(_ClientRuntime(self.runtime, client))
+            elif route.provider == 'openrouter':
+                from .openrouter import OpenRouterProvider
+                adapter = OpenRouterProvider(self.runtime)
             else:
-                self._adapter = GeminiProvider(self.runtime)
-        return self._adapter.generate(
+                adapter = GeminiProvider(self.runtime)
+            self._adapters[route.provider] = adapter
+        extra = {'options': options} if route.provider == 'openrouter' and not self._forced else {}
+        return self._adapters[route.provider].generate(
             route.model, parts, schema=schema, max_output_tokens=max_output_tokens,
             retry_tracker=retry_tracker, operation_name=operation_name or stage,
+            **extra,
         )
 
     def close(self):
         if not self._closed:
             self._closed = True
-            if self._adapter is not None:
-                self._adapter.close()
+            for adapter in self._adapters.values():
+                adapter.close()
 
     def __enter__(self):
         return self

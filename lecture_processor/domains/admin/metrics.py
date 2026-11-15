@@ -5,6 +5,7 @@ from flask import g
 
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai.providers.routing import Diagnostic, RoutingSnapshot
+from lecture_processor.domains.ai.providers.usage import combine_cost_sources, finite_cost_usd
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.runtime import environment as runtime_environment
 
@@ -734,6 +735,9 @@ def compute_job_stage_costs(job_payload, config_payload, runtime=None):
     output_total = 0
     total_total = 0
     cost_total = 0.0
+    estimated_total = 0.0
+    has_provider_metadata = False
+    cost_sources = []
     for stage_name, usage in stage_usage.items():
         safe_usage = usage if isinstance(usage, dict) else {}
         input_tokens = _as_non_negative_int(safe_usage.get('input_tokens', 0))
@@ -753,32 +757,42 @@ def compute_job_stage_costs(job_payload, config_payload, runtime=None):
         )
         input_cost = (input_tokens / 1_000_000.0) * _as_non_negative_float(pricing.get('input_rate_per_million', 0.0))
         output_cost = (output_tokens / 1_000_000.0) * _as_non_negative_float(pricing.get('output_rate_per_million', 0.0))
-        stage_cost = input_cost + output_cost
-
-        stages.append(
-            {
-                'stage': str(stage_name or ''),
-                'model': model_id,
-                'billing_mode': stage_billing_mode,
-                'input_modality': input_modality,
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'total_tokens': total_tokens,
-                'input_rate_per_million': _as_non_negative_float(pricing.get('input_rate_per_million', 0.0)),
-                'output_rate_per_million': _as_non_negative_float(pricing.get('output_rate_per_million', 0.0)),
-                'tier': str(pricing.get('tier', '') or ''),
-                'cost_input_usd': input_cost,
-                'cost_output_usd': output_cost,
-                'cost_usd': stage_cost,
-                'matched_pricing': bool(pricing.get('matched', False)),
-            }
-        )
+        estimated_cost = input_cost + output_cost
+        is_openrouter = safe_usage.get('provider') == 'openrouter'
+        reported_cost = finite_cost_usd(safe_usage.get('cost_usd')) if is_openrouter else None
+        stage_cost = reported_cost if reported_cost is not None else estimated_cost
+        source = 'provider_reported' if reported_cost is not None else 'tariff_estimate'
+        stage = {
+            'stage': str(stage_name or ''),
+            'model': model_id,
+            'billing_mode': stage_billing_mode,
+            'input_modality': input_modality,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': total_tokens,
+            'input_rate_per_million': _as_non_negative_float(pricing.get('input_rate_per_million', 0.0)),
+            'output_rate_per_million': _as_non_negative_float(pricing.get('output_rate_per_million', 0.0)),
+            'tier': str(pricing.get('tier', '') or ''),
+            'cost_input_usd': input_cost,
+            'cost_output_usd': output_cost,
+            'cost_usd': stage_cost,
+            'matched_pricing': bool(pricing.get('matched', False)),
+        }
+        if is_openrouter:
+            stage.update(
+                provider='openrouter', thinking_tokens=_as_non_negative_int(safe_usage.get('thinking_tokens', 0)),
+                cost_source=source, estimated_cost_usd=estimated_cost, cost_components_source='tariff_estimate',
+            )
+            has_provider_metadata = True
+        stages.append(stage)
         input_total += input_tokens
         output_total += output_tokens
         total_total += total_tokens
         cost_total += stage_cost
+        estimated_total += estimated_cost
+        cost_sources.append(source)
 
-    return {
+    result = {
         'stages': stages,
         'input_tokens': input_total,
         'output_tokens': output_total,
@@ -786,3 +800,6 @@ def compute_job_stage_costs(job_payload, config_payload, runtime=None):
         'cost_usd': cost_total,
         'missing_stage_usage': False,
     }
+    if has_provider_metadata:
+        result.update(cost_source=combine_cost_sources(cost_sources), estimated_cost_usd=estimated_total)
+    return result
