@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from .contracts import AudioPart
-from .gemini import GeminiProvider
+from .gemini import GeminiProvider, validate_file_part
 from .routing import AUDIO_STAGES, STAGES, default_models, load_routing, validate_openrouter_options
 
 
@@ -28,8 +28,7 @@ class ProviderSession:
         self._adapters = {}
         self._closed = False
 
-    def generate(self, stage, parts, *, schema=None, max_output_tokens=65536,
-                 retry_tracker=None, operation_name=None):
+    def _route(self, stage):
         if self._closed:
             raise RuntimeError('The provider workflow is closed.')
         if not isinstance(stage, str) or stage not in STAGES or stage not in self.routes.routes:
@@ -39,15 +38,9 @@ class ProviderSession:
             raise ValueError('Audio generation requires Gemini.')
         if route.provider not in {'gemini', 'openrouter'}:
             raise ValueError('Unsupported generation provider.')
-        options = None
-        if route.provider == 'openrouter':
-            options = validate_openrouter_options(route.model, route.options)
-            if type(max_output_tokens) is not int or max_output_tokens <= 0:
-                raise ValueError('Invalid generation output limit.')
-            max_output_tokens = min(max_output_tokens, options['max_output_tokens'])
-            parts = tuple(parts)
-            if any(isinstance(part, AudioPart) for part in parts):
-                raise ValueError('Audio generation requires Gemini.')
+        return route
+
+    def _adapter(self, route):
         if route.provider not in self._adapters:
             if self._forced:
                 from .fake import FakeGeminiClient, FakeProvider
@@ -61,8 +54,41 @@ class ProviderSession:
             else:
                 adapter = GeminiProvider(self.runtime)
             self._adapters[route.provider] = adapter
+        return self._adapters[route.provider]
+
+    def _prepare_file(self, stage, part, method, operation_name, retry_tracker):
+        route = self._route(stage)
+        if route.provider == 'openrouter' and isinstance(part, AudioPart):
+            raise ValueError('Audio generation requires Gemini.')
+        validate_file_part(part)
+        if route.provider == 'openrouter':
+            validate_openrouter_options(route.model, route.options)
+            # Its local file bytes are read by generate, never by preparation.
+            return
+        getattr(self._adapter(route), method)(part, operation_name=operation_name, retry_tracker=retry_tracker)
+
+    def upload_file(self, stage, part, *, operation_name, retry_tracker=None):
+        """Upload to Gemini; OpenRouter only validates route/part shape, not file readiness."""
+        self._prepare_file(stage, part, 'upload_file', operation_name, retry_tracker)
+
+    def wait_for_file(self, stage, part, *, operation_name, retry_tracker=None):
+        """Wait for Gemini; OpenRouter defers file content validation/reads to generation."""
+        self._prepare_file(stage, part, 'wait_for_file', operation_name, retry_tracker)
+
+    def generate(self, stage, parts, *, schema=None, max_output_tokens=65536,
+                 retry_tracker=None, operation_name=None):
+        route = self._route(stage)
+        options = None
+        if route.provider == 'openrouter':
+            options = validate_openrouter_options(route.model, route.options)
+            if type(max_output_tokens) is not int or max_output_tokens <= 0:
+                raise ValueError('Invalid generation output limit.')
+            max_output_tokens = min(max_output_tokens, options['max_output_tokens'])
+            parts = tuple(parts)
+            if any(isinstance(part, AudioPart) for part in parts):
+                raise ValueError('Audio generation requires Gemini.')
         extra = {'options': options} if route.provider == 'openrouter' and not self._forced else {}
-        return self._adapters[route.provider].generate(
+        return self._adapter(route).generate(
             route.model, parts, schema=schema, max_output_tokens=max_output_tokens,
             retry_tracker=retry_tracker, operation_name=operation_name or stage,
             **extra,

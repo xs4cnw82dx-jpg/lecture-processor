@@ -79,12 +79,25 @@ def normalize_response(response, model):
     )
 
 
+def validate_file_part(part):
+    """Validate file-part shape without reading or resolving its local path."""
+    if not isinstance(part, (PdfPart, ImagePart, AudioPart)):
+        raise ValueError('Unsupported file content part.')
+    if not isinstance(part.path, (str, Path)) or not str(part.path):
+        raise ValueError('A file part requires a local path.')
+    mime = 'application/pdf' if isinstance(part, PdfPart) else part.mime_type
+    if not isinstance(mime, str) or not mime:
+        raise ValueError('A content part requires a MIME type.')
+    return mime
+
+
 class GeminiProvider:
     """One workflow's native resources; callers retain ownership of local files."""
 
     def __init__(self, runtime):
         self.runtime = runtime
         self._files = {}
+        self._pending_files = {}
         self._owned_files = []
         self._closed = False
 
@@ -93,32 +106,70 @@ class GeminiProvider:
         from lecture_processor.domains.ai.provider import run_with_provider_retry
         return run_with_provider_retry(operation, callback, retry_tracker=tracker, runtime=self.runtime)
 
-    def _prepare_file(self, part, client, operation, tracker):
-        from lecture_processor.domains.ai import provider
-        from lecture_processor.runtime.media_runtime import wait_for_file_processing
+    def _preparation_client(self, part):
+        if self._closed:
+            raise RuntimeError('The provider workflow is closed.')
+        validate_file_part(part)
+        client = getattr(self.runtime, 'client', None)
+        if client is None:
+            raise RuntimeError('Gemini client is not configured.')
+        return client
 
-        mime = 'application/pdf' if isinstance(part, PdfPart) else part.mime_type
-        if not isinstance(mime, str) or not mime:
-            raise ValueError('A content part requires a MIME type.')
-        key = (str(Path(part.path).resolve()), mime)
-        if key in self._files:
-            cached_client, uploaded = self._files[key]
+    def _cached_file(self, key, client):
+        cached = self._files.get(key) or self._pending_files.get(key)
+        if cached is not None:
+            cached_client, uploaded = cached
             if cached_client is not client:
                 raise RuntimeError('The generation client changed during this workflow.')
             return uploaded
+        return None
+
+    def _upload_file(self, part, client, operation, tracker):
+        mime = validate_file_part(part)
+        key = (str(Path(part.path).resolve()), mime)
+        uploaded = self._cached_file(key, client)
+        if uploaded is not None:
+            return uploaded
         uploaded = self._retry(
-            operation + ':upload', lambda: client.files.upload(file=str(part.path), config={'mime_type': mime}), tracker,
+            operation, lambda: client.files.upload(file=str(part.path), config={'mime_type': mime}), tracker,
         )
         # Keep ownership even if processing fails, so context exit still cleans up.
         self._owned_files.append((client, uploaded))
+        self._pending_files[key] = (client, uploaded)
+        return uploaded
+
+    def _wait_for_file(self, part, client, operation, tracker):
+        from lecture_processor.domains.ai import provider
+        from lecture_processor.runtime.media_runtime import wait_for_file_processing
+
+        mime = validate_file_part(part)
+        key = (str(Path(part.path).resolve()), mime)
+        uploaded = self._cached_file(key, client)
+        if uploaded is None:
+            raise RuntimeError('The file has not been uploaded in this workflow.')
+        if key in self._files:
+            return uploaded
         logger = getattr(self.runtime, 'logger', None)
-        self._retry(operation + ':processing', lambda: wait_for_file_processing(
+        self._retry(operation, lambda: wait_for_file_processing(
             uploaded, client=client, logger=logger, time_module=getattr(self.runtime, 'time', time),
             is_transient_provider_error_fn=lambda error: provider.is_transient_provider_error(error, runtime=self.runtime),
             classify_provider_error_code_fn=lambda error: provider.classify_provider_error_code(error, runtime=self.runtime),
         ), tracker)
         self._files[key] = (client, uploaded)
+        self._pending_files.pop(key, None)
         return uploaded
+
+    def upload_file(self, part, *, operation_name, retry_tracker=None):
+        """Own one upload immediately; leave processing and local cleanup to their phases."""
+        self._upload_file(part, self._preparation_client(part), operation_name, retry_tracker)
+
+    def wait_for_file(self, part, *, operation_name, retry_tracker=None):
+        """Wait for an existing upload without rebuilding generation configuration."""
+        self._wait_for_file(part, self._preparation_client(part), operation_name, retry_tracker)
+
+    def _prepare_file(self, part, client, operation, tracker):
+        self._upload_file(part, client, operation + ':upload', tracker)
+        return self._wait_for_file(part, client, operation + ':processing', tracker)
 
     def generate(self, model, parts, *, schema=None, max_output_tokens=65536,
                  retry_tracker=None, operation_name=None):
@@ -166,6 +217,7 @@ class GeminiProvider:
                     logger.warning('Could not clean up a provider workflow file.')
         self._owned_files.clear()
         self._files.clear()
+        self._pending_files.clear()
 
     def __enter__(self):
         return self
