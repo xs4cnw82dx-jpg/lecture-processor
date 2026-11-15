@@ -174,7 +174,7 @@ def bind_cleanup(monkeypatch, state):
 def test_cleanup_removes_expired_terminal_snapshots_and_keeps_other_jobs(retention_state, monkeypatch, status):
     state = retention_state
     bind_cleanup(monkeypatch, state)
-    store.set_job('old', {'status': status, 'finished_at': 8000.0, 'job_scope': 'account-export'}, runtime=state.runtime)
+    store.set_job('old', {'status': status, 'finished_at': 8000.0}, runtime=state.runtime)
     store.set_job('fresh', {'status': status, 'finished_at': 9999.0}, runtime=state.runtime)
     store.set_job('active', {'status': 'processing', 'started_at': 1.0}, runtime=state.runtime)
     core.cleanup_old_jobs()

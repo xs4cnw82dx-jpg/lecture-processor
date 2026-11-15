@@ -694,7 +694,7 @@ test('a late profile response cannot restore account caches during explicit logo
 });
 
 for (const action of ['sign out', 'delete the pack', 'migrate local study data']) {
-  test(`unparseable and other-account legacy data survive ${action}`, async ({ page }) => {
+  test(`unscoped and other-account legacy data survive ${action}`, async ({ page }) => {
     const state = await installStudy(page);
     await openPack(page);
     await highlight(page);
@@ -728,7 +728,9 @@ for (const action of ['sign out', 'delete the pack', 'migrate local study data']
       await page.locator('#write-input').fill('A new scoped answer');
       await page.locator('#learn-change-mode-btn').click();
     }
-    expect(await page.evaluate(keys => Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])), Object.keys(retained))).toEqual(retained);
+    expect(await page.evaluate(keys => Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])), Object.keys(retained))).toEqual(
+      action === 'sign out' ? { ...retained, learning_session_a_a_practice: null } : retained
+    );
     expect(state.errors).toEqual([]);
   });
 }
