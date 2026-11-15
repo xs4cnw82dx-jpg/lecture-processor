@@ -152,6 +152,12 @@ class FakeProvider:
         from .gemini import GeminiProvider
         self._delegate = GeminiProvider(runtime)
 
+    def upload_file(self, part, *, operation_name, retry_tracker=None):
+        return self._delegate.upload_file(part, operation_name=operation_name, retry_tracker=retry_tracker)
+
+    def wait_for_file(self, part, *, operation_name, retry_tracker=None):
+        return self._delegate.wait_for_file(part, operation_name=operation_name, retry_tracker=retry_tracker)
+
     def generate(self, model, parts, *, schema=None, max_output_tokens=65536,
                  retry_tracker=None, operation_name=None):
         return replace(self._delegate.generate(

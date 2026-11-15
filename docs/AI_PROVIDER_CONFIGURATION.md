@@ -56,6 +56,32 @@ Forced isolated runners intercept routing before constructing any real
 provider client. Adapter contract tests use an injected HTTP mock transport
 with a literal test key and blocked network access.
 
+## Workflow file preparation
+
+A provider session can separate file upload, processing and generation with
+`upload_file(stage, part, operation_name=...)` and
+`wait_for_file(stage, part, operation_name=...)`. Pass the same neutral file part
+to each phase and to `generate`. Each preparation method returns `None`; native
+file handles stay private to the adapter. Explicit operation names and optional
+retry trackers preserve the caller's existing progress and retry accounting.
+
+For Gemini, an upload becomes session-owned immediately. A failed processing
+wait can be retried without uploading the file again. Ready files are reused
+within that session, keyed by resolved local path and MIME type; staged files
+must remain unchanged until the session closes. Preparation does not build a
+generation configuration. Callers that omit these phases retain lazy upload and
+processing during generation.
+
+OpenRouter preparation validates the route and file-part shape only. It does
+not read files, create a client or establish that a file exists or is ready.
+Generation performs its bounded file reads and request construction. Audio
+remains Gemini-only in both preparation and generation.
+
+Keep one session per workflow. The caller owns local files and cleans them up
+at its existing boundary, then closes the session for best-effort remote cleanup.
+Closing is idempotent and never deletes local files. An uploaded resource cannot
+be reused with a different Gemini client.
+
 ## Recorded costs
 
 New OpenRouter usage records retain thinking tokens separately, but do not add
