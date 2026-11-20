@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from lecture_processor.domains.runtime_jobs.schema import PERSISTED_RUNTIME_JOB_FIELDS
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.domains.runtime_jobs import execution, recovery
 from lecture_processor.domains.study import interview_coding_runs
 from lecture_processor.domains.account import lifecycle
@@ -129,7 +130,8 @@ def coding(monkeypatch):
 
     def generate(*_args, **_kwargs):
         state.provider_calls += 1
-        return SimpleNamespace(text='{"codes":[{"temp_id":"c1","name":"Guidance"}],"quotations":[]}')
+        return GenerationResult('{"codes":[{"temp_id":"c1","name":"Guidance"}],"quotations":[]}',
+                                None, Usage(), 'gemini', 'gemini-3.8-flash')
 
     def submit(target, *args, **kwargs):
         state.queued.append((target, args, kwargs))
@@ -153,8 +155,9 @@ def coding(monkeypatch):
     monkeypatch.setattr(service.study_api_support, 'require_user', lambda *_args: ({'uid': state.uid}, None, None))
     monkeypatch.setattr(service.study_api_support, 'account_write_guard', lambda *_args: None)
     monkeypatch.setattr(service, '_require_interview_pack', lambda *_args: (deepcopy(state.documents.get(('study_packs', 'pack-1'), {})), state.transcript, None, None))
-    monkeypatch.setattr(service.ai_provider, 'generate_with_policy', generate)
-    monkeypatch.setattr(service.ai_provider, 'extract_token_usage', lambda *_args, **_kwargs: {})
+    state.generate = generate
+    monkeypatch.setattr(service.factory, 'open_provider_session', lambda _runtime: SimpleNamespace(
+        generate=lambda *args, **kwargs: state.generate(*args, **kwargs), close=lambda: None))
     state.start = lambda: service.start_ai_coding_run(state.runtime, None, 'pack-1')
     state.docs = lambda collection: {key: value for (kind, key), value in state.documents.items() if kind == collection}
     def work():
@@ -253,7 +256,7 @@ def test_dispatch_rejection_refunds_the_same_durable_run(coding):
 
 def test_worker_error_is_private_and_refund_is_idempotent(coding, monkeypatch, caplog):
     run_id = start(coding)
-    monkeypatch.setattr(service.ai_provider, 'generate_with_policy', lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError('Synthetic provider detail 12345')))
+    monkeypatch.setattr(coding, 'generate', lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError('Synthetic provider detail 12345')))
     coding.work()
     run = coding.docs('interview_ai_coding_runs')[run_id]
     assert run['status'] == 'failed' and run['credit_refunded'] is True
@@ -310,12 +313,12 @@ def test_lost_completion_ack_never_refunds_a_successful_draft(coding):
 def test_recovery_winner_discards_late_provider_completion(coding, monkeypatch):
     run_id = start(coding)
     entered, release = Event(), Event()
-    original = service.ai_provider.generate_with_policy
+    original = coding.generate
     def held(*args, **kwargs):
         entered.set()
         assert release.wait(5)
         return original(*args, **kwargs)
-    monkeypatch.setattr(service.ai_provider, 'generate_with_policy', held)
+    monkeypatch.setattr(coding, 'generate', held)
     with ThreadPoolExecutor(max_workers=1) as executor:
         worker = executor.submit(coding.work)
         try:
@@ -347,12 +350,12 @@ def test_completed_canonical_run_protects_against_old_runtime_snapshot(coding, s
 def test_execution_registry_protects_live_provider_work(coding, monkeypatch):
     run_id = start(coding)
     entered, release = Event(), Event()
-    original = service.ai_provider.generate_with_policy
+    original = coding.generate
     def held(*args, **kwargs):
         entered.set()
         assert release.wait(5)
         return original(*args, **kwargs)
-    monkeypatch.setattr(service.ai_provider, 'generate_with_policy', held)
+    monkeypatch.setattr(coding, 'generate', held)
     target, args, kwargs = coding.queued.pop()
     with ThreadPoolExecutor(max_workers=1) as dispatcher:
         future = execution.submit_job(dispatcher, target, *args, execution_runtime=coding.runtime, **kwargs)
@@ -506,11 +509,11 @@ def test_oversized_result_fails_without_publishing_draft_and_refunds(coding, mon
 
 def test_pack_deleted_during_provider_work_prevents_draft_write(coding, monkeypatch):
     run_id = start(coding)
-    original = service.ai_provider.generate_with_policy
+    original = coding.generate
     def remove_pack(*args, **kwargs):
         del coding.documents[('study_packs', 'pack-1')]
         return original(*args, **kwargs)
-    monkeypatch.setattr(service.ai_provider, 'generate_with_policy', remove_pack)
+    monkeypatch.setattr(coding, 'generate', remove_pack)
     coding.work()
     assert coding.docs('interview_ai_coding_runs')[run_id]['status'] == 'failed'
     assert not coding.docs('study_packs')
@@ -641,14 +644,14 @@ def test_interruption_during_first_chunk_prevents_second_provider_call(coding, m
     run_id = start(coding)
     monkeypatch.setattr(service.interview_coding, 'split_segments_for_ai', lambda segments: [segments, segments])
     entered, release = Event(), Event()
-    original = service.ai_provider.generate_with_policy
+    original = coding.generate
     calls = []
     def held(*args, **kwargs):
         calls.append(kwargs['operation_name'])
         entered.set()
         assert release.wait(5)
         return original(*args, **kwargs)
-    monkeypatch.setattr(service.ai_provider, 'generate_with_policy', held)
+    monkeypatch.setattr(coding, 'generate', held)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(coding.work)
         try:

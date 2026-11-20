@@ -8,6 +8,7 @@ from flask import Flask, jsonify, request
 import pytest
 
 from lecture_processor.domains.ai import study_generation
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.domains.billing import ledger, policy
 from lecture_processor.repositories import study_repo, users_repo
 from lecture_processor.services import interview_coding_service as coding
@@ -67,12 +68,10 @@ def test_two_failed_interview_features_return_one_message_and_keep_accounting(mo
         calls.append(operation)
         if failure == 'exception' or (failure == 'mixed' and operation == 'interview_summary_generation'):
             raise RuntimeError('Synthetic private provider diagnostic')
-        return SimpleNamespace(text='  ')
+        return GenerationResult('  ', None, Usage(7, 4, 11), 'gemini', runtime.MODEL_STUDY)
 
-    monkeypatch.setattr(study_generation.ai_provider, 'generate_with_optional_thinking', generate)
-    monkeypatch.setattr(study_generation.ai_provider, 'extract_token_usage', lambda *_args, **_kwargs: {
-        'input_tokens': 7, 'output_tokens': 4, 'total_tokens': 11,
-    })
+    monkeypatch.setattr(study_generation.factory, 'open_provider_session',
+                        lambda _runtime: SimpleNamespace(generate=generate, close=lambda: None))
     result = study_generation.generate_interview_enhancements(
         'Synthetic transcript', ['summary', 'sections'], runtime=runtime,
     )

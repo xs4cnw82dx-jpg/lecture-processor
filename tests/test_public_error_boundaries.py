@@ -6,6 +6,7 @@ from flask import jsonify
 import pytest
 
 from lecture_processor.domains.ai import study_generation
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.services import account_data_service
 
 
@@ -30,7 +31,8 @@ def test_generation_exceptions_keep_tuple_contract_and_log_details(generation_ru
     def fail(*_args, **_kwargs):
         raise error_type(DETAIL)
 
-    monkeypatch.setattr(study_generation.ai_provider, 'generate_with_policy', fail)
+    monkeypatch.setattr(study_generation.factory, 'open_provider_session',
+                        lambda _runtime: SimpleNamespace(generate=fail, close=lambda: None))
     result = study_generation.generate_study_materials('Synthetic notes', '10', '5',
                                                      runtime=generation_runtime, include_usage=include_usage)
     assert result[:3] == ([], [], STUDY_MESSAGE)
@@ -44,12 +46,11 @@ def test_interview_partial_failure_retains_success_counts_and_usage(generation_r
     def generate(*_args, **kwargs):
         if kwargs['operation_name'] == 'interview_summary_generation':
             raise RuntimeError(DETAIL)
-        return SimpleNamespace(text='Structured transcript')
+        return GenerationResult('Structured transcript', None, Usage(7, 4, 11),
+                                'gemini', generation_runtime.MODEL_STUDY)
 
-    monkeypatch.setattr(study_generation.ai_provider, 'generate_with_optional_thinking', generate)
-    monkeypatch.setattr(study_generation.ai_provider, 'extract_token_usage', lambda *_args, **_kwargs: {
-        'input_tokens': 7, 'output_tokens': 4, 'total_tokens': 11,
-    })
+    monkeypatch.setattr(study_generation.factory, 'open_provider_session',
+                        lambda _runtime: SimpleNamespace(generate=generate, close=lambda: None))
     result = study_generation.generate_interview_enhancements('Synthetic transcript', ['summary', 'sections'], runtime=generation_runtime)
     assert result['error'] == 'Could not generate the interview summary. Please try again.'
     assert result['error_code'] == 'interview_enhancement_failed'

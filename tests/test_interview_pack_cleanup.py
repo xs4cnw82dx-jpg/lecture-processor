@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.domains.runtime_jobs.schema import PERSISTED_RUNTIME_JOB_FIELDS
 from lecture_processor.domains.runtime_jobs import store as runtime_job_store
 from lecture_processor.domains.billing import ledger
@@ -319,10 +320,11 @@ def test_late_coding_provider_result_cannot_recreate_deleted_children(pack_clean
     def held_provider(*_args, **_kwargs):
         entered.set()
         assert release.wait(3), 'Synthetic provider was not released'
-        return SimpleNamespace(text='{"codes":[{"temp_id":"c1","name":"Late code"}],"quotations":[]}')
+        return GenerationResult('{"codes":[{"temp_id":"c1","name":"Late code"}],"quotations":[]}',
+                                None, Usage(), 'gemini', 'gemini-synthetic-coding')
 
-    monkeypatch.setattr(coding.ai_provider, 'generate_with_policy', held_provider)
-    monkeypatch.setattr(coding.ai_provider, 'extract_token_usage', lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(coding.factory, 'open_provider_session',
+                        lambda _runtime: SimpleNamespace(generate=held_provider, close=lambda: None))
     with ThreadPoolExecutor(max_workers=1) as executor:
         worker = executor.submit(coding._run_ai_coding_job, run_id, 'Hello world', state.runtime)
         try:

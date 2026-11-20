@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from lecture_processor.domains.ai import pipelines
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.runtime_jobs import recovery
@@ -108,15 +109,16 @@ def run_regeneration(state, monkeypatch, while_generating=lambda: None, *, fail=
         while_generating()
         if fail:
             raise RuntimeError('Synthetic provider failure')
-        return SimpleNamespace(
-            text=json.dumps({
+        return GenerationResult(
+            json.dumps({
                 'flashcards': [{'front': 'What is original?', 'back': 'Generated answer'}],
                 'test_questions': [question('generated')],
             }),
-            usage_metadata=SimpleNamespace(prompt_token_count=12, candidates_token_count=8, total_token_count=20),
+            None, Usage(12, 8, 20), 'gemini', state.runtime.MODEL_STUDY,
         )
 
-    monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', generate)
+    monkeypatch.setattr(pipelines.study_generation.factory, 'open_provider_session',
+                        lambda _runtime: SimpleNamespace(generate=generate, close=lambda: None))
     monkeypatch.setattr(state.runtime.firestore, 'transactional', tracked_transactional)
     pipelines.regenerate_study_tools_for_pack('regenerate', 'pack', runtime=state.runtime)
     assert calls == [True], 'The interleaving must occur during real material generation'
@@ -592,7 +594,7 @@ def test_lost_start_ack_defers_without_generating_or_refunding(background, monke
     seed_regeneration(state)
     original = pack(state)
     generated, lost = [], []
-    monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', lambda *_args, **_kwargs: generated.append(True))
+    monkeypatch.setattr(pipelines.study_generation.factory, 'open_provider_session', lambda *_args, **_kwargs: generated.append(True))
 
     def after_commit(operations):
         if not writes_job_fields(operations, status='processing'):
@@ -619,7 +621,7 @@ def test_stale_cached_owner_cannot_act_on_another_canonical_job(background, monk
     seed_regeneration(state)
     state.runtime.jobs['regenerate']['user_id'] = 'stale-other-owner'
     before, generated = deepcopy(state.store.documents), []
-    monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', lambda *_args, **_kwargs: generated.append(True))
+    monkeypatch.setattr(pipelines.study_generation.factory, 'open_provider_session', lambda *_args, **_kwargs: generated.append(True))
 
     pipelines.regenerate_study_tools_for_pack('regenerate', 'pack', runtime=state.runtime)
 

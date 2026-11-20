@@ -4,6 +4,8 @@ import math
 from urllib.parse import quote
 
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai.providers import factory
+from lecture_processor.domains.ai.providers.contracts import TextPart
 from lecture_processor.domains.ai.providers.usage_view import public_stage_usage
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import job_charges, ledger, policy
@@ -539,9 +541,11 @@ def _run_ai_coding_job(job_id, transcript, runtime):
     run = coding_runs.run_ref(app_ctx, job_id).get().to_dict() or {}
     uid, pack_id = run.get('uid', ''), run.get('pack_id', '')
     retry_tracker = {}
+    provider_session = None
     try:
         if not coding_runs.start_processing(app_ctx, job_id):
             return
+        provider_session = factory.open_provider_session(app_ctx)
         all_segments = interview_coding.parse_transcript_segments(transcript)
         chunks = interview_coding.split_segments_for_ai(all_segments)
         existing_codes = _load_codes(app_ctx, uid)
@@ -557,21 +561,16 @@ def _run_ai_coding_job(job_id, transcript, runtime):
                 chunk,
                 existing_codes + proposed_codes,
             )
-            response = ai_provider.generate_with_policy(
-                getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
-                [prompt],
+            operation = f'interview_ai_coding_{index + 1}'
+            response = provider_session.generate(
+                'interview_coding',
+                [TextPart(prompt)],
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
-                operation_name=f'interview_ai_coding_{index + 1}',
-                runtime=app_ctx,
+                operation_name=operation,
             )
-            usage = ai_provider.extract_token_usage(response, runtime=app_ctx)
-            usage_by_stage[f'interview_ai_coding_{index + 1}'] = {
-                **usage,
-                'model': getattr(app_ctx, 'MODEL_INTERVIEW_CODING', 'gemini-3.8-flash'),
-                'billing_mode': 'standard',
-                'input_modality': 'text',
-            }
+            tokens = ai_provider.TokenAccumulator(runtime=app_ctx)
+            usage_by_stage[operation] = tokens.record_result(operation, response)
             parsed = interview_coding.sanitize_ai_coding_payload(
                 getattr(response, 'text', '') or '',
                 transcript,
@@ -609,6 +608,9 @@ def _run_ai_coding_job(job_id, transcript, runtime):
             coding_runs.fail_run(app_ctx, job_id)
         except Exception:
             app_ctx.logger.exception('Could not finalize interview coding run %s', job_id)
+    finally:
+        if provider_session is not None:
+            provider_session.close()
 
 
 def _owned_run_doc(app_ctx, uid, pack_id, run_id):
