@@ -1,4 +1,4 @@
-const WORKOUT_CACHE = 'lecture-processor-workout-static-v5';
+const WORKOUT_CACHE = 'lecture-processor-workout-static-v6';
 const WORKOUT_CACHE_PREFIX = 'lecture-processor-workout-';
 const WORKOUT_SHELL = '/admin/workout';
 const OFFLINE_PAGE = '/static/workout-offline.html';
@@ -120,5 +120,10 @@ self.addEventListener('fetch', (event) => {
     const copy = response.clone();
     caches.open(WORKOUT_CACHE).then((cache) => cache.put(request, copy));
     return response;
+  }).catch(async () => {
+    // Pages request content-versioned URLs (?v=...); offline, fall back to the precached file.
+    const precached = await caches.match(request, { ignoreSearch: true });
+    if (precached) return precached;
+    throw new Error('Offline and not cached.');
   })));
 });

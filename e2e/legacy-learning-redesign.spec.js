@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 test('retained planner uses shared date controls and calendar editor remains usable', async ({page}, testInfo) => {
   test.skip(process.env.STUDY_PLAN_V2 !== '0', 'Run explicitly with the supported legacy planner flag.');
   const stub = `(function(){var user={uid:'legacy-fixture',email:'student@example.com',getIdToken:()=>Promise.resolve('fixture')};var auth={currentUser:user,onAuthStateChanged:fn=>{queueMicrotask(()=>fn(user));return ()=>{};}};window.LectureProcessorBootstrap={getAuth:()=>auth,onAuthStateReady:(_auth,fn)=>fn(user)};})();`;
-  await page.route('**/static/js/firebase-bootstrap.js', route=>route.fulfill({contentType:'text/javascript',body:stub}));
+  await page.route('**/static/js/firebase-bootstrap.js*', route=>route.fulfill({contentType:'text/javascript',body:stub}));
   let saved;
   await page.route('**/api/**',route=>{
     const request=route.request(),path=new URL(request.url()).pathname;

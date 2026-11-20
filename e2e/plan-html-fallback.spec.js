@@ -5,7 +5,7 @@ for (const helperAvailable of [false, true]) {
   test(`Plan treats pack titles as text with HTML helper ${helperAvailable ? 'available' : 'missing'}`, async ({ page }, testInfo) => {
     const fixture = await installAccountFixture(page);
     if (!helperAvailable) {
-      await page.route('**/static/js/html-utils.js', route => route.abort('failed'));
+      await page.route('**/static/js/html-utils.js*', route => route.abort('failed'));
     }
     const title = '<img src="invalid" onerror="window.planMarkupRan=true"> A & B \'quoted\'';
     const pack = { study_pack_id: 'example', title, mode: 'manual', flashcards_count: 1,

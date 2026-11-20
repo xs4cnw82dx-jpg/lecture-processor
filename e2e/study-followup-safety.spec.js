@@ -280,7 +280,7 @@ for (const blocked of [false, true]) {
   test(`a card rating updates its review date and streak in ${progressTimezone} with progress utilities ${blocked ? 'unavailable' : 'available'}`, async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-12-31T12:00:00Z'));
     const state = await installStudy(page, { progressTimezone });
-    if (blocked) await page.route('**/static/js/study-progress-utils.js', route => route.abort());
+    if (blocked) await page.route('**/static/js/study-progress-utils.js*', route => route.abort());
     await page.addInitScript(previousDay => localStorage.setItem('study_streak_a', JSON.stringify({ last_study_date: previousDay, current_streak: 4 })), progressTimezone === 'UTC' ? '2026-12-30' : '2026-12-31');
     await openPack(page);
     await startFlashcards(page);

@@ -4,10 +4,15 @@ from datetime import datetime, timezone
 import hashlib
 import json
 
-try:
-    from openpyxl import Workbook
-except Exception:
-    Workbook = None
+
+
+def _load_workbook_class():
+    """Import openpyxl only for the admin Excel export, keeping it off the startup path."""
+    try:
+        from openpyxl import Workbook
+    except Exception:
+        return None
+    return Workbook
 
 from lecture_processor.services import admin_dashboard_service
 from lecture_processor.services import admin_support
@@ -18,6 +23,15 @@ from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.shared import sanitize_excel_cell
 from lecture_processor.domains.study import audio as study_audio
+
+
+def _load_workbook_class():
+    """Import openpyxl only for the admin Excel export, keeping it off the startup path."""
+    try:
+        from openpyxl import Workbook
+    except Exception:
+        return None
+    return Workbook
 
 ADMIN_CREDIT_GRANT_MAX = 10000
 ADMIN_CREDIT_FIELDS_BY_CATEGORY = {
@@ -666,6 +680,7 @@ def admin_cost_analysis_export(app_ctx, request):
     _decoded, error_response, status = _require_admin(app_ctx, request)
     if error_response is not None:
         return error_response, status
+    Workbook = _load_workbook_class()
     if Workbook is None:
         return app_ctx.jsonify({'error': 'Excel export dependency is missing'}), 500
 
