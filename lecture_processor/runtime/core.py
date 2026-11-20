@@ -76,6 +76,7 @@ from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.ai.providers import routing as ai_routing
+from lecture_processor.domains.ai.providers.contracts import AudioPart, TextPart
 from lecture_processor.domains.account import users as account_users
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
@@ -1669,23 +1670,56 @@ def format_transcript_with_timestamps(segments):
         lines.append(f'[{start_ms}-{end_ms}] {text}')
     return '\n'.join(lines)
 
-def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False):
+def _audio_generation_mode(audio_file, provider_session):
+    """Neutral audio parts need a caller-owned session; native handles must not get one."""
+    is_neutral = isinstance(audio_file, AudioPart)
+    if is_neutral != (provider_session is not None):
+        raise ValueError('Audio input and provider session do not match.')
+    return is_neutral
+
+
+def _generate_audio_text(audio_file, audio_mime_type, prompt, *, provider_session, stage, operation_name, retry_tracker):
+    """Return (text, three-count usage) through the caller's session or the native handle."""
+    if provider_session is not None:
+        result = provider_session.generate(
+            stage, [audio_file, TextPart(prompt)], max_output_tokens=65536,
+            retry_tracker=retry_tracker, operation_name=operation_name,
+        )
+        usage = {'input_tokens': result.usage.input_tokens, 'output_tokens': result.usage.output_tokens,
+                 'total_tokens': result.usage.total_tokens}
+        return (getattr(result, 'text', '') or ''), usage
+    response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name=operation_name)
+    # Usage is read before the text, as before, so a paid call is always counted.
+    usage = extract_token_usage(response)
+    return (getattr(response, 'text', '') or ''), usage
+
+
+def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False,
+                           *, provider_session=None, stage='audio_transcription'):
+    _audio_generation_mode(audio_file, provider_session)
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-    response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription')
-    transcript = (getattr(response, 'text', '') or '').strip()
+    text, usage = _generate_audio_text(audio_file, audio_mime_type, prompt, provider_session=provider_session,
+                                       stage=stage, operation_name='audio_transcription', retry_tracker=retry_tracker)
+    transcript = text.strip()
     if include_usage:
-        return (transcript, extract_token_usage(response))
+        return (transcript, usage)
     return transcript
 
-def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False):
+def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False,
+                                     *, provider_session=None):
+    # Validate before the fallback path, so a mismatch is never retried as plain text.
+    _audio_generation_mode(audio_file, provider_session)
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
     usage = {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
     try:
-        response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription_timestamped')
-        usage = extract_token_usage(response)
-        parsed = extract_json_payload(getattr(response, 'text', '') or '')
+        text, usage = _generate_audio_text(
+            audio_file, audio_mime_type, prompt, provider_session=provider_session,
+            stage='audio_transcription_timestamped', operation_name='audio_transcription_timestamped',
+            retry_tracker=retry_tracker,
+        )
+        parsed = extract_json_payload(text)
         if not isinstance(parsed, dict):
             raise ValueError('Timestamped transcription JSON not found')
         raw_segments = parsed.get('transcript_segments', [])
@@ -1714,11 +1748,14 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
     except Exception as e:
         logger.warning(f'⚠️ Timestamp transcription failed, falling back to plain transcript: {e}')
         fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-        fallback_response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=fallback_prompt)])], retry_tracker=retry_tracker, operation_name='audio_transcription_fallback')
-        fallback_usage = extract_token_usage(fallback_response)
+        # The fallback reuses the same prepared audio resource and session.
+        fallback_text, fallback_usage = _generate_audio_text(
+            audio_file, audio_mime_type, fallback_prompt, provider_session=provider_session,
+            stage='audio_transcription', operation_name='audio_transcription_fallback', retry_tracker=retry_tracker,
+        )
         combined_usage = {key: usage.get(key, 0) + fallback_usage.get(key, 0)
                           for key in ('input_tokens', 'output_tokens', 'total_tokens')}
-        fallback_text = (getattr(fallback_response, 'text', '') or '').strip()
+        fallback_text = fallback_text.strip()
         if include_usage:
             return (fallback_text, [], combined_usage)
         return (fallback_text, [])

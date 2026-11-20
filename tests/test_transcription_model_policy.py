@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from lecture_processor.domains.ai import batch_orchestrator, instant_batch_orchestrator, pipelines, provider
+from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.services import tools_transcription_service
 
 
@@ -22,10 +23,10 @@ def fake_provider(core, monkeypatch):
         ))
 
     uploaded = SimpleNamespace(uri='https://example.test/audio', name='files/test-audio')
-    monkeypatch.setattr(core, 'client', SimpleNamespace(
-        models=SimpleNamespace(generate_content=generate),
-        files=SimpleNamespace(upload=lambda **kwargs: uploaded, delete=lambda **kwargs: None),
-    ))
+    # A local fake client lets migrated workflow sessions upload and poll in isolation.
+    client = FakeGeminiClient()
+    client.models.generate_content = generate
+    monkeypatch.setattr(core, 'client', client)
     return calls, responses, uploaded
 
 
