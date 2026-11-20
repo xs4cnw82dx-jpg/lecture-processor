@@ -23,7 +23,7 @@
     </a>
     <main class="card" id="main-content" tabindex="-1">
       <h1>Privacy Policy</h1>
-      <p class="meta">Last updated: {{ last_updated }}</p>
+      <p class="meta"><span>Last updated:</span> <time datetime="{{ last_updated_iso }}">{{ last_updated }}</time></p>
       <div class="notice">
         This policy explains what Lecture Processor stores and how that data is used. This document is an operational baseline for a student-run project and should be reviewed by qualified legal counsel before public/commercial launch.
       </div>
@@ -65,13 +65,16 @@
       </ul>
 
       <h2 id="6-third-party-processors">6. Third-Party Processors</h2>
-      <p>Lecture Processor relies on service providers that process data on our behalf, including:</p>
+      <p>Lecture Processor uses the following service providers. Which AI service receives your materials depends on the feature and its enabled processing route:</p>
       <ul>
-        <li>Google Firebase (authentication and database services).</li>
-        <li>Google Gemini API (AI processing of uploaded materials and prompts).</li>
-        <li>Stripe (payment checkout and transaction processing).</li>
-        <li>Sentry (error monitoring), when configured.</li>
+        <li>Google Firebase: account sign-in and database services.</li>
+        <li>Google Gemini API: audio processing, and text or document features that use Gemini.</li>
+        <li>OpenRouter: when the Claude route is enabled for a feature, OpenRouter forwards the required text, documents, images and instructions to Google Cloud.</li>
+        <li>Google Cloud Vertex AI: processes requests forwarded through that Claude route, using models developed by Anthropic. Google operates this model-processing service.</li>
+        <li>Stripe: payment checkout and transaction processing.</li>
+        <li>Sentry: error monitoring, when configured.</li>
       </ul>
+      <p>Audio is always processed by Google Gemini. The Claude route applies only to text and document features for which it has been enabled.</p>
 
       <h2 id="7-uploads-audio-and-transcript-handling">7. Uploads, Audio, and Transcript Handling</h2>
       <ul>
@@ -92,11 +95,22 @@
         <li>Purchase/accounting records may be retained longer where required for legal, tax, audit, or fraud-prevention obligations.</li>
       </ul>
 
+      <p>Google Gemini API: under Google’s paid-service terms, submitted content is not used to improve Google’s products. Its published abuse-monitoring policy describes 55-day retention of prompts, supplied context and outputs for security, policy enforcement and required legal disclosures. Authorized Google staff may review flagged content.</p>
+      <p>Gemini file uploads: Google automatically deletes Files API uploads after 48 hours. We request deletion when processing no longer needs those uploads. Deleting an uploaded file does not remove separate abuse-monitoring records or the study content and playback audio stored by Lecture Processor.</p>
+      <p>Claude through OpenRouter: when enabled, this route is configured to use services that OpenRouter classifies as zero data retention (ZDR), with its Safety Retention category excluded. ZDR limits routine storage of prompts and responses after processing. Operational metadata, permitted temporary caches and legally required preservation can still apply.</p>
+      <ul>
+        <li><a href="https://aistudio.google.com/docs/terms#data-use-paid">Google Gemini paid-service terms</a></li>
+        <li><a href="https://aistudio.google.com/docs/usage-policies">Google Gemini abuse monitoring</a></li>
+        <li><a href="https://aistudio.google.com/docs/files#delete-uploaded">Google Gemini file storage</a></li>
+        <li><a href="https://openrouter.ai/docs/guides/features/zdr">OpenRouter data retention policy</a></li>
+      </ul>
+
       <h2 id="10-security">10. Security</h2>
       <p>We use access controls, authentication checks, and server-side validation to reduce unauthorized access and abuse. No online system is fully risk-free, so absolute security cannot be guaranteed.</p>
 
       <h2 id="11-international-processing">11. International Processing</h2>
       <p>Your data may be processed in countries where our infrastructure providers operate. Those transfers are handled through provider contractual safeguards where applicable.</p>
+      <p>When enabled, the Claude route uses Google Cloud’s global service. Requests may be processed in any region supported by the selected model, including outside the European Union.</p>
 
       <h2 id="12-your-rights">12. Your Rights</h2>
       <p>Depending on your jurisdiction, you may have rights to access, correct, delete, or export personal data, and to object to certain processing activities.</p>

@@ -1271,7 +1271,7 @@
     "Public navigation": "Publieke navigatie",
     "FAQ": "Veelgestelde vragen",
     "Open app": "App openen",
-    "Powered by Gemini AI · Made for students ·": "Met Gemini AI · Gemaakt voor studenten ·",
+    "AI-assisted study tools · Made for students ·": "Studiehulpmiddelen met AI · Gemaakt voor studenten ·",
     "Physio Clinical Workspace": "Klinische werkruimte voor fysiotherapie",
     "Physio Clinical Workspace · Lecture Processor": "Klinische werkruimte · Lecture Processor",
     "Saving your preferences…": "Je voorkeuren opslaan…",
