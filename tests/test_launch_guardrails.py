@@ -2827,49 +2827,20 @@ def test_download_docx_transcript_uses_consistent_filename(client, monkeypatch):
 
 
 def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_path):
-    class _FakeUploaded:
-        uri = "gs://fake/audio"
-        name = "files/fake-audio"
-
-    class _FakeFiles:
-        def upload(self, **_kwargs):
-            return _FakeUploaded()
-
-        def delete(self, **_kwargs):
-            return None
-
-    class _FakeModels:
-        def generate_content(self, **_kwargs):
-            class _Resp:
-                text = "Interview transcript output"
-
-            return _Resp()
-
-    class _FakeClient:
-        files = _FakeFiles()
-        models = _FakeModels()
+    # The workflow session uploads through the local fake client; every generation returns this text.
+    fake_client = FakeGeminiClient()
+    generations = []
+    fake_client.models.generate_content = lambda **kwargs: generations.append(kwargs) or SimpleNamespace(
+        text="Interview transcript output", usage_metadata=None)
 
     saved = []
     audio_path = tmp_path / "interview.wav"
     audio_path.write_bytes(b"RIFF0000WAVEfmt ")
 
-    monkeypatch.setattr(core, "client", _FakeClient())
+    monkeypatch.setattr(core, "client", fake_client)
     monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (str(path), False))
     monkeypatch.setattr(core, "persist_audio_for_study_pack", lambda _job_id, _path: "/tmp/persisted.mp3")
     monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")
-    monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
-    monkeypatch.setattr(
-        core,
-        "generate_interview_enhancements",
-        lambda _transcript, _features, _language="English", retry_tracker=None: {
-            "summary": "Summary text",
-            "sections": None,
-            "combined": None,
-            "successful_features": ["summary"],
-            "failed_count": 0,
-            "error": None,
-        },
-    )
     monkeypatch.setattr(core, "save_study_pack", lambda job_id, _job: saved.append(job_id) or True)
     monkeypatch.setattr(core, "cleanup_files", lambda _local, _gemini: None)
     monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: None)
@@ -2908,6 +2879,10 @@ def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_
 
     assert core.jobs[job_id]["status"] == "complete"
     assert saved == [job_id]
+    # One upload, transcription plus the summary extra, and the upload deleted once at close.
+    assert fake_client.calls.count("files.upload") == 1
+    assert len(generations) == 2
+    assert fake_client.calls.count("files.delete") == 1
 
 
 def test_upload_requires_auth(client):
