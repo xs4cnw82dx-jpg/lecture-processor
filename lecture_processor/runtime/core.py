@@ -76,7 +76,7 @@ from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.ai.providers import routing as ai_routing
-from lecture_processor.domains.ai.providers.contracts import AudioPart, TextPart
+from lecture_processor.domains.ai.providers.contracts import AudioPart, PreparedFilePart, TextPart
 from lecture_processor.domains.account import users as account_users
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
@@ -1672,7 +1672,7 @@ def format_transcript_with_timestamps(segments):
 
 def _audio_generation_mode(audio_file, provider_session):
     """Neutral audio parts need a caller-owned session; native handles must not get one."""
-    is_neutral = isinstance(audio_file, AudioPart)
+    is_neutral = isinstance(audio_file, (AudioPart, PreparedFilePart))
     if is_neutral != (provider_session is not None):
         raise ValueError('Audio input and provider session do not match.')
     return is_neutral

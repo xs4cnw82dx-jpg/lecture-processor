@@ -5,6 +5,7 @@ import zipfile
 
 import pytest
 
+from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import instant_batch_orchestrator
@@ -1401,9 +1402,6 @@ def test_instant_text_combine_uses_direct_generate_without_gemini_batch(monkeypa
         def create(self, *args, **kwargs):
             raise AssertionError('Gemini Batch API must not be used for instant batch.')
 
-    class _InstantClient:
-        batches = _ForbiddenBatches()
-
     class _Usage:
         prompt_token_count = 10
         candidates_token_count = 5
@@ -1417,12 +1415,15 @@ def test_instant_text_combine_uses_direct_generate_without_gemini_batch(monkeypa
 
     generate_calls = []
 
-    def _fake_generate(model, contents, **kwargs):
+    def _fake_generate(*, model, contents, **kwargs):
         generate_calls.append({'model': model, 'contents': contents, 'kwargs': kwargs})
         return _Response(f'# Instant result {len(generate_calls)}')
 
-    monkeypatch.setattr(core, 'client', _InstantClient())
-    monkeypatch.setattr(instant_batch_orchestrator.ai_provider, 'generate_with_policy', _fake_generate)
+    # Instant rows generate through a workflow session on the local fake client.
+    instant_client = FakeGeminiClient()
+    instant_client.batches = _ForbiddenBatches()
+    instant_client.models.generate_content = _fake_generate
+    monkeypatch.setattr(core, 'client', instant_client)
 
     batch_id = batch_orchestrator.create_batch_job(
         {
