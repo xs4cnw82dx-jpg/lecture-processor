@@ -2101,7 +2101,7 @@ def test_update_study_progress_empty_card_state_payload_does_not_delete_existing
     assert fake_card_doc.set_calls == []
 
 
-def test_update_study_progress_rejects_unknown_pack_without_writes(client, monkeypatch):
+def test_update_study_progress_rejects_unknown_pack_without_writes(allow_progress_account_access, client, monkeypatch):
     class _FakeSnapshot:
         exists = False
 
@@ -2118,9 +2118,6 @@ def test_update_study_progress_rejects_unknown_pack_without_writes(client, monke
         def set(self, payload, merge=False):
             self.set_calls.append((payload, merge))
 
-    class _MissingPackDoc:
-        exists = False
-
     fake_progress_doc = _FakeProgressDoc()
     runtime = get_runtime(client.application)
 
@@ -2128,7 +2125,8 @@ def test_update_study_progress_rejects_unknown_pack_without_writes(client, monke
     monkeypatch.setattr(account_lifecycle, "ensure_account_allows_writes", lambda _uid, runtime=None: (True, ""))
     monkeypatch.setattr(runtime, "db", object(), raising=False)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda _uid: fake_progress_doc, raising=False)
-    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _MissingPackDoc())
+    # Ownership is a projected uid read; a missing pack returns no owner document.
+    monkeypatch.setattr(core.study_repo, "get_study_pack_owner_docs", lambda _db, _ids, transaction=None: [])
 
     response = client.put(
         "/api/study-progress",
@@ -2565,19 +2563,22 @@ def test_update_study_progress_merges_cross_browser_card_states(allow_progress_a
     runtime = get_runtime(client.application)
     fake_db = _FakeDb()
 
-    class _FakePackDoc:
-        exists = True
-
-        def to_dict(self):
-            return {"uid": "u12", "study_pack_id": "pack-sync-1"}
+    def full_pack_read(*_args, **_kwargs):
+        raise AssertionError("Progress sync must not read whole study packs")
 
     monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u12", "email": "user@gmail.com"})
     monkeypatch.setattr(runtime, "db", fake_db, raising=False)
     monkeypatch.setattr(core.firestore, "transactional", lambda fn: fn, raising=False)
-    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", lambda _db, _pack_id: _FakePackDoc())
-    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", lambda _db, _pack_id: SimpleNamespace(get=lambda transaction=None: _FakePackDoc()))
     monkeypatch.setattr(core.study_repo, "list_all_study_card_states_by_uid", lambda *_args, **_kwargs: [])
-    monkeypatch.setattr(core.study_repo, "get_study_pack_owner_docs", lambda *_args, **_kwargs: [])
+    owner_reads = []
+
+    def owner_docs(_db, ids, transaction=None):
+        owner_reads.append(sorted(ids))
+        return [SimpleNamespace(id=pack_id, exists=True, to_dict=lambda: {"uid": "u12"}) for pack_id in ids]
+
+    monkeypatch.setattr(core.study_repo, "get_study_pack_owner_docs", owner_docs)
+    monkeypatch.setattr(core.study_repo, "get_study_pack_doc", full_pack_read)
+    monkeypatch.setattr(core.study_repo, "study_pack_doc_ref", full_pack_read)
     monkeypatch.setattr(runtime, "get_study_progress_doc", lambda uid: _FakeDocRef(progress_store, uid), raising=False)
     monkeypatch.setattr(
         runtime,
@@ -2673,6 +2674,8 @@ def test_update_study_progress_merges_cross_browser_card_states(allow_progress_a
         "2026-02-27": 1,
         "2026-03-01": 1,
     }
+    # One projected owner read per sync, never a whole-pack read.
+    assert [ids for ids in owner_reads if ids] == [["pack-sync-1"], ["pack-sync-1"]]
 
 
 def test_billing_receipt_helpers_track_charged_and_refunded_credits():

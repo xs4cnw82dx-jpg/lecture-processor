@@ -39,13 +39,26 @@ def _rollup_updates(uid, rollup, app_ctx):
     }
 
 
+def _assert_pack_owners(app_ctx, uid, pack_ids, transaction=None):
+    """Check ownership with projected uid reads, in the caller's transaction when given.
+
+    The first failing id in sorted order decides the error, as the full-pack check did.
+    """
+    ids = sorted(set(pack_ids))
+    if not ids:
+        return
+    docs = app_ctx.repositories.study.get_study_pack_owner_docs(app_ctx.db, ids, transaction=transaction)
+    by_id = {doc.id: doc for doc in docs}
+    for pack_id in ids:
+        doc = by_id.get(pack_id)
+        if doc is None or not doc.exists:
+            raise ProgressPackUnavailable('Study pack not found', 404)
+        if (doc.to_dict() or {}).get('uid') != uid:
+            raise ProgressPackUnavailable('Forbidden', 403)
+
+
 def _assert_pack_owner(app_ctx, uid, pack_id, transaction):
-    pack_ref = app_ctx.repositories.study.study_pack_doc_ref(app_ctx.db, pack_id)
-    doc = _read_doc(pack_ref, transaction)
-    if not doc.exists:
-        raise ProgressPackUnavailable('Study pack not found', 404)
-    if (doc.to_dict() or {}).get('uid') != uid:
-        raise ProgressPackUnavailable('Forbidden', 403)
+    _assert_pack_owners(app_ctx, uid, [pack_id], transaction)
 
 
 def _rebuild_due_rollup(app_ctx, uid, transaction=None):
@@ -367,21 +380,14 @@ def update_study_progress(app_ctx, request):
             if cleaned_state and pack_id not in remove_pack_id_set:
                 validated_states.append((pack_id, cleaned_state))
 
-        for pack_id in sorted(requested_pack_ids):
-            _pack_result, ownership_error, ownership_status = _get_owned_pack_or_response(app_ctx, uid, pack_id)
-            if ownership_error is not None:
-                return ownership_error, ownership_status
-
         progress_ref = app_ctx.get_study_progress_doc(uid)
         now_ts = app_ctx.time.time()
 
         def _build_mutations(transaction=None):
             account_lifecycle.require_account_access(uid, runtime=app_ctx, transaction=transaction)
-            # Ownership must be checked in the same transaction as progress:
-            # otherwise a concurrent pack deletion can resurrect its state.
-            if transaction is not None:
-                for pack_id in sorted(requested_pack_ids):
-                    _assert_pack_owner(app_ctx, uid, pack_id, transaction)
+            # Ownership is checked once, with projected uid reads, in the same transaction
+            # as progress; otherwise a concurrent pack deletion can resurrect its state.
+            _assert_pack_owners(app_ctx, uid, requested_pack_ids, transaction)
             existing_progress_doc = _read_doc(progress_ref, transaction)
             existing_progress_data = existing_progress_doc.to_dict() if existing_progress_doc.exists else {}
             updates = {'uid': uid, 'updated_at': now_ts}
