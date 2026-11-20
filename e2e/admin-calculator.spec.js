@@ -19,7 +19,7 @@ async function openCalculator(page, futureRates = false) {
       for (const change of rates.rate_schedule || []) Object.assign(rates, change);
     }
   }
-  await page.route('**/static/js/firebase-bootstrap.js', route => route.fulfill({
+  await page.route('**/static/js/firebase-bootstrap.js*', route => route.fulfill({
     contentType: 'text/javascript',
     body: `(() => {
       const user = {uid:'pricing-test',email:'admin@example.com',getIdToken:async()=> 'test-token'};

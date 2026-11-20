@@ -9,7 +9,7 @@ test('a signed-out reader opens a shared book through its name dialog', async ({
   let exchanges = 0;
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.route('**/static/js/firebase-bootstrap.js', (route) => route.fulfill({
+  await page.route('**/static/js/firebase-bootstrap.js*', (route) => route.fulfill({
     contentType: 'text/javascript',
     body: `const auth={currentUser:null,onAuthStateChanged(fn){queueMicrotask(()=>fn(null));}}; window.LectureProcessorBootstrap={getAuth:()=>auth};`,
   }));

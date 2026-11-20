@@ -11,7 +11,7 @@ async function darkFixture(page) {
   });
   // This suite exercises appearance independently of account hydration. The
   // settings suite covers server persistence and account ownership separately.
-  await page.route('**/static/js/preferences.js', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
+  await page.route('**/static/js/preferences.js*', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
 }
 
 for (const route of ['/', '/plan', '/study', '/lecture-notes', '/batch_mode', '/dashboard', '/buy_credits', '/voice-notes', '/physio', '/books', '/video-overlay-builder', '/faq']) {

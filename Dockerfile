@@ -24,6 +24,9 @@ RUN pip install -r requirements.txt -c requirements.constraints.txt
 
 COPY . .
 
+# Precompile application bytecode so a cold start does not compile it on first import.
+RUN python -m compileall -q /app/lecture_processor /app/app.py
+
 RUN mkdir -p /usr/local/share/fonts/book-studio && \
     cp static/fonts/books/*.ttf /usr/local/share/fonts/book-studio/ && fc-cache -f
 

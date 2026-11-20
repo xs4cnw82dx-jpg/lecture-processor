@@ -1,7 +1,7 @@
 const {test, expect} = require('@playwright/test');
 const field = (page, name) => page.locator(`[data-field="${name}"]`);
 async function studio(page) {
-  await page.route('**/static/js/firebase-bootstrap.js', route => route.fulfill({contentType:'text/javascript',body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};'}));
+  await page.route('**/static/js/firebase-bootstrap.js*', route => route.fulfill({contentType:'text/javascript',body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};'}));
   await page.goto('/books');
   await page.getByRole('button',{name:'＋ New book',exact:true}).click();
   await page.locator('[data-template="blank"]').click();

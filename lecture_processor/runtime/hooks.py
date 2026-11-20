@@ -10,6 +10,7 @@ from werkzeug.exceptions import HTTPException, NotFound, RequestEntityTooLarge
 
 from lecture_processor.calendar_observability import redact_calendar_url
 from lecture_processor.runtime.environment import extract_hostname, normalize_public_base_url
+from lecture_processor.runtime.static_assets import register_static_versioning
 
 
 def _set_sentry_tags(runtime, tags):
@@ -36,6 +37,7 @@ def register_runtime_hooks(app, runtime) -> None:
     state = app.extensions.setdefault('lecture_processor', {})
     if state.get('hooks_registered'):
         return
+    register_static_versioning(app)
 
     @app.before_request
     def _redirect_render_pages_to_public_origin():
@@ -64,6 +66,9 @@ def register_runtime_hooks(app, runtime) -> None:
 
     @app.before_request
     def _attach_csp_nonce():
+        if request.endpoint == 'static':
+            # Static files render no inline scripts; skip per-request page work.
+            return
         g.csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode('ascii').rstrip('=')
 
     @app.before_request
@@ -73,6 +78,8 @@ def register_runtime_hooks(app, runtime) -> None:
 
     @app.before_request
     def _attach_sentry_route_context():
+        if request.endpoint == 'static':
+            return
         request_id = str(request.headers.get('X-Request-ID', '') or '').strip()[:120] or uuid.uuid4().hex
         g.request_id = request_id
         tags = {
@@ -92,7 +99,8 @@ def register_runtime_hooks(app, runtime) -> None:
         request_id = str(getattr(g, 'request_id', '') or '').strip()
         if request_id:
             response.headers['X-Request-ID'] = request_id
-        _set_sentry_tags(runtime, {'route.status_code': str(response.status_code)})
+        if request.endpoint != 'static':
+            _set_sentry_tags(runtime, {'route.status_code': str(response.status_code)})
         runtime.apply_security_headers(response)
         return runtime.apply_cors_headers(response)
 

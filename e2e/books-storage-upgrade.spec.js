@@ -24,7 +24,7 @@ test("an older open tab shows a persistent storage message and retry keeps its d
       transaction.onerror = () => reject(transaction.error);
     };
   }), draft);
-  await page.route("**/static/js/firebase-bootstrap.js", (route) => route.fulfill({
+  await page.route("**/static/js/firebase-bootstrap.js*", (route) => route.fulfill({
     contentType: "text/javascript",
     body: "window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};",
   }));
@@ -57,7 +57,7 @@ test("an older open tab shows a persistent storage message and retry keeps its d
 });
 
 test("a revoked book keeps its access message visible after fonts load and retry", async ({ page }) => {
-  await page.route("**/static/js/firebase-bootstrap.js", (route) => route.fulfill({
+  await page.route("**/static/js/firebase-bootstrap.js*", (route) => route.fulfill({
     contentType: "text/javascript",
     body: "window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};",
   }));

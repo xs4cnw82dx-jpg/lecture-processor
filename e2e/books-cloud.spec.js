@@ -5,7 +5,7 @@ const Sync = require("../static/js/book-cloud-sync.js");
 
 async function setupCloud(page, options = {}) {
   const state = { books: new Map(), keys: new Map(), creates: 0, puts: 0, failCreate: options.failCreate || 0 };
-  await page.route("**/static/js/firebase-bootstrap.js", (route) => route.fulfill({
+  await page.route("**/static/js/firebase-bootstrap.js*", (route) => route.fulfill({
     contentType: "text/javascript",
     body: `(() => {
       const makeUser = uid => uid ? {uid,displayName:'Book Author',email:uid+'@example.com',getIdToken:async()=>uid} : null;

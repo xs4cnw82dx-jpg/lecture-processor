@@ -1,7 +1,7 @@
 const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
 async function picker(page) {
-  await page.route('**/static/js/firebase-bootstrap.js', route => route.fulfill({contentType:'text/javascript',body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};'}));
+  await page.route('**/static/js/firebase-bootstrap.js*', route => route.fulfill({contentType:'text/javascript',body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};'}));
   await page.goto('/books');
   await page.getByRole('button', {name:'＋ New book', exact:true}).click();
   await page.locator('[data-template="blank"]').click();

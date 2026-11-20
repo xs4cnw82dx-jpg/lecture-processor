@@ -43,7 +43,7 @@ async function openAdmin(page, { language = 'en', theme = 'light', checks = norm
     window.LectureProcessorBootstrap = { getAuth: () => auth };
   }, { language, theme });
   await page.route('https://**', route => route.abort());
-  await page.route('**/static/js/firebase-bootstrap.js', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
+  await page.route('**/static/js/firebase-bootstrap.js*', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
   await page.route('**/admin', route => route.fulfill({ contentType: 'text/html', body: html }));
   await page.route('**/api/**', route => {
     const pathname = new URL(route.request().url()).pathname;

@@ -7,7 +7,7 @@ const tinyPNG = Buffer.from(
 );
 
 async function localStudio(page) {
-  await page.route("**/static/js/firebase-bootstrap.js", (route) =>
+  await page.route("**/static/js/firebase-bootstrap.js*", (route) =>
     route.fulfill({
       contentType: "text/javascript",
       body: "window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};",
@@ -501,7 +501,7 @@ test("mobile object settings reopen the selection and remain open when switching
 test("shared refresh updates the title while preserving the reader's page and zoom", async ({
   page,
 }) => {
-  await page.route("**/static/js/firebase-bootstrap.js", (route) =>
+  await page.route("**/static/js/firebase-bootstrap.js*", (route) =>
     route.fulfill({
       contentType: "text/javascript",
       body: "window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};",

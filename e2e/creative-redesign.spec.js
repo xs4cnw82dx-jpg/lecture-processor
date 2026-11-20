@@ -5,7 +5,7 @@ test.beforeEach(async ({page}) => {
   for (const name of ['book-studio','video-overlay-builder']) await page.route('**/static/js/'+name+'.min.js*', route => route.fulfill({contentType:'text/javascript',body:readFileSync('static/js/'+name+'.js','utf8')}));
 });
 async function localAuth(page) {
-  await page.route('**/static/js/firebase-bootstrap.js', route => route.fulfill({ contentType:'text/javascript', body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};' }));
+  await page.route('**/static/js/firebase-bootstrap.js*', route => route.fulfill({ contentType:'text/javascript', body:'window.LectureProcessorBootstrap={getAuth:()=>({currentUser:null,onAuthStateChanged:fn=>queueMicrotask(()=>fn(null))})};' }));
 }
 async function fits(page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();

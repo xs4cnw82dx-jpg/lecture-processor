@@ -11,7 +11,7 @@ async function setup(page, { missingAsset = false } = {}) {
     if (assets.length) source.pages[0].items.push(M.object("image", { assetId: "missing-image" }));
     state.books.set(book.id, { book, pages: source.pages, assets });
   }
-  await page.route("**/static/js/firebase-bootstrap.js", (route) => route.fulfill({
+  await page.route("**/static/js/firebase-bootstrap.js*", (route) => route.fulfill({
     contentType: "text/javascript",
     body: `(() => {
       const makeUser = uid => uid ? {uid,displayName:uid,email:uid+'@example.com',getIdToken:async()=>uid} : null;

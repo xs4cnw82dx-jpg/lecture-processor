@@ -1,4 +1,4 @@
-const VOICE_CACHE = 'lecture-processor-voice-v10';
+const VOICE_CACHE = 'lecture-processor-voice-v11';
 const VOICE_CACHE_PREFIX = 'lecture-processor-voice-';
 const APP_SHELL = [
   '/voice-notes',
@@ -90,6 +90,8 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => caches.match(request))
+        // Pages request content-versioned URLs (?v=...); offline, fall back to the precached file.
+        .then((cached) => cached || caches.match(request, { ignoreSearch: true }))
     );
   }
 });
