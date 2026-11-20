@@ -16,6 +16,7 @@ from lecture_processor.runtime.container import get_runtime
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import pipelines as ai_pipelines
+from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.billing import credits as billing_credits
@@ -928,34 +929,11 @@ def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_te
         "run_with_provider_retry",
         lambda _name, fn, retry_tracker=None, runtime=None: fn(),
     )
-    monkeypatch.setattr(
-        ai_provider,
-        "generate_with_policy",
-        lambda *_args, **_kwargs: SimpleNamespace(text="Combined image extraction output"),
-    )
-    monkeypatch.setattr(ai_provider, "extract_token_usage", lambda *_args, **_kwargs: {})
-
-    class _Part:
-        @staticmethod
-        def from_uri(file_uri=None, mime_type=None):
-            return {"uri": file_uri, "mime_type": mime_type}
-
-        @staticmethod
-        def from_text(text=''):
-            return {"text": text}
-
-    class _Content:
-        def __init__(self, role=None, parts=None):
-            self.role = role
-            self.parts = parts or []
-
-    class _UploadApi:
-        def upload(self, file=None, config=None):
-            return SimpleNamespace(uri=f"mock://{file}", name="mock-file")
-
-    monkeypatch.setattr(core, "types", SimpleNamespace(Part=_Part, Content=_Content))
-    monkeypatch.setattr(core, "client", SimpleNamespace(files=_UploadApi()))
-    monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
+    # The workflow session owns uploads and generation through the local fake client.
+    fake_client = FakeGeminiClient({"models.generate_content": [
+        SimpleNamespace(text="Combined image extraction output", usage_metadata=None),
+    ]})
+    monkeypatch.setattr(core, "client", fake_client)
     monkeypatch.setattr(core, "submit_background_job", lambda target, *args, **kwargs: target(*args, **kwargs))
 
     response = client.post(
@@ -998,6 +976,9 @@ def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_te
     assert status_payload['billing_receipt']['charged'] == {'slides_credits': 1}
     assert log_calls
     assert cleanup_calls
+    assert fake_client.calls.count("files.upload") == 5
+    assert fake_client.calls.count("models.generate_content") == 1
+    assert fake_client.calls.count("files.delete") == 5
 
 
 def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(client, monkeypatch):

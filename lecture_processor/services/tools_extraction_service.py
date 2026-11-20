@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai.providers import factory as provider_factory
+from lecture_processor.domains.ai.providers.contracts import ImagePart, PdfPart, TextPart
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import job_charges
@@ -379,7 +381,7 @@ def _set_tools_job_progress(app_ctx, job_id: str, *, step: int, description: str
 
 def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_input: _StagedToolInput, deducted_credit: str, user_text_credits_before: int):
     retry_tracker = {}
-    gemini_files = []
+    provider_session = None
     local_paths = list(staged_input.staged_paths or [])
     refunded_credit = False
     provider_error_code = ''
@@ -396,6 +398,8 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
     try:
         if not job_charges.begin_runtime_job(job_id, runtime=app_ctx):
             return
+        # One workflow session owns every remote file; it opens only after admission.
+        provider_session = provider_factory.open_provider_session(app_ctx)
         _set_tools_job_progress(
             app_ctx,
             job_id,
@@ -475,86 +479,67 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 source_block_title = 'Source content extracted from DOCX:'
                 operation_name = 'tools_extract_document_docx'
             _set_tools_job_progress(app_ctx, job_id, step=3, description='Generating output…')
-            response = ai_provider.generate_with_policy(
-                app_ctx.MODEL_TOOLS,
-                [app_ctx.types.Content(role='user', parts=[
-                    app_ctx.types.Part.from_text(text=prompt),
-                    app_ctx.types.Part.from_text(text=f"{source_block_title}\n\n{docx_text}"),
-                ])],
+            response = provider_session.generate(
+                'tools_extraction',
+                [TextPart(prompt), TextPart(f"{source_block_title}\n\n{docx_text}")],
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
                 operation_name=operation_name,
-                runtime=app_ctx,
             )
         else:
             if source_type == 'image':
                 image_parts = []
                 _set_tools_job_progress(app_ctx, job_id, step=2, description='Uploading images…')
                 for index, image_path in enumerate(local_paths):
-                    image_mime_type = app_ctx.get_mime_type(image_path) or 'image/jpeg'
-                    uploaded_provider_file = ai_provider.run_with_provider_retry(
-                        f'tools_image_upload_{index + 1}',
-                        lambda p=image_path, m=image_mime_type: app_ctx.client.files.upload(file=p, config={'mime_type': m}),
-                        retry_tracker=retry_tracker,
-                        runtime=app_ctx,
+                    image_part = ImagePart(image_path, app_ctx.get_mime_type(image_path) or 'image/jpeg')
+                    provider_session.upload_file(
+                        'tools_extraction', image_part,
+                        operation_name=f'tools_image_upload_{index + 1}', retry_tracker=retry_tracker,
                     )
-                    gemini_files.append(uploaded_provider_file)
-                    ai_provider.run_with_provider_retry(
-                        f'tools_image_processing_{index + 1}',
-                        lambda uploaded=uploaded_provider_file: app_ctx.wait_for_file_processing(uploaded),
-                        retry_tracker=retry_tracker,
-                        runtime=app_ctx,
+                    provider_session.wait_for_file(
+                        'tools_extraction', image_part,
+                        operation_name=f'tools_image_processing_{index + 1}', retry_tracker=retry_tracker,
                     )
-                    image_parts.append(app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=image_mime_type))
-                image_parts.append(app_ctx.types.Part.from_text(text=prompt))
+                    image_parts.append(image_part)
+                image_parts.append(TextPart(prompt))
                 _set_tools_job_progress(app_ctx, job_id, step=3, description='Generating output…')
-                response = ai_provider.generate_with_policy(
-                    app_ctx.MODEL_TOOLS,
-                    [app_ctx.types.Content(role='user', parts=image_parts)],
+                response = provider_session.generate(
+                    'tools_extraction',
+                    image_parts,
                     max_output_tokens=32768,
                     retry_tracker=retry_tracker,
                     operation_name='tools_extract_image',
-                    runtime=app_ctx,
                 )
             else:
                 _set_tools_job_progress(app_ctx, job_id, step=2, description='Uploading document…')
-                uploaded_provider_file = ai_provider.run_with_provider_retry(
-                    'tools_file_upload',
-                    lambda: app_ctx.client.files.upload(file=upload_path, config={'mime_type': upload_mime_type}),
-                    retry_tracker=retry_tracker,
-                    runtime=app_ctx,
+                # Documents reach this branch only after conversion to PDF.
+                document_part = PdfPart(upload_path)
+                provider_session.upload_file(
+                    'tools_extraction', document_part,
+                    operation_name='tools_file_upload', retry_tracker=retry_tracker,
                 )
-                gemini_files.append(uploaded_provider_file)
-                ai_provider.run_with_provider_retry(
-                    'tools_file_processing',
-                    lambda: app_ctx.wait_for_file_processing(uploaded_provider_file),
-                    retry_tracker=retry_tracker,
-                    runtime=app_ctx,
+                provider_session.wait_for_file(
+                    'tools_extraction', document_part,
+                    operation_name='tools_file_processing', retry_tracker=retry_tracker,
                 )
                 _set_tools_job_progress(app_ctx, job_id, step=3, description='Generating output…')
-                response = ai_provider.generate_with_policy(
-                    app_ctx.MODEL_TOOLS,
-                    [app_ctx.types.Content(role='user', parts=[
-                        app_ctx.types.Part.from_uri(file_uri=uploaded_provider_file.uri, mime_type=upload_mime_type),
-                        app_ctx.types.Part.from_text(text=prompt),
-                    ])],
+                response = provider_session.generate(
+                    'tools_extraction',
+                    [document_part, TextPart(prompt)],
                     max_output_tokens=32768,
                     retry_tracker=retry_tracker,
                     operation_name=f'tools_extract_{source_type}',
-                    runtime=app_ctx,
                 )
 
         extracted_markdown = str(getattr(response, 'text', '') or '').strip()
         if not extracted_markdown:
             raise ValueError('Extraction returned empty output')
 
-        usage = ai_provider.extract_token_usage(response, runtime=app_ctx)
-        stage_usage = {
-            **usage,
-            'model': app_ctx.MODEL_TOOLS,
-            'billing_mode': 'standard',
-            'input_modality': 'text' if source_type in {'document', 'url'} else 'image',
-        }
+        stage_usage = ai_provider.TokenAccumulator(runtime=app_ctx).record_result(
+            f'tools_extract_{source_type}', response,
+            input_modality='text' if source_type in {'document', 'url'} else 'image',
+        )
+        usage = stage_usage
         retry_attempts_total = tools_extraction_support.sum_retry_attempts(retry_tracker)
         analytics_events.log_analytics_event(
             'tools_extract_completed',
@@ -724,5 +709,10 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             },
         )
     finally:
-        if local_paths or gemini_files:
-            app_ctx.cleanup_files(local_paths, gemini_files)
+        try:
+            if local_paths or provider_session is not None:
+                # Local inputs are removed first; the session then deletes its remote files.
+                app_ctx.cleanup_files(local_paths, [])
+        finally:
+            if provider_session is not None:
+                provider_session.close()

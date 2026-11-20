@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, TextPart, Usage
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.services import tools_extraction_service, tools_extraction_support
@@ -61,19 +61,23 @@ def test_tools_extract_job_redacts_url_and_prompt_from_persisted_metadata(monkey
         lambda _source_url: ('Readable page text', None, 'text/plain'),
     )
 
-    def _fake_generate(_model, contents, **_kwargs):
-        for content in contents:
-            for part in getattr(content, 'parts', []) or []:
-                if 'text' in part:
-                    generated_text_parts.append(part['text'])
-        return SimpleNamespace(text='Extracted markdown')
+    class _Session:
+        """Workflow provider double; the worker passes neutral text parts."""
 
-    monkeypatch.setattr(ai_provider, 'generate_with_policy', _fake_generate)
-    monkeypatch.setattr(
-        ai_provider,
-        'extract_token_usage',
-        lambda *_args, **_kwargs: {'input_tokens': 11, 'output_tokens': 7, 'total_tokens': 18},
-    )
+        closed = False
+
+        def generate(self, stage, parts, **_kwargs):
+            assert stage == 'tools_extraction'
+            generated_text_parts.extend(part.text for part in parts if isinstance(part, TextPart))
+            return GenerationResult(text='Extracted markdown', parsed=None,
+                                    usage=Usage(input_tokens=11, output_tokens=7, total_tokens=18),
+                                    provider='fake', model='gemini-test')
+
+        def close(self):
+            self.closed = True
+
+    session = _Session()
+    monkeypatch.setattr(tools_extraction_service.provider_factory, 'open_provider_session', lambda _runtime: session)
     monkeypatch.setattr(
         analytics_events,
         'log_analytics_event',
@@ -141,3 +145,4 @@ def test_tools_extract_job_redacts_url_and_prompt_from_persisted_metadata(monkey
     assert raw_url not in str(progress_updates)
     assert any(fields.get('tool_input_name') == 'URL: example.com' for _job_id, fields in progress_updates)
     assert raw_url not in '\n'.join(generated_text_parts)
+    assert generated_text_parts and session.closed
