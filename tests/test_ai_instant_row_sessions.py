@@ -187,3 +187,24 @@ def test_audio_helpers_accept_prepared_parts_only_with_a_session(core):
     assert text == 'Synthetic audio_transcription output.'
     assert usage == {'input_tokens': 7, 'output_tokens': 5, 'total_tokens': 19}
     assert session.calls[0][1][0] is part
+
+
+def test_session_start_failure_fails_the_row_and_refunds(core, row_env, monkeypatch):
+    def broken(_runtime, **_kwargs):
+        row_env.events.append('open')
+        raise RuntimeError('Synthetic session start failure')
+
+    monkeypatch.setattr(factory, 'open_provider_session', broken)
+    row = run_row(core, row_env, 'slides-only')
+    assert row['status'] == 'error' and row['failed_stage'] == 'instant_pipeline'
+    assert row_env.events == ['upload', 'open', 'refund', 'finalize', 'cleanup']
+
+
+def test_stopped_batch_during_generation_closes_without_refund(core, row_env, monkeypatch):
+    def stop(*_args, **_kwargs):
+        raise batch._BatchStopped('synthetic-batch')
+
+    monkeypatch.setattr(Session, 'generate', stop)
+    row = run_row(core, row_env, 'text-combine', slide_text='Synthetic slides.')
+    assert row.get('status') != 'error' and 'refund' not in row_env.events
+    assert row_env.events[-3:] == ['finalize', 'cleanup', 'close']
