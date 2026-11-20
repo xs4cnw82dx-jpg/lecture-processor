@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
+from lecture_processor.domains.ai.providers import factory as provider_factory
+from lecture_processor.domains.ai.providers.contracts import AudioPart, PdfPart, TextPart
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -257,7 +259,7 @@ def save_study_pack(job_id, job_data, runtime=None):
 
 def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    gemini_files = []
+    provider_session = None
     local_paths = [pdf_path, audio_path]
     set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=resolved_runtime, **fields)
     get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=resolved_runtime) or {}
@@ -268,42 +270,28 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
     try:
         if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
             return
+        # One workflow session owns every remote file; it opens only after admission.
+        provider_session = provider_factory.open_provider_session(resolved_runtime)
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_input_path = _prepare_slides_pdf_for_provider(job_id, pdf_path, local_paths, set_fields, runtime=resolved_runtime)
         failed_stage = 'slide_upload'
-        pdf_file = ai_provider.run_with_provider_retry(
-            'slide_upload',
-            lambda: resolved_runtime.client.files.upload(file=pdf_input_path, config={'mime_type': 'application/pdf'}),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
-        gemini_files.append(pdf_file)
+        pdf_part = PdfPart(pdf_input_path)
+        provider_session.upload_file('slides_extraction', pdf_part,
+                                     operation_name='slide_upload', retry_tracker=retry_tracker)
 
         failed_stage = 'slide_file_processing'
-        ai_provider.run_with_provider_retry(
-            'slide_file_processing',
-            lambda: resolved_runtime.wait_for_file_processing(pdf_file),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
+        provider_session.wait_for_file('slides_extraction', pdf_part,
+                                       operation_name='slide_file_processing', retry_tracker=retry_tracker)
 
         failed_stage = 'slide_extraction'
-        response = ai_provider.generate_with_policy(
-            resolved_runtime.MODEL_SLIDES,
-            [
-                resolved_runtime.types.Content(
-                    role='user',
-                    parts=[
-                        resolved_runtime.types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'),
-                        resolved_runtime.types.Part.from_text(text=resolved_runtime.PROMPT_SLIDE_EXTRACTION),
-                    ],
-                )
-            ],
+        response = provider_session.generate(
+            'slides_extraction',
+            [pdf_part, TextPart(resolved_runtime.PROMPT_SLIDE_EXTRACTION)],
+            max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='slide_extraction',
-            runtime=resolved_runtime,
         )
-        tokens.record('slide_extraction', response, model=resolved_runtime.MODEL_SLIDES, billing_mode='standard', input_modality='text')
+        tokens.record_result('slide_extraction', response, input_modality='text')
         slide_text = response.text
         set_fields(slide_text=slide_text, step=2, step_description='Transcribing audio...')
 
@@ -316,40 +304,37 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
         audio_mime_type = resolved_runtime.get_mime_type(converted_audio_path)
 
         failed_stage = 'audio_upload'
-        audio_file = ai_provider.run_with_provider_retry(
-            'audio_upload',
-            lambda: resolved_runtime.client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
-        gemini_files.append(audio_file)
+        audio_part = AudioPart(converted_audio_path, audio_mime_type)
+        # Preparation uses the first generation stage that reads this audio.
+        audio_stage = ('audio_transcription_timestamped' if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC
+                       else 'audio_transcription')
+        provider_session.upload_file(audio_stage, audio_part,
+                                     operation_name='audio_upload', retry_tracker=retry_tracker)
 
         set_fields(step_description='Processing audio file (this may take a few minutes)...')
         failed_stage = 'audio_file_processing'
-        ai_provider.run_with_provider_retry(
-            'audio_file_processing',
-            lambda: resolved_runtime.wait_for_file_processing(audio_file),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
+        provider_session.wait_for_file(audio_stage, audio_part,
+                                       operation_name='audio_file_processing', retry_tracker=retry_tracker)
 
         set_fields(step_description='Generating transcript...')
         failed_stage = 'audio_transcription'
         if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC:
             transcript, transcript_segments, transcription_usage = resolved_runtime.transcribe_audio_with_timestamps(
-                audio_file,
+                audio_part,
                 audio_mime_type,
                 output_language,
                 retry_tracker=retry_tracker,
                 include_usage=True,
+                provider_session=provider_session,
             )
         else:
             transcript, transcription_usage = resolved_runtime.transcribe_audio_plain(
-                audio_file,
+                audio_part,
                 audio_mime_type,
                 output_language,
                 retry_tracker=retry_tracker,
                 include_usage=True,
+                provider_session=provider_session,
             )
             transcript_segments = []
         tokens.record_usage(
@@ -387,14 +372,14 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
             )
 
         failed_stage = 'notes_merge'
-        response = ai_provider.generate_with_policy(
-            resolved_runtime.MODEL_INTEGRATION,
-            [resolved_runtime.types.Content(role='user', parts=[resolved_runtime.types.Part.from_text(text=merge_prompt)])],
+        response = provider_session.generate(
+            'notes_merge',
+            [TextPart(merge_prompt)],
+            max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='notes_merge',
-            runtime=resolved_runtime,
         )
-        tokens.record('merge', response, model=resolved_runtime.MODEL_INTEGRATION, billing_mode='standard', input_modality='text')
+        tokens.record_result('merge', response, input_modality='text')
         merged_notes = response.text
 
         set_fields(
@@ -419,6 +404,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
                 retry_tracker=retry_tracker,
                 runtime=resolved_runtime,
                 include_usage=True,
+                provider_session=provider_session,
             )
             for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
                 tokens.record_usage(
@@ -458,7 +444,12 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
         failed_job = get_fields()
         if failed_job.get('status') == 'error':
             study_audio.cleanup_failed_job_audio(job_id, failed_job, runtime=resolved_runtime)
-        resolved_runtime.cleanup_files(local_paths, gemini_files)
+        try:
+            # Local inputs are removed first; the session then deletes its remote files.
+            resolved_runtime.cleanup_files(local_paths, [])
+        finally:
+            if provider_session is not None:
+                provider_session.close()
         finished_at = resolved_runtime.time.time()
         set_fields(
             finished_at=finished_at,
@@ -471,7 +462,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
 
 def process_slides_only(job_id, pdf_path, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    gemini_files = []
+    provider_session = None
     local_paths = [pdf_path]
     set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=resolved_runtime, **fields)
     get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=resolved_runtime) or {}
@@ -482,43 +473,29 @@ def process_slides_only(job_id, pdf_path, runtime=None):
     try:
         if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
             return
+        # One workflow session owns every remote file; it opens only after admission.
+        provider_session = provider_factory.open_provider_session(resolved_runtime)
         set_fields(status='processing', step=1, step_description='Extracting text from slides...')
         pdf_input_path = _prepare_slides_pdf_for_provider(job_id, pdf_path, local_paths, set_fields, runtime=resolved_runtime)
 
         failed_stage = 'slide_upload'
-        pdf_file = ai_provider.run_with_provider_retry(
-            'slide_upload',
-            lambda: resolved_runtime.client.files.upload(file=pdf_input_path, config={'mime_type': 'application/pdf'}),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
-        gemini_files.append(pdf_file)
+        pdf_part = PdfPart(pdf_input_path)
+        provider_session.upload_file('slides_extraction', pdf_part,
+                                     operation_name='slide_upload', retry_tracker=retry_tracker)
 
         failed_stage = 'slide_file_processing'
-        ai_provider.run_with_provider_retry(
-            'slide_file_processing',
-            lambda: resolved_runtime.wait_for_file_processing(pdf_file),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
+        provider_session.wait_for_file('slides_extraction', pdf_part,
+                                       operation_name='slide_file_processing', retry_tracker=retry_tracker)
 
         failed_stage = 'slide_extraction'
-        response = ai_provider.generate_with_policy(
-            resolved_runtime.MODEL_SLIDES,
-            [
-                resolved_runtime.types.Content(
-                    role='user',
-                    parts=[
-                        resolved_runtime.types.Part.from_uri(file_uri=pdf_file.uri, mime_type='application/pdf'),
-                        resolved_runtime.types.Part.from_text(text=resolved_runtime.PROMPT_SLIDE_EXTRACTION),
-                    ],
-                )
-            ],
+        response = provider_session.generate(
+            'slides_extraction',
+            [pdf_part, TextPart(resolved_runtime.PROMPT_SLIDE_EXTRACTION)],
+            max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='slide_extraction',
-            runtime=resolved_runtime,
         )
-        tokens.record('slide_extraction', response, model=resolved_runtime.MODEL_SLIDES, billing_mode='standard', input_modality='text')
+        tokens.record_result('slide_extraction', response, input_modality='text')
 
         extracted_text = response.text
         set_fields(result=extracted_text)
@@ -536,6 +513,7 @@ def process_slides_only(job_id, pdf_path, runtime=None):
                 retry_tracker=retry_tracker,
                 runtime=resolved_runtime,
                 include_usage=True,
+                provider_session=provider_session,
             )
             for stage_name, stage_usage in (study_usage.get('token_usage_by_stage', {}) or {}).items():
                 tokens.record_usage(
@@ -572,7 +550,12 @@ def process_slides_only(job_id, pdf_path, runtime=None):
         credit_type = failed_job.get('credit_deducted')
         _refund_primary_job_credit(job_id, failed_job, uid, credit_type, runtime=resolved_runtime)
     finally:
-        resolved_runtime.cleanup_files(local_paths, gemini_files)
+        try:
+            # Local inputs are removed first; the session then deletes its remote files.
+            resolved_runtime.cleanup_files(local_paths, [])
+        finally:
+            if provider_session is not None:
+                provider_session.close()
         finished_at = resolved_runtime.time.time()
         set_fields(
             finished_at=finished_at,
@@ -585,7 +568,7 @@ def process_slides_only(job_id, pdf_path, runtime=None):
 
 def process_interview_transcription(job_id, audio_path, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    gemini_files = []
+    provider_session = None
     local_paths = [audio_path]
     set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=resolved_runtime, **fields)
     get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=resolved_runtime) or {}
@@ -596,6 +579,8 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
     try:
         if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
             return
+        # One workflow session owns every remote file; it opens only after admission.
+        provider_session = provider_factory.open_provider_session(resolved_runtime)
         set_fields(status='processing', step=1, step_description='Optimizing audio for faster processing...')
 
         output_language = get_fields().get('output_language', 'English')
@@ -607,42 +592,26 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
         audio_mime_type = resolved_runtime.get_mime_type(converted_audio_path)
 
         failed_stage = 'audio_upload'
-        audio_file = ai_provider.run_with_provider_retry(
-            'audio_upload',
-            lambda: resolved_runtime.client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
-        gemini_files.append(audio_file)
+        audio_part = AudioPart(converted_audio_path, audio_mime_type)
+        provider_session.upload_file('interview_transcription', audio_part,
+                                     operation_name='audio_upload', retry_tracker=retry_tracker)
 
         set_fields(step_description='Processing audio file (this may take a few minutes)...')
         failed_stage = 'audio_file_processing'
-        ai_provider.run_with_provider_retry(
-            'audio_file_processing',
-            lambda: resolved_runtime.wait_for_file_processing(audio_file),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
+        provider_session.wait_for_file('interview_transcription', audio_part,
+                                       operation_name='audio_file_processing', retry_tracker=retry_tracker)
 
         set_fields(step_description='Generating transcript with timestamps...')
         interview_prompt = resolved_runtime.PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=output_language)
         failed_stage = 'interview_transcription'
-        response = ai_provider.generate_with_policy(
-            resolved_runtime.MODEL_INTERVIEW,
-            [
-                resolved_runtime.types.Content(
-                    role='user',
-                    parts=[
-                        resolved_runtime.types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-                        resolved_runtime.types.Part.from_text(text=interview_prompt),
-                    ],
-                )
-            ],
+        response = provider_session.generate(
+            'interview_transcription',
+            [audio_part, TextPart(interview_prompt)],
+            max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='interview_transcription',
-            runtime=resolved_runtime,
         )
-        tokens.record('interview_transcription', response, model=resolved_runtime.MODEL_INTERVIEW, billing_mode='standard', input_modality='audio')
+        tokens.record_result('interview_transcription', response, input_modality='audio')
 
         transcript_text = response.text or ''
         set_fields(transcript=transcript_text, result=transcript_text)
@@ -659,6 +628,7 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
                 retry_tracker=retry_tracker,
                 runtime=resolved_runtime,
                 include_usage=True,
+                provider_session=provider_session,
             )
             for stage_name, stage_usage in (enhancement.get('token_usage_by_stage', {}) or {}).items():
                 tokens.record_usage(
@@ -719,7 +689,12 @@ def process_interview_transcription(job_id, audio_path, runtime=None):
         failed_job = get_fields()
         if failed_job.get('status') == 'error':
             study_audio.cleanup_failed_job_audio(job_id, failed_job, runtime=resolved_runtime)
-        resolved_runtime.cleanup_files(local_paths, gemini_files)
+        try:
+            # Local inputs are removed first; the session then deletes its remote files.
+            resolved_runtime.cleanup_files(local_paths, [])
+        finally:
+            if provider_session is not None:
+                provider_session.close()
         finished_at = resolved_runtime.time.time()
         set_fields(
             finished_at=finished_at,
@@ -892,7 +867,7 @@ def _parse_voice_note_transcription_response(raw_text, runtime=None):
 
 def process_voice_note(job_id, audio_path, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
-    gemini_files = []
+    provider_session = None
     local_paths = [audio_path]
     set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=resolved_runtime, **fields)
     get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=resolved_runtime) or {}
@@ -903,6 +878,8 @@ def process_voice_note(job_id, audio_path, runtime=None):
     try:
         if not job_charges.begin_runtime_job(job_id, runtime=resolved_runtime):
             return
+        # One workflow session owns every remote file; it opens only after admission.
+        provider_session = provider_factory.open_provider_session(resolved_runtime)
         set_fields(status='processing', step=1, step_description='Preparing audio...')
 
         output_language = get_fields().get('output_language', 'English')
@@ -915,22 +892,14 @@ def process_voice_note(job_id, audio_path, runtime=None):
         audio_mime_type = resolved_runtime.get_mime_type(converted_audio_path)
 
         failed_stage = 'audio_upload'
-        audio_file = ai_provider.run_with_provider_retry(
-            'voice_note_audio_upload',
-            lambda: resolved_runtime.client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
-        gemini_files.append(audio_file)
+        audio_part = AudioPart(converted_audio_path, audio_mime_type)
+        provider_session.upload_file('voice_note_transcription', audio_part,
+                                     operation_name='voice_note_audio_upload', retry_tracker=retry_tracker)
 
         set_fields(step_description='Processing audio file...')
         failed_stage = 'audio_file_processing'
-        ai_provider.run_with_provider_retry(
-            'voice_note_audio_file_processing',
-            lambda: resolved_runtime.wait_for_file_processing(audio_file),
-            retry_tracker=retry_tracker,
-            runtime=resolved_runtime,
-        )
+        provider_session.wait_for_file('voice_note_transcription', audio_part,
+                                       operation_name='voice_note_audio_file_processing', retry_tracker=retry_tracker)
 
         set_fields(step_description='Transcribing voice note...')
         failed_stage = 'voice_note_transcription'
@@ -939,32 +908,18 @@ def process_voice_note(job_id, audio_path, runtime=None):
             output_language=output_language,
             custom_instruction=custom_instruction or 'None.',
         )
-        response = ai_provider.generate_with_policy(
-            resolved_runtime.MODEL_AUDIO,
-            [
-                resolved_runtime.types.Content(
-                    role='user',
-                    parts=[
-                        resolved_runtime.types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
-                        resolved_runtime.types.Part.from_text(text=prompt),
-                    ],
-                )
-            ],
+        response = provider_session.generate(
+            'voice_note_transcription',
+            [audio_part, TextPart(prompt)],
+            max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='voice_note_transcription',
-            runtime=resolved_runtime,
         )
         parsed_voice_note = _parse_voice_note_transcription_response(getattr(response, 'text', '') or '', runtime=resolved_runtime)
         transcript_text = parsed_voice_note.get('transcript', '')
         if not str(transcript_text or '').strip():
             raise ValueError('Transcript generation returned empty output.')
-        tokens.record(
-            'voice_note_transcription',
-            response,
-            model=resolved_runtime.MODEL_AUDIO,
-            billing_mode='standard',
-            input_modality='audio',
-        )
+        tokens.record_result('voice_note_transcription', response, input_modality='audio')
         set_fields(
             transcript=transcript_text,
             result=transcript_text,
@@ -1000,7 +955,12 @@ def process_voice_note(job_id, audio_path, runtime=None):
         failed_job = get_fields()
         if failed_job.get('status') == 'error':
             study_audio.cleanup_failed_job_audio(job_id, failed_job, runtime=resolved_runtime)
-        resolved_runtime.cleanup_files(local_paths, gemini_files)
+        try:
+            # Local inputs are removed first; the session then deletes its remote files.
+            resolved_runtime.cleanup_files(local_paths, [])
+        finally:
+            if provider_session is not None:
+                provider_session.close()
         finished_at = resolved_runtime.time.time()
         set_fields(
             finished_at=finished_at,

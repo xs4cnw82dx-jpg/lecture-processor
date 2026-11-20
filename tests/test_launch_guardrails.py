@@ -2827,33 +2827,16 @@ def test_download_docx_transcript_uses_consistent_filename(client, monkeypatch):
 
 
 def test_process_interview_transcription_saves_pack_on_success(monkeypatch, tmp_path):
-    class _FakeUploaded:
-        uri = "gs://fake/audio"
-        name = "files/fake-audio"
-
-    class _FakeFiles:
-        def upload(self, **_kwargs):
-            return _FakeUploaded()
-
-        def delete(self, **_kwargs):
-            return None
-
-    class _FakeModels:
-        def generate_content(self, **_kwargs):
-            class _Resp:
-                text = "Interview transcript output"
-
-            return _Resp()
-
-    class _FakeClient:
-        files = _FakeFiles()
-        models = _FakeModels()
+    # The workflow session uploads through the local fake client; every generation returns this text.
+    fake_client = FakeGeminiClient()
+    fake_client.models.generate_content = lambda **_kwargs: SimpleNamespace(
+        text="Interview transcript output", usage_metadata=None)
 
     saved = []
     audio_path = tmp_path / "interview.wav"
     audio_path.write_bytes(b"RIFF0000WAVEfmt ")
 
-    monkeypatch.setattr(core, "client", _FakeClient())
+    monkeypatch.setattr(core, "client", fake_client)
     monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (str(path), False))
     monkeypatch.setattr(core, "persist_audio_for_study_pack", lambda _job_id, _path: "/tmp/persisted.mp3")
     monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")

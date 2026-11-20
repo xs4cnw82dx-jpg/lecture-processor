@@ -13,6 +13,8 @@ import pytest
 from lecture_processor.domains.ai import pipelines
 from lecture_processor.domains.ai import batch_orchestrator as batch
 from lecture_processor.domains.ai import instant_batch_orchestrator as instant
+from lecture_processor.domains.ai.providers import factory
+from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.repositories import study_repo
 
@@ -93,6 +95,27 @@ class MemoryDatabase:
         return [payload for (collection, _doc_id), payload in self.documents.items() if collection == 'study_packs']
 
 
+class _HarnessSession:
+    """Workflow session double that routes worker calls to the harness's synthetic outcomes."""
+
+    def __init__(self, harness):
+        self.harness = harness
+
+    def upload_file(self, _stage, part, **_kwargs):
+        self.harness.upload(file=str(part.path), config={'mime_type': getattr(part, 'mime_type', 'application/pdf')})
+
+    def wait_for_file(self, *_args, **_kwargs):
+        return None
+
+    def generate(self, stage, parts, *, operation_name=None, **_kwargs):
+        response = self.harness.generate(None, parts, operation_name=operation_name)
+        return GenerationResult(text=response.text, parsed=None, usage=Usage(), provider='gemini',
+                                model=f'synthetic-{stage}')
+
+    def close(self):
+        return None
+
+
 class AudioPipeline:
     def __init__(self, monkeypatch, tmp_path, mode, failure='provider'):
         self.mode = mode
@@ -142,6 +165,7 @@ class AudioPipeline:
         monkeypatch.setattr(pipelines.runtime_jobs_store, 'set_job', self.set_job)
         monkeypatch.setattr(pipelines.ai_provider, 'run_with_provider_retry', lambda _stage, callback, **_kwargs: callback())
         monkeypatch.setattr(pipelines.ai_provider, 'generate_with_policy', self.generate)
+        monkeypatch.setattr(factory, 'open_provider_session', lambda _runtime, **_kwargs: _HarnessSession(self))
         monkeypatch.setattr(pipelines.job_charges.ledger, 'refund_legacy_credits', self.refund)
         monkeypatch.setattr(pipelines.account_lifecycle, 'ensure_account_allows_writes', lambda *_args, **_kwargs: (True, ''))
         monkeypatch.setattr(pipelines.study_progress, 'resolve_user_timezone', lambda *_args, **_kwargs: (timezone.utc, 'UTC'))
