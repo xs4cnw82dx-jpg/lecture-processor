@@ -381,3 +381,37 @@ def test_active_plan_due_scope_filters_recommendations_without_mutating_global_h
     assert service.load_due_study_cards(runtime, 'owner', active_plan=True)['due_count'] == 0
     assert db.get_all_calls == reads_before
     assert service.load_due_study_cards(runtime, 'owner')['due_count'] == 3
+
+
+@pytest.mark.parametrize('body,status,error', [
+    ({'card_states': {'foreign': {'fc_0': {'seen': 1}}}}, 403, 'Forbidden'),
+    ({'remove_pack_ids': ['foreign']}, 403, 'Forbidden'),
+    ({'card_states': {'a-missing': {'fc_0': {'seen': 1}}, 'b-foreign': {'fc_0': {'seen': 1}}}}, 404, 'Study pack not found'),
+    ({'card_states': {'a-foreign': {'fc_0': {'seen': 1}}, 'z-missing': {'fc_0': {'seen': 1}}}}, 403, 'Forbidden'),
+])
+def test_progress_sync_rejects_foreign_and_missing_packs_without_writes(setup, body, status, error):
+    runtime, db, _ = setup
+    runtime.MAX_PROGRESS_PACKS_PER_SYNC = 5
+    seed_pack(db, 'foreign', ['2000-01-01'], owner='someone-else')
+    seed_pack(db, 'a-foreign', ['2000-01-01'], owner='someone-else')
+    seed_pack(db, 'b-foreign', ['2000-01-01'], owner='someone-else')
+    before = dict(db.data)
+
+    response, actual = update(runtime, body)
+
+    assert actual == status and response.get_json()['error'] == error
+    assert db.data == before
+
+
+def test_progress_sync_checks_ownership_without_transactions(setup):
+    runtime, db, _ = setup
+    runtime.firestore = SimpleNamespace()
+    seed_pack(db, 'foreign', ['2000-01-01'], owner='someone-else')
+    seed_pack(db, 'mine', ['2000-01-01'])
+    before = dict(db.data)
+
+    response, status = update(runtime, {'card_states': {'foreign': {'fc_0': {'seen': 1}}}})
+    assert status == 403 and db.data == before
+
+    assert_ok(update(runtime, {'remove_pack_ids': ['mine']}))
+    assert 'study_card_states/owner__mine' not in db.data
