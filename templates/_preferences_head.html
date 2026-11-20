@@ -5,10 +5,22 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<script src="{{ url_for('static', filename='js/i18n-catalog.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/i18n-supplement.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/i18n-dynamic.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/i18n-dynamic-learning.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/i18n-dynamic-tools.js') }}" defer></script>
+{# Dutch catalogs load only for Dutch; i18n.js fetches them on a later switch. #}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var urls = {{ [
+    url_for('static', filename='js/i18n-catalog.js'),
+    url_for('static', filename='js/i18n-supplement.js'),
+    url_for('static', filename='js/i18n-dynamic.js'),
+    url_for('static', filename='js/i18n-dynamic-learning.js'),
+    url_for('static', filename='js/i18n-dynamic-tools.js')
+  ] | tojson }};
+  window.LectureI18nCatalogUrls = urls;
+  var dutch = false;
+  try { dutch = JSON.parse(window.localStorage.getItem('lp-preferences') || '{}').language === 'nl'; } catch (_error) { dutch = false; }
+  // Parser-inserted deferred scripts keep their order before i18n.js.
+  if (dutch) urls.forEach(function (src) { document.write('<script src="' + src + '" defer><\/script>'); });
+})();
+</script>
 <script src="{{ url_for('static', filename='js/i18n.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/preferences.js') }}" defer></script>
