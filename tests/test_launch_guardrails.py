@@ -1003,18 +1003,15 @@ def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(cli
     monkeypatch.setattr(core, "cleanup_files", lambda local_paths, remote_files: cleanup_calls.append((list(local_paths), list(remote_files))))
     monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: True)
 
-    class _UploadApi:
-        def upload(self, file=None, config=None):
-            return SimpleNamespace(uri=f"mock://{file}", name="mock-file")
-
-    monkeypatch.setattr(core, "client", SimpleNamespace(files=_UploadApi()))
+    # The workflow session uploads through the local fake client.
+    monkeypatch.setattr(core, "client", FakeGeminiClient())
     monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (path, False))
     monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")
     monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
     monkeypatch.setattr(
         core,
         "transcribe_audio_plain",
-        lambda _audio_file, _audio_mime_type, output_language="English", retry_tracker=None, include_usage=False: (
+        lambda _audio_file, _audio_mime_type, output_language="English", retry_tracker=None, include_usage=False, **_kwargs: (
             ("Transcript in " + str(output_language), {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18})
             if include_usage else ("Transcript in " + str(output_language))
         ),
@@ -1182,18 +1179,15 @@ def test_tools_transcribe_audio_allows_per_run_output_language_override(client, 
     monkeypatch.setattr(core, "cleanup_files", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(core, "save_job_log", lambda *_args, **_kwargs: True)
 
-    class _UploadApi:
-        def upload(self, file=None, config=None):
-            return SimpleNamespace(uri=f"mock://{file}", name="mock-file")
-
-    monkeypatch.setattr(core, "client", SimpleNamespace(files=_UploadApi()))
+    # The workflow session uploads through the local fake client.
+    monkeypatch.setattr(core, "client", FakeGeminiClient())
     monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (path, False))
     monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")
     monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
     monkeypatch.setattr(
         core,
         "transcribe_audio_plain",
-        lambda _audio_file, _audio_mime_type, output_language="English", retry_tracker=None, include_usage=False: (
+        lambda _audio_file, _audio_mime_type, output_language="English", retry_tracker=None, include_usage=False, **_kwargs: (
             ("Transcript in " + str(output_language), {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18})
             if include_usage else ("Transcript in " + str(output_language))
         ),

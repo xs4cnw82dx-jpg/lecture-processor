@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from lecture_processor.domains.ai import provider as ai_provider
+from lecture_processor.domains.ai.providers import factory as provider_factory
+from lecture_processor.domains.ai.providers.contracts import AudioPart
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.billing import job_charges
@@ -244,7 +246,7 @@ def create_general_transcription(app_ctx, request):
 
 def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtime=None):
     _ = runtime
-    gemini_files = []
+    provider_session = None
     local_paths = [audio_path]
     set_fields = lambda **fields: runtime_jobs_store.update_job_fields(job_id, runtime=app_ctx, **fields)
     get_fields = lambda: runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx) or {}
@@ -255,6 +257,8 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
     try:
         if not job_charges.begin_runtime_job(job_id, runtime=app_ctx):
             return
+        # One workflow session owns the uploaded audio; it opens only after admission.
+        provider_session = provider_factory.open_provider_session(app_ctx)
         set_fields(status='processing', step=1, step_description='Preparing audio…')
 
         converted_audio_path, converted = app_ctx.convert_audio_to_mp3_with_ytdlp(audio_path)
@@ -263,32 +267,26 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
 
         audio_mime_type = app_ctx.get_mime_type(converted_audio_path)
         failed_stage = 'audio_upload'
-        audio_file = ai_provider.run_with_provider_retry(
-            'general_audio_upload',
-            lambda: app_ctx.client.files.upload(file=converted_audio_path, config={'mime_type': audio_mime_type}),
-            retry_tracker=retry_tracker,
-            runtime=app_ctx,
-        )
-        gemini_files.append(audio_file)
+        audio_part = AudioPart(converted_audio_path, audio_mime_type)
+        provider_session.upload_file('tools_transcription', audio_part,
+                                     operation_name='general_audio_upload', retry_tracker=retry_tracker)
 
         set_fields(step_description='Processing audio file…')
         failed_stage = 'audio_file_processing'
-        ai_provider.run_with_provider_retry(
-            'general_audio_file_processing',
-            lambda: app_ctx.wait_for_file_processing(audio_file),
-            retry_tracker=retry_tracker,
-            runtime=app_ctx,
-        )
+        provider_session.wait_for_file('tools_transcription', audio_part,
+                                       operation_name='general_audio_file_processing', retry_tracker=retry_tracker)
 
         set_fields(step_description='Generating transcript…')
         failed_stage = 'audio_transcription'
         output_language = get_fields().get('output_language', 'English')
         transcript_text, usage = app_ctx.transcribe_audio_plain(
-            audio_file,
+            audio_part,
             audio_mime_type,
             output_language=output_language,
             retry_tracker=retry_tracker,
             include_usage=True,
+            provider_session=provider_session,
+            stage='tools_transcription',
         )
         if not str(transcript_text or '').strip():
             raise ValueError('Transcript generation returned empty output.')
@@ -336,7 +334,12 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
                 app_ctx.logger.warning('General transcription credit refund failed for job %s and user %s', job_id, uid)
             job_charges.set_admitted_job(job_id, failed_job, runtime=app_ctx)
     finally:
-        app_ctx.cleanup_files(local_paths, gemini_files)
+        try:
+            # Local inputs are removed first; the session then deletes its remote upload.
+            app_ctx.cleanup_files(local_paths, [])
+        finally:
+            if provider_session is not None:
+                provider_session.close()
         finished_at = app_ctx.time.time()
         set_fields(
             finished_at=finished_at,
