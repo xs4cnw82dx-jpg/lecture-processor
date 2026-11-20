@@ -1,4 +1,4 @@
-"""Candidate worker session/routing tests. Private until the migration is released."""
+"""Regular processing workers own one provider session and route each step to its stage."""
 from copy import deepcopy
 import json
 from pathlib import Path
