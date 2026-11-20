@@ -1689,7 +1689,9 @@ def _generate_audio_text(audio_file, audio_mime_type, prompt, *, provider_sessio
                  'total_tokens': result.usage.total_tokens}
         return (getattr(result, 'text', '') or ''), usage
     response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name=operation_name)
-    return (getattr(response, 'text', '') or ''), extract_token_usage(response)
+    # Usage is read before the text, as before, so a paid call is always counted.
+    usage = extract_token_usage(response)
+    return (getattr(response, 'text', '') or ''), usage
 
 
 def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False,

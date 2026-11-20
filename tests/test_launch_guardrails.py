@@ -1007,7 +1007,6 @@ def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(cli
     monkeypatch.setattr(core, "client", FakeGeminiClient())
     monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (path, False))
     monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")
-    monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
     monkeypatch.setattr(
         core,
         "transcribe_audio_plain",
@@ -1183,7 +1182,6 @@ def test_tools_transcribe_audio_allows_per_run_output_language_override(client, 
     monkeypatch.setattr(core, "client", FakeGeminiClient())
     monkeypatch.setattr(core, "convert_audio_to_mp3_with_ytdlp", lambda path: (path, False))
     monkeypatch.setattr(core, "get_mime_type", lambda _path: "audio/mpeg")
-    monkeypatch.setattr(core, "wait_for_file_processing", lambda _uploaded: None)
     monkeypatch.setattr(
         core,
         "transcribe_audio_plain",

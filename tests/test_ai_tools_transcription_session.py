@@ -47,6 +47,8 @@ def workflow(core, monkeypatch, tmp_path):
 
     def upload(**kwargs):
         state.events.append(('remote_upload', kwargs['config']['mime_type']))
+        if state.failure == 'upload':
+            raise PermanentFailure()
         return native_upload(**kwargs)
 
     def poll(**kwargs):
@@ -155,19 +157,21 @@ def test_general_transcription_uses_one_session_on_the_tools_stage(workflow):
         'billing_mode': 'standard', 'input_modality': 'audio'}}
 
 
-@pytest.mark.parametrize('failure', ['processing', 'generation'])
+@pytest.mark.parametrize('failure', ['upload', 'processing', 'generation'])
 def test_general_transcription_failure_deletes_the_upload_once_and_refunds(workflow, failure):
     state = workflow
     state.failure = failure
     state.job['credit_deducted'] = 'interview_credits_short'
     run_job(state)
     assert_owned_session(state)
-    assert [name for name, _ in state.events].count('remote_delete') == 1
+    assert [name for name, _ in state.events].count('remote_delete') == (0 if failure == 'upload' else 1)
     assert state.job['status'] == 'error'
-    assert state.job['failed_stage'] == ('audio_file_processing' if failure == 'processing' else 'audio_transcription')
+    assert state.job['failed_stage'] == {'upload': 'audio_upload', 'processing': 'audio_file_processing',
+                                         'generation': 'audio_transcription'}[failure]
+    assert state.job.get('finished_at')
     assert state.job['provider_error_code'] == 'HTTP_400'
     assert state.refunds == ['interview_credits_short']
-    assert len(state.calls) == (0 if failure == 'processing' else 1)
+    assert len(state.calls) == (1 if failure == 'generation' else 0)
 
 
 def test_denied_admission_cleans_local_audio_without_a_session(workflow):
