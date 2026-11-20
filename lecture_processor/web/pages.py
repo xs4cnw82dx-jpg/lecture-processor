@@ -642,8 +642,8 @@ def privacy_policy():
     return render_template(
         'privacy.html',
         **_public_context(runtime=runtime),
-        last_updated='November 15, 2026',
-        last_updated_iso='2026-11-15',
+        last_updated='November 20, 2026',
+        last_updated_iso='2026-11-20',
     )
 
 
@@ -653,6 +653,6 @@ def terms_of_service():
     return render_template(
         'terms.html',
         **_public_context(runtime=runtime),
-        last_updated='November 15, 2026',
-        last_updated_iso='2026-11-15',
+        last_updated='November 20, 2026',
+        last_updated_iso='2026-11-20',
     )

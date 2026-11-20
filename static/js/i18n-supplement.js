@@ -243,7 +243,7 @@
   "The AI service providers and processing routes used for your content are described in our": "De AI-dienstverleners en verwerkingsroutes die voor je inhoud worden gebruikt, staan in ons",
   "Privacy Policy.": "privacybeleid.",
   "Last updated:": "Laatst bijgewerkt:",
-  "November 15, 2026": "15 november 2026",
+  "November 20, 2026": "20 november 2026",
   "Uploaded files are processed to generate study outputs.": "Geüploade bestanden worden verwerkt om studiemateriaal te genereren.",
   "For packs with playback features enabled, a processed audio file may be stored so playback and notes-to-audio sync can work.": "Voor pakketten met afspeelfuncties kan een verwerkt audiobestand worden opgeslagen, zodat afspelen en synchronisatie tussen notities en audio mogelijk zijn.",
   "Audio/transcript data can be removed by deleting the study pack or deleting the account.": "Audio- en transcriptiegegevens kunnen worden verwijderd door het studiepakket of het account te verwijderen.",

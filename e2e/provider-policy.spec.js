@@ -5,7 +5,7 @@ test.describe.configure({ mode: 'parallel' });
 
 const copy = {
   en: {
-    date: 'November 15, 2026', updated: 'Last updated:',
+    date: 'November 20, 2026', updated: 'Last updated:',
     footer: 'AI-assisted study tools · Made for students',
     routing: 'Audio is always processed by Google Gemini. The Claude route applies only to text and document features for which it has been enabled.',
     developer: 'using models developed by Anthropic. Google operates this model-processing service.',
@@ -18,7 +18,7 @@ const copy = {
     terms: 'The AI service providers and processing routes used for your content are described in our Privacy Policy.',
   },
   nl: {
-    date: '15 november 2026', updated: 'Laatst bijgewerkt:',
+    date: '20 november 2026', updated: 'Laatst bijgewerkt:',
     footer: 'Studiehulpmiddelen met AI · Gemaakt voor studenten',
     routing: 'Audio wordt altijd door Google Gemini verwerkt. De Claude-route geldt alleen voor tekst- en documentfuncties waarvoor die is ingeschakeld.',
     developer: 'met modellen die door Anthropic zijn ontwikkeld. Google beheert deze dienst voor modelverwerking.',
@@ -51,7 +51,7 @@ async function prepare(page, language, theme) {
 async function expectDate(page, language) {
   await expect(page.locator('.meta')).toContainText(copy[language].updated);
   await expect(page.locator('.meta time')).toHaveText(copy[language].date);
-  await expect(page.locator('.meta time')).toHaveAttribute('datetime', '2026-11-15');
+  await expect(page.locator('.meta time')).toHaveAttribute('datetime', '2026-11-20');
 }
 
 async function expectFooter(page, language) {

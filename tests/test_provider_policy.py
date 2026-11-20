@@ -8,7 +8,7 @@ def test_policy_revision_and_optional_contact_render(client, runtime, monkeypatc
     response = client.get(path)
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert '<time datetime="2026-11-15">November 15, 2026</time>' in html
+    assert '<time datetime="2026-11-20">November 20, 2026</time>' in html
     assert 'AI-assisted study tools' in html
     if contact:
         assert 'mailto:policy-test@example.invalid' in html
