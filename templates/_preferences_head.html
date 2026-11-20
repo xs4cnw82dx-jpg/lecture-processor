@@ -6,15 +6,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 {# Dutch catalogs load only for Dutch; i18n.js fetches them on a later switch. #}
-<script nonce="{{ csp_nonce }}">
+<script nonce="{{ csp_nonce }}" data-i18n-catalogs="{{ url_for('static', filename='js/i18n-catalog.js') }} {{ url_for('static', filename='js/i18n-supplement.js') }} {{ url_for('static', filename='js/i18n-dynamic.js') }} {{ url_for('static', filename='js/i18n-dynamic-learning.js') }} {{ url_for('static', filename='js/i18n-dynamic-tools.js') }}">
 (function () {
-  var urls = {{ [
-    url_for('static', filename='js/i18n-catalog.js'),
-    url_for('static', filename='js/i18n-supplement.js'),
-    url_for('static', filename='js/i18n-dynamic.js'),
-    url_for('static', filename='js/i18n-dynamic-learning.js'),
-    url_for('static', filename='js/i18n-dynamic-tools.js')
-  ] | tojson }};
+  var script = document.currentScript;
+  var urls = String((script && script.getAttribute('data-i18n-catalogs')) || '').split(' ').filter(Boolean);
   window.LectureI18nCatalogUrls = urls;
   var dutch = false;
   try { dutch = JSON.parse(window.localStorage.getItem('lp-preferences') || '{}').language === 'nl'; } catch (_error) { dutch = false; }
