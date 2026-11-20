@@ -978,6 +978,7 @@ def test_tools_extract_image_accepts_five_files_bills_once_and_returns_output_te
     assert cleanup_calls
     assert fake_client.calls.count("files.upload") == 5
     assert fake_client.calls.count("models.generate_content") == 1
+    assert fake_client.calls.count("files.delete") == 5
 
 
 def test_tools_transcribe_audio_uses_interview_credit_and_returns_transcript(client, monkeypatch):

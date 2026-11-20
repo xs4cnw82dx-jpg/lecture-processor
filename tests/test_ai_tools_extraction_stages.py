@@ -220,6 +220,15 @@ def test_extraction_owns_one_session_and_preserves_ordered_parts_labels_and_usag
     assert not state.refunds
     assert len(state.calls) == 1 and state.calls[0]['model'] == MODEL
     assert state.calls[0]['config'].model_dump(exclude_none=True) == {'max_output_tokens': 32768}
+    # Native wire: each file uploaded, polled and deleted exactly once, in staged order before the prompt.
+    file_count = {'url': 0, 'docx': 0, 'images': 2}.get(kind, 1)
+    assert state.uploads == file_count and state.polls == file_count
+    assert len([event for event in state.events if event[0] == 'remote_delete']) == file_count
+    native_parts = state.calls[0]['contents'][0].parts
+    assert state.calls[0]['contents'][0].role == 'user'
+    assert [getattr(part.file_data, 'mime_type', None) for part in native_parts[:file_count]] == (
+        ['image/png', 'image/jpeg'] if kind == 'images' else ['application/pdf'] * file_count)
+    assert [part.text for part in native_parts[file_count:]] == [part.text for part in parts[file_count:]]
 
 
 @pytest.mark.parametrize('failure', ['partial_upload', 'partial_processing', 'generation', 'empty'])
@@ -229,6 +238,9 @@ def test_extraction_closes_partial_resources_after_local_cleanup_and_keeps_failu
     run_worker(state, 'images')
     assert_owned_session(state)
     assert state.job['status'] == 'error' and state.job['failed_stage'] == 'tools_extract'
+    expected_error = 'Extraction returned empty output' if failure == 'empty' else 'Synthetic permanent failure.'
+    assert state.job['error'] == f'{expected_error} Your text extraction credit has been refunded.'
+    assert state.job['provider_error_code'] == ('GENERIC' if failure == 'empty' else 'HTTP_400')
     assert state.job['credit_refunded'] is True and state.job['credit_refund_pending'] is False
     assert state.job['billing_receipt'] == {'charged': {'slides_credits': 1}, 'refunded': {'slides_credits': 1}}
     assert len(state.refunds) == 1
