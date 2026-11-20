@@ -1,10 +1,11 @@
-const VOICE_CACHE = 'lecture-processor-voice-v11';
+const VOICE_CACHE = 'lecture-processor-voice-v12';
 const VOICE_CACHE_PREFIX = 'lecture-processor-voice-';
 const APP_SHELL = [
   '/voice-notes',
   '/static/manifest.webmanifest',
   '/static/css/theme.css',
   '/static/js/theme.js',
+  '/static/js/i18n-loader.js',
   '/static/js/i18n-catalog.js',
   '/static/js/i18n-supplement.js',
   '/static/js/i18n-dynamic.js',

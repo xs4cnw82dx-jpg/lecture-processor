@@ -3,6 +3,7 @@
 <head>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
+  {% set i18n_dutch_source = true %}{# Authored in Dutch; English is translated back from the catalogs. #}
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Physio Clinical Workspace · Lecture Processor</title>

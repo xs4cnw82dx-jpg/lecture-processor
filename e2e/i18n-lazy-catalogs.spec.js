@@ -49,3 +49,12 @@ test('a failed catalog download keeps the page usable in English', async ({ page
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.locator('h1')).toContainText('Less');
 });
+
+test('pages authored in Dutch still load the catalogs for their English view', async ({ page }) => {
+  const seen = catalogRequests(page);
+  await page.route('**/healthz', (route) => route.abort('connectionrefused'));
+  await page.goto('/physio');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByText('Help getting started', { exact: true })).toBeVisible();
+  expect(seen).toEqual(['catalog', 'supplement', 'dynamic', 'dynamic-learning', 'dynamic-tools']);
+});
