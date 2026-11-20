@@ -26,6 +26,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/preferences.js',
   'static/js/settings.js',
   'static/js/i18n.js',
+  'static/js/i18n-loader.js',
   'static/js/i18n-catalog.js',
   'static/js/i18n-supplement.js',
   'static/js/i18n-dynamic.js',

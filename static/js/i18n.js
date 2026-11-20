@@ -1,14 +1,39 @@
 /* Interface localization. User-authored and generated material stays in its original language. */
 (function (root) {
   'use strict';
-  var catalog = root.LectureI18nCatalog || { nl: {}, en: {} };
-  // Custom controls can copy an already translated option into a new node.
-  // Keep those interface labels reversible when returning to English.
-  catalog.en = catalog.en || {};
-  Object.keys(catalog.nl || {}).forEach(function (source) {
-    var translated = catalog.nl[source];
-    if (translated !== source && !Object.prototype.hasOwnProperty.call(catalog.en, translated)) catalog.en[translated] = source;
-  });
+  var catalog = { nl: {}, en: {} };
+  var catalogLoad = null;
+  function useCatalog() {
+    catalog = root.LectureI18nCatalog || { nl: {}, en: {} };
+    catalog.nl = catalog.nl || {};
+    // Custom controls can copy an already translated option into a new node.
+    // Keep those interface labels reversible when returning to English.
+    catalog.en = catalog.en || {};
+    Object.keys(catalog.nl).forEach(function (source) {
+      var translated = catalog.nl[source];
+      if (translated !== source && !Object.prototype.hasOwnProperty.call(catalog.en, translated)) catalog.en[translated] = source;
+    });
+  }
+  function catalogReady() { return Object.keys((root.LectureI18nCatalog || {}).nl || {}).length > 0; }
+  useCatalog();
+  // English pages skip the Dutch catalogs; load them in order on the first switch to Dutch.
+  function loadCatalog() {
+    if (catalogReady()) return Promise.resolve();
+    if (catalogLoad) return catalogLoad;
+    var urls = Array.isArray(root.LectureI18nCatalogUrls) ? root.LectureI18nCatalogUrls : [];
+    catalogLoad = urls.reduce(function (previous, src) {
+      return previous.then(function () {
+        return new Promise(function (resolve, reject) {
+          var script = root.document.createElement('script');
+          script.src = src;
+          script.onload = resolve;
+          script.onerror = function () { reject(new Error('Language files could not be loaded.')); };
+          root.document.head.appendChild(script);
+        });
+      });
+    }, Promise.resolve()).then(useCatalog, function (error) { catalogLoad = null; throw error; });
+    return catalogLoad;
+  }
   var language = 'en';
   try { language = JSON.parse(root.localStorage.getItem('lp-preferences') || '{}').language === 'nl' ? 'nl' : 'en'; } catch (_error) { /* Storage can be unavailable in private windows. */ }
   var originals = new WeakMap();
@@ -129,13 +154,25 @@
   function observe() {
     if (observer) observer.observe(root.document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: attributes });
   }
-  function setLanguage(value) {
-    language = value === 'nl' ? 'nl' : 'en';
-    if (!root.document) return language;
+  function applyLanguage() {
     root.document.documentElement.lang = language;
+    startObserver();
     queued.add(root.document.documentElement);
     flush();
     root.dispatchEvent(new CustomEvent('lp:language-changed', { detail: { language: language, locale: locale() } }));
+  }
+  function setLanguage(value) {
+    var next = value === 'nl' ? 'nl' : 'en';
+    if (!root.document) { language = next; return language; }
+    if (next === 'nl' && !catalogReady() && root.LectureI18nCatalogUrls) {
+      loadCatalog().then(function () {
+        language = next;
+        applyLanguage();
+      }, function () { /* Keep the current language when the files are unavailable (for example offline). */ });
+      return next;
+    }
+    language = next;
+    applyLanguage();
     return language;
   }
   function locale() { return language === 'nl' ? 'nl-NL' : 'en-GB'; }
@@ -144,7 +181,10 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (!root.document) return;
   root.document.documentElement.lang = language;
-  function start() {
+  var started = false;
+  function startObserver() {
+    // Only Dutch, or a page that has already used the catalogs, needs DOM translation.
+    if (observer || !started || (language !== 'nl' && !catalogReady())) return;
     localize(root.document.documentElement);
     observer = new MutationObserver(function (records) {
       records.forEach(function (record) {
@@ -154,6 +194,10 @@
       if (!scheduled && queued.size) { scheduled = true; queueMicrotask(flush); }
     });
     observe();
+  }
+  function start() {
+    started = true;
+    startObserver();
   }
   if (root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
