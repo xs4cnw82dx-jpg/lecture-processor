@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from types import SimpleNamespace
+from contextlib import contextmanager
 
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
+from lecture_processor.domains.ai.providers import factory as provider_factory
+from lecture_processor.domains.ai.providers.contracts import PreparedFilePart, TextPart
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.study import audio as study_audio
@@ -39,25 +41,42 @@ class InstantApiStagger:
             self.runtime.time.sleep(sleep_for)
 
 
-def _content_from_text(runtime, text):
-    return [
-        runtime.types.Content(
-            role='user',
-            parts=[runtime.types.Part.from_text(text=text)],
-        )
-    ]
+class _LazyRowSession:
+    """One provider session per row, opened only when the row first generates.
+
+    Rows that stop or fail before any generation (admission, uploads, conversion) keep
+    exactly their previous behaviour. Batch uploads stay owned by the row's file cleanup.
+    """
+
+    def __init__(self, runtime):
+        self._runtime = runtime
+        self._session = None
+        self._closed = False
+
+    def generate(self, *args, **kwargs):
+        if self._closed:
+            raise RuntimeError('The provider workflow is closed.')
+        if self._session is None:
+            self._session = provider_factory.open_provider_session(self._runtime)
+        return self._session.generate(*args, **kwargs)
+
+    def close(self):
+        self._closed = True
+        if self._session is not None:
+            self._session.close()
 
 
-def _content_from_file_and_text(runtime, file_uri, mime_type, prompt_text):
-    return [
-        runtime.types.Content(
-            role='user',
-            parts=[
-                runtime.types.Part.from_uri(file_uri=file_uri, mime_type=mime_type),
-                runtime.types.Part.from_text(text=prompt_text),
-            ],
-        )
-    ]
+@contextmanager
+def _row_session(runtime, provider_session):
+    """Borrow the row's session, or own a temporary one for a direct stage call."""
+    if provider_session is not None:
+        yield provider_session
+        return
+    session = provider_factory.open_provider_session(runtime)
+    try:
+        yield session
+    finally:
+        session.close()
 
 
 def _public_row_error(error, runtime):
@@ -222,30 +241,21 @@ def _finalize_row(batch_id, batch, row, tokens, retry_tracker, runtime=None):
     )
 
 
-def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runtime):
+def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runtime, *, provider_session=None):
     _upsert_row_progress(batch_id, row, 'slide_extraction', 'extracting slide text', runtime=runtime)
     throttler.wait()
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    response = ai_provider.generate_with_policy(
-        runtime.MODEL_SLIDES,
-        _content_from_file_and_text(
-            runtime,
-            row.get('slides_file_uri', ''),
-            'application/pdf',
-            runtime.PROMPT_SLIDE_EXTRACTION,
-        ),
-        retry_tracker=retry_tracker,
-        operation_name='instant_slide_extraction',
-        runtime=runtime,
-    )
+    with _row_session(runtime, provider_session) as session:
+        response = session.generate(
+            'slides_extraction',
+            [PreparedFilePart(row.get('slides_file_uri', ''), 'application/pdf'),
+             TextPart(runtime.PROMPT_SLIDE_EXTRACTION)],
+            max_output_tokens=65536,
+            retry_tracker=retry_tracker,
+            operation_name='instant_slide_extraction',
+        )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    tokens.record(
-        'slide_extraction',
-        response,
-        model=runtime.MODEL_SLIDES,
-        billing_mode='instant_batch',
-        input_modality='text',
-    )
+    tokens.record_result('slide_extraction', response, billing_mode='instant_batch', input_modality='text')
     row['slide_text'] = str(getattr(response, 'text', '') or '')
     batch_orchestrator._upsert_row(
         batch_id,
@@ -256,30 +266,34 @@ def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runti
     )
 
 
-def _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, runtime, *, timestamped=False):
+def _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, runtime, *, timestamped=False,
+                             provider_session=None):
     _upsert_row_progress(batch_id, row, 'audio_transcription', 'transcribing audio', runtime=runtime)
     throttler.wait()
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    audio_file = SimpleNamespace(uri=row.get('audio_file_uri', ''))
     audio_mime = row.get('audio_mime_type', 'audio/mpeg')
+    audio_file = PreparedFilePart(row.get('audio_file_uri', ''), audio_mime)
     output_language = row.get('output_language', 'English')
-    if timestamped:
-        transcript, segments, usage = runtime.transcribe_audio_with_timestamps(
-            audio_file,
-            audio_mime,
-            output_language,
-            retry_tracker=retry_tracker,
-            include_usage=True,
-        )
-    else:
-        transcript, usage = runtime.transcribe_audio_plain(
-            audio_file,
-            audio_mime,
-            output_language,
-            retry_tracker=retry_tracker,
-            include_usage=True,
-        )
-        segments = []
+    with _row_session(runtime, provider_session) as session:
+        if timestamped:
+            transcript, segments, usage = runtime.transcribe_audio_with_timestamps(
+                audio_file,
+                audio_mime,
+                output_language,
+                retry_tracker=retry_tracker,
+                include_usage=True,
+                provider_session=session,
+            )
+        else:
+            transcript, usage = runtime.transcribe_audio_plain(
+                audio_file,
+                audio_mime,
+                output_language,
+                retry_tracker=retry_tracker,
+                include_usage=True,
+                provider_session=session,
+            )
+            segments = []
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record_usage(
         'audio_transcription',
@@ -306,7 +320,8 @@ def _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, ru
     )
 
 
-def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *, text_combine=False):
+def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *, text_combine=False,
+                     provider_session=None):
     _upsert_row_progress(batch_id, row, 'notes_merge', 'merging notes', runtime=runtime)
     prompt = (
         batch_orchestrator._text_combine_prompt_for_row(row, runtime)
@@ -315,21 +330,17 @@ def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *
     )
     throttler.wait()
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    response = ai_provider.generate_with_policy(
-        runtime.MODEL_INTEGRATION,
-        _content_from_text(runtime, prompt),
-        retry_tracker=retry_tracker,
-        operation_name='instant_notes_merge',
-        runtime=runtime,
-    )
+    with _row_session(runtime, provider_session) as session:
+        # Text combine selects its own route; operation and usage labels stay notes_merge.
+        response = session.generate(
+            'text_combine' if text_combine else 'notes_merge',
+            [TextPart(prompt)],
+            max_output_tokens=65536,
+            retry_tracker=retry_tracker,
+            operation_name='instant_notes_merge',
+        )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    tokens.record(
-        'notes_merge',
-        response,
-        model=runtime.MODEL_INTEGRATION,
-        billing_mode='instant_batch',
-        input_modality='text',
-    )
+    tokens.record_result('notes_merge', response, billing_mode='instant_batch', input_modality='text')
     merged = str(getattr(response, 'text', '') or '')
     row['merged_notes'] = merged
     row['result'] = merged
@@ -353,7 +364,7 @@ def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *
     )
 
 
-def _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, runtime):
+def _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, runtime, *, provider_session=None):
     study_features = str(row.get('study_features', 'none') or 'none')
     if study_features == 'none':
         row['flashcards'] = []
@@ -375,6 +386,7 @@ def _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, runtime):
         retry_tracker=retry_tracker,
         runtime=runtime,
         include_usage=True,
+        provider_session=provider_session,
     )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     _record_usage_dict(tokens, usage, runtime.MODEL_STUDY)
@@ -396,31 +408,22 @@ def _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, runtime):
     )
 
 
-def _run_interview_transcription(batch_id, row, throttler, tokens, retry_tracker, runtime):
+def _run_interview_transcription(batch_id, row, throttler, tokens, retry_tracker, runtime, *, provider_session=None):
     _upsert_row_progress(batch_id, row, 'interview_transcription', 'transcribing interview', runtime=runtime)
     prompt = runtime.PROMPT_INTERVIEW_TRANSCRIPTION.format(output_language=row.get('output_language', 'English'))
     throttler.wait()
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    response = ai_provider.generate_with_policy(
-        runtime.MODEL_INTERVIEW,
-        _content_from_file_and_text(
-            runtime,
-            row.get('audio_file_uri', ''),
-            row.get('audio_mime_type', 'audio/mpeg'),
-            prompt,
-        ),
-        retry_tracker=retry_tracker,
-        operation_name='instant_interview_transcription',
-        runtime=runtime,
-    )
+    with _row_session(runtime, provider_session) as session:
+        response = session.generate(
+            'interview_transcription',
+            [PreparedFilePart(row.get('audio_file_uri', ''), row.get('audio_mime_type', 'audio/mpeg')),
+             TextPart(prompt)],
+            max_output_tokens=65536,
+            retry_tracker=retry_tracker,
+            operation_name='instant_interview_transcription',
+        )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    tokens.record(
-        'interview_transcription',
-        response,
-        model=runtime.MODEL_INTERVIEW,
-        billing_mode='instant_batch',
-        input_modality='audio',
-    )
+    tokens.record_result('interview_transcription', response, billing_mode='instant_batch', input_modality='audio')
     transcript = str(getattr(response, 'text', '') or '')
     row['transcript'] = transcript
     row['result'] = transcript
@@ -433,7 +436,7 @@ def _run_interview_transcription(batch_id, row, throttler, tokens, retry_tracker
     )
 
 
-def _run_interview_extras(batch_id, batch, row, throttler, tokens, retry_tracker, runtime):
+def _run_interview_extras(batch_id, batch, row, throttler, tokens, retry_tracker, runtime, *, provider_session=None):
     selected = row.get('interview_features', []) or []
     if not selected:
         return
@@ -447,6 +450,7 @@ def _run_interview_extras(batch_id, batch, row, throttler, tokens, retry_tracker
         retry_tracker=retry_tracker,
         runtime=runtime,
         include_usage=True,
+        provider_session=provider_session,
     )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     _record_usage_dict(tokens, enhancement, runtime.MODEL_STUDY)
@@ -494,6 +498,8 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
     row['processing_strategy'] = 'instant'
     row['billing_mode'] = 'instant_batch'
     row['billing_multiplier'] = 1.0
+    provider_session = _LazyRowSession(resolved_runtime)
+    stage_options = {'provider_session': provider_session}
 
     try:
         if mode in {'lecture-notes', 'slides-only', 'interview', 'audio-transcription'}:
@@ -522,7 +528,7 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
             )
 
         if mode in {'lecture-notes', 'slides-only'}:
-            _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime)
+            _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, **stage_options)
 
         if mode == 'lecture-notes':
             _run_audio_transcription(
@@ -533,23 +539,26 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
                 retry_tracker,
                 resolved_runtime,
                 timestamped=bool(resolved_runtime.FEATURE_AUDIO_SECTION_SYNC),
+                **stage_options,
             )
-            _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime)
-            _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime)
+            _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, **stage_options)
+            _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, **stage_options)
 
         elif mode == 'slides-only':
             row['result'] = str(row.get('slide_text', '') or '')
-            _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime)
+            _run_study_tools(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, **stage_options)
 
         elif mode == 'audio-transcription':
-            _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, timestamped=False)
+            _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, timestamped=False,
+                                     **stage_options)
 
         elif mode == 'interview':
-            _run_interview_transcription(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime)
-            _run_interview_extras(batch_id, batch, row, throttler, tokens, retry_tracker, resolved_runtime)
+            _run_interview_transcription(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, **stage_options)
+            _run_interview_extras(batch_id, batch, row, throttler, tokens, retry_tracker, resolved_runtime, **stage_options)
 
         elif mode == 'text-combine':
-            _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, text_combine=True)
+            _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, text_combine=True,
+                             **stage_options)
 
         else:
             raise ValueError('Unsupported instant batch mode.')
@@ -572,7 +581,10 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
                 _finalize_row(batch_id, batch, row, tokens, retry_tracker, runtime=resolved_runtime)
                 _refresh_batch_progress(batch_id, runtime=resolved_runtime)
         finally:
-            _cleanup_row_files(row, runtime=resolved_runtime)
+            try:
+                _cleanup_row_files(row, runtime=resolved_runtime)
+            finally:
+                provider_session.close()
 
 
 @batch_orchestrator._protect_batch_worker

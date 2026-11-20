@@ -6,7 +6,7 @@ import time
 from flask import has_request_context
 
 from lecture_processor.runtime.environment import get_gemini_http_timeout_ms
-from .contracts import AudioPart, GenerationResult, ImagePart, PdfPart, TextPart, Usage
+from .contracts import AudioPart, GenerationResult, ImagePart, PdfPart, PreparedFilePart, TextPart, Usage
 
 try:
     from google.genai import types as genai_types
@@ -176,12 +176,16 @@ class GeminiProvider:
         if self._closed:
             raise RuntimeError('The provider workflow is closed.')
         ordered = tuple(parts)
-        if not all(isinstance(part, (TextPart, PdfPart, ImagePart, AudioPart)) for part in ordered):
+        if not all(isinstance(part, (TextPart, PdfPart, ImagePart, AudioPart, PreparedFilePart)) for part in ordered):
             raise ValueError('Unsupported generation content part.')
         for part in ordered:
             if isinstance(part, TextPart):
                 if not isinstance(part.text, str):
                     raise ValueError('A text part requires text.')
+            elif isinstance(part, PreparedFilePart):
+                if (not isinstance(part.uri, str) or not part.uri
+                        or not isinstance(part.mime_type, str) or not part.mime_type):
+                    raise ValueError('A prepared file part requires a URI and MIME type.')
             elif not isinstance(part.path, (str, Path)) or not str(part.path):
                 raise ValueError('A file part requires a local path.')
             elif not isinstance(part, PdfPart) and (not isinstance(part.mime_type, str) or not part.mime_type):
@@ -193,6 +197,10 @@ class GeminiProvider:
         for part in ordered:
             if isinstance(part, TextPart):
                 native_parts.append(module.Part.from_text(text=part.text) if hasattr(module, 'Part') else {'text': part.text})
+            elif isinstance(part, PreparedFilePart):
+                # Already uploaded and processed by the caller; reference it without new ownership.
+                native_parts.append(module.Part.from_uri(file_uri=part.uri, mime_type=part.mime_type) if hasattr(module, 'Part')
+                                    else {'file_data': {'file_uri': part.uri, 'mime_type': part.mime_type}})
             else:
                 uploaded = self._prepare_file(part, prepared.client, operation, retry_tracker)
                 mime = 'application/pdf' if isinstance(part, PdfPart) else part.mime_type

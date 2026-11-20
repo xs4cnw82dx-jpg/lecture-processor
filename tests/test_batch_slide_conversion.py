@@ -11,6 +11,7 @@ import zipfile
 
 import pytest
 
+from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.ai import batch_orchestrator as batch
 from lecture_processor.domains.ai import instant_batch_orchestrator as instant
@@ -81,7 +82,6 @@ def slides(core, runtime, client, monkeypatch, tmp_path):
     monkeypatch.setattr(core, 'save_job_log', lambda *args: state.job_logs.append(deepcopy(args)))
     monkeypatch.setattr(batch, 'send_batch_completion_email', lambda *_args, **_kwargs: ('skipped', 'isolated test'))
     monkeypatch.setattr(batch, '_run_batch_stage', lambda _batch_id, _stage_name, requests, **_kwargs: [{'response': {'text': 'Synthetic slide notes.'}} for _ in requests])
-    monkeypatch.setattr(batch.ai_provider, 'generate_with_policy', lambda *_args, **_kwargs: SimpleNamespace(text='Synthetic slide notes.', usage_metadata=None))
 
     def save_pack(job_id, payload, **_kwargs):
         payload['study_pack_id'] = f'synthetic-pack-{job_id}'
@@ -111,7 +111,11 @@ def slides(core, runtime, client, monkeypatch, tmp_path):
 
     monkeypatch.setattr(core, 'cleanup_files', cleanup)
     monkeypatch.setattr(core, 'convert_pptx_to_pdf', convert)
-    monkeypatch.setattr(core, 'client', SimpleNamespace(files=SimpleNamespace(upload=upload)))
+    # A local fake client: rows upload through this seam and instant rows generate through a session.
+    fake_client = FakeGeminiClient()
+    fake_client.files.upload = upload
+    fake_client.models.generate_content = lambda **_kwargs: SimpleNamespace(text='Synthetic slide notes.', usage_metadata=None)
+    monkeypatch.setattr(core, 'client', fake_client)
     original_upsert = batch._upsert_row
 
     def checkpoint(batch_id, row_id, payload, runtime=None, merge=True):

@@ -1,7 +1,7 @@
 """Workflow-local generation selected from an immutable routing snapshot."""
 from pathlib import Path
 
-from .contracts import AudioPart
+from .contracts import AudioPart, PreparedFilePart
 from .gemini import GeminiProvider, validate_file_part
 from .routing import AUDIO_STAGES, STAGES, default_models, load_routing, validate_openrouter_options
 
@@ -87,6 +87,9 @@ class ProviderSession:
             parts = tuple(parts)
             if any(isinstance(part, AudioPart) for part in parts):
                 raise ValueError('Audio generation requires Gemini.')
+            # Prepared parts are Gemini Files references; never fall back or re-read them elsewhere.
+            if any(isinstance(part, PreparedFilePart) for part in parts):
+                raise ValueError('Prepared provider files require Gemini.')
         extra = {'options': options} if route.provider == 'openrouter' and not self._forced else {}
         return self._adapter(route).generate(
             route.model, parts, schema=schema, max_output_tokens=max_output_tokens,

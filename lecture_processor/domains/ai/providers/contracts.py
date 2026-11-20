@@ -27,6 +27,17 @@ class AudioPart:
 
 
 @dataclass(frozen=True)
+class PreparedFilePart:
+    """A file the Gemini Files API already holds for this job (for example a batch row upload).
+
+    Gemini-only: it is referenced by URI, never read from disk or uploaded again, and the
+    caller keeps ownership of the remote file.
+    """
+    uri: str
+    mime_type: str
+
+
+@dataclass(frozen=True)
 class Usage:
     input_tokens: int = 0
     # Output already includes thinking; never add thinking_tokens again.
