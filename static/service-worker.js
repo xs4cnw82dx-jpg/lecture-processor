@@ -1,4 +1,4 @@
-const VOICE_CACHE = 'lecture-processor-voice-v12';
+const VOICE_CACHE = 'lecture-processor-voice-v13';
 const VOICE_CACHE_PREFIX = 'lecture-processor-voice-';
 const APP_SHELL = [
   '/voice-notes',

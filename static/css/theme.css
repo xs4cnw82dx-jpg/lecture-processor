@@ -1,38 +1,79 @@
-/* Shared appearance contract. Component declarations retain their original light
-   colors as fallbacks; only these semantic tokens change in dark mode. Artwork,
-   uploaded documents, category swatches and export canvases retain their colors. */
-:root { color-scheme: light; --focus-ring: #2558d9; }
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --focus-ring: #9bbcff;
-  --theme-canvas: #101723;
-  --theme-surface: #192333;
-  --theme-surface-soft: #202c3e;
-  --theme-ink: #ecf2fc;
-  --theme-muted: #acbad0;
-  --theme-line: #36465d;
-  --theme-accent-ink: #9bbcff;
-  --theme-accent-soft: #21375a;
-  --theme-accent-line: #3d5f90;
-  --theme-success-ink: #85dfba;
-  --theme-success-soft: #18392f;
-  --theme-success-line: #366955;
-  --theme-warning-ink: #f3ce8a;
-  --theme-warning-soft: #3a3022;
-  --theme-warning-line: #77603b;
-  --theme-danger-ink: #ffa5b0;
-  --theme-danger-soft: #402833;
-  --theme-danger-line: #794654;
-  --theme-violet-ink: #c6b5ff;
-  --theme-violet-soft: #342c4d;
-  --theme-violet-line: #635284;
-  --surface-shadow: 0 8px 28px rgb(0 0 0 / 16%);
-  --control-shadow: 0 2px 5px rgb(0 0 0 / 12%);
-  --shadow-sm: 0 1px 3px rgb(0 0 0 / 16%);
-  --shadow: 0 3px 10px rgb(0 0 0 / 18%);
-  --shadow-md: 0 8px 24px rgb(0 0 0 / 22%);
-  --shadow-lg: 0 18px 42px rgb(0 0 0 / 30%);
-  --shadow-xl: 0 24px 64px rgb(0 0 0 / 38%);
+/* Shared appearance contract: the single source of every semantic colour.
+   Component rules use these tokens without fallbacks (tests enforce this), so a
+   colour changes in one place for every page. Dark values apply on screen only;
+   print always uses the light values. Artwork, uploaded documents, category
+   swatches and export canvases keep their own colours. */
+:root {
+  color-scheme: light;
+  --focus-ring: #2558d9;
+  --theme-canvas: #f6f8fc;
+  --theme-surface: #ffffff;
+  --theme-surface-soft: #f6f8fc;
+  --theme-ink: #17233c;
+  --theme-ink-soft: #34435c;
+  --theme-muted-strong: #4a566e;
+  --theme-muted: #5f6b84;
+  --theme-line-soft: #edf1f7;
+  --theme-line: #dfe5ef;
+  --theme-control-border: #aab6c9;
+  --control-border: var(--theme-control-border);
+  --theme-accent-ink: #2558d9;
+  --theme-accent-strong: #1e46a8;
+  --theme-accent-soft: #eaf0ff;
+  --theme-accent-line: #c9d6ee;
+  --theme-accent-line-strong: #7f9ff0;
+  --theme-success-ink: #166534;
+  --theme-success-soft: #e8f7f1;
+  --theme-success-line: #a7f3d0;
+  --theme-warning-ink: #92400e;
+  --theme-warning-soft: #fff4de;
+  --theme-warning-line: #f3d49b;
+  --theme-danger-ink: #991b1b;
+  --theme-danger-soft: #fff1f2;
+  --theme-danger-line: #fecaca;
+  --theme-violet-ink: #8a3053;
+  --theme-violet-soft: #fce7f3;
+  --theme-violet-line: #e5c9df;
+}
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --focus-ring: #9bbcff;
+    --theme-canvas: #101723;
+    --theme-surface: #192333;
+    --theme-surface-soft: #202c3e;
+    --theme-ink: #ecf2fc;
+    --theme-ink-soft: #d5deec;
+    --theme-muted-strong: #c0ccdf;
+    --theme-muted: #acbad0;
+    --theme-line-soft: #2b394d;
+    --theme-line: #36465d;
+    --theme-control-border: #5a6d89;
+    --theme-accent-ink: #9bbcff;
+    --theme-accent-strong: #bcd1ff;
+    --theme-accent-soft: #21375a;
+    --theme-accent-line: #3d5f90;
+    --theme-accent-line-strong: #5b7fbf;
+    --theme-success-ink: #85dfba;
+    --theme-success-soft: #18392f;
+    --theme-success-line: #366955;
+    --theme-warning-ink: #f3ce8a;
+    --theme-warning-soft: #3a3022;
+    --theme-warning-line: #77603b;
+    --theme-danger-ink: #ffa5b0;
+    --theme-danger-soft: #402833;
+    --theme-danger-line: #794654;
+    --theme-violet-ink: #c6b5ff;
+    --theme-violet-soft: #342c4d;
+    --theme-violet-line: #635284;
+    --surface-shadow: 0 8px 28px rgb(0 0 0 / 16%);
+    --control-shadow: 0 2px 5px rgb(0 0 0 / 12%);
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 16%);
+    --shadow: 0 3px 10px rgb(0 0 0 / 18%);
+    --shadow-md: 0 8px 24px rgb(0 0 0 / 22%);
+    --shadow-lg: 0 18px 42px rgb(0 0 0 / 30%);
+    --shadow-xl: 0 24px 64px rgb(0 0 0 / 38%);
+  }
 }
 
 /* The page canvas sits one level below cards and quiet inset controls. */
@@ -53,29 +94,5 @@ html[data-theme="dark"] .app-shell-sidebar { border-right: 1px solid #303d51; }
 
 /* Dark canvases do not affect the actual print/export document. */
 @media print {
-  :root[data-theme="dark"] {
-    color-scheme: light;
-    --theme-canvas: initial;
-    --theme-surface: initial;
-    --theme-surface-soft: initial;
-    --theme-ink: initial;
-    --theme-muted: initial;
-    --theme-line: initial;
-    --theme-accent-ink: initial;
-    --theme-accent-soft: initial;
-    --theme-accent-line: initial;
-    --theme-success-ink: initial;
-    --theme-success-soft: initial;
-    --theme-success-line: initial;
-    --theme-warning-ink: initial;
-    --theme-warning-soft: initial;
-    --theme-warning-line: initial;
-    --theme-danger-ink: initial;
-    --theme-danger-soft: initial;
-    --theme-danger-line: initial;
-    --theme-violet-ink: initial;
-    --theme-violet-soft: initial;
-    --theme-violet-line: initial;
-  }
   html[data-theme="dark"], html[data-theme="dark"] body { background: white; color: #17233c; }
 }
