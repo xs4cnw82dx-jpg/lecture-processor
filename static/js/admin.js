@@ -34,7 +34,6 @@ const ADMIN_ROUTES = {
     'batches': { group: '', title: 'Batches', copy: 'Batch jobs across all users, with their stage and refunds.', period: false },
     'system/health': { group: 'system', title: 'Service health', copy: 'Deployment, runtime checks and maintenance actions.', period: false },
 };
-const LEGACY_ADMIN_TABS = { 'overview': 'overview', 'batch-jobs': 'batches', 'credits': 'users/credits' };
 const adminViews = Array.from(document.querySelectorAll('[data-admin-view]'));
 const adminRouteLinks = Array.from(document.querySelectorAll('[data-admin-route]'));
 const adminMenuButtons = Array.from(document.querySelectorAll('[data-admin-menu]'));
@@ -260,13 +259,7 @@ async function activateAdminRoute(route, { focusHeading = false } = {}) {
 }
 
 // Kept for callers that still name the original three tabs.
-function setAdminTab(tabKey) {
-    return showAdminRoute(LEGACY_ADMIN_TABS[tabKey] || tabKey);
-}
 
-async function activateAdminTab(tabKey) {
-    await activateAdminRoute(LEGACY_ADMIN_TABS[tabKey] || tabKey);
-}
 
 function renderAdminBatchJobs(rows) {
     if (!adminBatchJobsBody) return;

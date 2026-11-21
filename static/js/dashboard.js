@@ -43,13 +43,6 @@
     authBanner.hidden = !visible;
   }
 
-  function localDateString(value) {
-    var date = value ? new Date(value) : new Date();
-    var y = String(date.getFullYear());
-    var m = String(date.getMonth() + 1).padStart(2, '0');
-    var d = String(date.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + d;
-  }
 
   function sortSessions(sessions) {
     return (sessions || []).slice().sort(function (a, b) {
@@ -59,17 +52,7 @@
     });
   }
 
-  function readCacheJson(key, fallbackValue) {
-    return typeof userCache.getJson === 'function'
-      ? userCache.getJson(key, fallbackValue, uiCache)
-      : fallbackValue;
-  }
 
-  function writeCacheJson(key, value) {
-    return typeof userCache.setJson === 'function'
-      ? userCache.setJson(key, value, uiCache)
-      : false;
-  }
 
   function readUserCacheJson(userOrUid, key, fallbackValue) {
     return typeof userCache.getUserJson === 'function'

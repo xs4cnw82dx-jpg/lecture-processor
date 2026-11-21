@@ -549,6 +549,7 @@
   "Shared Workout · Lecture Processor": "Gedeelde training · Lecture Processor",
   "Shared Study Content · Lecture Processor": "Gedeeld studiemateriaal · Lecture Processor",
   "Your account": "Je account",
-  "Your purchases, your data and your sign-in.": "Je aankopen, je gegevens en je aanmelding."
+  "Your purchases, your data and your sign-in.": "Je aankopen, je gegevens en je aanmelding.",
+  "Checkout is limited for a moment. Try again in {seconds} seconds.": "Afrekenen is even beperkt. Probeer het over {seconds} seconden opnieuw."
 });
 })(typeof window !== 'undefined' ? window : globalThis);

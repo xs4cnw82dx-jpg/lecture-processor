@@ -1349,13 +1349,6 @@
     });
   }
 
-  function findPackById(packId) {
-    var safePackId = String(packId || '').trim();
-    if (!safePackId) return null;
-    return currentPacks.find(function (pack) {
-      return String(pack.study_pack_id || '') === safePackId;
-    }) || null;
-  }
 
   function persistPackGoal(packId, showValidationError) {
     var safePackId = String(packId || '').trim();

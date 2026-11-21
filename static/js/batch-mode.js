@@ -396,13 +396,6 @@
     }
   }
 
-  function readCachedBatchId() {
-    try {
-      return String(window.localStorage.getItem(storageKeyForMode()) || '').trim();
-    } catch (_error) {
-      return '';
-    }
-  }
 
   function setBatchIdInUrl(batchId) {
     try {

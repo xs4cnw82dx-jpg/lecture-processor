@@ -159,9 +159,9 @@ def publish(job_id, pack_id, uid, expected_fingerprint, fallback_text, pack_upda
                 raise PublicationRejected('Regeneration charge is no longer available')
         updates = dict(pack_updates)
         if 'flashcards' in updates:
-            next_ids = picture_refs._card_image_ids(updates['flashcards'])
+            next_ids = picture_refs.card_image_ids(updates['flashcards'])
             pending = (set(current_pack.get(picture_refs.PENDING_PICTURES, []))
-                       | picture_refs._card_image_ids(current_pack.get('flashcards'))) - next_ids
+                       | picture_refs.card_image_ids(current_pack.get('flashcards'))) - next_ids
             updates[picture_refs.PENDING_PICTURES] = sorted(pending)
         transaction.update(pack_ref, updates)
         job = _write_job(transaction, job_ref, job_id, current, {

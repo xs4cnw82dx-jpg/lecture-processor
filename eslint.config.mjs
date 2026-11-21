@@ -27,6 +27,7 @@ export default [
       "no-undef": "error",
       "no-redeclare": "error",
       "no-unreachable": "error",
+      "no-unused-vars": ["error", { vars: "all", args: "none", caughtErrors: "none" }],
     },
   },
   {
