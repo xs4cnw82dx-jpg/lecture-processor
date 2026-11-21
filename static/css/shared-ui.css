@@ -376,3 +376,24 @@ input[type="file"]::file-selector-button { padding:9px 13px; margin-right:12px; 
 .skip-link:focus { transform: translateY(0); outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .app-select-upgraded .app-select-item:focus-visible,
 .app-menu-panel :is(button,a[href]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Touch screens: every button-like control is at least 44px tall, and icon-only
+   controls at least 44px wide. Pages size these controls for a mouse; this
+   minimum applies only to coarse pointers and wins over page rules on purpose.
+   Inline text links inside sentences keep their natural size. */
+@media (pointer: coarse) {
+  .btn, .bs-button, .bs-tab, .mode-link, .amount-chip, .tool-chip, .support-pill,
+  .public-header-link, .public-header-auth, .app-shell-credits, .empty-state-link,
+  .hero-btn, .primary-btn, .secondary-btn, .ghost-btn, .voice-btn,
+  .refresh-history-btn, .study-plan-tab, .advanced-toggle, .app-select-button,
+  .folder-row-main, .export-menu-item, .app-menu-panel button, summary, .settings-buy-credits,
+  .voice-record-btn {
+    min-height: 44px !important;
+  }
+  .app-shell-menu-btn, .overlay-icon-btn, .password-toggle, .hl-btn, .notes-audio-btn,
+  .public-header-brand, .auth-modal-close, .folder-action-menu summary,
+  #schedule-prev-week, #schedule-next-week {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+}

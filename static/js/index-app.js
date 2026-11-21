@@ -974,15 +974,38 @@ function showAuthView(view) {
     if (view === 'signup') signupView.classList.add('active');
     if (view === 'reset') resetView.classList.add('active');
 }
+const AUTH_ERROR_FIELDS = {
+    'signin-error': ['signin-email', 'signin-password'],
+    'signup-error': ['signup-email', 'signup-password', 'signup-password-confirm'],
+    'reset-error': ['reset-email'],
+};
+function setAuthFieldsInvalid(errorEl, invalid) {
+    if (!errorEl || !errorEl.id) return;
+    (AUTH_ERROR_FIELDS[errorEl.id] || []).forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+        const described = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== errorEl.id);
+        if (invalid) {
+            field.setAttribute('aria-invalid', 'true');
+            described.push(errorEl.id);
+        } else {
+            field.removeAttribute('aria-invalid');
+        }
+        if (described.length) field.setAttribute('aria-describedby', described.join(' '));
+        else field.removeAttribute('aria-describedby');
+    });
+}
 function clearAuthErrors() {
     [signinError, signupError, resetError, resetSuccess].forEach(el => {
         el.classList.remove('visible');
         el.textContent = '';
+        setAuthFieldsInvalid(el, false);
     });
 }
 function showAuthError(el, msg) {
     el.textContent = msg;
     el.classList.add('visible');
+    setAuthFieldsInvalid(el, true);
 }
 function isUnverifiedEmailUser(user) {
     return Boolean(user && user.email && user.emailVerified === false);

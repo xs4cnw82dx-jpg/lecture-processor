@@ -232,3 +232,17 @@ test('payment return survives the real sign-in navigation and confirms once', as
   await expect(page.locator('#payment-result')).toContainText('Payment confirmed');
   expect(confirmations).toBe(1);
 });
+
+test('sign-in errors mark the fields invalid and describe them, then clear on a new view', async ({ page }) => {
+  await loginFixture(page, { allowed: false });
+  await submitEmail(page);
+  await expect(page.locator('#signin-error')).toHaveText('This email is not allowed.');
+  for (const id of ['#signin-email', '#signin-password']) {
+    await expect(page.locator(id)).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator(id)).toHaveAttribute('aria-describedby', /(^|\s)signin-error(\s|$)/);
+  }
+  await page.locator('#switch-to-signup').click();
+  await expect(page.locator('#signin-email')).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#signin-email')).not.toHaveAttribute('aria-describedby', /signin-error/);
+  await expect(page.locator('#signup-password')).toHaveAttribute('aria-describedby', 'signup-password-help');
+});

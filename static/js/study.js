@@ -2226,6 +2226,17 @@ function setExportPdfSubmenuOpen(open) {
   var trigger = exportMenuList ? exportMenuList.querySelector('[data-export-kind="pdf-menu"]') : null;
   if (trigger) { trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false'); }
 }
+// Open the pack actions menu upward when the viewport has no room below it,
+// so every action (including Delete pack) stays reachable in short windows.
+function placeExportMenu() {
+  if (!exportMenuList || !exportMenuBtn) return;
+  exportMenuList.classList.remove('opens-up');
+  var rect = exportMenuBtn.getBoundingClientRect();
+  var menuHeight = exportMenuList.offsetHeight;
+  var below = window.innerHeight - rect.bottom - 12;
+  var above = rect.top - 12;
+  if (menuHeight > below && above > below) exportMenuList.classList.add('opens-up');
+}
 function setExportMenuOpen(open, focusMode) {
   if (!exportMenuList || !exportMenuBtn) return;
   var shouldOpen = !!open;
@@ -2233,6 +2244,7 @@ function setExportMenuOpen(open, focusMode) {
   exportMenuList.classList.toggle('visible', shouldOpen);
   exportMenuBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   if (!shouldOpen) { setExportPdfSubmenuOpen(false); return; }
+  placeExportMenu();
   if (focusMode) { focusMenuItem(exportMenuList, '.export-menu-item', focusMode); }
 }
 function mdToHtml(md) {
@@ -8412,6 +8424,9 @@ if (exportMenuBtn && exportMenuList) {
     var csvType = (kind === 'test') ? 'test' : 'flashcards';
     showToast('CSV export started.', 'success');
     downloadStudyPackCsv(selectedPackId, csvType).catch(function (e4) { showToast(e4.message || 'Could not export CSV.', 'error'); });
+  });
+  exportMenuList.addEventListener('focusin', function (e) {
+    if (e.target && typeof e.target.scrollIntoView === 'function') e.target.scrollIntoView({ block: 'nearest' });
   });
   exportMenuList.addEventListener('keydown', function (e) {
     var focused = document.activeElement;

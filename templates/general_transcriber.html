@@ -72,10 +72,10 @@
 
               <div class="tool-retention-note" id="transcriber-audio-retention-note">Keep your original recording. Uploaded audio is deleted after transcription.</div>
           <div class="tool-language-field">
-            <span class="tool-language-label">Output Language</span>
+            <span class="tool-language-label" id="transcriber-output-language-heading">Output Language</span>
             <input type="hidden" id="transcriber-output-language" value="english">
             <div class="app-select" id="transcriber-output-language-picker">
-              <button type="button" class="app-select-button" id="transcriber-output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="transcriber-output-language-menu">
+              <button type="button" class="app-select-button" id="transcriber-output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="transcriber-output-language-menu" aria-labelledby="transcriber-output-language-heading transcriber-output-language-label">
                 <span id="transcriber-output-language-label">🇬🇧 English</span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <polyline points="6 9 12 15 18 9"></polyline>
@@ -91,7 +91,7 @@
                 <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="other">🌐 Other</button>
               </div>
             </div>
-            <input class="language-custom-input" id="transcriber-output-language-custom" placeholder="Type your preferred language (for example: Italian)" hidden>
+            <input class="language-custom-input" id="transcriber-output-language-custom" aria-label="Custom output language" placeholder="Type your preferred language (for example: Italian)" hidden>
             <p class="tool-note tool-language-note" id="transcriber-language-note">Transcript language: checking your preference…</p>
           </div>
 

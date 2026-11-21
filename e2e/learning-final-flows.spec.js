@@ -196,3 +196,27 @@ test('one Library export menu retains original and annotated notes downloads',as
   expect(exports[1].method).toBe('POST');
   expect(JSON.stringify(exports[1].body)).toContain('Movement and memory');
 });
+
+test('pack actions menu opens upward when a short window has no room below', async ({ page }) => {
+  await installLibrary(page, { packs: [studyPack()] });
+  await page.setViewportSize({ width: 1280, height: 594 });
+  await page.goto('/study?pack_id=flow');
+  const button = page.locator('#export-menu-btn');
+  await expect(button).toBeVisible();
+  await page.evaluate(() => {
+    const target = document.getElementById('export-menu-btn');
+    window.scrollBy(0, target.getBoundingClientRect().bottom - window.innerHeight + 60);
+  });
+  await button.focus();
+  await page.keyboard.press('Enter');
+  const menu = page.locator('#export-menu-list');
+  await expect(menu).toHaveClass(/visible/);
+  await expect(menu).toHaveClass(/opens-up/);
+  const box = await menu.boundingBox();
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  await page.keyboard.press('End');
+  await expect(page.locator('#delete-pack-btn')).toBeFocused();
+  await expect(page.locator('#delete-pack-btn')).toBeInViewport();
+  await page.keyboard.press('Escape');
+  await expect(menu).not.toHaveClass(/visible/);
+});
