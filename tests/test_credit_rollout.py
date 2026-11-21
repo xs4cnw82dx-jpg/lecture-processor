@@ -235,3 +235,26 @@ def test_cancelled_account_deletion_allows_purchase(credit_runtime):
     store.documents[('account_deletions', 'u1')] = {'status': 'cancelled'}
     assert purchases.process_checkout_session_credits(checkout('credits_40'), runtime=runtime) == (True, 'granted')
     assert store.documents[('users', 'u1')]['credits'] == 130
+
+
+def test_current_profile_loads_without_a_transaction_and_others_still_normalize(credit_runtime):
+    runtime, store = credit_runtime
+    runtime.UNIFIED_CREDITS_ENABLED = False
+    transactions = []
+    open_transaction = runtime.db.transaction
+    runtime.db.transaction = lambda *args, **kwargs: transactions.append(1) or open_transaction(*args, **kwargs)
+
+    first = users.get_or_create_user('u1', 'u1@example.com', runtime=runtime)
+    assert transactions == [1]  # The legacy profile needed normalization, written in a transaction.
+    stored = deepcopy(store.docs('users')['u1'])
+    assert {key: stored[key] for key in first} == first
+
+    again = users.get_or_create_user('u1', 'u1@example.com', runtime=runtime)
+    assert transactions == [1]  # Now current: answered from plain reads.
+    assert again == first and store.docs('users')['u1'] == stored
+
+    users.get_or_create_user('u1', 'changed@example.com', runtime=runtime)
+    assert transactions == [1, 1] and store.docs('users')['u1']['email'] == 'changed@example.com'
+
+    users.get_or_create_user('brand-new', 'new@example.com', runtime=runtime)
+    assert len(transactions) == 3 and 'brand-new' in store.docs('users')
