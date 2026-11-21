@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
   {% include '_preferences_head.html' %}
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% if forced_mode == 'lecture-notes' %}Lecture Notes{% elif forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Lecture Processor — Processing{% endif %}</title>
+    <title>{% if forced_mode == 'lecture-notes' %}Lecture Notes{% elif forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Processing{% endif %} · Lecture Processor</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
@@ -180,7 +180,7 @@
                 </div>
             </div>
             <div class="sign-in-required" id="sign-in-required"><p>Please sign in to start processing your lectures</p><button class="process-button" id="sign-in-to-process-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg><span>Sign in to continue</span></button></div>
-            <div class="progress-section" id="progress-section" tabindex="-1"><div class="progress-header"><h3 class="progress-title">Preparing your study material</h3><p class="progress-subtitle">This may take a few minutes depending on how long your lecture is</p></div><div class="progress-safe-banner" id="progress-safe-banner" hidden>Safe to leave: processing continues in the background and the finished result will appear in Study Library.</div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status" role="status" aria-live="polite" aria-atomic="true"><div class="spinner"></div><span id="status-text">Starting...</span></div><div class="progress-retry" id="progress-retry"><button type="button" class="progress-retry-btn" id="progress-retry-btn">Retry status check now</button></div></div>
+            <div class="progress-section" id="progress-section" tabindex="-1"><div class="progress-header"><h2 class="progress-title">Preparing your study material</h2><p class="progress-subtitle">This may take a few minutes depending on how long your lecture is</p></div><div class="progress-safe-banner" id="progress-safe-banner" hidden>Safe to leave: processing continues in the background and the finished result will appear in Study Library.</div><div class="progress-steps" id="progress-steps"></div><div class="progress-status" id="progress-status" role="status" aria-live="polite" aria-atomic="true"><div class="spinner"></div><span id="status-text">Starting...</span></div><div class="progress-retry" id="progress-retry"><button type="button" class="progress-retry-btn" id="progress-retry-btn">Retry status check now</button></div></div>
             <div class="results-section" id="results-section">
                 <div class="focus-dashboard">
                     <aside class="focus-sidebar">
@@ -252,17 +252,17 @@
                 <div class="features">
                     <div class="feature-card">
                         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div>
-                        <h3 class="feature-title">Smart Slide Extraction</h3>
+                        <h2 class="feature-title">Smart Slide Extraction</h2>
                         <p class="feature-description">Extracts all text and identifies important visuals automatically</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg></div>
-                        <h3 class="feature-title">Audio Transcription</h3>
+                        <h2 class="feature-title">Audio Transcription</h2>
                         <p class="feature-description">Converts spoken explanations into clean, readable text</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
-                        <h3 class="feature-title">Intelligent Merging</h3>
+                        <h2 class="feature-title">Intelligent Merging</h2>
                         <p class="feature-description">Combines slides and audio into comprehensive study notes</p>
                     </div>
                 </div>

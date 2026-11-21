@@ -25,7 +25,7 @@ select {
 }
 
 .app-shell {
-  min-height: 100vh;
+  min-height: 100vh; min-height: 100dvh;
   display: grid;
   grid-template-columns: 260px 1fr;
 }
@@ -37,7 +37,7 @@ select {
 .app-shell-sidebar {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100vh; height: 100dvh;
   background: #0f1a2f;
   color: #e6edf9;
   border-right: 1px solid rgba(255, 255, 255, 0.08);

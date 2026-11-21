@@ -15,7 +15,7 @@
       background:var(--theme-surface-soft);
       color:var(--theme-ink);
       line-height:1.6;
-      min-height:100vh;
+      min-height:100vh; min-height:100dvh;
       -webkit-font-smoothing:antialiased;
     }
     input,textarea,select,button{font-family:inherit}

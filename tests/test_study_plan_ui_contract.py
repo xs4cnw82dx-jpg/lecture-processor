@@ -15,7 +15,7 @@ def test_unified_study_plan_contains_guided_views_and_reliable_states(client):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
 
-    assert '<title>Study Plan - Lecture Processor</title>' in html
+    assert '<title>Study Plan · Lecture Processor</title>' in html
     assert 'data-plan-view="today"' in html
     assert 'data-plan-view="schedule"' in html
     assert 'data-plan-view="progress"' in html

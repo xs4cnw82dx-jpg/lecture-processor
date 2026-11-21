@@ -52,7 +52,7 @@
 .hub-card h3 a { color: var(--theme-ink); text-decoration: none; }
 .hub-card h3 a:hover { color: var(--theme-accent-ink); }
 .hub-card p { max-width: 50ch; margin: 0 0 14px; color: var(--theme-muted); font-size: .86rem; line-height: 1.65; flex: 1; }
-.hub-open { align-self: flex-start; text-decoration: none; color: var(--theme-accent-strong); font-size: .8rem; font-weight: 650; display: inline-flex; gap: 9px; align-items: center; padding: 6px 0; }
+.hub-open { align-self: flex-start; text-decoration: none; color: var(--theme-accent-strong); font-size: .8rem; font-weight: 700; display: inline-flex; gap: 9px; align-items: center; padding: 6px 0; }
 .hub-open:hover { text-decoration: underline; }
 .tools-hub-page :is(button,a):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .hub-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

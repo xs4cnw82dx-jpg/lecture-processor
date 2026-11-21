@@ -491,3 +491,24 @@ def test_processing_template_defaults_optional_sections_to_collapsed_state():
     assert 'id="other-audio-toggle" aria-expanded="false"' in index_template
     assert 'id="other-audio-body" aria-hidden="true"' in index_template
     assert 'id="advanced-settings-toggle" aria-expanded="false"' in index_template
+
+
+def test_page_titles_share_one_format_and_pages_have_one_h1():
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "templates"
+    brand_first = {"landing.html", "admin.html"}
+    for path in sorted(root.glob("*.html")):
+        source = path.read_text(encoding="utf-8")
+        head = source.split("<body", 1)[0]
+        for title in re.findall(r"<title>(.*?)</title>", head, flags=re.S):
+            if path.name in brand_first:
+                continue
+            assert title.strip().endswith("· Lecture Processor"), (path.name, title)
+            assert " | " not in title and " - Lecture Processor" not in title, (path.name, title)
+        # These pages swap between two exclusive states (signed out / error),
+        # each with its own H1; only one is ever visible.
+        if path.name.startswith("_") or path.name in {"batch_dashboard.html", "workout_share.html"}:
+            continue
+        assert len(re.findall(r"<h1\b", source)) <= 1, path.name

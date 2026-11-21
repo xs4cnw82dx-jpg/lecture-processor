@@ -1,5 +1,5 @@
 .study-picture-editor { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--theme-line); display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.study-picture-heading { display: block; font-size: .75rem; color: var(--theme-muted); font-weight: 650; }
+.study-picture-heading { display: block; font-size: .75rem; color: var(--theme-muted); font-weight: 700; }
 .study-picture-gallery { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin: 12px 0; }
 .study-picture-item { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: 100%; }
 .study-picture-open { cursor: zoom-in; border: 1px solid var(--theme-line); border-radius: 11px; background: var(--theme-surface); padding: 4px; transition: border-color .16s, box-shadow .16s; }

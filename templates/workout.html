@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Workout · Private Admin</title>
+  <title>Workout · Lecture Processor</title>
   <link rel="manifest" href="{{ url_for('static', filename='workout-manifest.webmanifest') }}">
   <link rel="apple-touch-icon" sizes="180x180" type="image/png" href="{{ url_for('static', filename='icons/workout-touch-v2-180.png') }}">
   <link rel="apple-touch-icon-precomposed" sizes="180x180" type="image/png" href="{{ url_for('static', filename='icons/workout-touch-v2-180.png') }}">
@@ -200,7 +200,7 @@
   <section class="workout-logger" id="workout-logger" aria-label="Active workout" hidden>
     <header class="workout-logger-header">
       <button class="workout-icon-btn" id="workout-close-logger" type="button" aria-label="Minimize workout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
-      <div><p id="workout-logger-status">Active workout</p><h1 id="workout-logger-title">Workout</h1></div>
+      <div><p id="workout-logger-status">Active workout</p><h2 id="workout-logger-title">Workout</h2></div>
       <button class="workout-finish-btn" id="workout-finish-btn" type="button">Finish</button>
     </header>
     <div class="workout-logger-metrics">
