@@ -55,7 +55,7 @@ async function openAdmin(page, { language = 'en', theme = 'light', checks = norm
     } : pathname === '/api/user-preferences' ? { preferences: { interface_language: language, theme } } : {};
     return route.fulfill({ json: payload });
   });
-  await page.goto('/admin');
+  await page.goto('/admin#system/health');
   await expect(page.locator('#dashboard')).toBeVisible();
   expect(state.assets).toEqual([`/static/js/${asset}`]);
   return state;

@@ -19,16 +19,32 @@ const exportFunnelBtn = document.getElementById('export-funnel-btn');
 const exportFunnelDailyBtn = document.getElementById('export-funnel-daily-btn');
 const adminCleanStaleAudioBtn = document.getElementById('admin-clean-stale-audio-btn');
 const adminCleanStaleAudioStatus = document.getElementById('admin-clean-stale-audio-status');
-const adminTabButtons = Array.from(document.querySelectorAll('[data-admin-tab]'));
-const adminOverviewContent = document.getElementById('admin-tab-overview-content');
-const adminBatchContent = document.getElementById('admin-tab-batch-content');
-const adminCreditsContent = document.getElementById('admin-tab-credits-content');
-const adminTabKeys = ['overview', 'batch-jobs', 'credits'];
-const adminTabPanels = {
-    'overview': adminOverviewContent,
-    'batch-jobs': adminBatchContent,
-    'credits': adminCreditsContent,
+// Each admin page has its own hash route; the overview request feeds Overview, Activity and System.
+const ADMIN_ROUTES = {
+    'overview': { group: '', title: 'Overview', copy: 'Key numbers for the selected reporting period.', period: true },
+    'activity/trends': { group: 'activity', title: 'Trends', copy: 'Success rate, revenue and the mix of processing modes.', period: true },
+    'activity/funnel': { group: 'activity', title: 'Conversion funnel', copy: 'How visitors move from first visit to purchase.', period: true },
+    'activity/jobs': { group: 'activity', title: 'Recent jobs', copy: 'The latest processing jobs with their duration and tokens.', period: true },
+    'activity/purchases': { group: 'activity', title: 'Purchases', copy: 'The latest credit purchases.', period: true },
+    'activity/rate-limits': { group: 'activity', title: 'Rate limits', copy: 'Recent requests that hit a rate limit.', period: true },
+    'costs/calculator': { group: 'costs', title: 'Cost calculator', copy: 'Estimate API cost and margin per bundle and scenario.', period: false },
+    'costs/analyzer': { group: 'costs', title: 'Job cost analyzer', copy: 'Real token costs for finished jobs, with an Excel export.', period: false },
+    'costs/prompts': { group: 'costs', title: 'Prompts', copy: 'The prompts the processing pipeline currently uses.', period: false },
+    'users/credits': { group: 'users', title: 'Credits and grants', copy: 'Find a user, grant credits or change unlimited access.', period: false },
+    'batches': { group: '', title: 'Batches', copy: 'Batch jobs across all users, with their stage and refunds.', period: false },
+    'system/health': { group: 'system', title: 'Service health', copy: 'Deployment, runtime checks and maintenance actions.', period: false },
 };
+const LEGACY_ADMIN_TABS = { 'overview': 'overview', 'batch-jobs': 'batches', 'credits': 'users/credits' };
+const adminViews = Array.from(document.querySelectorAll('[data-admin-view]'));
+const adminRouteLinks = Array.from(document.querySelectorAll('[data-admin-route]'));
+const adminMenuButtons = Array.from(document.querySelectorAll('[data-admin-menu]'));
+const adminNavToggle = document.getElementById('admin-nav-toggle');
+const adminNav = document.getElementById('admin-nav');
+const adminPageTitle = document.getElementById('admin-page-title');
+const adminPageCopy = document.getElementById('admin-page-copy');
+const adminPageEyebrow = document.getElementById('admin-page-eyebrow');
+const adminPeriodFilters = document.getElementById('admin-period-filters');
+const adminLoadedPages = new Set();
 const adminBatchRefreshBtn = document.getElementById('admin-batch-refresh-btn');
 const adminBatchMode = document.getElementById('admin-batch-mode');
 const adminBatchStatus = document.getElementById('admin-batch-status');
@@ -63,7 +79,7 @@ const adminCreditGrantsBody = document.getElementById('admin-credit-grants-body'
 let currentWindow = '7d';
 let currentModeView = 'total';
 let latestModeBreakdown = {};
-let activeAdminTab = 'overview';
+let activeAdminRoute = 'overview';
 let adminToastTimer = null;
 let currentAdminCreditUser = null;
 let adminCreditBusy = false;
@@ -184,46 +200,78 @@ function setAdminMaintenanceStatus(message, type) {
     if (type === 'error') adminCleanStaleAudioStatus.classList.add('error');
 }
 
+function routeFromHash(hash) {
+    const key = decodeURIComponent(String(hash || '').replace(/^#\/?/, ''));
+    return Object.prototype.hasOwnProperty.call(ADMIN_ROUTES, key) ? key : 'overview';
+}
+
+function closeAdminMenus(exceptKey = '') {
+    adminMenuButtons.forEach((button) => {
+        if (button.dataset.adminMenu === exceptKey) return;
+        button.setAttribute('aria-expanded', 'false');
+        const panel = document.getElementById(button.getAttribute('aria-controls'));
+        if (panel) panel.hidden = true;
+    });
+}
+
+function setAdminNavOpen(open) {
+    if (!adminNavToggle || !adminNav) return;
+    adminNavToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    adminNav.classList.toggle('is-open', open);
+    if (!open) closeAdminMenus();
+}
+
+function showAdminRoute(route) {
+    const next = Object.prototype.hasOwnProperty.call(ADMIN_ROUTES, route) ? route : 'overview';
+    const meta = ADMIN_ROUTES[next];
+    activeAdminRoute = next;
+    adminViews.forEach((view) => { view.hidden = view.dataset.adminView !== next; });
+    adminRouteLinks.forEach((link) => {
+        if (link.dataset.adminRoute === next && !link.classList.contains('admin-brand')) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+    });
+    adminMenuButtons.forEach((button) => button.classList.toggle('is-current', button.dataset.adminMenu === meta.group));
+    adminRouteLinks.filter((link) => link.classList.contains('admin-nav-link'))
+        .forEach((link) => link.classList.toggle('is-current', link.dataset.adminRoute === next));
+    if (adminPageTitle) adminPageTitle.textContent = meta.title;
+    if (adminPageCopy) adminPageCopy.textContent = meta.copy;
+    if (adminPageEyebrow) {
+        const groupButton = adminMenuButtons.find((button) => button.dataset.adminMenu === meta.group);
+        adminPageEyebrow.textContent = groupButton ? groupButton.firstChild.textContent.trim().toUpperCase() : 'ADMINISTRATION';
+    }
+    if (adminPeriodFilters) adminPeriodFilters.hidden = !meta.period;
+    document.title = `${adminT(meta.title)} · ${adminT('Lecture Processor Admin')}`;
+    return next;
+}
+
+async function loadAdminRouteData(route, { force = false } = {}) {
+    if (!auth.currentUser) return;
+    const first = !adminLoadedPages.has(route);
+    adminLoadedPages.add(route);
+    if (route === 'batches' && (first || force)) await loadAdminBatchJobs(force);
+    if (route === 'users/credits' && (first || force)) await loadAdminCreditGrants(force);
+    if (route === 'costs/calculator' && (first || force)) await initCostCalculator();
+    if (route === 'costs/analyzer' && (first || force)) await runActualCostAnalysis(false);
+}
+
+async function activateAdminRoute(route, { focusHeading = false } = {}) {
+    const next = showAdminRoute(route);
+    closeAdminMenus();
+    setAdminNavOpen(false);
+    if (focusHeading && adminPageTitle) {
+        adminPageTitle.tabIndex = -1;
+        adminPageTitle.focus({ preventScroll: false });
+    }
+    await loadAdminRouteData(next);
+}
+
+// Kept for callers that still name the original three tabs.
 function setAdminTab(tabKey) {
-    const next = adminTabKeys.includes(tabKey) ? tabKey : 'overview';
-    activeAdminTab = next;
-    adminTabButtons.forEach((btn) => {
-        const isActive = btn.dataset.adminTab === next;
-        btn.classList.toggle('active', isActive);
-        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-        btn.tabIndex = isActive ? 0 : -1;
-    });
-    Object.entries(adminTabPanels).forEach(([key, panel]) => {
-        if (!panel) return;
-        const isActive = key === next;
-        panel.hidden = !isActive;
-        panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
-    });
+    return showAdminRoute(LEGACY_ADMIN_TABS[tabKey] || tabKey);
 }
 
-async function loadAdminTabData(tabKey) {
-    if (tabKey === 'batch-jobs' && auth.currentUser) {
-        await loadAdminBatchJobs(false);
-    }
-    if (tabKey === 'credits' && auth.currentUser) {
-        await loadAdminCreditGrants(false);
-    }
-}
-
-async function activateAdminTab(tabKey, { focus = false } = {}) {
-    const next = adminTabKeys.includes(tabKey) ? tabKey : 'overview';
-    setAdminTab(next);
-    if (focus) {
-        const nextButton = adminTabButtons.find((btn) => btn.dataset.adminTab === next);
-        if (nextButton) nextButton.focus();
-    }
-    await loadAdminTabData(next);
-}
-
-function nextAdminTabKey(currentKey, direction) {
-    const currentIndex = Math.max(0, adminTabKeys.indexOf(currentKey));
-    const nextIndex = (currentIndex + direction + adminTabKeys.length) % adminTabKeys.length;
-    return adminTabKeys[nextIndex];
+async function activateAdminTab(tabKey) {
+    await activateAdminRoute(LEGACY_ADMIN_TABS[tabKey] || tabKey);
 }
 
 function renderAdminBatchJobs(rows) {
@@ -1352,14 +1400,14 @@ onAdminAuthStateReady(async (user) => {
         signedInMeta.textContent = `Signed in as ${user.email}`;
         authBtn.textContent = 'Sign out';
         await loadAdminOverview(user);
-        await initCostCalculator();
-        await runActualCostAnalysis(false);
-        await loadAdminBatchJobs(false);
+        // Other pages load their own data the first time they are opened.
+        adminLoadedPages.clear();
+        await loadAdminRouteData(activeAdminRoute);
     } else {
         if (authClient && typeof authClient.clearToken === 'function') authClient.clearToken();
         signedInMeta.textContent = 'Not signed in';
         authBtn.textContent = 'Sign in';
-        setAdminTab('overview');
+        adminLoadedPages.clear();
         renderAdminBatchJobs([]);
         renderAdminCreditUser(null);
         renderAdminCreditGrants([]);
@@ -1391,11 +1439,11 @@ refreshBtn.addEventListener('click', async () => {
         setState('Please sign in to refresh.', 'blocked');
         return;
     }
-    if (activeAdminTab === 'batch-jobs') {
+    if (activeAdminRoute === 'batches') {
         await loadAdminBatchJobs(true);
         return;
     }
-    if (activeAdminTab === 'credits') {
+    if (activeAdminRoute === 'users/credits') {
         if (currentAdminCreditUser && currentAdminCreditUser.email) {
             await searchAdminCreditUser();
         } else {
@@ -1403,9 +1451,11 @@ refreshBtn.addEventListener('click', async () => {
         }
         return;
     }
+    if (activeAdminRoute === 'costs/calculator' || activeAdminRoute === 'costs/analyzer') {
+        await loadAdminRouteData(activeAdminRoute, { force: true });
+        return;
+    }
     await loadAdminOverview(auth.currentUser);
-    await initCostCalculator();
-    await runActualCostAnalysis(false);
 });
 
 backBtn.addEventListener('click', () => {
@@ -1452,26 +1502,84 @@ document.querySelectorAll('.mode-view').forEach((btn) => {
     });
 });
 
-adminTabButtons.forEach((btn) => {
-    btn.addEventListener('click', async () => {
-        await activateAdminTab(btn.dataset.adminTab || 'overview');
-    });
-    btn.addEventListener('keydown', async (event) => {
-        let nextKey = '';
-        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-            nextKey = nextAdminTabKey(btn.dataset.adminTab || 'overview', 1);
-        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-            nextKey = nextAdminTabKey(btn.dataset.adminTab || 'overview', -1);
-        } else if (event.key === 'Home') {
-            nextKey = adminTabKeys[0];
-        } else if (event.key === 'End') {
-            nextKey = adminTabKeys[adminTabKeys.length - 1];
-        }
-        if (!nextKey) return;
+adminRouteLinks.forEach((link) => {
+    link.addEventListener('click', (event) => {
+        const route = link.dataset.adminRoute || 'overview';
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button > 0) return;
         event.preventDefault();
-        await activateAdminTab(nextKey, { focus: true });
+        if (routeFromHash(window.location.hash) !== route || window.location.hash === '') {
+            window.history.pushState(null, '', `#${route}`);
+        }
+        activateAdminRoute(route, { focusHeading: !link.classList.contains('admin-brand') });
     });
 });
+
+window.addEventListener('popstate', () => { activateAdminRoute(routeFromHash(window.location.hash)); });
+window.addEventListener('hashchange', () => {
+    const route = routeFromHash(window.location.hash);
+    if (route !== activeAdminRoute) activateAdminRoute(route);
+});
+
+function menuItems(button) {
+    const panel = document.getElementById(button.getAttribute('aria-controls'));
+    return panel ? Array.from(panel.querySelectorAll('a')) : [];
+}
+
+adminMenuButtons.forEach((button, index) => {
+    button.addEventListener('click', () => {
+        const open = button.getAttribute('aria-expanded') !== 'true';
+        closeAdminMenus(button.dataset.adminMenu);
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
+        const panel = document.getElementById(button.getAttribute('aria-controls'));
+        if (panel) panel.hidden = !open;
+    });
+    button.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            button.setAttribute('aria-expanded', 'true');
+            const panel = document.getElementById(button.getAttribute('aria-controls'));
+            if (panel) panel.hidden = false;
+            closeAdminMenus(button.dataset.adminMenu);
+            const items = menuItems(button);
+            if (items[0]) items[0].focus();
+        } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+            event.preventDefault();
+            const step = event.key === 'ArrowRight' ? 1 : -1;
+            const target = adminMenuButtons[(index + step + adminMenuButtons.length) % adminMenuButtons.length];
+            if (target) target.focus();
+        }
+    });
+    menuItems(button).forEach((item, itemIndex, items) => {
+        item.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                const step = event.key === 'ArrowDown' ? 1 : -1;
+                items[(itemIndex + step + items.length) % items.length].focus();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeAdminMenus();
+                button.focus();
+            }
+        });
+    });
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const open = adminMenuButtons.find((button) => button.getAttribute('aria-expanded') === 'true');
+    if (open) { closeAdminMenus(); open.focus(); return; }
+    if (adminNav && adminNav.classList.contains('is-open')) { setAdminNavOpen(false); adminNavToggle.focus(); }
+});
+
+document.addEventListener('click', (event) => {
+    if (!event.target.closest('.admin-nav-group')) closeAdminMenus();
+});
+
+if (adminNavToggle) {
+    adminNavToggle.addEventListener('click', () => {
+        setAdminNavOpen(adminNavToggle.getAttribute('aria-expanded') !== 'true');
+    });
+}
 
 if (adminBatchRefreshBtn) {
     adminBatchRefreshBtn.addEventListener('click', async () => {
@@ -1555,7 +1663,7 @@ if (loadPromptsBtn && promptsOutput) {
 
 setActiveFilterButton();
 setActiveModeViewButton();
-setAdminTab('overview');
+showAdminRoute(routeFromHash(window.location.hash));
 
 /* ── Cost Calculator ── */
 function enhanceAdminSelect(selectEl, onChange) {

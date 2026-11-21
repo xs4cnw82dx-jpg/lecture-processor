@@ -360,22 +360,15 @@ def test_shell_account_delete_is_reachable_and_announced():
     assert ".shell-modal-primary.danger" in app_shell_css
 
 
-def test_admin_tabs_expose_tab_semantics_and_keyboard_navigation():
+def test_admin_navigation_names_its_menus_and_pages():
     admin_template = Path('templates/admin.html').read_text(encoding='utf-8')
-    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
 
-    assert 'class="admin-tabs" role="tablist" aria-label="Admin sections"' in admin_template
-    assert 'id="admin-tab-overview" data-admin-tab="overview" type="button" role="tab" aria-selected="true"' in admin_template
-    assert 'id="admin-tab-batch-jobs" data-admin-tab="batch-jobs" type="button" role="tab" aria-selected="false"' in admin_template
-    assert 'id="admin-tab-overview-content" role="tabpanel" aria-labelledby="admin-tab-overview" aria-hidden="false"' in admin_template
-    assert 'id="admin-tab-batch-content" role="tabpanel" aria-labelledby="admin-tab-batch-jobs" aria-hidden="true" hidden' in admin_template
-    assert "btn.setAttribute('aria-selected', isActive ? 'true' : 'false');" in admin_js
-    assert 'btn.tabIndex = isActive ? 0 : -1;' in admin_js
-    assert "panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');" in admin_js
-    assert "event.key === 'ArrowRight' || event.key === 'ArrowDown'" in admin_js
-    assert "event.key === 'Home'" in admin_js
-    assert "event.key === 'End'" in admin_js
-
+    # Behaviour (menus, keyboard, routing, layouts) is covered by e2e/admin-navigation.spec.js.
+    assert '<nav class="admin-nav" id="admin-nav" aria-label="Admin sections">' in admin_template
+    for key in ('activity', 'costs', 'users', 'system', 'tools'):
+        assert f'aria-controls="admin-menu-{key}" data-admin-menu="{key}"' in admin_template
+    for route in ('overview', 'activity/trends', 'costs/calculator', 'users/credits', 'batches', 'system/health'):
+        assert f'data-admin-view="{route}"' in admin_template
 
 def test_admin_stale_audio_cleanup_control_is_accessible():
     admin_template = Path('templates/admin.html').read_text(encoding='utf-8')

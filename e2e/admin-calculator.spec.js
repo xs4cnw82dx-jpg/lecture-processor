@@ -1,5 +1,7 @@
 const { expectProductControls } = require('./helpers/control-audit');
 const { test, expect } = require('@playwright/test');
+
+const openAdminRoute = (page, route) => page.evaluate((value) => { window.location.hash = value; }, route);
 const fs = require('node:fs');
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -36,12 +38,13 @@ async function openCalculator(page, futureRates = false) {
   const html = fs.readFileSync('templates/admin.html', 'utf8')
     .replace(/\{\{ url_for\('static', filename='([^']+)'\) \}\}/g, (_match, filename) => `/static/${filename}`)
     .replace("{{ url_for('static', filename=admin_js_asset or 'js/admin.js') }}", '/static/js/admin.min.js');
-  await page.route('**/admin', route => route.fulfill({ contentType: 'text/html', body: html }));
+  await page.route('**/admin?*', route => route.fulfill({ contentType: 'text/html', body: html }));
   // Route the production asset URL to current source so the pricing fixture stays independent of a build.
   await page.route(/\/static\/js\/admin(?:\.min)?\.js(?:\?.*)?$/, route => route.fulfill({
     contentType: 'text/javascript', body: fs.readFileSync('static/js/admin.js', 'utf8'),
   }));
-  await page.goto('/admin');
+  // A distinct query forces a full load when a test opens the calculator twice.
+  await page.goto(`/admin?rates=${futureRates ? 'future' : 'current'}#costs/calculator`);
   await expect(page.locator('#calc-pricing-version')).toContainText(pricing.pricing_as_of);
 }
 
@@ -91,7 +94,7 @@ test('interview coding calculator uses the scheduled Flash price change', async 
   for (const width of [1440, 1024, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await expectProductControls(page);
-    await page.locator('#admin-tab-overview').click();
+    await openAdminRoute(page, 'overview');
     const exportMenu = page.locator('.admin-export-menu');
     await exportMenu.locator('summary').click();
     await expect(exportMenu.locator('.app-menu-panel')).toBeVisible();
@@ -103,7 +106,7 @@ test('interview coding calculator uses the scheduled Flash price change', async 
     await expect(exportMenu.locator('summary')).toBeFocused();
     expect(await page.evaluate(() => Array.from(document.querySelectorAll('body *')).filter(el => { const r=el.getBoundingClientRect(); return r.width && r.right > innerWidth + 1 && !el.closest('.table-wrap,.app-select-menu'); }).map(el => ({tag:el.tagName,cls:el.className,right:Math.round(el.getBoundingClientRect().right)})).slice(0,12))).toEqual([]);
     await page.screenshot({path: `/tmp/redesign-secondary-evidence/admin-${width}.png`, fullPage: true, animations: 'disabled'});
-    await page.locator('#admin-tab-credits').click();
+    await openAdminRoute(page, 'users/credits');
     await page.screenshot({path: `/tmp/redesign-secondary-evidence/admin-credits-${width}.png`, fullPage: true, animations: 'disabled'});
   }
  });

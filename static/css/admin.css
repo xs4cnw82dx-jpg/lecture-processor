@@ -368,17 +368,6 @@
             padding: 14px;
         }
         .panel h2 { font-size: 1rem; margin-bottom: 10px; }
-        .admin-tabs-panel { margin-bottom: 12px; }
-        .admin-tabs {
-            display: inline-flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .btn.admin-tab.active {
-            border: 1px solid transparent;
-            color: #fff;
-            background: var(--primary);
-        }
         .calculator-panel { margin-top: 12px; }
         .calculator-head {
             display: flex;
@@ -1046,3 +1035,94 @@
         }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+
+        /* ── Admin top navigation: grouped menus open one page at a time ── */
+        .admin-nav-bar {
+            position: sticky; top: 0; z-index: 40;
+            background: var(--theme-surface, #fff);
+            border-bottom: 1px solid var(--theme-line, var(--border));
+        }
+        .admin-nav-inner {
+            max-width: 1392px; margin: 0 auto; padding: 10px 28px;
+            display: flex; align-items: center; gap: 20px; min-height: 64px;
+        }
+        .admin-brand {
+            display: inline-flex; align-items: center; gap: 10px; flex: none;
+            color: var(--theme-ink, var(--text)); text-decoration: none; font-weight: 800; letter-spacing: -.02em;
+        }
+        .admin-brand-mark {
+            display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px;
+            background: var(--primary); color: #fff; font-size: 13px; letter-spacing: 0;
+        }
+        .admin-brand-name { font-size: 17px; }
+        .admin-brand-tag {
+            font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+            color: var(--theme-accent-ink, var(--primary)); background: var(--theme-accent-soft, #eaf0ff);
+            border-radius: 999px; padding: 3px 8px;
+        }
+        .admin-nav { flex: 1; min-width: 0; }
+        .admin-nav-list { list-style: none; display: flex; align-items: center; gap: 2px; }
+        .admin-nav-group { position: relative; }
+        .admin-nav-link, .admin-nav-trigger {
+            display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px;
+            border: 0; border-radius: 10px; background: transparent; cursor: pointer;
+            color: var(--theme-ink, var(--text)); font: inherit; font-size: 15px; font-weight: 600; text-decoration: none;
+            white-space: nowrap;
+        }
+        .admin-nav-link:hover, .admin-nav-trigger:hover,
+        .admin-nav-trigger[aria-expanded="true"] { background: var(--theme-accent-soft, #eef3ff); }
+        .admin-nav-link.is-current, .admin-nav-trigger.is-current { color: var(--theme-accent-ink, var(--primary)); }
+        .admin-nav-link.is-current::after, .admin-nav-trigger.is-current::after {
+            content: ""; position: absolute; left: 12px; right: 12px; bottom: -11px; height: 3px; border-radius: 3px 3px 0 0;
+            background: var(--primary);
+        }
+        .admin-nav-list > li { position: relative; }
+        .admin-nav-chevron {
+            width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2;
+            stroke-linecap: round; stroke-linejoin: round; transition: transform .16s ease;
+        }
+        .admin-nav-trigger[aria-expanded="true"] .admin-nav-chevron { transform: rotate(180deg); }
+        .admin-nav-panel {
+            position: absolute; top: calc(100% + 10px); left: 0; min-width: 320px; padding: 10px;
+            background: var(--theme-surface, #fff); border: 1px solid var(--theme-line, var(--border));
+            border-radius: 18px; box-shadow: var(--shadow-lg);
+        }
+        .admin-nav-panel-list { list-style: none; display: grid; gap: 2px; }
+        .admin-nav-item {
+            display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px;
+            color: var(--theme-ink, var(--text)); text-decoration: none;
+        }
+        .admin-nav-item:hover, .admin-nav-item:focus-visible { background: var(--theme-accent-soft, #eef3ff); }
+        .admin-nav-item[aria-current="page"] { background: var(--theme-accent-soft, #eef3ff); }
+        .admin-nav-item[aria-current="page"] .admin-nav-item-title { color: var(--theme-accent-ink, var(--primary)); }
+        .admin-nav-item-title { font-size: 15px; font-weight: 700; }
+        .admin-nav-item-copy { font-size: 13px; color: var(--theme-muted, var(--muted)); }
+        .admin-nav-actions { display: flex; gap: 8px; flex: none; }
+        .admin-nav-actions .btn { font-size: 14px; padding: 8px 12px; }
+        .admin-nav-toggle { display: none; }
+        .admin-page-copy { color: var(--theme-muted, var(--muted)); font-size: 14px; margin: 0 0 8px; max-width: 64ch; }
+        .admin-view > * + * { margin-top: 16px; }
+        .admin-overview-warnings .admin-status-card { border: 0; padding: 0; background: transparent; }
+
+        @media (max-width: 1100px) {
+            .admin-nav-inner { flex-wrap: wrap; padding: 10px 16px; gap: 10px; }
+            .admin-nav-toggle {
+                display: inline-flex; align-items: center; gap: 6px; margin-left: auto; height: 40px; padding: 0 14px;
+                border: 1px solid var(--theme-line, var(--border)); border-radius: 10px; background: var(--theme-surface, #fff);
+                color: var(--theme-ink, var(--text)); font: inherit; font-weight: 700; cursor: pointer;
+            }
+            .admin-nav-toggle[aria-expanded="true"] .admin-nav-chevron { transform: rotate(180deg); }
+            .admin-nav { display: none; flex-basis: 100%; order: 3; }
+            .admin-nav.is-open { display: block; }
+            .admin-nav-list { flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 0 10px; }
+            .admin-nav-link, .admin-nav-trigger { width: 100%; justify-content: space-between; }
+            .admin-nav-link.is-current::after, .admin-nav-trigger.is-current::after { display: none; }
+            .admin-nav-link.is-current, .admin-nav-trigger.is-current { background: var(--theme-accent-soft, #eef3ff); }
+            .admin-nav-panel { position: static; min-width: 0; box-shadow: none; border-radius: 14px; margin: 4px 0 6px; }
+            .admin-nav-actions { order: 2; }
+        }
+        @media (max-width: 520px) {
+            .admin-brand-name { display: none; }
+            .admin-nav-actions .btn { padding: 8px 10px; font-size: 13px; }
+        }
+        @media (prefers-reduced-motion: reduce) { .admin-nav-chevron { transition: none; } }
