@@ -228,7 +228,7 @@ select {
 .app-shell-topbar {
   position: sticky;
   top: 0;
-  z-index: 200;
+  z-index: calc(var(--z-shell) + 1);
   background: var(--theme-surface);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--theme-line);
@@ -318,7 +318,7 @@ select {
     opacity 260ms ease,
     transform 260ms ease,
     visibility 0s linear 260ms;
-  z-index: 230;
+  z-index: calc(var(--z-shell) + 4);
 }
 
 .app-shell-credits:hover .app-shell-credits-tooltip,
@@ -430,7 +430,7 @@ select {
     opacity 340ms cubic-bezier(.16,.84,.24,1),
     transform 340ms cubic-bezier(.16,.84,.24,1),
     visibility 0s linear 340ms;
-  z-index: 240;
+  z-index: calc(var(--z-shell) + 5);
 }
 
 .app-shell-account.is-open .app-shell-account-panel-wrap {
@@ -523,7 +523,7 @@ select {
   background: rgba(15, 23, 42, 0.45);
   display: grid;
   place-items: center;
-  z-index: 300;
+  z-index: calc(var(--z-shell) + 10);
   padding: 16px;
 }
 
@@ -664,7 +664,7 @@ select {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease, transform 0.2s ease;
-  z-index: 40;
+  z-index: var(--z-page);
 }
 
 .app-shell-toast.visible {
@@ -704,7 +704,7 @@ select {
     width: 260px;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
-    z-index: 260;
+    z-index: calc(var(--z-shell) + 7);
   }
 
   .app-shell.sidebar-open .app-shell-sidebar {
@@ -720,7 +720,7 @@ select {
     background: rgba(15, 23, 42, 0.45);
     position: fixed;
     inset: 0;
-    z-index: 250;
+    z-index: calc(var(--z-shell) + 6);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -1112,7 +1112,7 @@ body {
     background: rgba(15, 23, 42, 0.46);
     position: fixed;
     inset: 0;
-    z-index: 250;
+    z-index: calc(var(--z-shell) + 6);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;

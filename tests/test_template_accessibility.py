@@ -482,7 +482,10 @@ def test_buy_credits_signed_out_has_sign_in_path():
 def test_calendar_modal_stacks_above_shell_topbar():
     calendar_css = Path('static/css/calendar.css').read_text(encoding='utf-8')
 
-    assert re.search(r'\.overlay\{[^}]*z-index:320', calendar_css)
+    overlay = re.search(r'\.overlay\{[^}]*z-index:([^;}]+)', calendar_css).group(1)
+    shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
+    topbar = re.search(r'\.app-shell-topbar \{[^}]*z-index:\s*([^;}]+)', shell_css).group(1)
+    assert _layer_value(overlay) > _layer_value(topbar)
 
 
 def test_processing_template_defaults_optional_sections_to_collapsed_state():
@@ -526,3 +529,23 @@ def test_app_pages_use_the_shared_page_header():
     shared = (root / "static" / "css" / "shared-ui.css").read_text(encoding="utf-8")
     for token in ("--fs-display", ".app-shell-page .page-title", ".app-shell-page .page-eyebrow", ".app-shell-page .page-lead"):
         assert token in shared, token
+
+
+
+def _layer_value(expression):
+    theme = Path('static/css/theme.css').read_text(encoding='utf-8')
+    layers = {name: int(value) for name, value in re.findall(r'--z-([a-z]+):\s*(\d+);', theme)}
+    expression = expression.strip()
+    match = re.fullmatch(r'(?:calc\()?var\(--z-([a-z]+)\)(?:\s*\+\s*(\d+)\))?', expression)
+    if match:
+        return layers[match.group(1)] + int(match.group(2) or 0)
+    return int(expression)
+
+
+def test_global_stacking_uses_named_layers():
+    offenders = []
+    for path in sorted(Path('static/css').glob('*.css')):
+        for value in re.findall(r'z-index\s*:\s*(\d+)', path.read_text(encoding='utf-8')):
+            if int(value) >= 40:
+                offenders.append(f'{path.name}: {value}')
+    assert offenders == [], offenders

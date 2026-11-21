@@ -787,7 +787,7 @@
   max-width: min(600px, 90vw);
   font-size: 13px;
   box-shadow: var(--shadow-lg);
-  z-index: 50;
+  z-index: calc(var(--z-page) + 1);
 }
 .book-toast.error {
   background: #7f1d1d;
@@ -1978,7 +1978,7 @@
 .book-path-point:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .book-path-menu {
   position: fixed;
-  z-index: 100;
+  z-index: calc(var(--z-page) + 5);
   width: 212px;
   padding: 6px;
   border-radius: 14px;

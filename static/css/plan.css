@@ -27,7 +27,7 @@
     button:focus:not(:focus-visible), a:focus:not(:focus-visible){outline:none;box-shadow:none}
     .container{max-width:1240px;margin:0 auto;padding:0 24px}
 
-    .topbar{position:sticky;top:0;z-index:40;padding:12px 0;background:var(--theme-surface-soft)}
+    .topbar{position:sticky;top:0;z-index:var(--z-page);padding:12px 0;background:var(--theme-surface-soft)}
     .topbar-inner{
       display:flex;align-items:center;gap:10px;padding:14px 18px;flex-wrap:wrap;
       background:var(--theme-surface);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
@@ -282,7 +282,7 @@
     .empty-actions .empty-link{margin-top:0}
     button.empty-link{border:0;cursor:pointer;font-family:inherit}
     .empty-link.secondary{background:var(--theme-surface);color:var(--theme-ink-soft);border:1px solid var(--theme-line)}
-    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(18px);padding:10px 14px;border-radius:var(--radius-md);background:var(--gray-900);color:var(--white);font-size:.86rem;opacity:0;pointer-events:none;transition:opacity .22s ease,transform .22s ease;border:1px solid transparent;z-index:200;box-shadow:0 4px 18px rgba(23,35,60,.04)}
+    .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(18px);padding:10px 14px;border-radius:var(--radius-md);background:var(--gray-900);color:var(--white);font-size:.86rem;opacity:0;pointer-events:none;transition:opacity .22s ease,transform .22s ease;border:1px solid transparent;z-index:calc(var(--z-shell) + 1);box-shadow:0 4px 18px rgba(23,35,60,.04)}
     .toast.visible{opacity:1;transform:translateX(-50%) translateY(0)}
     .toast.success{background:var(--theme-success-soft);color:var(--theme-success-ink);border-color:var(--theme-success-line)}
     .toast.error{background:var(--danger)}
