@@ -420,7 +420,9 @@ def get_image(runtime, request, pack_id, aid):
     data = book_storage.request('GET', asset['path'] if original else asset['preview_path'])
     response = send_file(io.BytesIO(data), mimetype=asset['mime'] if original else 'image/webp',
                          download_name=asset['name'], as_attachment=original)
-    response.headers['Cache-Control'] = 'private, no-store'
+    # Picture ids hash the owner, pack and exact bytes, so a URL never changes content.
+    # Owner decision 2026-11-21: favour speed, so the browser may keep them after sign-out.
+    response.headers['Cache-Control'] = 'private, max-age=31536000, immutable'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     return response
 
