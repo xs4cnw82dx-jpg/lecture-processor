@@ -175,6 +175,29 @@
     });
   }
 
+  // The server rate-limits checkout. Keep the buy buttons disabled for the wait it
+  // asks for (Retry-After header or retry_after_seconds), then allow a retry.
+  var checkoutCooldownTimer = null;
+  function retryAfterSeconds(response, payload) {
+    var fromBody = Number(payload && payload.retry_after_seconds);
+    if (Number.isFinite(fromBody) && fromBody > 0) return Math.ceil(fromBody);
+    var fromHeader = Number(response && response.headers && response.headers.get('Retry-After'));
+    if (Number.isFinite(fromHeader) && fromHeader > 0) return Math.ceil(fromHeader);
+    return 30;
+  }
+  function startCheckoutCooldown(seconds) {
+    var wait = Math.max(1, Math.ceil(Number(seconds) || 0));
+    showToast(t('Checkout is limited for a moment. Try again in {seconds} seconds.', { seconds: wait }), 'error');
+    if (checkoutCooldownTimer) window.clearTimeout(checkoutCooldownTimer);
+    checkoutBusy = true;
+    setBundleButtons(true);
+    checkoutCooldownTimer = window.setTimeout(function () {
+      checkoutCooldownTimer = null;
+      checkoutBusy = false;
+      setBundleButtons(false);
+    }, wait * 1000);
+  }
+
   async function purchaseBundle(bundleId) {
     if (!getCurrentUser()) {
       authStateResolved = true;
@@ -197,6 +220,10 @@
       });
       var payload = await response.json().catch(function () { return {}; });
       if (!isCurrent() || attempt !== checkoutAttempt) return;
+      if (response.status === 429) {
+        startCheckoutCooldown(retryAfterSeconds(response, payload));
+        return;
+      }
       if (!response.ok || !payload.checkout_url) {
         throw new Error(payload.error || 'Could not start checkout');
       }
@@ -415,6 +442,7 @@
 
   function resetCheckoutNavigation() {
     checkoutAttempt += 1;
+    if (checkoutCooldownTimer) return;
     checkoutBusy = false;
     setBundleButtons(false);
   }

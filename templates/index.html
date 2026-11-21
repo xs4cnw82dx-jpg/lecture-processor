@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
 </head>
 <body data-forced-mode="{{ forced_mode or '' }}">
-    {% from '_pricing_catalog.html' import render_pricing_catalog %}
     {% if forced_mode == 'lecture-notes' %}
         {% set shell_title = 'Lecture Notes' %}
     {% elif forced_mode == 'slides-only' %}
@@ -23,7 +22,6 @@
     {% endif %}
     {% include '_app_shell.html' %}
     {% include '_index_auth_overlay.html' %}
-    {% include '_index_purchase_overlays.html' %}
 
     <main class="app-shell-page creation-page" id="main-content" tabindex="-1">
         <header class="hero"><div class="container"><p class="creation-eyebrow page-eyebrow">Create study material</p><h1 class="hero-title page-title">{% if forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Lecture Notes{% endif %}</h1><p class="hero-description page-lead">{% if forced_mode == 'slides-only' %}Turn your slides into clear notes, with optional flashcards and practice questions.{% elif forced_mode == 'interview' %}Create a timestamped transcript, with optional summaries and section headings.{% else %}Bring your slides and recording together in one set of notes, flashcards, and practice questions.{% endif %}</p></div></header>

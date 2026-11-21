@@ -35,8 +35,6 @@
   let imageTarget = "",
     replacement = "",
     selectionRange = null,
-    cloudAvailable = true,
-    closed = false,
     opening = false;
   const renderedAssets = {},
     fontCache = {},
@@ -70,7 +68,6 @@
   if (tabChannel) tabChannel.postMessage({ type: "probe", session, instance });
   sessionStorage.setItem("book-tab-session", session);
   let accessToken = "",
-    storedSelection = null,
     accountGeneration = 0,
     localSaveError = "";
   const storageScope = () => user?.uid || "guest:" + session;
@@ -116,7 +113,7 @@
     undoStack = [];
     redoStack = [];
     savedPages = {};
-    storedSelection = selectionRange = null;
+    selectionRange = null;
     furnitureSelection = "";
     dirty = false;
     saveError = localSaveError = "";
@@ -675,7 +672,6 @@
         const result = await api("/api/books");
         assertAccount(generation);
         cloudBooks = result.books;
-        cloudAvailable = result.storage_available;
         const pending = await Promise.all(localBooks.filter((draft) => draft.local && draft.cloudAccountUid === uid).map((draft) => D.getSync(draft.id)));
         assertAccount(generation);
         const uploadingIds = new Set(pending.filter((operation) => operation && !operation.complete).map((operation) => operation.remoteId));
@@ -1309,8 +1305,7 @@
         return `<div class="book-sheet" data-page-id="${p.id}" data-active="${p.id === active}" tabindex="0" aria-label="${esc(p.role === "page" ? "Page " + b.pages.indexOf(p) + ": " + p.title : p.title)}">${rulers && !reading ? rulerMarkup() : ""}${M.svg(p, renderedAssets, { ...M.pageRenderOptions(p, b.pages, b.pageNumbers), guides: guides && !reading })}${editorGuides(p.id)}</div>`;
       })
       .join("");
-    const p = page(),
-      index = b.pages.indexOf(p);
+    const p = page();
     $("page-position").textContent =
       p.role === "front"
         ? "Front cover"

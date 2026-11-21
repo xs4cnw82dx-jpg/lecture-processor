@@ -1051,13 +1051,6 @@
       toast(error.message + ' Your visible change was undone.', 'error');
     }
   }
-  function updateSessionStatus(session, status) {
-    if (!session) return;
-    if (status === 'completed') { openStudyLog(session); return; }
-    if (!isEditable()) { toast('Reconnect before changing a session.', 'error'); return; }
-    openSessionEditor(session);
-    saveSession(status);
-  }
 
   var studyLogSession = null;
   var studyLogKey = '';

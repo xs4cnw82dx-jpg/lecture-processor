@@ -35,12 +35,12 @@ let selectedPackIds = new Set(), packSelectionAnchorId = '';
 let plannedPackIds = new Set();
 let plannerActivity = null, plannerActivitySyncTimer = null, plannerActivitySyncPromise = null;
 let packsHasMore = false, packsNextCursor = '', packsLoadingMore = false;
-let activeEditorPane = 'notes', exportType = 'flashcards', draggedPackId = '', draggedPackIds = [], draggingFolderId = '';
+let activeEditorPane = 'notes', draggedPackId = '', draggedPackIds = [], draggingFolderId = '';
 let renderedEditorPanes = { flashcards: false, test: false };
 let folderModalMode = 'create', editingFolderId = '', folderModalParentId = '', pendingOpenPackId = '', confirmModalResolver = null;
-let builderDraft = null, builderMode = 'edit', builderPane = 'info', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
+let builderDraft = null, builderMode = 'edit', builderDirty = false, builderPackId = '', builderExitResolver = null, builderImportParsed = null;
 let builderAutoSaveTimer = null, builderAutoSaving = false, builderAutoSaveQueued = false, builderBulkImporting = false;
-let inlineAutoSaveTimer = null, inlineAutoSaving = false, inlineAutoSaveQueued = false;
+let inlineAutoSaveTimer = null, inlineAutoSaving = false;
 let inlineAutosaveBaseline = null;
 let inlineAutosavePromise = null;
 let inlineAutosaveError = null, inlineDiscardPromise = null;
@@ -288,7 +288,6 @@ const MODE_DESCS = { review: 'Work through your planned mix of material', resume
 let sessionSettings = { swapAnswerQuestion: false, randomSwap: false, caseSensitive: false, forceExactMatch: false, addMissedToReview: true, ignoreArticles: false, ignoreDeterminers: false, ignoreBrackets: false };
 let sessionAlgo = ['new', 'new', 'familiar', 'retry', 'remaster'], sessionAlgoPreset = 'balanced';
 let sessionLessons = { flashcards: true, test: true, write: false, match: false, notes: false };
-let activeSetupPane = 'mastery';
 
 /* ── Card mastery + spaced repetition (localStorage) ── */
 const SR_MIN_INTERVAL_DAYS = 1;
@@ -707,15 +706,6 @@ function mergeProgressFromServer(remote) {
     persistSharedSummaryCaches(auth.currentUser, progressSummaryCache || buildLiveProgressSummary());
   }
 }
-function loadRemoteProgress() {
-  if (!auth.currentUser || !token) { return Promise.resolve(); }
-  return apiCall('/api/study-progress').then(function (data) {
-    progressHydrationDone = true;
-    mergeProgressFromServer(data || {});
-  }).catch(function (e) {
-    console.warn('Could not load remote study progress:', e && e.message ? e.message : e);
-  });
-}
 function loadRemoteProgressForPack(packId) {
   var safePackId = String(packId || '').trim();
   if (!safePackId || !auth.currentUser || !token) { return Promise.resolve(); }
@@ -1021,25 +1011,6 @@ function recordPlannerOutcome(cardId, correct) {
   if (correct) plannerActivity.metrics.correct += 1;
   else plannerActivity.metrics.incorrect += 1;
   queuePlannerActivitySync();
-}
-function setCardDifficulty(cardId, difficulty) {
-  var action = mapLegacyDifficultyToAction(difficulty);
-  setCardReviewAction(cardId, action);
-}
-function setCardReviewAction(cardId, action) {
-  if (!cardId) return;
-  var value = normalizeReviewAction(action);
-  var state = loadCardState();
-  var entry = ensureCardStateEntry(state, cardId);
-  entry.last_action = value;
-  entry.updated_at = Date.now();
-  if (value === 'hard') entry.difficulty = 'hard';
-  else if (value === 'easy') entry.difficulty = 'easy';
-  else entry.difficulty = 'medium';
-  saveCardState(state);
-  updateDifficultyToolbar();
-  updateLearnCardStatus();
-  renderMasteryGauge();
 }
 function applyReviewAction(cardId, action, acknowledged) {
   if (!cardId) return;
@@ -1729,7 +1700,7 @@ function applyStudySignedOutState() {
   libraryRefreshPending = false;
   libraryRefreshInFlight = null;
   inlineAutosaveError = null;
-  inlineAutoSaving = false; inlineAutosavePromise = null; inlineAutoSaveQueued = false;
+  inlineAutoSaving = false; inlineAutosavePromise = null;
   packEditController = null; packEditReview = null;
   packEditRecoveryRecords = []; packEditRecoverySources = [];
   packEditRecoveryError = false;
@@ -1916,12 +1887,6 @@ function removeRuntimeJobFromList(currentJobs, jobId) {
   return (Array.isArray(currentJobs) ? currentJobs : []).filter(function (job) {
     return String(job && job.job_id || '').trim() !== safeJobId;
   });
-}
-function getLatestRuntimeJob(jobs) {
-  if (runtimeJobUtils && typeof runtimeJobUtils.findLatestRuntimeJob === 'function') {
-    return runtimeJobUtils.findLatestRuntimeJob(jobs);
-  }
-  return Array.isArray(jobs) && jobs.length ? jobs[0] : null;
 }
 function readActiveRuntimeJobsCache(userOrUid) {
   return mergeRuntimeJobs([], readUiCacheJsonForUser(userOrUid, ACTIVE_RUNTIME_JOBS_CACHE_KEY, []));
@@ -2485,14 +2450,6 @@ var studyApiClient = studyApiUtils && typeof studyApiUtils.createStudyApiClient 
   })
   : null;
 
-function ensureAuthToken(forceRefresh) {
-  if (studyApiClient && typeof studyApiClient.ensureAuthToken === 'function') {
-    return studyApiClient.ensureAuthToken(forceRefresh);
-  }
-  if (!auth.currentUser) { return Promise.reject(new Error('Please sign in')); }
-  if (token && !forceRefresh) { return Promise.resolve(token); }
-  return auth.currentUser.getIdToken(!!forceRefresh).then(function (t) { token = t; return t; });
-}
 function withAuthHeaders(opts, activeToken) {
   if (studyApiUtils && typeof studyApiUtils.withAuthHeaders === 'function') {
     return studyApiUtils.withAuthHeaders(opts, activeToken || token || '');
@@ -3230,7 +3187,6 @@ function syncBuilderQuestionAnswerSelect(row, question) {
   });
 }
 function setBuilderPane(nextPane) {
-  builderPane = nextPane;
   syncTabSelection(builderPaneButtons, 'builderPane', nextPane);
 }
 function clearBuilderImportState() {
@@ -4065,7 +4021,6 @@ function renderMasteryGauge() {
 }
 
 function setSetupPane(p) {
-  activeSetupPane = p;
   syncTabSelection(setupTabs, 'setupPane', p);
 }
 
@@ -4076,15 +4031,6 @@ function getEnabledModes() {
   return [];
 }
 
-function bindKeyboardActivation(element, callback) {
-  if (!element || typeof callback !== 'function') { return; }
-  element.addEventListener('keydown', function (event) {
-    if (event.target !== element) { return; }
-    if (event.key !== 'Enter' && event.key !== ' ') { return; }
-    event.preventDefault();
-    callback(event);
-  });
-}
 
 function syncTabSelection(buttons, datasetKey, activeValue) {
   buttons.forEach(function (button) {
@@ -4556,7 +4502,6 @@ function setEditorPane(pane) {
     if (pane === 'test') renderQuestionEditor();
   }
   if (codingPane && !codingWorkspaceOpen) codingPane.hidden = true;
-  exportType = (pane === 'test') ? 'test' : 'flashcards';
   if (pane === 'notes') { scheduleNotesFullscreenIdle(); }
 }
 
@@ -4596,9 +4541,6 @@ function loadPinnedFolderIds() {
 function syncPinnedFolderIds() {
   pinnedFolderIds = sanitizePinnedFolderIds(pinnedFolderIds);
   persistPinnedFolderIds();
-}
-function isPinnedFolder(folderId) {
-  return pinnedFolderIds.indexOf(String(folderId || '')) >= 0;
 }
 function togglePinnedFolder(folderId) {
   var safeId = String(folderId || '').trim();
@@ -7645,7 +7587,6 @@ function runInlineAutosaveNow(options) {
   if (packEditReview && packEditReview.controller === controller) return Promise.resolve(false);
   if (controller.state.discarding) return Promise.resolve(false);
   if (inlineAutoSaving) {
-    inlineAutoSaveQueued = true;
     return inlineAutosavePromise.then(function (saved) { return saved && isCurrentPackEdit(controller) ? runInlineAutosaveNow(opts) : false; });
   }
   if (opts.showNoChangesToast && hasBlockedPackEdits()) {
@@ -7710,7 +7651,7 @@ function runInlineAutosaveNow(options) {
     return false;
   }).finally(function () {
     if (!isCurrentPackEdit(controller)) return;
-    inlineAutoSaving = false; inlineAutosavePromise = null; inlineAutoSaveQueued = false;
+    inlineAutoSaving = false; inlineAutosavePromise = null;
     updatePackEditStatus();
   });
   return inlineAutosavePromise;
@@ -9529,17 +9470,6 @@ document.addEventListener('selectionchange', function () {
   scheduleHighlightToSelection(1000);
 });
 
-function downloadBlob(filename, mime, textContent) {
-  var blob = new Blob([textContent], { type: mime });
-  var url = URL.createObjectURL(blob);
-  var anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
 function downloadOriginalNotesDocx() {
   if (!selectedPackId) {
     showToast('No notes to download.', 'error');
@@ -9619,9 +9549,6 @@ function downloadAnnotatedNotesPdf() {
   }).catch(function (e) {
     showToast(e && e.message ? e.message : 'Could not export annotated PDF.', 'error');
   });
-}
-function isNotesFullscreenActive() {
-  return document.fullscreenElement === notesPaneShell || document.webkitFullscreenElement === notesPaneShell;
 }
 function getHighlightDownloadMenuHost() {
   if (hlDownloadWrap) {

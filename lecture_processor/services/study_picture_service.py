@@ -13,7 +13,7 @@ from flask import jsonify, send_file
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.books.model import BookError
 from lecture_processor.domains.study.content_revision import fingerprint
-from lecture_processor.domains.study.picture_refs import IMAGE_ID, PENDING_PICTURES, _card_image_ids
+from lecture_processor.domains.study.picture_refs import IMAGE_ID, PENDING_PICTURES, card_image_ids
 from lecture_processor.repositories.books_repo import BookStore
 from lecture_processor.repositories import study_repo
 from lecture_processor.services import book_service, book_storage, study_api_support
@@ -139,13 +139,13 @@ def update_pack_and_collect_removed(runtime, uid, pack_id, updates, *, base_cont
         pending = set(pack.get(PENDING_PICTURES, []))
         saved = {**pack, **updates}
         if 'flashcards' in updates:
-            next_ids = _card_image_ids(updates['flashcards'])
+            next_ids = card_image_ids(updates['flashcards'])
             if next_ids and user.get('study_pictures_enabled') is not True:
                 raise BookError('Pictures are not enabled for this account.', 403)
             for aid in sorted(next_ids):
                 asset = tx.get('study_images/' + aid)
                 _require_attachable_asset(asset, uid, pack_id)
-            pending = (pending | _card_image_ids(pack.get('flashcards'))) - next_ids
+            pending = (pending | card_image_ids(pack.get('flashcards'))) - next_ids
             saved[PENDING_PICTURES] = sorted(pending)
         # All reads, including account and image authority, precede this write.
         # Merge into this attempt's snapshot so retries retain other fields.
@@ -220,7 +220,7 @@ def _delete_asset(db, uid, asset, *, account_delete=False):
         if not current or current.get('uid') != uid or _generation(current) != _generation(asset):
             return None
         if not account_delete and pack:
-            if pack.get('uid') != uid or aid in _card_image_ids(pack.get('flashcards')):
+            if pack.get('uid') != uid or aid in card_image_ids(pack.get('flashcards')):
                 return None
             if aid not in pack.get(PENDING_PICTURES, []):
                 return None

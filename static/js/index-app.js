@@ -86,21 +86,7 @@ function describeAudioImportRequest(options) {
     return { shouldImport: true, reason: 'import' };
 }
 
-function formatDateLabel(value) {
-    if (typeof uxUtils.formatDate === 'function') return uxUtils.formatDate(value);
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '-';
-    const locale = (window.LectureI18n ? window.LectureI18n.locale() : 'en-GB');
-    return date.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
-}
 
-function formatTimeLabel(value) {
-    if (typeof uxUtils.formatTime === 'function') return uxUtils.formatTime(value);
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '-';
-    const locale = (window.LectureI18n ? window.LectureI18n.locale() : 'en-GB');
-    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-}
 
 let currentUser = null;
 let unverifiedEmailUser = null;
@@ -295,7 +281,6 @@ const headerFeaturesBtn = document.getElementById('header-features-btn');
 const headerToolsBtn = document.getElementById('header-tools-btn');
 const headerPlannerBtn = document.getElementById('header-planner-btn');
 const headerPlannerGroup = document.getElementById('header-planner-group');
-const headerPlannerSubmenu = document.getElementById('header-planner-submenu');
 const headerCalendarBtn = document.getElementById('header-calendar-btn');
 const progressMenu = document.getElementById('progress-menu');
 const progressButton = document.getElementById('progress-button');
@@ -420,7 +405,6 @@ const pdfDownload = document.getElementById('pdf-download');
 const audioDownload = document.getElementById('audio-download');
 const pdfRemove = document.getElementById('pdf-remove');
 const audioRemove = document.getElementById('audio-remove');
-const audioUrlImport = document.getElementById('audio-url-import');
 const audioUrlImportTitle = document.getElementById('audio-url-import-title');
 const audioUrlImportHint = document.getElementById('audio-url-import-hint');
 const audioUrlAdvanced = document.getElementById('audio-url-advanced');
@@ -441,7 +425,6 @@ const audioRecorderTimer = document.getElementById('audio-recorder-timer');
 const audioRecordingStatus = document.getElementById('audio-recording-status');
 const audioRecordingWarning = document.getElementById('audio-recording-warning');
 const languageOnboardingOverlay = document.getElementById('language-onboarding-overlay');
-const languageOnboardingGrid = document.getElementById('language-onboarding-grid');
 const languageOnboardingButtons = document.querySelectorAll('#language-onboarding-grid .onboarding-language-btn');
 const languageOnboardingCustom = document.getElementById('language-onboarding-custom');
 const languageOnboardingError = document.getElementById('language-onboarding-error');
@@ -503,22 +486,10 @@ const quizExplanation = document.getElementById('quiz-explanation');
 const quizNextBtn = document.getElementById('quiz-next-btn');
 const quizEmpty = document.getElementById('quiz-empty');
 
-const pricingOverlay = document.getElementById('pricing-overlay');
-const pricingModalClose = document.getElementById('pricing-modal-close');
-const historyOverlay = document.getElementById('history-overlay');
-const historyModalClose = document.getElementById('history-modal-close');
-const historyList = document.getElementById('history-list');
 const toast = document.getElementById('toast');
 const toastIcon = document.getElementById('toast-icon');
 const toastText = document.getElementById('toast-text');
 
-function localDateString(ts) {
-    const d = ts ? new Date(ts) : new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-}
 const htmlUtils = window.LectureProcessorHtml || {};
 const escapeHtml = htmlUtils.escapeHtml || function (value) {
     return String(value ?? '')
@@ -675,9 +646,6 @@ async function fetchStudyProgressSummary() {
 let activeModalOverlay = null;
 let modalStateStack = [];
 let authSubmitBusyKind = '';
-let checkoutCooldownUntilMs = 0;
-let checkoutCooldownTimer = null;
-let checkoutRequestInFlight = false;
 let uploadCooldownUntilMs = 0;
 let uploadCooldownTimer = null;
 const authSubmitButtons = {
@@ -711,8 +679,6 @@ function getFocusableElements(overlay) {
 }
 function requestCloseOverlay(overlay) {
     if (overlay === authOverlay) { hideAuthModal(); return; }
-    if (overlay === pricingOverlay) { hidePricingModal(); return; }
-    if (overlay === historyOverlay) { hideHistoryModal(); return; }
     if (overlay === goalModalOverlay) { closeGoalModal(); return; }
     if (overlay === languageOnboardingOverlay) { closeLanguageOnboarding(); return; }
     closeOverlay(overlay);
@@ -2722,54 +2688,6 @@ function formatRetryDelay(seconds) {
     const rem = total % 60;
     return rem ? `${minutes}m ${rem}s` : `${minutes}m`;
 }
-function ensureBundleButtonDefaults() {
-    document.querySelectorAll('.bundle-buy-btn').forEach((btn) => {
-        if (!btn.dataset.defaultLabel) btn.dataset.defaultLabel = btn.textContent || 'Buy now';
-    });
-}
-function getCheckoutCooldownSeconds() {
-    if (!checkoutCooldownUntilMs) return 0;
-    return Math.max(0, Math.ceil((checkoutCooldownUntilMs - Date.now()) / 1000));
-}
-function clearCheckoutCooldownTimer() {
-    if (!checkoutCooldownTimer) return;
-    clearInterval(checkoutCooldownTimer);
-    checkoutCooldownTimer = null;
-}
-function applyCheckoutButtonsState() {
-    ensureBundleButtonDefaults();
-    const allBtns = document.querySelectorAll('.bundle-buy-btn');
-    const remaining = getCheckoutCooldownSeconds();
-    if (remaining > 0) {
-        const label = `Try again in ${formatRetryDelay(remaining)}`;
-        allBtns.forEach((btn) => {
-            btn.disabled = true;
-            btn.textContent = label;
-        });
-        return;
-    }
-    if (checkoutRequestInFlight) {
-        allBtns.forEach((btn) => { btn.disabled = true; });
-        return;
-    }
-    allBtns.forEach((btn) => {
-        btn.disabled = false;
-        btn.textContent = btn.dataset.defaultLabel || 'Buy now';
-    });
-}
-function startCheckoutCooldown(seconds) {
-    const safeSeconds = Math.max(1, Math.ceil(Number(seconds) || 0));
-    checkoutCooldownUntilMs = Date.now() + (safeSeconds * 1000);
-    clearCheckoutCooldownTimer();
-    applyCheckoutButtonsState();
-    checkoutCooldownTimer = setInterval(() => {
-        if (getCheckoutCooldownSeconds() <= 0) {
-            checkoutCooldownUntilMs = 0;
-            clearCheckoutCooldownTimer();
-        }
-        applyCheckoutButtonsState();
-    }, 1000);
-}
 function getUploadCooldownSeconds() {
     if (!uploadCooldownUntilMs) return 0;
     return Math.max(0, Math.ceil((uploadCooldownUntilMs - Date.now()) / 1000));
@@ -4213,171 +4131,7 @@ function resetResultsState() {
 function showPricingModal() {
     window.location.href = '/buy_credits';
 }
-function hidePricingModal() {}
 function showHistoryModal() { window.location.href = '/buy_credits'; }
-function hideHistoryModal() {}
-function formatPrice(cents, currency) {
-    if (displayFormatUtils && typeof displayFormatUtils.formatCurrencyFromCents === 'function') {
-        return displayFormatUtils.formatCurrencyFromCents(cents, currency);
-    }
-    const amount = (Number(cents || 0) / 100).toFixed(2);
-    return String(currency || 'eur').toLowerCase() === 'eur' ? `€${amount}` : `${amount} ${String(currency || 'EUR').toUpperCase()}`;
-}
-function formatCreditsText(credits) { return Object.entries(credits).map(([k, v]) => `${v} ${k.replace(/_/g, ' ').replace('credits ', '').replace('credits', '').trim()}`).join(', '); }
-function setHistoryMessage(message, loading = false) {
-    while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
-    const wrapper = document.createElement('div');
-    wrapper.className = loading ? 'history-loading' : 'history-empty';
-    if (loading) {
-        const spinner = document.createElement('div');
-        spinner.className = 'spinner';
-        wrapper.appendChild(spinner);
-    }
-    const text = document.createElement('span');
-    text.textContent = message;
-    wrapper.appendChild(text);
-    historyList.appendChild(wrapper);
-}
-function setHistoryLoadingSkeleton() {
-    while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
-    const wrapper = document.createElement('div');
-    wrapper.className = 'history-skeleton-list';
-    for (let i = 0; i < 3; i += 1) {
-        const item = document.createElement('div');
-        item.className = 'history-skeleton-item';
-
-        const left = document.createElement('div');
-        left.className = 'history-skeleton-left';
-        const title = document.createElement('div');
-        title.className = 'history-skeleton-line title';
-        const meta = document.createElement('div');
-        meta.className = 'history-skeleton-line meta';
-        const subMeta = document.createElement('div');
-        subMeta.className = 'history-skeleton-line submeta';
-        left.appendChild(title);
-        left.appendChild(meta);
-        left.appendChild(subMeta);
-
-        const price = document.createElement('div');
-        price.className = 'history-skeleton-price';
-
-        item.appendChild(left);
-        item.appendChild(price);
-        wrapper.appendChild(item);
-    }
-    historyList.appendChild(wrapper);
-}
-function setHistoryEmptyState() {
-    while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
-    const wrapper = document.createElement('div');
-    wrapper.className = 'history-empty';
-    const title = document.createElement('span');
-    title.textContent = 'No purchases yet';
-    const note = document.createElement('div');
-    note.className = 'history-empty-note';
-    note.textContent = 'You can keep using free credits or buy a bundle when you need more.';
-    const action = document.createElement('button');
-    action.type = 'button';
-    action.className = 'history-empty-action';
-    action.textContent = 'Buy credits';
-    action.addEventListener('click', () => {
-        hideHistoryModal();
-        showPricingModal();
-    });
-    wrapper.appendChild(title);
-    wrapper.appendChild(note);
-    wrapper.appendChild(action);
-    historyList.appendChild(wrapper);
-}
-async function loadPurchaseHistory() {
-    setHistoryLoadingSkeleton();
-    if (!currentUser) return;
-    try {
-        const r = await authenticatedFetch('/api/purchase-history');
-        const d = await r.json();
-        if (!d.purchases || !d.purchases.length) {
-            setHistoryEmptyState();
-            return;
-        }
-        while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
-        d.purchases.forEach(p => {
-            const row = document.createElement('div');
-            row.className = 'history-item';
-
-            const left = document.createElement('div');
-            left.className = 'history-item-left';
-            const name = document.createElement('div');
-            name.className = 'history-item-name';
-            name.textContent = p.bundle_name || '-';
-            const dateEl = document.createElement('div');
-            dateEl.className = 'history-item-date';
-            dateEl.textContent = displayFormatUtils && typeof displayFormatUtils.formatDateTimeFromEpochSeconds === 'function'
-                ? displayFormatUtils.formatDateTimeFromEpochSeconds(p.created_at)
-                : '-';
-            const credits = document.createElement('div');
-            credits.className = 'history-item-credits';
-            credits.textContent = formatCreditsText(p.credits || {});
-            left.appendChild(name);
-            left.appendChild(dateEl);
-            left.appendChild(credits);
-
-            const price = document.createElement('div');
-            price.className = 'history-item-price';
-            price.textContent = formatPrice(p.price_cents || 0, p.currency || 'eur');
-            row.appendChild(left);
-            row.appendChild(price);
-            historyList.appendChild(row);
-        });
-    } catch (e) {
-        setHistoryMessage('Could not load purchase history. Please try again.');
-    }
-}
-async function purchaseBundle(bundleId) {
-    if (!currentUser) { hidePricingModal(); showAuthModal(); return; }
-    const remaining = getCheckoutCooldownSeconds();
-    if (remaining > 0) {
-        applyCheckoutButtonsState();
-        showToast(`Checkout temporarily limited. Try again in ${formatRetryDelay(remaining)}.`, 'info', 4500);
-        return;
-    }
-    if (checkoutRequestInFlight) return;
-    checkoutRequestInFlight = true;
-    const allBtns = document.querySelectorAll('.bundle-buy-btn');
-    allBtns.forEach(btn => { btn.disabled = true; if (btn.dataset.bundleId === bundleId) btn.textContent = 'Redirecting...'; });
-    try {
-        trackEvent('checkout_started', { bundle_id: bundleId }, { preferBeacon: true });
-        const r = await authenticatedFetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bundle_id: bundleId }) });
-        const d = await r.json();
-        if (d.error) {
-            if (r.status === 429) {
-                const retryAfter = getRetryAfterSeconds(r, d);
-                const retryMsg = retryAfter ? `${d.error} Try again in ${formatRetryDelay(retryAfter)}.` : d.error;
-                showToast(retryMsg, 'info', 6000);
-                checkoutRequestInFlight = false;
-                if (retryAfter > 0) startCheckoutCooldown(retryAfter);
-                else applyCheckoutButtonsState();
-            } else {
-                showToast(d.error, 'error');
-                checkoutRequestInFlight = false;
-                applyCheckoutButtonsState();
-            }
-            return;
-        }
-        if (d.checkout_url) {
-            window.location.href = d.checkout_url;
-            return;
-        }
-        showToast('Could not start checkout. Please try again.', 'error');
-        checkoutRequestInFlight = false;
-        applyCheckoutButtonsState();
-    } catch (e) {
-        captureClientError(e, 'purchase_bundle');
-        showToast('Something went wrong. Please try again.', 'error');
-        checkoutRequestInFlight = false;
-        applyCheckoutButtonsState();
-    }
-}
-
 if (displayFormatUtils && typeof displayFormatUtils.applyPricingCatalog === 'function') {
     displayFormatUtils.applyPricingCatalog(document);
 }
@@ -4794,18 +4548,12 @@ if (adminDashboardBtn) {
     });
 }
 buyCreditsLink.addEventListener('click', (e) => { e.preventDefault(); showPricingModal(); });
-pricingModalClose.addEventListener('click', hidePricingModal);
-pricingOverlay.addEventListener('click', (e) => { if (e.target === pricingOverlay) hidePricingModal(); });
-historyModalClose.addEventListener('click', hideHistoryModal);
-historyOverlay.addEventListener('click', (e) => { if (e.target === historyOverlay) hideHistoryModal(); });
 document.addEventListener('keydown', (e) => {
     if (!activeModalOverlay) return;
     if (typeof uxUtils.openModalOverlay === 'function' && typeof uxUtils.closeModalOverlay === 'function') return;
     if (e.key === 'Escape') {
         e.preventDefault();
         if (activeModalOverlay === authOverlay) hideAuthModal();
-        else if (activeModalOverlay === pricingOverlay) hidePricingModal();
-        else if (activeModalOverlay === historyOverlay) hideHistoryModal();
         else if (activeModalOverlay === goalModalOverlay) closeGoalModal();
         return;
     }
@@ -4823,7 +4571,6 @@ document.addEventListener('keydown', (e) => {
         first.focus();
     }
 });
-document.querySelectorAll('.bundle-buy-btn').forEach(btn => btn.addEventListener('click', () => purchaseBundle(btn.dataset.bundleId)));
 downloadButton.addEventListener('click', (e) => {
     e.stopPropagation();
     const visible = !downloadDropdownContent.classList.contains('visible');

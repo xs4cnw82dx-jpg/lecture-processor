@@ -19,6 +19,9 @@ firebase-credentials.json
 .env
 .env.*
 tests/
+tests_js/
+e2e/
+.ruff_cache/
 docs/
 context_dump.txt
 test-*.pdf

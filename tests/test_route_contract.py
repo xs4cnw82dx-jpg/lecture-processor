@@ -358,7 +358,12 @@ def test_pricing_pages_render_runtime_bundle_catalog(client, runtime, monkeypatc
         },
     })
 
-    for path in ['/buy_credits', '/lecture-notes']:
+    # Buy Credits is the only pricing page; the old in-page pricing dialog on
+    # Lecture Notes was removed (its buttons already linked to Buy Credits).
+    lecture_html = client.get('/lecture-notes').get_data(as_text=True)
+    assert 'id="pricing-overlay"' not in lecture_html
+    assert 'id="history-overlay"' not in lecture_html
+    for path in ['/buy_credits']:
         response = client.get(path)
         assert response.status_code == 200
         html = response.get_data(as_text=True)
