@@ -120,18 +120,12 @@
 
   function showToast(message, type) {
     if (!toast) return;
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(String(message || ''), { element: toast, type: type === 'error' ? 'error' : 'info', duration: 3200 });
+      return;
+    }
     toast.textContent = String(message || '');
-    toast.classList.remove('error');
-    if (type === 'error') toast.classList.add('error');
-    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
-    toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-    toast.classList.add('visible');
-    window.setTimeout(function () {
-      toast.classList.remove('visible');
-      toast.classList.remove('error');
-      toast.setAttribute('role', 'status');
-      toast.setAttribute('aria-live', 'polite');
-    }, 2800);
   }
 
   function updateSignedOutUi() {

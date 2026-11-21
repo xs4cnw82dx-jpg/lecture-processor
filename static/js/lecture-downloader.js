@@ -22,7 +22,6 @@
   var authStateResolved = !!currentUser;
   var selectedFormat = 'video';
   var running = false;
-  var toastTimer = null;
   var pendingJob = null;
   var activeAttempt = null;
 
@@ -47,12 +46,12 @@
 
   function showToast(message, type) {
     if (!toastEl || !message) return;
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: toastEl, type: type || 'info', duration: 2200, show: function (el) { el.className = 'reader-toast visible' + (type ? ' ' + type : ''); }, hide: function (el) { el.className = 'reader-toast'; } });
+      return;
+    }
     toastEl.textContent = String(message);
-    toastEl.className = 'reader-toast visible' + (type ? ' ' + type : '');
-    if (toastTimer) window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(function () {
-      toastEl.className = 'reader-toast';
-    }, 2200);
   }
 
   function updateSummary(message) {
@@ -294,7 +293,7 @@
       pendingJob = null;
       running = false;
       if (urlInput) urlInput.value = '';
-      if (toastTimer) window.clearTimeout(toastTimer);
+      if (toastEl && toastEl._uxToastTimer) { window.clearTimeout(toastEl._uxToastTimer); toastEl._uxToastTimer = null; }
       if (toastEl) { toastEl.className = 'reader-toast'; toastEl.textContent = ''; }
       updateSummary('none yet.');
       setStatus('', '');

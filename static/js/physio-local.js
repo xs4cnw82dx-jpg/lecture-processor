@@ -62,11 +62,12 @@
 
   function toast(message, isError) {
     var node = $('#clinical-toast');
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: node, type: isError ? 'error' : 'info', duration: 3200, show: function (el) { el.classList.toggle('is-error', Boolean(isError)); el.classList.add('is-visible'); }, hide: function (el) { el.classList.remove('is-visible'); } });
+      return;
+    }
     node.textContent = message;
-    node.classList.toggle('is-error', Boolean(isError));
-    node.classList.add('is-visible');
-    window.clearTimeout(toast.timer);
-    toast.timer = window.setTimeout(function () { node.classList.remove('is-visible'); }, 3200);
   }
 
   async function ensureCsrf() {

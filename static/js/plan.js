@@ -46,16 +46,15 @@
   var PLAN_CACHE_KEY = 'plan_summary';
   var DASHBOARD_CACHE_KEY = 'dashboard_summary';
   var PLAN_SYNC_SOURCE_ID = 'plan-' + Math.random().toString(36).slice(2, 10);
-  var toastTimer = null;
 
   function showToast(message, type) {
     if (!toastEl || !message) return;
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: toastEl, type: type || 'info', duration: 2200, show: function (el) { el.className = 'toast visible' + (type ? ' ' + type : ''); }, hide: function (el) { el.className = 'toast'; } });
+      return;
+    }
     toastEl.textContent = String(message);
-    toastEl.className = 'toast visible' + (type ? ' ' + type : '');
-    if (toastTimer) window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(function () {
-      toastEl.className = 'toast';
-    }, 2200);
   }
 
   function readCacheJson(key, fallbackValue) {
