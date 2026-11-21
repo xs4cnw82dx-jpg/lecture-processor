@@ -105,5 +105,5 @@ test('printing a dark page restores light component colors', async ({ page }) =>
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.goal-health-card')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(page.locator('body')).toHaveCSS('color', 'rgb(23, 35, 60)');
-  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--theme-ink').trim())).toBe('');
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--theme-ink').trim())).toBe('#17233c');
 });

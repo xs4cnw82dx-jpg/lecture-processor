@@ -1,4 +1,4 @@
-const WORKOUT_CACHE = 'lecture-processor-workout-static-v7';
+const WORKOUT_CACHE = 'lecture-processor-workout-static-v8';
 const WORKOUT_CACHE_PREFIX = 'lecture-processor-workout-';
 const WORKOUT_SHELL = '/admin/workout';
 const OFFLINE_PAGE = '/static/workout-offline.html';

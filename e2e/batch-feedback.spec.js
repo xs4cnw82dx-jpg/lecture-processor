@@ -10,7 +10,7 @@ test('creation and reader disclosures are tinted before hover', async ({ page })
     await expect(page.locator('main')).toBeVisible();
     const controls = page.locator('.processing-disclosure-toggle:visible,.advanced-settings-toggle:visible,.study-tools-toggle:visible,.advanced-toggle:visible,details.app-disclosure:not([data-app-menu]) > summary:visible');
     expect(await controls.count()).toBeGreaterThan(0);
-    for (const control of await controls.all()) await expect(control).toHaveCSS('background-color', 'rgb(238, 241, 255)');
+    for (const control of await controls.all()) await expect(control).toHaveCSS('background-color', 'rgb(234, 240, 255)');
   }
 });
 
@@ -48,7 +48,7 @@ test('batch import instructions, tinted disclosures and mobile switch remain rea
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/instant_batch_mode');
     const disclosure = page.locator('.row-url-import').first();
-    await expect(disclosure.locator('summary')).toHaveCSS('background-color', 'rgb(238, 241, 255)');
+    await expect(disclosure.locator('summary')).toHaveCSS('background-color', 'rgb(234, 240, 255)');
     await disclosure.locator('summary').click();
     await expect(disclosure.getByText(/Play your LMS recording/).first()).toBeVisible();
     await expect(disclosure.getByRole('link', { name: /Brightspace walkthrough/ })).toBeVisible();
