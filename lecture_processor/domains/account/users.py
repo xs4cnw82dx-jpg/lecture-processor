@@ -15,9 +15,64 @@ def build_default_user_data(uid, email, runtime=None):
     return billing_credits.build_default_user_data(uid, email, runtime=resolved_runtime)
 
 
+def _profile_updates(user_data, email, runtime):
+    """Normalization a stored profile needs; an empty result means it is already current."""
+    if str(user_data.get('account_status', '') or '').strip().lower() in {'deleting', 'deleted'}:
+        raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
+    updates = {}
+    if billing_policy.uses_unified_credits(user_data, runtime=runtime):
+        updates.update(billing_policy.conversion_updates(user_data))
+    if user_data.get('email') != email and email:
+        updates['email'] = email
+    normalized_email = billing_credits.normalize_email(email or user_data.get('email', ''))
+    if user_data.get('email_normalized') != normalized_email:
+        updates['email_normalized'] = normalized_email
+    normalized_unlimited = billing_credits.normalize_unlimited_credits(user_data.get('unlimited_credits'))
+    if user_data.get('unlimited_credits') != normalized_unlimited:
+        updates['unlimited_credits'] = normalized_unlimited
+
+    preferred_key = runtime.sanitize_output_language_pref_key(
+        user_data.get('preferred_output_language', runtime.DEFAULT_OUTPUT_LANGUAGE_KEY),
+    )
+    preferred_custom = runtime.sanitize_output_language_pref_custom(
+        user_data.get('preferred_output_language_custom', ''),
+    )
+    if preferred_key != str(user_data.get('preferred_output_language', '') or '').strip().lower():
+        updates['preferred_output_language'] = preferred_key
+    if preferred_key != 'other':
+        preferred_custom = ''
+    if preferred_custom != str(user_data.get('preferred_output_language_custom', '') or '').strip():
+        updates['preferred_output_language_custom'] = preferred_custom
+    if not isinstance(user_data.get('onboarding_completed'), bool):
+        updates['onboarding_completed'] = False
+    if not isinstance(user_data.get('has_created_study_pack'), bool):
+        updates['has_created_study_pack'] = bool(user_data.get('total_processed', 0))
+    if str(user_data.get('account_status', '') or '').strip().lower() not in {'active', 'deleting'}:
+        updates['account_status'] = 'active'
+    if 'delete_requested_at' not in user_data:
+        updates['delete_requested_at'] = 0
+    if 'delete_started_at' not in user_data:
+        updates['delete_started_at'] = 0
+    if 'last_delete_failure_at' not in user_data:
+        updates['last_delete_failure_at'] = 0
+    if 'last_delete_failure_reason' not in user_data:
+        updates['last_delete_failure_reason'] = ''
+    return updates
+
+
 def get_or_create_user(uid, email, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     user_ref = resolved_runtime.users_repo.doc_ref(resolved_runtime.db, uid)
+
+    # Most loads find a current profile: answer from plain reads, without a transaction.
+    # Anything that must be created or normalized goes through the transaction below.
+    account_lifecycle.require_account_access(uid, runtime=resolved_runtime)
+    current = user_ref.get()
+    if current.exists:
+        current_data = current.to_dict() or {}
+        if not _profile_updates(current_data, email, resolved_runtime):
+            return current_data
+
     transaction = resolved_runtime.db.transaction()
 
     @resolved_runtime.firestore.transactional
@@ -26,46 +81,7 @@ def get_or_create_user(uid, email, runtime=None):
         user_doc = user_ref.get(transaction=txn)
         if user_doc.exists:
             user_data = user_doc.to_dict()
-            if str(user_data.get('account_status', '') or '').strip().lower() in {'deleting', 'deleted'}:
-                raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
-            updates = {}
-            if billing_policy.uses_unified_credits(user_data, runtime=resolved_runtime):
-                updates.update(billing_policy.conversion_updates(user_data))
-            if user_data.get('email') != email and email:
-                updates['email'] = email
-            normalized_email = billing_credits.normalize_email(email or user_data.get('email', ''))
-            if user_data.get('email_normalized') != normalized_email:
-                updates['email_normalized'] = normalized_email
-            normalized_unlimited = billing_credits.normalize_unlimited_credits(user_data.get('unlimited_credits'))
-            if user_data.get('unlimited_credits') != normalized_unlimited:
-                updates['unlimited_credits'] = normalized_unlimited
-
-            preferred_key = resolved_runtime.sanitize_output_language_pref_key(
-                user_data.get('preferred_output_language', resolved_runtime.DEFAULT_OUTPUT_LANGUAGE_KEY),
-            )
-            preferred_custom = resolved_runtime.sanitize_output_language_pref_custom(
-                user_data.get('preferred_output_language_custom', ''),
-            )
-            if preferred_key != str(user_data.get('preferred_output_language', '') or '').strip().lower():
-                updates['preferred_output_language'] = preferred_key
-            if preferred_key != 'other':
-                preferred_custom = ''
-            if preferred_custom != str(user_data.get('preferred_output_language_custom', '') or '').strip():
-                updates['preferred_output_language_custom'] = preferred_custom
-            if not isinstance(user_data.get('onboarding_completed'), bool):
-                updates['onboarding_completed'] = False
-            if not isinstance(user_data.get('has_created_study_pack'), bool):
-                updates['has_created_study_pack'] = bool(user_data.get('total_processed', 0))
-            if str(user_data.get('account_status', '') or '').strip().lower() not in {'active', 'deleting'}:
-                updates['account_status'] = 'active'
-            if 'delete_requested_at' not in user_data:
-                updates['delete_requested_at'] = 0
-            if 'delete_started_at' not in user_data:
-                updates['delete_started_at'] = 0
-            if 'last_delete_failure_at' not in user_data:
-                updates['last_delete_failure_at'] = 0
-            if 'last_delete_failure_reason' not in user_data:
-                updates['last_delete_failure_reason'] = ''
+            updates = _profile_updates(user_data, email, resolved_runtime)
             if updates:
                 txn.update(user_ref, updates)
                 user_data.update(updates)
