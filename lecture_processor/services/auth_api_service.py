@@ -175,6 +175,8 @@ def ingest_analytics_event(app_ctx, request):
             limit=app_ctx.ANALYTICS_RATE_LIMIT_MAX_REQUESTS,
             window_seconds=app_ctx.ANALYTICS_RATE_LIMIT_WINDOW_SECONDS,
             runtime=app_ctx,
+            # Best-effort telemetry: the single web process enforces this in memory.
+            local_only=True,
         )
         if not allowed_analytics:
             analytics_events.log_rate_limit_hit('analytics', retry_after, runtime=app_ctx)

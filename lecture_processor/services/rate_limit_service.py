@@ -56,6 +56,28 @@ def check_rate_limit_firestore(
         return None
 
 
+MAX_IN_MEMORY_KEYS = 10000
+_LONGEST_WINDOW_SECONDS = 86400
+
+
+def _bound_in_memory_events(in_memory_events, now_ts):
+    """Keep the process-local limiter bounded: callers can choose keys (for example a session id).
+
+    Called with the limiter lock held. Expired keys go first; if needed, the least recently
+    used keys are dropped, which can only make a limit slightly more permissive.
+    """
+    if len(in_memory_events) <= MAX_IN_MEMORY_KEYS:
+        return
+    cutoff = now_ts - _LONGEST_WINDOW_SECONDS
+    for stale_key in [key for key, stamps in in_memory_events.items() if not stamps or stamps[-1] < cutoff]:
+        del in_memory_events[stale_key]
+    if len(in_memory_events) <= MAX_IN_MEMORY_KEYS:
+        return
+    newest_first = sorted(in_memory_events, key=lambda key: in_memory_events[key][-1], reverse=True)
+    for evicted in newest_first[int(MAX_IN_MEMORY_KEYS * 0.9):]:
+        del in_memory_events[evicted]
+
+
 def check_rate_limit(
     key,
     limit,
@@ -84,6 +106,7 @@ def check_rate_limit(
         return firestore_result
 
     with in_memory_lock:
+        _bound_in_memory_events(in_memory_events, now_ts)
         timestamps = in_memory_events.get(key, [])
         cutoff = now_ts - window_seconds
         kept = [ts for ts in timestamps if ts >= cutoff]
