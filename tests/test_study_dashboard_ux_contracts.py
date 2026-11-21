@@ -319,22 +319,3 @@ def test_one_study_answer_only_syncs_dirty_pack_and_summary_markers():
     assert 'flushProgressSync(false);' in study_js
     assert 'flushProgressSync(!currentPackOnly);' not in study_js
     assert 'payload.card_states[marker] = loadCardStateForPack(marker);' in study_js
-
-
-def test_planner_loads_bounded_data_and_has_safe_error_states():
-    plan_template = _read('templates/plan.html')
-    plan_js = _read('static/js/plan.js')
-
-    assert 'id="folders-empty" hidden role="status" aria-live="polite" aria-atomic="true"' in plan_template
-    assert 'id="pack-goals-empty" hidden role="status" aria-live="polite" aria-atomic="true"' in plan_template
-    assert "authFetch('/api/study-folders?include_pending=0')" in plan_js
-    assert "authFetch('/api/study-packs?limit=50')" in plan_js
-    assert "authFetch('/api/study-progress')" in plan_js
-    assert 'function requireOkResponse(response, fallbackMessage)' in plan_js
-    assert 'function renderPlannerEmptyState(container, title, message, actions)' in plan_js
-    assert 'messageEl.textContent = String(message || \'\');' in plan_js
-    assert 'data-plan-retry-load' in plan_js
-    assert 'foldersEmptyEl.innerHTML' not in plan_js
-    assert 'packGoalsEmptyEl.innerHTML' not in plan_js
-    assert 'var plannerLoadPromise = null;' in plan_js
-    assert 'function schedulePlannerRefresh()' in plan_js

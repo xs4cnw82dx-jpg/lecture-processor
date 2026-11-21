@@ -53,26 +53,3 @@ def test_page_csp_allows_local_vendors_without_jsdelivr(client):
     assert 'https://browser.sentry-cdn.com' in directives['script-src']
     assert 'https://fonts.googleapis.com' in directives['style-src']
     assert 'https://fonts.gstatic.com' in directives['font-src']
-
-
-@pytest.mark.parametrize('path', ['/plan', '/calendar'])
-def test_legacy_planning_page_vendor_tags_use_verified_local_responses(client, core, monkeypatch, path):
-    monkeypatch.setattr(core, 'STUDY_PLAN_V2', False)
-    assets = []
-
-    class VendorTags(HTMLParser):
-        def handle_starttag(self, tag, attrs):
-            attributes = dict(attrs)
-            url = attributes.get('src' if tag == 'script' else 'href', '')
-            if tag in {'script', 'link'} and 'flatpickr' in url:
-                assets.append((url, attributes.get('integrity')))
-
-    response = client.get(path)
-    assert response.status_code == 200
-    VendorTags().feed(response.get_data(as_text=True))
-    assert len(assets) == 2
-    for url, integrity in assets:
-        assert not urlparse(url).netloc
-        asset = client.get(url)
-        assert asset.status_code == 200
-        assert integrity == 'sha384-' + base64.b64encode(hashlib.sha384(asset.data).digest()).decode()

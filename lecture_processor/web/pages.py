@@ -139,7 +139,6 @@ def _shell_context(*, runtime, page_key: str, show_credits_pill: bool = False) -
     return {
         'shell_page_key': page_key,
         'shell_show_credits_pill': bool(show_credits_pill),
-        'study_plan_v2': bool(runtime.STUDY_PLAN_V2),
         'legal_contact_email': runtime.LEGAL_CONTACT_EMAIL,
         'unified_credits_enabled': billing_policy.is_unified_enabled(runtime),
         'free_signup_credits': billing_policy.FREE_SIGNUP_CREDITS,
@@ -255,38 +254,22 @@ def _render_physio_launcher():
 @pages_bp.route('/plan')
 def plan_dashboard():
     runtime = get_runtime()
-    if runtime.STUDY_PLAN_V2:
-        return render_template(
-            'study_plan.html',
-            study_plan_js_asset=runtime.resolve_js_asset('js/study-plan.js'),
-            **_shell_context(runtime=runtime, page_key='plan'),
-        )
     return render_template(
-        'plan.html',
+        'study_plan.html',
+        study_plan_js_asset=runtime.resolve_js_asset('js/study-plan.js'),
         **_shell_context(runtime=runtime, page_key='plan'),
     )
 
 
+# The legacy planner's URLs keep working by opening the matching Study Plan view.
 @pages_bp.route('/stats')
 def stats_dashboard():
-    runtime = get_runtime()
-    if runtime.STUDY_PLAN_V2:
-        return redirect('/plan?view=progress', code=302)
-    return render_template(
-        'plan.html',
-        **_shell_context(runtime=runtime, page_key='plan'),
-    )
+    return redirect('/plan?view=progress', code=302)
 
 
 @pages_bp.route('/calendar')
 def calendar_dashboard():
-    runtime = get_runtime()
-    if runtime.STUDY_PLAN_V2:
-        return redirect('/plan?view=schedule', code=302)
-    return render_template(
-        'calendar.html',
-        **_shell_context(runtime=runtime, page_key='calendar'),
-    )
+    return redirect('/plan?view=schedule', code=302)
 
 
 @pages_bp.route('/features')

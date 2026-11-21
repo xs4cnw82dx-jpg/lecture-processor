@@ -283,18 +283,6 @@ def test_features_heading_preserves_readable_text_boundary():
     assert "The recording explains why." in heading
 
 
-def test_calendar_validation_errors_are_field_owned():
-    calendar_template = Path('templates/calendar.html').read_text(encoding='utf-8')
-    calendar_js = Path('static/js/calendar.js').read_text(encoding='utf-8')
-
-    assert 'placeholder="yyyy-mm-dd"' in calendar_template
-    assert 'id="session-date-error" role="alert" hidden' in calendar_template
-    assert "input.setAttribute('aria-invalid', 'true');" in calendar_js
-    assert 'function isValidIsoDateValue(value)' in calendar_js
-    assert 'function isValidTimeValue(value)' in calendar_js
-    assert "Choose a valid session date in yyyy-mm-dd format." in calendar_js
-
-
 def test_voice_notes_and_study_pages_have_single_page_heading_contract():
     voice_template = Path('templates/voice_notes.html').read_text(encoding='utf-8')
     study_template = Path('templates/study.html').read_text(encoding='utf-8')
@@ -440,8 +428,7 @@ def test_non_study_toasts_and_auth_messages_are_live_regions():
     for template_name in (
         'reader.html',
         'buy_credits.html',
-        'calendar.html',
-        'plan.html',
+        'study_plan.html',
         'lecture_downloader.html',
         'general_transcriber.html',
         'video_overlay_builder.html',
@@ -477,15 +464,6 @@ def test_buy_credits_signed_out_has_sign_in_path():
 
     assert 'id="buy-credits-auth-panel" hidden' in buy_credits_template
     assert 'id="buy-credits-signin-link" href="/lecture-notes?auth=signin&amp;next={{ request.path }}"' in buy_credits_template
-
-
-def test_calendar_modal_stacks_above_shell_topbar():
-    calendar_css = Path('static/css/calendar.css').read_text(encoding='utf-8')
-
-    overlay = re.search(r'\.overlay\{[^}]*z-index:([^;}]+)', calendar_css).group(1)
-    shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
-    topbar = re.search(r'\.app-shell-topbar \{[^}]*z-index:\s*([^;}]+)', shell_css).group(1)
-    assert _layer_value(overlay) > _layer_value(topbar)
 
 
 def test_processing_template_defaults_optional_sections_to_collapsed_state():
@@ -530,6 +508,14 @@ def test_app_pages_use_the_shared_page_header():
     for token in ("--fs-display", ".app-shell-page .page-title", ".app-shell-page .page-eyebrow", ".app-shell-page .page-lead"):
         assert token in shared, token
 
+
+
+def test_study_plan_dialogs_stack_above_shell_topbar():
+    plan_css = Path('static/css/study-plan.css').read_text(encoding='utf-8')
+    overlay = re.search(r'\.plan-overlay \{[^}]*z-index:\s*([^;}]+)', plan_css).group(1)
+    shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
+    topbar = re.search(r'\.app-shell-topbar \{[^}]*z-index:\s*([^;}]+)', shell_css).group(1)
+    assert _layer_value(overlay) > _layer_value(topbar)
 
 
 def _layer_value(expression):

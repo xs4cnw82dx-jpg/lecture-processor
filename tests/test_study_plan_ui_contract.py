@@ -90,17 +90,3 @@ def test_study_plan_is_responsive_and_has_mobile_agenda():
     assert '@media (max-width: 980px)' in styles
     assert '.week-calendar { display: none; }' in styles
     assert '.mobile-agenda { display: grid;' in styles
-
-
-def test_study_plan_v2_flag_keeps_legacy_pages_as_one_release_rollback(client, monkeypatch):
-    monkeypatch.setattr(core, 'STUDY_PLAN_V2', False)
-
-    plan = client.get('/plan')
-    calendar = client.get('/calendar')
-    stats = client.get('/stats')
-
-    assert plan.status_code == 200
-    assert 'Planning &amp; Progress' in plan.get_data(as_text=True)
-    assert calendar.status_code == 200
-    assert 'id="session-modal-overlay" hidden aria-hidden="true"' in calendar.get_data(as_text=True)
-    assert stats.status_code == 200

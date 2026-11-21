@@ -145,8 +145,6 @@ const focusExamples = [
   { sheet: 'physio-local', markup: '<div class="clinical-app"><button data-focus>Save</button><input data-focus type="checkbox" aria-label="Selected"></div>' },
   { sheet: 'batch-dashboard', markup: '<button data-focus class="bs-button">Retry</button><button data-focus class="bs-tab">Details</button>' },
   { sheet: 'book-studio', markup: '<div class="book-app"><button data-focus>Save</button><button data-focus class="book-path-point" aria-label="Point" style="position:relative;margin:30px"></button></div>' },
-  { sheet: 'plan', markup: '<input data-focus class="input" aria-label="Date">' },
-  { sheet: 'calendar', markup: '<input data-focus class="input" aria-label="Date">' },
   { sheet: 'tools-hub', markup: '<div class="tools-hub-page"><button data-focus>Open tool</button></div>' },
   { sheet: 'study-pictures', markup: '<button data-focus class="study-picture-open">Picture</button>' },
   { sheet: 'video-overlay-builder', markup: '<div class="overlay-zoom-controls"><input data-focus aria-label="Zoom"></div>' },
@@ -236,7 +234,7 @@ for (const theme of ['light', 'dark']) {
   });
 }
 
-for (const sheet of ['calendar', 'plan', 'study']) {
+for (const sheet of ['study']) {
   test(`${sheet} date picker today ring stays visible in dark mode`, async ({ page }) => {
     await renderStyles(page, [sheet], '<button class="flatpickr-day today">14</button>', 'dark');
     const shadow = await page.locator('.flatpickr-day').evaluate(element => getComputedStyle(element).boxShadow);
