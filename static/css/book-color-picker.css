@@ -47,7 +47,7 @@
   inset: auto;
   left: var(--book-color-left, 12px);
   top: var(--book-color-top, 12px);
-  z-index: 10000;
+  z-index: var(--z-critical);
   margin: 0;
   width: min(292px, var(--book-color-max-width, calc(100vw - 24px)));
   max-height: var(--book-color-max-height, calc(100dvh - 24px));

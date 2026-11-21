@@ -1701,7 +1701,7 @@
       transform: translateY(-6px) scale(.98);
       transform-origin: top right;
       transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
-      z-index: 40;
+      z-index: var(--z-page);
     }
 
     .hl-download-menu.is-floating {
@@ -1711,7 +1711,7 @@
       right: auto;
       bottom: auto;
       transform-origin: top left;
-      z-index: 520;
+      z-index: calc(var(--z-modal) + 3);
     }
 
     .hl-download-menu.is-upward {
@@ -1760,7 +1760,7 @@
     .notes-pane-shell:-webkit-full-screen .hl-download-menu {
       background: var(--theme-surface);
       max-height: min(240px, calc(100vh - 120px)); max-height: min(240px, calc(100dvh - 120px));
-      z-index: 530;
+      z-index: calc(var(--z-modal) + 4);
     }
 
     .hl-clear-all:hover {
@@ -1872,7 +1872,7 @@
     .setup-overlay {
       position: fixed;
       inset: 0;
-      z-index: 280;
+      z-index: calc(var(--z-shell) + 8);
       background: rgba(0, 0, 0, .5);
       display: none;
       align-items: center;
@@ -2446,7 +2446,7 @@
     .learn-stage {
       position: fixed;
       inset: 0;
-      z-index: 300;
+      z-index: calc(var(--z-shell) + 10);
       background: linear-gradient(135deg, var(--theme-surface-soft) 0%, var(--theme-surface-soft) 100%);
       display: none;
       opacity: 0;
@@ -2763,7 +2763,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      z-index: 360;
+      z-index: calc(var(--z-shell) + 13);
       display: flex;
       align-items: center;
       gap: 12px;
@@ -2894,7 +2894,7 @@
 
     .export-menu {
       position: relative;
-      z-index: 40
+      z-index: var(--z-page)
     }
 
     .export-menu-list {
@@ -2915,7 +2915,7 @@
       border: 1px solid var(--theme-line);
       border-radius: var(--radius-md);
       box-shadow: var(--shadow-lg);
-      z-index: 50;
+      z-index: calc(var(--z-page) + 1);
       overflow: visible
     }
 
@@ -3871,7 +3871,7 @@
     .builder-overlay {
       position: fixed;
       inset: 0;
-      z-index: 290;
+      z-index: calc(var(--z-shell) + 9);
       display: none;
       opacity: 0;
       transition: opacity .28s ease;
@@ -4448,7 +4448,7 @@
     body.coding-workspace-open #editor-pane-coding {
       position: fixed;
       inset: 0;
-      z-index: 300;
+      z-index: calc(var(--z-shell) + 10);
       display: block;
       min-width: 0;
       padding: 20px;
@@ -5172,7 +5172,7 @@
     .modal-overlay {
       position: fixed;
       inset: 0;
-      z-index: 420;
+      z-index: var(--z-modal);
       background: rgba(0, 0, 0, .5);
       display: none;
       align-items: center;
@@ -5258,7 +5258,7 @@
       box-shadow: var(--shadow-xl);
       opacity: 0;
       transition: all .3s ease;
-      z-index: 500;
+      z-index: calc(var(--z-modal) + 2);
       display: flex;
       align-items: center;
       gap: 10px;
@@ -5732,7 +5732,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 450;
+        z-index: calc(var(--z-modal) + 1);
         margin: 0;
         padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
         border-top: 1px solid var(--theme-line);
@@ -6081,7 +6081,7 @@
 .builder-rail .pack-edit-notice { min-width: 0; }
 .builder-rail .pack-edit-notice .actions .btn { width: 100%; white-space: normal; }
 .pack-edit-draft-select { display: block; width: 100%; max-width: 520px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--theme-control-border); border-radius: 8px; color: inherit; background: var(--theme-surface); font: inherit; }
-.pack-edit-review.modal-overlay { z-index: 14500; }
+.pack-edit-review.modal-overlay { z-index: calc(var(--z-critical) + 2); }
 .pack-edit-review .modal { display: flex; flex-direction: column; width: min(960px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); overflow: hidden; }
 .pack-edit-review .modal-head, .pack-edit-review .modal-message { flex-shrink: 0; }
 #pack-edit-review-fields { min-height: 0; overflow-y: auto; }

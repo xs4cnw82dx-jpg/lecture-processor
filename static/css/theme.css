@@ -76,6 +76,19 @@
   }
 }
 
+/* Stacking layers. Component-internal stacking uses small numbers (below 40);
+   anything that must sit above other page content uses one of these layers,
+   optionally plus a small offset to order items within the layer. */
+:root {
+  --z-page: 100;      /* sticky page bars, in-page menus and tooltips */
+  --z-shell: 200;     /* app shell chrome, drawers and full-page overlays */
+  --z-modal: 300;     /* modal dialogs and their floating toolbars */
+  --z-popover: 1000;  /* popovers above modals and page-level toasts */
+  --z-critical: 1100; /* confirmation dialogs and the skip link */
+}
+/* The vendored date picker uses 999 for its open calendar; popover and
+   critical layers stay above it, modal and lower layers below it. */
+
 /* The page canvas sits one level below cards and quiet inset controls. */
 html[data-theme="dark"],
 html[data-theme="dark"] body,

@@ -11,7 +11,7 @@
 .public-header {
   position: sticky;
   top: 14px;
-  z-index: 110;
+  z-index: calc(var(--z-page) + 6);
   width: min(1160px, calc(100% - 32px));
   margin: 18px auto 0;
 }

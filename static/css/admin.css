@@ -906,7 +906,7 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
-            z-index: 50;
+            z-index: calc(var(--z-page) + 1);
         }
         .admin-toast.visible {
             opacity: 1;
@@ -1013,7 +1013,7 @@
 
         /* ── Admin top navigation: grouped menus open one page at a time ── */
         .admin-nav-bar {
-            position: sticky; top: 0; z-index: 40;
+            position: sticky; top: 0; z-index: var(--z-page);
             background: var(--theme-surface);
             border-bottom: 1px solid var(--theme-line);
         }
