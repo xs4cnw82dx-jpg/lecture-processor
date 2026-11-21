@@ -225,6 +225,31 @@ def list_study_packs_by_uid_and_folder(db, uid, folder_id):
     return list(apply_where(apply_where(db.collection('study_packs'), 'uid', '==', uid), 'folder_id', '==', folder_id).stream())
 
 
+def _folder_pack_query(db, uid, folder_id):
+    return apply_where(apply_where(db.collection('study_packs'), 'uid', '==', uid), 'folder_id', '==', folder_id)
+
+
+def _key_only(query):
+    """Return document names only, so large pack bodies are not transferred."""
+    select = getattr(query, 'select', None)
+    return select(['__name__']) if callable(select) else query
+
+
+def list_study_pack_refs_by_uid_and_folder(db, uid, folder_id):
+    """Key-only folder membership for callers that only update or count packs."""
+    return list(_key_only(_folder_pack_query(db, uid, folder_id)).stream())
+
+
+def study_folder_has_packs(db, uid, folder_id):
+    query = _key_only(_folder_pack_query(db, uid, folder_id))
+    limit = getattr(query, 'limit', None)
+    if callable(limit):
+        query = limit(1)
+    for _doc in query.stream():
+        return True
+    return False
+
+
 def list_study_pack_summaries_by_uid_and_folder(db, uid, folder_id, limit=100):
     query = apply_where(db.collection('study_packs'), 'uid', '==', uid)
     query = apply_where(query, 'folder_id', '==', folder_id).order_by('created_at', direction='DESCENDING')

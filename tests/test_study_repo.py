@@ -179,3 +179,31 @@ def test_rollup_owner_reads_are_projected_batched_and_transactional():
     assert len(result) == 205
     assert [size for size, _ in calls] == [100, 100, 5]
     assert all(options == {'field_paths': ['uid'], 'transaction': transaction} for _, options in calls)
+
+
+def _folder_filters(query):
+    return [
+        (getattr(call[2].get("filter"), "field_path", ""), getattr(call[2].get("filter"), "value", ""))
+        for call in query.calls if call[0] == "where"
+    ]
+
+
+def test_folder_pack_refs_are_key_only():
+    query = _StudyPackQuery()
+
+    result = study_repo.list_study_pack_refs_by_uid_and_folder(_DB(query), "u-123", "folder-1")
+
+    assert result == ["doc-1", "doc-2"]
+    assert _folder_filters(query) == [("uid", "u-123"), ("folder_id", "folder-1")]
+    assert ("select", ("__name__",)) in query.calls
+    assert not any(call[0] == "limit" for call in query.calls)
+
+
+def test_folder_emptiness_check_reads_at_most_one_key():
+    query = _StudyPackQuery()
+
+    assert study_repo.study_folder_has_packs(_DB(query), "u-123", "folder-1") is True
+    assert ("select", ("__name__",)) in query.calls and ("limit", 1) in query.calls
+    assert _folder_filters(query) == [("uid", "u-123"), ("folder_id", "folder-1")]
+    query.stream = lambda: iter(())
+    assert study_repo.study_folder_has_packs(_DB(query), "u-123", "folder-1") is False
