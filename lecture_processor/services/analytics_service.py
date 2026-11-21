@@ -94,6 +94,15 @@ def log_analytics_event(
         'expires_at_ts': _telemetry_expires_at_ts(event_expires_at),
     }
     try:
+        batch_factory = getattr(db, 'batch', None)
+        if callable(batch_factory) and runtime is not None:
+            # One commit stores the event and both rollup increments together.
+            batch = batch_factory()
+            batch.set(analytics_repo.new_event_ref(db), payload)
+            for doc_ref, merge_payload in admin_rollups.analytics_rollup_writes(payload, runtime=runtime):
+                batch.set(doc_ref, merge_payload, merge=True)
+            batch.commit()
+            return True
         analytics_repo.add_event(db, payload)
         admin_rollups.increment_analytics_rollups(payload, runtime=runtime)
         return True

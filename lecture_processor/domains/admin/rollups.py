@@ -114,11 +114,21 @@ def _incremented_mode(mode):
 
 
 def _increment_rollup_doc(period, bucket_key, payload, runtime=None):
+    write = _rollup_increment_write(period, bucket_key, payload, runtime=runtime)
+    if write is None:
+        return False
+    doc_ref, merge_payload = write
+    doc_ref.set(merge_payload, merge=True)
+    return True
+
+
+def _rollup_increment_write(period, bucket_key, payload, runtime=None):
+    """Return (doc_ref, merge payload) for one rollup increment, or None without a database."""
     resolved_runtime = _resolve_runtime(runtime)
     db = getattr(resolved_runtime, 'db', None)
     firestore_module = getattr(resolved_runtime, 'firestore', None)
     if db is None or firestore_module is None:
-        return False
+        return None
     doc_ref = _rollup_doc_ref(db, period, bucket_key)
     window_start, window_end = _bucket_bounds(bucket_key, period)
     increment = firestore_module.Increment
@@ -139,8 +149,7 @@ def _increment_rollup_doc(period, bucket_key, payload, runtime=None):
                         merge_payload[section][key][child_key] = increment(child_value)
             else:
                 merge_payload[section][key] = increment(value)
-    doc_ref.set(merge_payload, merge=True)
-    return True
+    return doc_ref, merge_payload
 
 
 def increment_purchase_rollups(purchase_payload, runtime=None):
@@ -186,19 +195,32 @@ def increment_job_rollups(job_payload, runtime=None):
         _increment_rollup_doc(period, bucket_key_for_timestamp(finished_at, period), increment_payload, runtime=resolved_runtime)
 
 
-def increment_analytics_rollups(event_payload, runtime=None):
-    resolved_runtime = _resolve_runtime(runtime)
+def _analytics_increment(event_payload, runtime):
     payload = event_payload if isinstance(event_payload, dict) else {}
-    created_at = float(payload.get('created_at', resolved_runtime.time.time()) or resolved_runtime.time.time())
+    created_at = float(payload.get('created_at', runtime.time.time()) or runtime.time.time())
     event_name = str(payload.get('event', '') or '').strip().lower()
-    increment_payload = {
+    return created_at, {
         'analytics': {
             'event_count': 1,
             'funnel_counts': {event_name: 1} if event_name else {},
         }
     }
+
+
+def increment_analytics_rollups(event_payload, runtime=None):
+    resolved_runtime = _resolve_runtime(runtime)
+    created_at, increment_payload = _analytics_increment(event_payload, resolved_runtime)
     for period in ('hourly', 'daily'):
         _increment_rollup_doc(period, bucket_key_for_timestamp(created_at, period), increment_payload, runtime=resolved_runtime)
+
+
+def analytics_rollup_writes(event_payload, runtime=None):
+    """The hourly and daily increments for one event, for a caller's write batch."""
+    resolved_runtime = _resolve_runtime(runtime)
+    created_at, increment_payload = _analytics_increment(event_payload, resolved_runtime)
+    writes = [_rollup_increment_write(period, bucket_key_for_timestamp(created_at, period), increment_payload,
+                                      runtime=resolved_runtime) for period in ('hourly', 'daily')]
+    return [write for write in writes if write is not None]
 
 
 def increment_rate_limit_rollups(entry_payload, runtime=None):

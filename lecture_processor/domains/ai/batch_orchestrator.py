@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import time
 import base64
@@ -1001,6 +1002,34 @@ def _cancel_stopped_provider_batch(batch_job, runtime):
         runtime.logger.warning('Could not start cancellation for provider batch %s', name, exc_info=True)
 
 
+def _parse_batch_result_lines(content, request_keys, request_count):
+    """Map Batch API JSONL rows to request order; rows are read one '\n' line at a time."""
+    key_map = {str(key): index for index, key in enumerate(request_keys)}
+    parsed_by_index = {}
+    # Iterate rows without holding decoded and split copies of the whole file.
+    lines = (io.BytesIO(bytes(content)) if isinstance(content, (bytes, bytearray))
+             else io.StringIO(str(content or '')))
+    for line in lines:
+        line_text = (line.decode('utf-8') if isinstance(line, bytes) else line).strip()
+        if not line_text:
+            continue
+        try:
+            record = json.loads(line_text)
+        except Exception:
+            continue
+        if not isinstance(record, dict):
+            continue
+        key = str(record.get('key', '') or '')
+        if key not in key_map:
+            continue
+        parsed_by_index[key_map[key]] = {
+            'response': record.get('response'),
+            'error': record.get('error'),
+        }
+    return [parsed_by_index.get(index, {'response': None, 'error': 'Missing response line'})
+            for index in range(request_count)]
+
+
 def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=None, display_name=''):
     resolved_runtime = _resolve_runtime(runtime)
     if not requests:
@@ -1143,31 +1172,7 @@ def _run_batch_stage(batch_id, stage_name, requests, request_keys=None, runtime=
                 runtime=resolved_runtime,
             )
             _require_active_batch(batch_id, runtime=resolved_runtime)
-            key_map = {}
-            for idx, key in enumerate(request_keys):
-                key_map[str(key)] = idx
-            parsed_by_index = {}
-            decoded = content_bytes.decode('utf-8') if isinstance(content_bytes, (bytes, bytearray)) else str(content_bytes or '')
-            for line in decoded.splitlines():
-                line_text = str(line or '').strip()
-                if not line_text:
-                    continue
-                try:
-                    record = json.loads(line_text)
-                except Exception:
-                    continue
-                if not isinstance(record, dict):
-                    continue
-                key = str(record.get('key', '') or '')
-                if key not in key_map:
-                    continue
-                parsed_by_index[key_map[key]] = {
-                    'response': record.get('response'),
-                    'error': record.get('error'),
-                }
-            for idx in range(len(requests)):
-                responses.append(parsed_by_index.get(idx, {'response': None, 'error': 'Missing response line'}))
-            return responses
+            return _parse_batch_result_lines(content_bytes, request_keys, len(requests))
 
         inline_responses = getattr(getattr(final_job, 'dest', None), 'inlined_responses', None) or []
         for inline in inline_responses:

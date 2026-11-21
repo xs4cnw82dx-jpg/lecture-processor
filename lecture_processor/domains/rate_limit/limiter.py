@@ -9,13 +9,14 @@ def _resolve_runtime(runtime=None):
     return get_runtime()
 
 
-def check_rate_limit(key, limit, window_seconds, runtime=None):
+def check_rate_limit(key, limit, window_seconds, runtime=None, *, local_only=False):
+    """local_only keeps best-effort limits (telemetry) in this process, with no database round trips."""
     resolved_runtime = _resolve_runtime(runtime)
     return resolved_runtime.rate_limit_service.check_rate_limit(
         key,
         limit,
         window_seconds,
-        firestore_enabled=resolved_runtime.RATE_LIMIT_FIRESTORE_ENABLED,
+        firestore_enabled=bool(resolved_runtime.RATE_LIMIT_FIRESTORE_ENABLED) and not local_only,
         db=resolved_runtime.db,
         firestore_module=resolved_runtime.firestore,
         counter_collection=resolved_runtime.RATE_LIMIT_COUNTER_COLLECTION,
