@@ -525,9 +525,11 @@ def get_study_progress_summary(app_ctx, request):
             account_lifecycle.require_account_access(uid, runtime=app_ctx)
             doc = app_ctx.get_study_progress_doc(uid).get()
             progress = doc.to_dict() or {} if doc.exists else {}
-            due = load_due_study_cards(app_ctx, uid, active_plan=True)
+            # Read the progress document and the active-plan goals once for this request.
+            plan_ids = active_plan_pack_ids(app_ctx, uid)
+            due = load_due_study_cards(app_ctx, uid, active_plan=True, progress_data=progress, active_ids=plan_ids)
             summary = _summary_with_due_count(progress, due['due_count'], app_ctx)
-            summary['active_plan_pack_ids'] = sorted(active_plan_pack_ids(app_ctx, uid))
+            summary['active_plan_pack_ids'] = sorted(plan_ids)
             return app_ctx.jsonify(summary)
         return app_ctx.jsonify(load_study_progress_summary(app_ctx, uid))
     except account_lifecycle.AccountUnavailableError:
@@ -543,10 +545,16 @@ def active_plan_pack_ids(app_ctx, uid):
             for pack_id in goal.get('pack_ids', []) if isinstance(pack_id, str)}
 
 
-def load_due_study_cards(app_ctx, uid, *, active_plan=False):
-    progress_doc = app_ctx.get_study_progress_doc(uid).get()
-    today = _local_today(progress_doc.to_dict() or {} if progress_doc.exists else {}, app_ctx)
-    active_ids = active_plan_pack_ids(app_ctx, uid) if active_plan else None
+def load_due_study_cards(app_ctx, uid, *, active_plan=False, progress_data=None, active_ids=None):
+    """Resolve the due queue; callers that already read progress or plan goals pass them in."""
+    if progress_data is None:
+        progress_doc = app_ctx.get_study_progress_doc(uid).get()
+        progress_data = progress_doc.to_dict() or {} if progress_doc.exists else {}
+    today = _local_today(progress_data, app_ctx)
+    if not active_plan:
+        active_ids = None
+    elif active_ids is None:
+        active_ids = active_plan_pack_ids(app_ctx, uid)
     if active_ids == set():
         return {'date': today, 'due_count': 0, 'packs': []}
     packs = []
@@ -566,7 +574,9 @@ def load_due_study_cards(app_ctx, uid, *, active_plan=False):
                and str(entry.get('next_review_date') or UNSCHEDULED_DUE_DATE) <= today
                for card_id, entry in state.items()):
             candidates[pack_id] = state
-    for pack_doc in app_ctx.repositories.study.get_study_pack_docs(app_ctx.db, candidates):
+    study = app_ctx.repositories.study
+    read_packs = getattr(study, 'get_study_pack_due_docs', None) or study.get_study_pack_docs
+    for pack_doc in read_packs(app_ctx.db, candidates):
         pack_id = pack_doc.id
         pack = (pack_doc.to_dict() or {}) if pack_doc.exists else {}
         if pack.get('uid') != uid or pack.get('archived'):

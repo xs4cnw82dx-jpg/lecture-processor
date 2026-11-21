@@ -415,3 +415,31 @@ def test_progress_sync_checks_ownership_without_transactions(setup):
 
     assert_ok(update(runtime, {'remove_pack_ids': ['mine']}))
     assert 'study_card_states/owner__mine' not in db.data
+
+
+def test_active_plan_summary_reads_progress_and_goals_once_and_projects_due_packs(setup, monkeypatch):
+    runtime, db, _ = setup
+    from lecture_processor.repositories import planner_repo
+    runtime.repositories.planner = planner_repo
+    seed_pack(db, 'active', ['2000-01-01'])
+    db.data['study_packs/active'].update(flashcards=[{'front': 'Due card', 'back': 'answer'}],
+                                         notes_markdown='Long notes that the due queue never shows.')
+    db.data['study_goals/one'] = {'uid': 'owner', 'status': 'active', 'pack_ids': ['active']}
+    progress_reads, goal_reads = [], []
+    progress_ref = runtime.get_study_progress_doc
+    runtime.get_study_progress_doc = lambda uid: progress_reads.append(uid) or progress_ref(uid)
+    list_goals = planner_repo.list_active_study_goals_by_uid
+    monkeypatch.setattr(planner_repo, 'list_active_study_goals_by_uid',
+                        lambda *args, **kwargs: goal_reads.append(1) or list_goals(*args, **kwargs))
+    monkeypatch.setattr(study_repo, 'get_study_pack_docs',
+                        lambda *args, **kwargs: pytest.fail('The due queue must read projected pack fields'))
+    batched = []
+    get_all = db.get_all
+    db.get_all = lambda refs, **kwargs: batched.append(([ref.path for ref in refs], kwargs.get('field_paths'))) or get_all(refs, **kwargs)
+
+    summary = assert_ok(service.get_study_progress_summary(runtime, SimpleNamespace(args={'scope': 'active_plan'})))
+
+    assert summary['due_today'] == 1 and summary['active_plan_pack_ids'] == ['active']
+    assert progress_reads == ['owner'] and goal_reads == [1]
+    pack_reads = [call for call in batched if call[0] == ['study_packs/active']]
+    assert pack_reads == [(['study_packs/active'], list(study_repo.STUDY_PACK_DUE_FIELDS))]
