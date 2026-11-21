@@ -138,15 +138,39 @@ def backup(book_id):
     return service.backup(get_runtime(), book_id)
 
 
+_FONTS_INSTALL_NOTE = (
+    'Book Studio fonts\n\nUnzip this folder. On macOS, select the TTF files and open them with Font Book, '
+    'then click Install. On Windows, select the TTF files, right-click and choose Install. Restart Word after '
+    'installing.\n\nIncluded fonts: Andika, Playpen Sans, Nunito, Comic Neue, Fraunces, Nohemi Bold and General '
+    'Sans Regular/Bold. License files are included. Editable Word uses regular and bold weights; continuous '
+    'thickness and some effects are flattened or substituted as shown before export. Word edits do not '
+    'synchronize with Book Studio.\n'
+)
+_fonts_bundle = {'signature': None, 'data': b''}
+_fonts_bundle_lock = threading.Lock()
+
+
+def _fonts_bundle_bytes(folder):
+    """Build the font ZIP once per process; rebuild only when the font files change."""
+    from pathlib import Path
+    import zipfile
+    fonts = [font for font in sorted(Path(folder).iterdir()) if font.suffix in ('.ttf', '.txt')]
+    signature = tuple((font.name, font.stat().st_size, font.stat().st_mtime_ns) for font in fonts)
+    with _fonts_bundle_lock:
+        if _fonts_bundle['signature'] != signature:
+            output = io.BytesIO()
+            with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+                for font in fonts:
+                    archive.write(font, font.name)
+                archive.writestr('INSTALL.txt', _FONTS_INSTALL_NOTE)
+            _fonts_bundle.update(signature=signature, data=output.getvalue())
+        return _fonts_bundle['data']
+
+
 @books_bp.route('/api/books/fonts')
 def book_fonts():
     """Public, licensed font bundle for editable Word output."""
     from pathlib import Path
-    import zipfile
-    output = io.BytesIO()
-    with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for font in sorted((Path(current_app.static_folder) / 'fonts' / 'books').iterdir()):
-            if font.suffix in ('.ttf', '.txt'):
-                archive.write(font, font.name)
-        archive.writestr('INSTALL.txt', 'Book Studio fonts\n\nUnzip this folder. On macOS, select the TTF files and open them with Font Book, then click Install. On Windows, select the TTF files, right-click and choose Install. Restart Word after installing.\n\nIncluded fonts: Andika, Playpen Sans, Nunito, Comic Neue, Fraunces, Nohemi Bold and General Sans Regular/Bold. License files are included. Editable Word uses regular and bold weights; continuous thickness and some effects are flattened or substituted as shown before export. Word edits do not synchronize with Book Studio.\n')
-    return send_file(io.BytesIO(output.getvalue()), mimetype='application/zip', as_attachment=True, download_name='Book Studio fonts.zip', max_age=86400)
+    data = _fonts_bundle_bytes(Path(current_app.static_folder) / 'fonts' / 'books')
+    return send_file(io.BytesIO(data), mimetype='application/zip', as_attachment=True,
+                     download_name='Book Studio fonts.zip', max_age=86400)

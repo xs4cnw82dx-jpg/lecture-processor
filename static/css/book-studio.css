@@ -21,101 +21,97 @@
 }
 @font-face {
   font-family: "Comic Neue";
-  src: url("/static/fonts/books/comicneue-ComicNeue-LightItalic.ttf");
+  src: url("/static/fonts/books/comicneue-ComicNeue-LightItalic.woff2") format("woff2");
   font-weight: 300;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: Nunito;
-  src: url("/static/fonts/books/nunito-Nunito-wght.ttf") format("truetype");
+  src: url("/static/fonts/books/nunito-Nunito-wght.woff2") format("woff2");
   font-weight: 200 1000;
   font-display: swap;
 }
 @font-face {
   font-family: Nunito;
-  src: url("/static/fonts/books/nunito-Nunito-Italic-wght.ttf")
-    format("truetype");
+  src: url("/static/fonts/books/nunito-Nunito-Italic-wght.woff2") format("woff2");
   font-weight: 200 1000;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: "Playpen Sans";
-  src: url("/static/fonts/books/playpensans-PlaypenSans-wght.ttf")
-    format("truetype");
+  src: url("/static/fonts/books/playpensans-PlaypenSans-wght.woff2") format("woff2");
   font-weight: 100 800;
   font-display: swap;
 }
 @font-face {
   font-family: Fraunces;
-  src: url("/static/fonts/books/fraunces-Fraunces-SOFT-WONK-opsz-wght.ttf")
-    format("truetype");
+  src: url("/static/fonts/books/fraunces-Fraunces-SOFT-WONK-opsz-wght.woff2") format("woff2");
   font-weight: 100 900;
   font-display: swap;
 }
 @font-face {
   font-family: Fraunces;
-  src: url("/static/fonts/books/fraunces-Fraunces-Italic-SOFT-WONK-opsz-wght.ttf")
-    format("truetype");
+  src: url("/static/fonts/books/fraunces-Fraunces-Italic-SOFT-WONK-opsz-wght.woff2") format("woff2");
   font-weight: 100 900;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: Andika;
-  src: url("/static/fonts/books/andika-Andika-Regular.ttf");
+  src: url("/static/fonts/books/andika-Andika-Regular.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
 }
 @font-face {
   font-family: Andika;
-  src: url("/static/fonts/books/andika-Andika-Bold.ttf");
+  src: url("/static/fonts/books/andika-Andika-Bold.woff2") format("woff2");
   font-weight: 700;
   font-display: swap;
 }
 @font-face {
   font-family: Andika;
-  src: url("/static/fonts/books/andika-Andika-Italic.ttf");
+  src: url("/static/fonts/books/andika-Andika-Italic.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: Andika;
-  src: url("/static/fonts/books/andika-Andika-BoldItalic.ttf");
+  src: url("/static/fonts/books/andika-Andika-BoldItalic.woff2") format("woff2");
   font-weight: 700;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: "Comic Neue";
-  src: url("/static/fonts/books/comicneue-ComicNeue-Light.ttf");
+  src: url("/static/fonts/books/comicneue-ComicNeue-Light.woff2") format("woff2");
   font-weight: 300;
   font-display: swap;
 }
 @font-face {
   font-family: "Comic Neue";
-  src: url("/static/fonts/books/comicneue-ComicNeue-Regular.ttf");
+  src: url("/static/fonts/books/comicneue-ComicNeue-Regular.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
 }
 @font-face {
   font-family: "Comic Neue";
-  src: url("/static/fonts/books/comicneue-ComicNeue-Bold.ttf");
+  src: url("/static/fonts/books/comicneue-ComicNeue-Bold.woff2") format("woff2");
   font-weight: 700;
   font-display: swap;
 }
 @font-face {
   font-family: "Comic Neue";
-  src: url("/static/fonts/books/comicneue-ComicNeue-Italic.ttf");
+  src: url("/static/fonts/books/comicneue-ComicNeue-Italic.woff2") format("woff2");
   font-weight: 400;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: "Comic Neue";
-  src: url("/static/fonts/books/comicneue-ComicNeue-BoldItalic.ttf");
+  src: url("/static/fonts/books/comicneue-ComicNeue-BoldItalic.woff2") format("woff2");
   font-weight: 700;
   font-style: italic;
   font-display: swap;
