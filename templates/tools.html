@@ -26,7 +26,7 @@
         <p id="hub-favorites-status" role="status" aria-live="polite"></p>
       </section>
       <section class="hub-discovery" aria-label="Find a tool">
-        <label class="hub-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="6"></circle><path d="m15 15 5 5"></path></svg><span class="hub-sr-only">Search tools</span><input id="hub-search" type="search" placeholder="Search tools, files, or tasks…" autocomplete="off"></label>
+        <label class="hub-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="6"></circle><path d="m15 15 5 5"></path></svg><span class="hub-sr-only">Search tools</span><input id="hub-search" type="search" placeholder="Search tools…" autocomplete="off"></label>
         <div class="hub-filters" aria-label="Tool categories"><button type="button" data-category="all" aria-pressed="true">All tools</button>{% for key, title, description in tool_categories %}<button type="button" data-category="{{ key }}" aria-pressed="false">{{ title }}</button>{% endfor %}</div>
       </section>
       <p id="hub-results-status" class="hub-sr-only" role="status" aria-live="polite"></p>
@@ -39,7 +39,7 @@
             <article class="shell-panel hub-card" data-tool-id="{{ tool.id }}" data-search="{{ (tool.name ~ ' ' ~ tool.description ~ ' ' ~ title)|lower }}">
               <div class="hub-card-head"><span class="hub-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ tool_icons[tool.icon] }}"></path></svg></span><button type="button" class="hub-star" data-favorite="{{ tool.id }}" aria-label="Add {{ tool.name }} to favorites" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z"></path></svg></button></div>
               <h3><a href="{{ tool.url }}">{{ tool.name }}</a></h3><p>{{ tool.description }}</p>
-              <a class="hub-open" href="{{ tool.url }}" aria-label="Open {{ tool.name }}">Open tool <span aria-hidden="true">↗</span></a>
+              <a class="hub-open" href="{{ tool.url }}" aria-label="Open {{ tool.name }}">Open tool <span aria-hidden="true">→</span></a>
             </article>
           {% endfor %}
           </div>

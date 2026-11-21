@@ -276,10 +276,14 @@
     document.getElementById('batch-speed-title').textContent = instant ? 'Instant processing' : 'Deferred processing';
     document.getElementById('batch-speed-deferred').classList.toggle('is-selected', !instant);
     document.getElementById('batch-speed-instant').classList.toggle('is-selected', instant);
+    if (active && window.matchMedia && window.matchMedia('(max-width: 760px)').matches && typeof active.scrollIntoView === 'function') {
+      active.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
     var pageTitle = 'Batch Processing · ' + (active ? active.textContent : modeMeta().plural);
     document.title = pageTitle + ' · Lecture Processor';
     var shellTitle = document.querySelector('.app-shell-title');
-    if (shellTitle) shellTitle.textContent = pageTitle;
+    // The page heading names the mode; the top bar stays short enough not to truncate on phones.
+    if (shellTitle) shellTitle.textContent = window.matchMedia && window.matchMedia('(max-width: 420px)').matches ? 'Batch' : 'Batch Processing';
     updateRowLabels();
     setStartButtonState(pendingStartRequest || startLockedByBatchState);
     updateBatchCreditUi();

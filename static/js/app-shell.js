@@ -989,6 +989,8 @@
     setAuthState(signedIn ? 'signed-in' : 'signed-out');
     if (signInBtn) signInBtn.hidden = signedIn;
     if (accountWrap) accountWrap.hidden = !signedIn;
+    var settingsAccount = document.getElementById('settings-account');
+    if (settingsAccount) settingsAccount.hidden = !signedIn;
     setAccountMenuOpen(false);
     if (!signedIn) {
       applySignedOutState(lastSignedInUid);
@@ -1570,6 +1572,15 @@
   bootstrap.onAuthStateReady(auth, function (user) {
     authStateResolved = true;
     applyAuth(user || null);
+  });
+
+  // Settings repeats the account menu's actions; each button runs the same
+  // shell action, so behaviour and confirmations stay in one place.
+  document.addEventListener('click', function (event) {
+    var trigger = event.target && event.target.closest && event.target.closest('[data-shell-account-action]');
+    if (!trigger) return;
+    var action = document.getElementById(trigger.getAttribute('data-shell-account-action'));
+    if (action && !action.hidden) action.click();
   });
 
   setAuthState('pending');

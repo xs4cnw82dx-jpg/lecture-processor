@@ -68,6 +68,13 @@
 
 .mode-link.active { background: var(--theme-surface); box-shadow: 0 2px 8px #2032561f; color: var(--theme-accent-ink); }
 
+/* Phones: the five modes stay one scrollable segmented row instead of wrapping 2-2-1. */
+@media (max-width: 760px) {
+  .mode-links { flex-wrap: nowrap; width: 100%; max-width: 100%; min-width: 0; contain: inline-size; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .mode-links::-webkit-scrollbar { display: none; }
+  .mode-link { flex: none; white-space: nowrap; scroll-snap-align: center; }
+}
+
 .batch-form { display: grid; gap: 24px; }
 
 .batch-grid { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(220px,1fr); gap: 24px; }

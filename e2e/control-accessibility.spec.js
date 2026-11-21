@@ -60,3 +60,17 @@ test('shared dropdowns follow values set in code, not only clicks', async ({ pag
   expect(result.afterValue).toBe(result.expected);
   expect(result.afterIndex).toBe(result.first);
 });
+
+test.describe('batch modes on phones', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+  test('mode tabs stay one scrollable row and the shell title stays short', async ({ page }) => {
+    await installAccountFixture(page);
+    await page.goto('/batch_mode_text_combine');
+    const tops = await page.locator('.mode-links .mode-link').evaluateAll(links => links.map(link => Math.round(link.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(1);
+    await expect(page.locator('.mode-links .mode-link.active')).toBeInViewport();
+    await expect(page.locator('.app-shell-title')).toHaveText('Batch');
+    expect(await page.locator('.app-shell-title').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  });
+});

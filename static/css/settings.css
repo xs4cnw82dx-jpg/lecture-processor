@@ -65,3 +65,9 @@
   .settings-credit-summary { align-items: flex-start; flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) { .settings-switch-track, .settings-switch-track > span { transition: none; } }
+
+.settings-account { margin-top: 18px; }
+.settings-account .settings-section-heading { margin-bottom: 18px; }
+.settings-account-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.settings-account-actions .danger { margin-left: auto; }
+@media (max-width: 560px) { .settings-account-actions .btn { flex: 1 1 calc(50% - 5px); } .settings-account-actions .danger { margin-left: 0; } }

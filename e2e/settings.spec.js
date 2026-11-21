@@ -268,3 +268,19 @@ test('late Workout login response clears its admin cookie after account switch',
   await expect(page).toHaveURL(/\/settings$/);
   expect((await context.cookies()).filter(cookie => cookie.name === 'lp_admin_session')).toEqual([]);
 });
+
+test('settings repeat the account actions and run the same shell flows', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/settings');
+  const account = page.locator('#settings-account');
+  await expect(account).toBeVisible();
+  for (const name of ['Purchase history', 'Export data', 'Sign out', 'Delete account']) {
+    await expect(account.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+  await account.getByRole('button', { name: 'Export data', exact: true }).click();
+  await expect(page.locator('#shell-export-overlay')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#shell-export-overlay')).toBeHidden();
+  await account.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await expect(page.locator('#shell-delete-account-overlay')).toBeVisible();
+});
