@@ -1,4 +1,6 @@
 const { test, expect } = require('@playwright/test');
+
+const openAdminRoute = (page, route) => page.evaluate((value) => { window.location.hash = value; }, route);
 const { execFileSync } = require('node:child_process');
 const { existsSync, readFileSync } = require('node:fs');
 const path = require('node:path');
@@ -56,7 +58,7 @@ async function openAdmin(page, { language = 'en', theme = 'light', jobs = mixedJ
           : pathname === '/api/user-preferences' ? { preferences: { interface_language: language, theme } } : {};
     return route.fulfill({ json: payload });
   });
-  await page.goto('/admin');
+  await page.goto('/admin#costs/analyzer');
   await expect(page.locator('#dashboard')).toBeVisible();
   await expect(page.locator('#analyzer-jobs-body tr')).toHaveCount(jobs.length);
   expect(state.assets).toEqual([`/static/js/${asset}`]);
@@ -139,6 +141,7 @@ test('unknown cost-source fields never become markup or claims', async ({ page }
 for (const language of ['en', 'nl']) {
   test(`calculator shares use numeric stage costs in ${language}`, async ({ page }) => {
     const state = await openAdmin(page, { language });
+    await openAdminRoute(page, 'costs/calculator');
     const cards = page.locator('#calc-stage-grid .calc-stage-card');
     await expect(cards).toHaveCount(4);
     // Published fixture rates: .0615 + .4875 + .4200 + .0590 = 1.0280 USD.

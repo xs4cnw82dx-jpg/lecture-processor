@@ -1,4 +1,6 @@
 const { test, expect } = require('@playwright/test');
+
+const openAdminRoute = (page, route) => page.evaluate((value) => { window.location.hash = value; }, route);
 const fs = require('node:fs');
 const { installAccountFixture } = require('./helpers/batch-fixture');
 
@@ -150,8 +152,7 @@ async function adminFixture(page, options = {}) {
     .replace(/\{\{ url_for\('static', filename='([^']+)'\) \}\}/g, (_match, filename) => `/static/${filename}`)
     .replace("{{ url_for('static', filename=admin_js_asset or 'js/admin.js') }}", `/static/js/admin${process.env.USE_MINIFIED_JS_ASSETS === '1' ? '.min' : ''}.js`);
   await page.route('**/admin', route => route.fulfill({ contentType: 'text/html', body: html }));
-  await page.goto('/admin');
-  await page.locator('#admin-tab-credits').click();
+  await page.goto('/admin#users/credits');
   await page.locator('#admin-credit-email').fill('student@example.test');
   await page.locator('#admin-credit-search-btn').click();
   await expect(page.locator('#admin-credit-user-email')).toHaveText('student@example.test');
@@ -218,10 +219,12 @@ test('an in-flight grant is submitted once and cannot restore another admin sess
 
 test('admin distinguishes processing jobs, recorded credits and localized provider costs', async ({ page }) => {
   await adminFixture(page);
-  await page.locator('#admin-tab-overview').click();
+  await openAdminRoute(page, 'overview');
   await expect(page.locator('#m-processed').locator('..')).toContainText('Processing jobs');
   await expect(page.locator('#m-processed')).toHaveText('7');
+  await openAdminRoute(page, 'activity/jobs');
   await expect(page.locator('#jobs-body')).toContainText('10 credits charged · 2 credits refunded');
+  await openAdminRoute(page, 'costs/calculator');
   await expect(page.locator('#calc-total')).toHaveText('$1.0280');
   await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
   await expect(page.locator('#m-revenue')).toHaveText('€\u00a012,34');
