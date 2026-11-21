@@ -183,7 +183,7 @@ def test_private_read_and_account_cleanup(setup, monkeypatch):
         response = service.get_image(runtime, context.request, 'pack', image['id'])
         response.direct_passthrough = False
         assert response.get_data() == data
-        assert response.headers['Cache-Control'] == 'private, no-store'
+        assert response.headers['Cache-Control'] == 'private, max-age=31536000, immutable'
         assert response.headers['X-Content-Type-Options'] == 'nosniff'
         with pytest.raises(BookError): service.get_image(runtime, context.request, 'other', image['id'])
     assert service.delete_owned(runtime, 'owner') == 1
