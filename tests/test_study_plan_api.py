@@ -598,3 +598,44 @@ def test_reset_entire_plan_preserves_history_invalidates_preview_and_replays_saf
     assert client.post('/api/study-plan/reset', json=body, headers=_headers()).get_json()['replayed'] is True
     assert core.planner_repo.get_planner_session(None, uid, 'new').to_dict()['status'] == 'planned'
     assert client.get('/api/study-plan', headers=_headers()).get_json()['study_packs'][0]['study_pack_id'] == study_plan_runtime['pack_id']
+
+
+def test_bootstrap_reads_sessions_once_and_skips_the_active_goal_scan_when_complete(client, study_plan_runtime, monkeypatch):
+    session_calls, active_goal_calls = [], []
+    list_sessions = core.planner_repo.list_planner_sessions_by_uid
+    list_active = core.planner_repo.list_active_study_goals_by_uid
+
+    def sessions(db, uid, limit, **kwargs):
+        session_calls.append((limit, kwargs.get('start_date')))
+        return list_sessions(db, uid, limit, **kwargs)
+
+    monkeypatch.setattr(core.planner_repo, 'list_planner_sessions_by_uid', sessions)
+    monkeypatch.setattr(core.planner_repo, 'list_active_study_goals_by_uid',
+                        lambda *args: active_goal_calls.append(1) or list_active(*args))
+    response = client.get('/api/study-plan', headers=_headers())
+    assert response.status_code == 200
+    payload = response.get_json()
+    today = payload['range']['from']
+    week_start = (date.fromisoformat(today) - timedelta(days=date.fromisoformat(today).weekday())).isoformat()
+    assert session_calls == [(2001, min(today, week_start))]
+    assert active_goal_calls == []
+
+
+def test_bootstrap_falls_back_to_exact_queries_when_results_are_truncated(client, study_plan_runtime, monkeypatch):
+    session_calls, active_goal_calls = [], []
+    full_session_page = [{'id': f's{index}', 'uid': study_plan_runtime['uid']} for index in range(2001)]
+    full_goal_page = [{'goal_id': f'g{index}', 'uid': study_plan_runtime['uid'], 'status': 'archived', 'pack_ids': []}
+                      for index in range(200)]
+    monkeypatch.setattr(core.planner_repo, 'list_planner_sessions_by_uid',
+                        lambda db, uid, limit, **kwargs: session_calls.append((limit, kwargs.get('start_date'))) or (
+                            full_session_page if len(session_calls) == 1 else []))
+    monkeypatch.setattr(core.planner_repo, 'list_study_goals_by_uid', lambda *args: list(full_goal_page))
+    monkeypatch.setattr(core.planner_repo, 'list_active_study_goals_by_uid',
+                        lambda *args: active_goal_calls.append(1) or [])
+    response = client.get('/api/study-plan', headers=_headers())
+    assert response.status_code == 200
+    today = response.get_json()['range']['from']
+    week_start = (date.fromisoformat(today) - timedelta(days=date.fromisoformat(today).weekday())).isoformat()
+    # The truncated combined page is not reused; both original exact queries run.
+    assert session_calls[1:] == [(2000, today), (2000, week_start)]
+    assert active_goal_calls == [1]

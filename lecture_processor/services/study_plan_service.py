@@ -272,11 +272,16 @@ def _migrate_legacy_folder_goals(app_ctx, uid, preferences):
     return updated
 
 
-def _session_records(app_ctx, uid, start_date='', end_date='', limit=2000):
-    records = app_ctx.repositories.planner.list_planner_sessions_by_uid(
+SESSION_QUERY_LIMIT = 2001
+GOAL_PAGE_LIMIT = 200
+
+
+def _session_records(app_ctx, uid, start_date='', end_date='', limit=2000, *, raw_records=None):
+    """Sanitize sessions in [start_date, end_date]; raw_records may come from a wider complete query."""
+    records = raw_records if raw_records is not None else app_ctx.repositories.planner.list_planner_sessions_by_uid(
         app_ctx.db,
         uid,
-        min(2001, max(1, int(limit or 2000))),
+        min(SESSION_QUERY_LIMIT, max(1, int(limit or 2000))),
         start_date=start_date or None,
     )
     sessions = []
@@ -401,9 +406,11 @@ def get_bootstrap(app_ctx, request):
     try:
         preferences = _migrate_legacy_folder_goals(app_ctx, uid, _preferences(app_ctx, uid))
         start_date, end_date = _date_bounds(request, preferences['timezone'])
-        goal_records = app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, 200)
+        goal_records = app_ctx.repositories.planner.list_study_goals_by_uid(app_ctx.db, uid, GOAL_PAGE_LIMIT)
         goals_by_id = {item['goal_id']: item for item in goal_records}
-        goals_by_id.update({item['goal_id']: item for item in app_ctx.repositories.planner.list_active_study_goals_by_uid(app_ctx.db, uid)})
+        if len(goal_records) >= GOAL_PAGE_LIMIT:
+            # A full page may omit active goals; a shorter page already holds every goal.
+            goals_by_id.update({item['goal_id']: item for item in app_ctx.repositories.planner.list_active_study_goals_by_uid(app_ctx.db, uid)})
         goals = [_serialize_goal(item) for item in goals_by_id.values()]
         active_goals = [item for item in goals if item['status'] == 'active']
         try:
@@ -451,11 +458,18 @@ def get_bootstrap(app_ctx, request):
         for pack in packs:
             pack['in_plan'] = pack['study_pack_id'] in membership
             pack['workload'] = workloads.get(pack['study_pack_id'], {})
-        sessions = _session_records(app_ctx, uid, start_date, end_date)
         week_start = date.fromisoformat(today) - timedelta(days=date.fromisoformat(today).weekday())
         week_end = week_start + timedelta(days=6)
         progress_end = max([week_end.isoformat()] + [goal['exam_date'] for goal in active_goals])
-        progress_sessions = _session_records(app_ctx, uid, week_start.isoformat(), progress_end, 2000)
+        # One query from the earlier start serves both ranges when it is complete (not truncated).
+        combined = app_ctx.repositories.planner.list_planner_sessions_by_uid(
+            app_ctx.db, uid, SESSION_QUERY_LIMIT, start_date=min(start_date, week_start.isoformat()))
+        if len(combined) < SESSION_QUERY_LIMIT:
+            sessions = _session_records(app_ctx, uid, start_date, end_date, raw_records=combined)
+            progress_sessions = _session_records(app_ctx, uid, week_start.isoformat(), progress_end, raw_records=combined)
+        else:
+            sessions = _session_records(app_ctx, uid, start_date, end_date)
+            progress_sessions = _session_records(app_ctx, uid, week_start.isoformat(), progress_end, 2000)
         progress = _activity_summary(
             app_ctx,
             uid,
