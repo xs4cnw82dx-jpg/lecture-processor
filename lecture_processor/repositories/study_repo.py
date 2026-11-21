@@ -186,6 +186,15 @@ def _get_projected_docs(db, refs, field_paths):
     return documents
 
 
+STUDY_PACK_DUE_FIELDS = ('uid', 'archived', 'title', 'flashcards')
+
+
+def get_study_pack_due_docs(db, pack_ids):
+    """Read only what the due queue shows (owner, archive state, title, cards), per 100."""
+    refs = [study_pack_doc_ref(db, pack_id) for pack_id in dict.fromkeys(pack_ids)]
+    return _get_projected_docs(db, refs, STUDY_PACK_DUE_FIELDS)
+
+
 def get_study_pack_summary_docs(db, pack_ids):
     refs = [study_pack_doc_ref(db, pack_id) for pack_id in dict.fromkeys(pack_ids)]
     return _get_projected_docs(db, refs, STUDY_PACK_SUMMARY_FIELDS)
