@@ -20,7 +20,7 @@ def test_workout_page_requires_admin_cookie_and_renders_pwa(client, monkeypatch)
     assert 'workout-touch-v2-180.png' in html
     assert 'viewport-fit=cover' in html
     assert 'workout-bottom-nav' in html
-    assert 'Workout · Private Admin' in html
+    assert 'Workout · Lecture Processor' in html
 
 
 def test_workout_api_rejects_non_admin(client, monkeypatch, runtime):

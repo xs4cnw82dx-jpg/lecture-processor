@@ -48,7 +48,7 @@ test('local Physio workspace supports shoulder lookup, graph, case workflow and 
   await page.route('**/api/local/physio/media/atlas-of-anatomy', route => route.fulfill({contentType:'application/pdf',body:pdf}));
   await openCompanion(page);
 
-  await expect(page.locator('#portal-hero h1')).toHaveText('Schouder');
+  await expect(page.locator('#portal-hero h2')).toHaveText('Schouder');
   await expect(page.locator('#clinical-connection')).toHaveClass(/is-online/);
   await page.locator('#clinical-search-input').fill('scapula');
   const scapula = page.locator('#search-results [data-note-id="structure-scapula"]').first();
@@ -152,7 +152,7 @@ test('portal shortcuts, search results and styled controls stay usable in a comp
   await expect(page.locator('#clinical-context')).not.toHaveClass(/is-open/);
 
   await page.locator('#region-list [data-region="nek"]').click();
-  await expect(page.locator('#portal-hero h1')).toHaveText('Nek');
+  await expect(page.locator('#portal-hero h2')).toHaveText('Nek');
   await page.locator('#portal-shortcuts [data-section="screening"]').click();
   await expect(page.locator('#clinical-context')).toHaveClass(/is-open/);
   await expect(page.locator('#note-reader .reader-head h2')).toHaveText('Nek');

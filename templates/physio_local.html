@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/css/media-player.css">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Physio Clinical Workspace</title>
+  <title>Physio Clinical Workspace · Lecture Processor</title>
   <link rel="stylesheet" href="/static/css/physio-local.css">
 </head>
 <body>
@@ -82,6 +82,7 @@
     </aside>
 
     <main class="clinical-main" id="main-content" tabindex="-1">
+      <h1 class="sr-only">Klinische werkruimte</h1>
       <div class="workspace-tabs" role="tablist" aria-label="Werkruimte">
         <button class="is-active" data-view="knowledge" role="tab">Kennisbank</button>
         <button data-view="sources" role="tab">Bronnen beheren</button>
@@ -91,7 +92,7 @@
 
       <section class="workspace-view is-active" data-view-panel="knowledge">
         <div class="portal-hero" id="portal-hero">
-          <div><span class="eyebrow">Regioportaal</span><h1>Schouder</h1><p>Snel van presentatie naar screening, onderzoek, klinische afweging en plan.</p></div>
+          <div><span class="eyebrow">Regioportaal</span><h2>Schouder</h2><p>Snel van presentatie naar screening, onderzoek, klinische afweging en plan.</p></div>
           <div class="portal-actions"><button id="open-portal-note" type="button">Open portaalnotitie</button><button class="primary" id="deep-search" type="button">Diep zoeken met Codex</button></div>
         </div>
         <div class="portal-shortcut-intro"><strong>Snel naar onderdeel</strong><span>Deze knoppen openen direct het gekozen hoofdstuk van het huidige regioportaal.</span></div>
@@ -109,7 +110,7 @@
 
       <section class="workspace-view" data-view-panel="sources">
         <div class="section-title source-title">
-          <div><span class="eyebrow">Lokale bronnenbibliotheek</span><h1>Bronnen beheren</h1><p>Sleep bestanden hierheen. De companion kiest een map; jij kunt categorie, status en metadata altijd aanpassen.</p></div>
+          <div><span class="eyebrow">Lokale bronnenbibliotheek</span><h2>Bronnen beheren</h2><p>Sleep bestanden hierheen. De companion kiest een map; jij kunt categorie, status en metadata altijd aanpassen.</p></div>
           <div class="source-steps" aria-label="Bronnenworkflow"><span><b>1</b> Importeer</span><span><b>2</b> Controleer metadata</span><span><b>3</b> Activeer</span></div>
         </div>
         <form id="source-upload-form" class="source-upload-form">
@@ -141,12 +142,12 @@
       </section>
 
       <section class="workspace-view" data-view-panel="graph">
-        <div class="section-title graph-title"><div><span class="eyebrow">Lokale graaf</span><h1>Verbanden rond de huidige notitie</h1><p>Bewuste links helpen je van anatomie en tests naar klinische toepassing.</p></div><button type="button" id="global-graph">Toon volledige graaf</button></div>
+        <div class="section-title graph-title"><div><span class="eyebrow">Lokale graaf</span><h2>Verbanden rond de huidige notitie</h2><p>Bewuste links helpen je van anatomie en tests naar klinische toepassing.</p></div><button type="button" id="global-graph">Toon volledige graaf</button></div>
         <div class="graph-shell"><svg id="clinical-graph" viewBox="0 0 900 560" role="img" aria-label="Kennisgraaf"></svg><div class="empty-state" id="graph-empty">Open eerst een notitie om de lokale verbanden te zien.</div></div>
       </section>
 
       <section class="workspace-view" data-view-panel="cases">
-        <div class="section-title"><span class="eyebrow">Jouw klinische werkruimte</span><h1>Lokale casussen</h1><p>Jij bepaalt welke context voldoende geanonimiseerd is. Opslaan gebeurt lokaal; versturen naar Codex alleen na een expliciete actie.</p></div>
+        <div class="section-title"><span class="eyebrow">Jouw klinische werkruimte</span><h2>Lokale casussen</h2><p>Jij bepaalt welke context voldoende geanonimiseerd is. Opslaan gebeurt lokaal; versturen naar Codex alleen na een expliciete actie.</p></div>
         <div class="case-board"><div><button class="primary wide" id="create-case" type="button">Nieuwe casus</button><div id="case-list" class="case-list"></div></div><div id="case-editor" class="case-editor"><div class="empty-state">Selecteer of maak een casus.</div></div></div>
       </section>
     </main>

@@ -156,7 +156,7 @@
     $$('.body-hotspots [data-region]').forEach(function (spot) { spot.classList.toggle('is-active', spot.dataset.region === state.region); });
     var name = slugLabel(state.region || 'Alle regio’s');
     $('#body-map-label').textContent = name + ' geselecteerd';
-    $('#portal-hero h1').textContent = name;
+    $('#portal-hero h2').textContent = name;
     $('#portal-hero p').textContent = 'Snel van presentatie naar screening, onderzoek, klinische afweging en plan voor ' + name.toLowerCase() + '.';
     search();
   }

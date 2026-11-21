@@ -125,14 +125,14 @@ body {
   margin: 0 0 8px;
   color: var(--theme-ink);
   font-size: 0.82rem;
-  font-weight: 850;
+  font-weight: 900;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .voice-recorder-copy { margin: 0; max-width: 450px; color: var(--theme-muted); font-size: .86rem; line-height: 1.6; }
 
-.voice-time { display: block; color: var(--theme-ink); font-size: clamp(3rem,7vw,4.2rem); font-weight: 450; letter-spacing: -.035em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.voice-time { display: block; color: var(--theme-ink); font-size: clamp(3rem,7vw,4.2rem); font-weight: 500; letter-spacing: -.035em; line-height: 1.15; font-variant-numeric: tabular-nums; }
 
 .voice-meter { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 70px; padding: 12px; border: 0; border-radius: 12px; background: var(--theme-surface-soft); overflow: hidden; }
 
@@ -233,7 +233,7 @@ body {
 .voice-confirm-head h2 {
   margin: 0;
   font-size: 1.18rem;
-  font-weight: 850;
+  font-weight: 900;
   letter-spacing: 0;
 }
 
@@ -326,7 +326,7 @@ body {
   background: linear-gradient(135deg, var(--voice-primary), var(--voice-primary-dark));
   color: white;
   font: inherit;
-  font-weight: 850;
+  font-weight: 900;
   box-shadow: 0 14px 30px rgba(37, 88, 217, 0.28);
   cursor: pointer;
 }
@@ -551,7 +551,7 @@ body {
 .voice-detail-meta {
   color: var(--theme-muted);
   font-size: 0.86rem;
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .voice-tag-row {
@@ -587,7 +587,7 @@ body {
   overflow: visible;
 }
 
-.voice-back-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--theme-accent-ink); padding: 0 0 16px; font: inherit; font-size: .84rem; font-weight: 650; cursor: pointer; }
+.voice-back-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--theme-accent-ink); padding: 0 0 16px; font: inherit; font-size: .84rem; font-weight: 700; cursor: pointer; }
 
 .voice-back-btn svg {
   width: 18px;
@@ -618,7 +618,7 @@ body {
   background: transparent;
   padding: 4px 0;
   font-size: 1.25rem;
-  font-weight: 850;
+  font-weight: 900;
 }
 
 .voice-detail-actions {
@@ -652,7 +652,7 @@ body {
   background: var(--theme-surface);
   color: var(--theme-ink);
   font-size: 0.8rem;
-  font-weight: 850;
+  font-weight: 900;
   cursor: pointer;
 }
 
@@ -728,7 +728,7 @@ body {
   background: var(--theme-surface);
   color: var(--theme-ink-soft);
   font-size: 0.8rem;
-  font-weight: 750;
+  font-weight: 800;
   line-height: 1.45;
 }
 
@@ -751,7 +751,7 @@ body {
   border-radius: 8px;
   background: var(--theme-surface-soft);
   color: var(--theme-muted);
-  font-weight: 850;
+  font-weight: 900;
   cursor: pointer;
 }
 
@@ -845,7 +845,7 @@ body {
   min-height: 42px;
   margin-bottom: 12px;
   color: var(--theme-muted);
-  font-weight: 850;
+  font-weight: 900;
 }
 
 .voice-flashcards,
@@ -870,7 +870,7 @@ body {
 .voice-flashcard-front {
   color: var(--theme-ink);
   font-size: 1.08rem;
-  font-weight: 850;
+  font-weight: 900;
 }
 
 .voice-flashcard-back {
@@ -970,7 +970,7 @@ body {
 .voice-advanced-settings summary {
   cursor: pointer;
   color: var(--theme-ink);
-  font-weight: 850;
+  font-weight: 900;
 }
 
 .voice-advanced-settings .voice-field {
@@ -989,7 +989,7 @@ body {
   border-radius: 8px;
   background: #17233c;
   color: white;
-  font-weight: 750;
+  font-weight: 800;
   opacity: 0;
   pointer-events: none;
   transition: opacity 180ms ease, transform 180ms ease;
@@ -1176,7 +1176,7 @@ body {
 .voice-note-status.synced { color: var(--theme-success-ink); background: var(--theme-success-soft); }
 .voice-note-actions { position: relative; }
 .voice-more-actions { position: relative; }
-.voice-more-actions > summary { list-style: none; min-width: 42px; min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--theme-line); border-radius: 11px; cursor: pointer; color: var(--theme-muted-strong); background: var(--theme-surface); font-size: .84rem; font-weight: 650; padding: 8px 12px; }
+.voice-more-actions > summary { list-style: none; min-width: 42px; min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--theme-line); border-radius: 11px; cursor: pointer; color: var(--theme-muted-strong); background: var(--theme-surface); font-size: .84rem; font-weight: 700; padding: 8px 12px; }
 .voice-more-actions > summary::-webkit-details-marker { display: none; }
 .voice-more-menu { min-width: 170px; display: grid; gap: 4px; }
 .voice-more-menu button { width: 100%; text-align: left; justify-content: flex-start; border: 0; background: transparent; }

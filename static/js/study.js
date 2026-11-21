@@ -1708,7 +1708,7 @@ function updateStudyShellTitle(nextTitle) {
   if (shellTitleEl) { shellTitleEl.textContent = safeTitle; }
   var pageHeading = document.getElementById('study-page-heading');
   if (pageHeading) { pageHeading.textContent = safeTitle; }
-  document.title = safeTitle;
+  document.title = safeTitle + ' · Lecture Processor';
 }
 function resetStudyBuilderEntryState() {
   if (!resetStudyEntryAfterBuilderClose) { return; }

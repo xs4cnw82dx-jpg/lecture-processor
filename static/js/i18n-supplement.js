@@ -188,7 +188,7 @@
   "Tracked as €0 grants for finance visibility.": "Geregistreerd als toekenningen van € 0 voor financieel inzicht.",
   "Action": "Actie",
   "Change": "Wijziging",
-  "Terms of Service | Lecture Processor": "Gebruiksvoorwaarden | Lecture Processor",
+  "Terms of Service · Lecture Processor": "Gebruiksvoorwaarden · Lecture Processor",
   "These terms are an operational baseline for a student-run project and should be reviewed by qualified legal counsel before public/commercial release.": "Deze voorwaarden vormen een praktische basis voor een door studenten beheerd project en moeten vóór een publieke of commerciële lancering door een gekwalificeerd juridisch adviseur worden beoordeeld.",
   "On this page": "Op deze pagina",
   "1. Agreement": "1. Overeenkomst",
@@ -232,7 +232,7 @@
   "For legal notices or terms questions, contact:": "Neem voor juridische kennisgevingen of vragen over de voorwaarden contact op via:",
   "For legal notices or terms questions, contact the project owner through the designated support channel.": "Neem voor juridische kennisgevingen of vragen over de voorwaarden contact op met de projecteigenaar via het aangewezen ondersteuningskanaal.",
   "We may update these Terms. Continued use after updates means you accept the revised Terms.": "We kunnen deze voorwaarden wijzigen. Als je de dienst na wijzigingen blijft gebruiken, betekent dit dat je de aangepaste voorwaarden accepteert.",
-  "Privacy Policy | Lecture Processor": "Privacybeleid | Lecture Processor",
+  "Privacy Policy · Lecture Processor": "Privacybeleid · Lecture Processor",
   "This policy explains what Lecture Processor stores and how that data is used. This document is an operational baseline for a student-run project and should be reviewed by qualified legal counsel before public/commercial launch.": "Dit beleid legt uit welke gegevens Lecture Processor opslaat en hoe die worden gebruikt. Dit document vormt een praktische basis voor een door studenten beheerd project en moet vóór een publieke of commerciële lancering door een gekwalificeerd juridisch adviseur worden beoordeeld.",
   "1. Who This Applies To": "1. Voor wie dit geldt",
   "2. Service Operator": "2. Beheerder van de dienst",
@@ -432,7 +432,7 @@
   "Start with the lecture": "Begin met het college",
   "in front of you.": "waar je nu aan werkt.",
   "Create lecture notes": "Collegeaantekeningen maken",
-  "FAQ | Lecture Processor": "Veelgestelde vragen | Lecture Processor",
+  "FAQ · Lecture Processor": "Veelgestelde vragen · Lecture Processor",
   "A few useful answers": "Een paar handige antwoorden",
   "Frequently asked questions": "Veelgestelde vragen",
   "If you need step-by-step help instead of a short answer, open the": "Heb je liever stapsgewijze hulp dan een kort antwoord? Open dan het",
@@ -462,7 +462,7 @@
   "See": "Bekijk",
   "and": " en",
   "How do I contact support?": "Hoe neem ik contact op met de ondersteuning?",
-  "Help Center | Lecture Processor": "Helpcentrum | Lecture Processor",
+  "Help Center · Lecture Processor": "Helpcentrum · Lecture Processor",
   "Here to help": "We helpen je op weg",
   "Find your next step, from your first upload to a study plan that works for you.": "Vind je volgende stap, van je eerste upload tot een studieplanning dat bij je past.",
   "File Requirements": "Bestandsvereisten",
@@ -543,6 +543,9 @@
   "Questions before you upload?": "Vragen voordat je uploadt?",
   "Read the practical docs, check the FAQ, or contact support before you process your next lecture.": "Lees de praktische uitleg, bekijk de veelgestelde vragen of neem contact op voordat je je volgende college verwerkt.",
   "Support links": "Hulp en ondersteuning",
-  "Custom output language": "Eigen uitvoertaal"
+  "Custom output language": "Eigen uitvoertaal",
+  "Voice Notes · Lecture Processor": "Spraaknotities · Lecture Processor",
+  "Shared Workout · Lecture Processor": "Gedeelde training · Lecture Processor",
+  "Shared Study Content · Lecture Processor": "Gedeeld studiemateriaal · Lecture Processor"
 });
 })(typeof window !== 'undefined' ? window : globalThis);

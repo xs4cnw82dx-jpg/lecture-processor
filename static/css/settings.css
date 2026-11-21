@@ -1,4 +1,4 @@
-.settings-page { background: var(--theme-surface-soft); color: var(--theme-ink); min-height: calc(100vh - 76px); }
+.settings-page { background: var(--theme-surface-soft); color: var(--theme-ink); min-height: calc(100vh - 76px); min-height: calc(100dvh - 76px); }
 .settings-container { width: min(960px, 100%); margin: 0 auto; padding: 36px 20px 72px; }
 .settings-header { margin-bottom: 32px; }
 .settings-eyebrow { color: var(--theme-accent-ink); font-size: .72rem; font-weight: 800; letter-spacing: .12em; margin: 0 0 7px; }
@@ -7,7 +7,7 @@
 .settings-controls { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 22px; }
 .settings-credits { margin-bottom: 22px; }
 .settings-credit-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.settings-credit-balance { margin: 10px 0 0; font-size: clamp(1.7rem, 4vw, 2.2rem); font-weight: 750; letter-spacing: -.04em; line-height: 1.2; }
+.settings-credit-balance { margin: 10px 0 0; font-size: clamp(1.7rem, 4vw, 2.2rem); font-weight: 800; letter-spacing: -.04em; line-height: 1.2; }
 .settings-buy-credits { flex-shrink: 0; padding: 11px 17px; background: var(--theme-accent-ink); color: var(--theme-surface); border-radius: 10px; font-weight: 700; text-decoration: none; }
 .settings-credit-detail, .settings-credit-access, .settings-credit-refresh { color: var(--theme-muted); font-size: .87rem; line-height: 1.6; }
 .settings-credit-detail { margin: 18px 0 0; }

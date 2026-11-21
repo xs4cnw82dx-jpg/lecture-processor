@@ -9,7 +9,7 @@
             --radius-sm: 8px; --radius-lg: 14px;         }
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, var(--theme-surface-soft) 0%, var(--theme-surface-soft) 100%); color: var(--theme-ink); line-height: 1.6; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, var(--theme-surface-soft) 0%, var(--theme-surface-soft) 100%); color: var(--theme-ink); line-height: 1.6; min-height: 100vh; min-height: 100dvh; -webkit-font-smoothing: antialiased; }
         .sr-only {
             position: absolute;
             width: 1px;
@@ -713,7 +713,7 @@
 .button-section { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; text-align: left; padding-top: 20px; border-top: 1px solid var(--theme-line); }
         .mobile-process-summary { display: none; font-size: 0.82rem; color: var(--theme-muted-strong); margin-bottom: 8px; line-height: 1.45; }
 
-.process-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; padding: 12px 22px; border: 1px solid #2352cd; border-radius: 11px; background: linear-gradient(135deg,#2c66ec,#2352cd); color: white; font-size: .94rem; font-weight: 750; cursor: pointer; transition: background .16s ease,box-shadow .16s ease; box-shadow: 0 5px 12px #2558d920; }
+.process-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 46px; padding: 12px 22px; border: 1px solid #2352cd; border-radius: 11px; background: linear-gradient(135deg,#2c66ec,#2352cd); color: white; font-size: .94rem; font-weight: 800; cursor: pointer; transition: background .16s ease,box-shadow .16s ease; box-shadow: 0 5px 12px #2558d920; }
         .process-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px 0 rgba(37,88,217,0.5); }
         .process-button:disabled { background: var(--theme-line); cursor: not-allowed; box-shadow: none; }
         .process-button svg { width: 20px; height: 20px; }

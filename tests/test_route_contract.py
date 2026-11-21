@@ -466,7 +466,7 @@ def test_voice_notes_page_renders_pwa_assets(client):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert '<title>Voice Notes</title>' in html
+    assert '<title>Voice Notes · Lecture Processor</title>' in html
     assert 'rel="manifest"' in html
     assert '/service-worker.js' in client.get('/service-worker.js').get_data(as_text=True)
     assert 'voice-notes.min.js' in html or 'voice-notes.js' in html
@@ -481,7 +481,7 @@ def test_study_pack_builder_page_primes_direct_builder_entry(client):
     response = client.get('/study-pack-builder')
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert '<title>Study Pack Builder</title>' in html
+    assert '<title>Study Pack Builder · Lecture Processor</title>' in html
     assert 'data-study-entry-mode="create-pack"' in html
     assert 'href="/study-pack-builder"' in html
 
