@@ -545,94 +545,9 @@
     activeControlPopover = { panel: panel, anchor: anchor };
     positionControlPopover(panel, anchor);
   }
-  function refreshPrettySelect(select) {
-    if (!select || !select._prettyButton) return;
-    select._prettyButton.disabled = select.disabled;
-    var option = select.options[select.selectedIndex] || select.options[0];
-    var text = option ? option.textContent : 'Choose an option';
-    var optionLabel = select._prettyButton.querySelector('[data-pretty-select-label]');
-    optionLabel.toggleAttribute('data-user-content', !!(option && window.LectureI18n && window.LectureI18n.isContent(option)));
-    optionLabel.textContent = text;
-    select._prettyButton.setAttribute('aria-label', controlLabel(select) + ': ' + text);
-  }
-  function openPrettySelect(select) {
-    if (select.disabled) return;
-    var button = select._prettyButton;
-    var panel = document.createElement('div');
-    panel.className = 'select-popover';
-    panel.setAttribute('role', 'listbox');
-    panel.setAttribute('aria-label', controlLabel(select));
-    var search = null;
-    if (select.options.length > 7) {
-      panel.setAttribute('role', 'dialog');
-      search = document.createElement('input');
-      search.type = 'search'; search.className = 'plan-picker-search'; search.placeholder = 'Find a study pack…'; search.setAttribute('aria-label', 'Find a study pack');
-      search.addEventListener('input', function () { queryAll('.pretty-option', panel).forEach(function (item) { item.hidden = !item.textContent.toLowerCase().includes(search.value.toLowerCase()); }); });
-      panel.appendChild(search);
-    }
-    Array.prototype.forEach.call(select.options, function (option) {
-      var optionButton = document.createElement('button');
-      optionButton.type = 'button';
-      optionButton.className = 'pretty-option' + (option.selected ? ' is-selected' : '');
-      optionButton.toggleAttribute('data-user-content', !!(window.LectureI18n && window.LectureI18n.isContent(option)));
-      optionButton.textContent = option.textContent;
-      optionButton.setAttribute('role', 'option');
-      optionButton.setAttribute('aria-selected', option.selected ? 'true' : 'false');
-      optionButton.disabled = option.disabled;
-      optionButton.addEventListener('click', function () {
-        select.value = option.value;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        refreshPrettySelect(select);
-        closeControlPopover(false);
-        button.focus();
-      });
-      panel.appendChild(optionButton);
-    });
-    showControlPopover(panel, button);
-    panel.addEventListener('keydown', function (event) {
-      var options = queryAll('.pretty-option:not([disabled]):not([hidden])', panel);
-      var index = options.indexOf(document.activeElement);
-      if (event.target === search) {
-        if (event.key === 'Home' || event.key === 'End') return;
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          if (options.length === 1) options[0].click();
-          else if (options.length) options[0].focus();
-          return;
-        }
-      }
-      if (!options.length || ['ArrowDown', 'ArrowUp', 'Home', 'End'].indexOf(event.key) === -1) return;
-      event.preventDefault();
-      var next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + options.length) % options.length;
-      options[next].focus();
-    });
-    var selectedButton = panel.querySelector('.pretty-option.is-selected');
-    if (search) search.focus({ preventScroll: true }); else if (selectedButton) selectedButton.focus({ preventScroll: true });
-  }
-  function enhancePrettySelects(root) {
-    queryAll('select[data-pretty-select]', root || document).forEach(function (select) {
-      if (select.dataset.prettySelectReady === 'true') { refreshPrettySelect(select); return; }
-      select.dataset.prettySelectReady = 'true';
-      var wrapper = document.createElement('span');
-      wrapper.className = 'pretty-select';
-      select.parentNode.insertBefore(wrapper, select);
-      wrapper.appendChild(select);
-      select.classList.add('plan-native-control-hidden');
-      select.tabIndex = -1;
-      select.setAttribute('aria-hidden', 'true');
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'pretty-select-button';
-      button.setAttribute('aria-haspopup', 'listbox');
-      button.setAttribute('aria-expanded', 'false');
-      button.innerHTML = '<span data-pretty-select-label></span>';
-      wrapper.appendChild(button);
-      select._prettyButton = button;
-      refreshPrettySelect(select);
-      select.addEventListener('change', function () { refreshPrettySelect(select); });
-      button.addEventListener('click', function (event) { event.stopPropagation(); if (activeControlPopover && activeControlPopover.anchor === button) closeControlPopover(false); else openPrettySelect(select); });
-      button.addEventListener('keydown', function (event) { if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPrettySelect(select); } });
-    });
+  // Study Plan selects use the shared enhanced select from ux-utils.
+  function refreshAppSelect(select) {
+    if (select && ux && typeof ux.refreshEnhancedSelect === 'function') ux.refreshEnhancedSelect(select);
   }
   function pickerIcon(kind) {
     if (kind === 'time') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 7v5l3 2"></path></svg>';
@@ -840,7 +755,7 @@
     els.wizardDate.max = localDate(addDays(parseDate(todayInTimezone()), 366));
     els.wizardSessionLength.value = String(state.wizardPreferences.default_session_minutes || 45);
     els.wizardStartTime.value = state.wizardPreferences.daily_start || '17:00';
-    refreshPrettySelect(els.wizardSessionLength);
+    refreshAppSelect(els.wizardSessionLength);
     renderCustomAvailability();
     var configured = !!state.wizardPreferences.availability_configured;
     chooseAvailabilityPreset(existing || configured ? (state.wizardPreferences.availability_preset || 'custom') : '', true);
@@ -1064,7 +979,7 @@
 
   function populateSessionEditorPacks(selected) {
     els.sessionPack.innerHTML = '<option value="">No linked pack</option>' + eligibleStudyPacks().map(function (pack) { return '<option value="' + escapeHtml(pack.study_pack_id) + '"' + (pack.study_pack_id === selected ? ' selected' : '') + '>' + escapeHtml(pack.title) + '</option>'; }).join('');
-    refreshPrettySelect(els.sessionPack);
+    refreshAppSelect(els.sessionPack);
   }
   function openSessionEditor(session) {
     if (!isEditable()) { toast('Reconnect before changing a session.', 'error'); return; }
@@ -1418,7 +1333,7 @@
   }
 
   function init() {
-    bindElements(); enhancePrettySelects(document); enhancePlanPickers(document); bindActions(); renderCustomAvailability();
+    bindElements(); enhancePlanPickers(document); bindActions(); renderCustomAvailability();
     var requestedView = new URLSearchParams(window.location.search).get('view');
     state.view = ['today', 'schedule', 'progress'].indexOf(requestedView) >= 0 ? requestedView : 'today';
     setOfflineState();

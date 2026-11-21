@@ -44,3 +44,19 @@ test.describe('mouse screens', () => {
     expect(box.height).toBeLessThan(44);
   });
 });
+
+test('shared dropdowns follow values set in code, not only clicks', async ({ page }) => {
+  await installAccountFixture(page);
+  await page.goto('/batch_dashboard');
+  const result = await page.evaluate(() => {
+    const select = document.getElementById('batch-dashboard-mode-filter');
+    const label = () => document.getElementById(select.id + '-value').textContent.trim();
+    const target = select.options[select.options.length - 1];
+    select.value = target.value;
+    const afterValue = label();
+    select.selectedIndex = 0;
+    return { expected: target.textContent.trim(), afterValue, afterIndex: label(), first: select.options[0].textContent.trim() };
+  });
+  expect(result.afterValue).toBe(result.expected);
+  expect(result.afterIndex).toBe(result.first);
+});

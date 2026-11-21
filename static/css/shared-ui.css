@@ -243,23 +243,26 @@ input.app-toggle:checked::before{transform:translateX(20px)}
 input.app-toggle:focus-visible{outline: 2px solid var(--focus-ring);outline-offset: 2px}
 @media(prefers-reduced-motion:reduce){input.app-toggle,input.app-toggle::before{transition:none}}
 
-/* Shared selection controls. Page-specific layouts own width, not appearance. */
-.app-select-upgraded { position: relative; min-width: 0; width: 100%; }
-.app-select-upgraded .app-select-button { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:44px; padding:10px 13px; border:1px solid var(--border,var(--theme-control-border)); border-radius:11px; background:var(--theme-surface); color:var(--text,var(--theme-ink)); font:inherit; font-size:.875rem; text-align:left; cursor:pointer; box-shadow:var(--control-shadow); }
-.app-select-upgraded .app-select-button svg { width:16px; height:16px; flex:none; transition:transform 160ms ease; }
-.app-select-upgraded .app-select-button.open svg { transform:rotate(180deg); }
-.app-select-upgraded .app-select-button:hover { border-color:var(--theme-control-border); }
-.app-select-upgraded .app-select-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.app-select-upgraded .app-select-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.app-select-upgraded .app-select-menu { display:block; position:absolute; z-index:110; top:calc(100% + 7px); left:0; right:0; min-width:0; max-height:320px; overflow:auto; padding:6px; border:1px solid var(--theme-line); border-radius:14px; background:var(--theme-surface); box-shadow:0 16px 42px #17233c24; opacity:0; visibility:hidden; pointer-events:none; transform:translateY(-5px); transition:opacity 160ms ease,transform 200ms ease,visibility 0s 200ms; }
-.app-select-upgraded .app-select-menu.visible { opacity:1; visibility:visible; pointer-events:auto; transform:translateY(0); transition-delay:0s; }
-.app-select-upgraded .app-select-item { display:block; width:100%; border:0; border-radius:8px; background:transparent; padding:11px 12px; color:var(--theme-ink-soft); font:inherit; font-size:.875rem; text-align:left; cursor:pointer; white-space:normal; }
-.app-select-upgraded .app-select-item:hover,.app-select-upgraded .app-select-item:focus-visible { background:var(--theme-accent-soft); }
-.app-select-upgraded .app-select-item.active { background:var(--theme-accent-soft); color:var(--theme-accent-ink); font-weight:700; }
-.app-select-upgraded .app-select-item:disabled { color:#8590a3; color:light-dark(#8590a3, var(--theme-muted)); cursor:not-allowed; }
-.app-select-upgraded .app-select-search { position:sticky; top:0; width:100%; min-height:40px; margin:0 0 5px; padding:9px 11px; border:1px solid var(--theme-control-border); border-radius:9px; background:var(--theme-surface); color:var(--theme-ink); font:inherit; font-size:.85rem; }
-.app-select-upgraded.is-disabled { opacity:.6; }
-.app-select-upgraded.is-disabled .app-select-button { cursor:not-allowed; }
+/* Shared selection controls, for enhanced native selects and the static pickers
+   alike. Page-specific layouts own width, not appearance. */
+.app-select { position: relative; min-width: 0; width: 100%; }
+.app-select .app-select-button { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:var(--control-height, 44px); padding:10px 13px; border:1px solid var(--border,var(--theme-control-border)); border-radius:11px; background:var(--theme-surface); color:var(--text,var(--theme-ink)); font:inherit; font-size:.875rem; text-align:left; cursor:pointer; box-shadow:var(--control-shadow); }
+.app-select .app-select-button svg { width:16px; height:16px; flex:none; transition:transform 160ms ease; }
+.app-select .app-select-button.open svg { transform:rotate(180deg); }
+.app-select .app-select-button:hover { border-color:var(--theme-control-border); }
+.app-select .app-select-button.open { border-color:var(--theme-accent-line-strong); box-shadow:0 0 0 3px rgba(37, 88, 217, .12); }
+.app-select .app-select-button:disabled { cursor:not-allowed; opacity:.6; }
+.app-select .app-select-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.app-select .app-select-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.app-select .app-select-menu { display:block; position:absolute; z-index:110; top:calc(100% + 7px); left:0; right:0; min-width:0; max-height:320px; overflow:auto; padding:6px; border:1px solid var(--theme-line); border-radius:14px; background:var(--theme-surface); box-shadow:0 16px 42px #17233c24; opacity:0; visibility:hidden; pointer-events:none; transform:translateY(-5px); transition:opacity 160ms ease,transform 200ms ease,visibility 0s 200ms; }
+.app-select .app-select-menu.visible { opacity:1; visibility:visible; pointer-events:auto; transform:translateY(0); transition-delay:0s; }
+.app-select .app-select-item { display:block; width:100%; border:0; border-radius:8px; background:transparent; padding:11px 12px; color:var(--theme-ink-soft); font:inherit; font-size:.875rem; text-align:left; cursor:pointer; white-space:normal; }
+.app-select .app-select-item:hover,.app-select .app-select-item:focus-visible { background:var(--theme-accent-soft); }
+.app-select .app-select-item.active { background:var(--theme-accent-soft); color:var(--theme-accent-ink); font-weight:700; }
+.app-select .app-select-item:disabled { color:#8590a3; color:light-dark(#8590a3, var(--theme-muted)); cursor:not-allowed; }
+.app-select .app-select-search { position:sticky; top:0; width:100%; min-height:40px; margin:0 0 5px; padding:9px 11px; border:1px solid var(--theme-control-border); border-radius:9px; background:var(--theme-surface); color:var(--theme-ink); font:inherit; font-size:.85rem; }
+.app-select.is-disabled { opacity:.6; }
+.app-select.is-disabled .app-select-button { cursor:not-allowed; }
 :where(button,a,input,select,textarea,summary,[tabindex],[contenteditable="true"]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 :where(button,input,select,textarea) { font:inherit; }
 :where(details) > summary { cursor:pointer; }

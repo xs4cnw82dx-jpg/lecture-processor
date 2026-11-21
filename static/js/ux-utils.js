@@ -354,8 +354,8 @@
         var search = document.createElement('input');
         search.type = 'search';
         search.className = 'app-select-search';
-        search.placeholder = 'Find an option…';
-        search.setAttribute('aria-label', 'Search options');
+        search.placeholder = selectEl.getAttribute('data-app-select-search-placeholder') || 'Find an option…';
+        search.setAttribute('aria-label', selectEl.getAttribute('data-app-select-search-label') || 'Search options');
         menu.appendChild(search);
         optionHost = document.createElement('div');
         optionHost.setAttribute('role', 'listbox');
@@ -470,6 +470,18 @@
     });
 
     selectEl.addEventListener('change', sync);
+    // Pages often set select.value or selectedIndex in code without a change
+    // event; keep the visible button in step with those writes as well.
+    ['value', 'selectedIndex'].forEach(function (property) {
+      if (!global.HTMLSelectElement) return;
+      var native = Object.getOwnPropertyDescriptor(global.HTMLSelectElement.prototype, property);
+      if (!native || !native.set) return;
+      Object.defineProperty(selectEl, property, {
+        configurable: true,
+        get: function () { return native.get.call(this); },
+        set: function (next) { native.set.call(this, next); sync(); },
+      });
+    });
 
     var instance = {
       select: selectEl,
