@@ -4,8 +4,7 @@ Study Plan v2 replaces the separate Planning & Progress and Calendar pages with 
 
 ## Rollout and rollback
 
-- `STUDY_PLAN_V2=1` enables the redesign and is the production default.
-- Set `STUDY_PLAN_V2=0` and redeploy to restore the legacy planner pages and APIs for the rollback window.
+- The redesigned Study Plan is the only planner. The legacy v1 pages were removed (WP-E2, owner-approved); `/calendar` and `/stats` redirect to the matching Study Plan views, and no planner data was deleted.
 - `/calendar` redirects to `/plan?view=schedule` and `/stats` redirects to `/plan?view=progress` while v2 is enabled.
 - Legacy `planner_sessions` records are read additively as manual, locked sessions. No destructive session migration is required.
 

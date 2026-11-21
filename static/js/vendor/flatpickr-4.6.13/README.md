@@ -25,5 +25,4 @@ Keep these upstream files outside the application asset build. To update them,
 verify the chosen official npm distribution, replace all three upstream files
 together, update the versioned paths and integrity values in the templates and
 Study lazy loader, and update this record and the HTTP byte checks. Run the
-isolated local-library browser checks, including the retained Calendar with
-`STUDY_PLAN_V2=0`, afterward.
+isolated local-library browser checks afterward.

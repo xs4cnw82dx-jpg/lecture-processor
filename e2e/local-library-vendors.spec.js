@@ -58,25 +58,6 @@ test('CSV import preserves quoted commas, escaped quotes and multiline fields wi
   expect(state.browserErrors).toEqual([]);
 });
 
-test('legacy Calendar initializes its time picker and saves typed time with the CDN blocked', async ({ page }) => {
-  test.skip(process.env.STUDY_PLAN_V2 !== '0', 'The retained Calendar is tested only with its explicit legacy flag.');
-  const state = await installFixture(page);
-  await page.goto('/calendar');
-  await page.locator('#add-session-btn').click();
-  await page.locator('#session-title').fill('Synthetic biology review');
-  await page.locator('#session-time').click();
-  const picker = page.locator('.flatpickr-calendar.open');
-  await expect(picker).toBeVisible();
-  await page.locator('#session-time').fill('16:35');
-  await page.locator('#session-time').press('Tab');
-  await page.locator('#session-title').click();
-  await expect(page.locator('#session-time')).toHaveValue('16:35');
-  await page.locator('#session-save-btn').click();
-  await expect.poll(() => state.sessions.length).toBe(1);
-  expect(state.sessions[0].time).toBe('16:35');
-  expect(state.cdnRequests).toEqual([]);
-  expect(state.browserErrors).toEqual([]);
-});
 
 test('CSV header validation remains available and a corrected file reuses the loaded parser', async ({ page }) => {
   const state = await installFixture(page);
@@ -136,22 +117,5 @@ for (const width of [1440, 375]) {
       expect(state.browserErrors).toEqual([]);
     });
 
-    test(`legacy time controls render at ${width}px in ${theme} mode`, async ({ page }, testInfo) => {
-      test.skip(process.env.STUDY_PLAN_V2 !== '0', 'The retained Calendar is tested only with its explicit legacy flag.');
-      await page.setViewportSize({ width, height: 1000 });
-      const state = await installFixture(page, theme);
-      await page.goto('/calendar');
-      await page.locator('#add-session-btn').click();
-      await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
-      await page.locator('#session-title').fill('Synthetic biology review');
-      await page.locator('#session-time').click();
-      await expect(page.locator('.flatpickr-calendar.open')).toBeVisible();
-      const bounds = await page.locator('#session-modal-card').boundingBox();
-      expect(bounds.x).toBeGreaterThanOrEqual(0);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
-      await page.screenshot({ path: testInfo.outputPath(`calendar-time-${theme}-${width}.png`), animations: 'disabled' });
-      expect(state.cdnRequests).toEqual([]);
-      expect(state.browserErrors).toEqual([]);
-    });
   }
 }
