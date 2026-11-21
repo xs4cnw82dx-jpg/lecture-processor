@@ -1718,6 +1718,10 @@
 .overlay-insert-tools h2 { font-size:.72rem; color:var(--theme-muted); font-weight:600; }
 .overlay-insert-tools .overlay-add-grid { display:flex; flex-wrap:wrap; gap:5px; }
 .overlay-insert-tools button { min-height:32px!important; font-size:.77rem!important; padding:7px 10px!important; }
+@media (pointer: coarse) {
+  .overlay-stage-actions button, .overlay-insert-tools button { min-height:44px!important; }
+  #overlay-zoom-in, #overlay-zoom-out { min-width:44px; }
+}
 .overlay-table-options { width:100%; border:1px solid var(--theme-line); border-radius:11px; padding:0 12px; }
 .overlay-table-options .overlay-table-size-row { padding:8px 0 12px; max-width:260px; }
 .overlay-table-options summary, .overlay-recording-tools summary { cursor:pointer; color:var(--theme-muted); font-size:.77rem; padding:7px 0; }

@@ -3077,6 +3077,22 @@
       transition-delay: 0s;
     }
 
+    .export-menu-list.opens-up {
+      top: auto;
+      bottom: calc(100% + 6px);
+      transform: translateY(6px) scale(.98);
+      transform-origin: bottom left;
+    }
+
+    .export-menu-list.opens-up.visible {
+      transform: translateY(0) scale(1);
+    }
+
+    .export-menu-list.opens-up .export-submenu {
+      top: auto;
+      bottom: 0;
+    }
+
     .export-menu-item {
       width: 100%;
       text-align: left;
@@ -5084,6 +5100,13 @@
       display: grid;
       gap: 8px;
       border-bottom: 1px solid var(--theme-line)
+    }
+
+    .coding-field-label {
+      margin-bottom: -4px;
+      color: var(--theme-muted-strong);
+      font-size: .75rem;
+      font-weight: 700
     }
 
     .coding-palette {

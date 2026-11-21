@@ -152,10 +152,10 @@
                                     </div>
                                     <div class="generation-controls" id="language-controls">
                                         <div class="generation-control wide language-control">
-                                            <span class="control-label">Output Language</span>
+                                            <span class="control-label" id="output-language-heading">Output Language</span>
                                             <input type="hidden" id="output-language-select" value="english">
                                             <div class="app-select" id="output-language-picker">
-                                                <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu">
+                                                <button type="button" class="app-select-button" id="output-language-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="output-language-menu" aria-labelledby="output-language-heading output-language-label">
                                                     <span id="output-language-label">🇬🇧 English</span>
                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                                                 </button>
@@ -169,7 +169,7 @@
                                                     <button type="button" role="option" aria-selected="false" class="app-select-item" data-value="other">🌐 Other</button>
                                                 </div>
                                             </div>
-                                            <input class="language-custom-input" id="output-language-custom" placeholder="Type your preferred language (for example: Italian)" hidden>
+                                            <input class="language-custom-input" id="output-language-custom" aria-label="Custom output language" placeholder="Type your preferred language (for example: Italian)" hidden>
                                         </div>
                                     </div>
                                 </div>

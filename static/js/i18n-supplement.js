@@ -542,6 +542,7 @@
   "Plan focused sessions around your deadline and see what deserves another look.": "Plan gerichte sessies rond je deadline en zie welke stof nog aandacht verdient.",
   "Questions before you upload?": "Vragen voordat je uploadt?",
   "Read the practical docs, check the FAQ, or contact support before you process your next lecture.": "Lees de praktische uitleg, bekijk de veelgestelde vragen of neem contact op voordat je je volgende college verwerkt.",
-  "Support links": "Hulp en ondersteuning"
+  "Support links": "Hulp en ondersteuning",
+  "Custom output language": "Eigen uitvoertaal"
 });
 })(typeof window !== 'undefined' ? window : globalThis);
