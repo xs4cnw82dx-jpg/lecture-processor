@@ -16,9 +16,9 @@
   {% include '_app_shell.html' %}
     <main class="app-shell-page buy-credits-page" id="main-content" tabindex="-1">
       <section class="credits-heading">
-        <span class="credits-eyebrow">Your study workspace</span>
-        <h1>Credits for the work you need.</h1>
-        <p id="buy-credits-intro">{% if unified_credits_enabled %}Choose a bundle for all your study tools. Your credit balance is available in the header.{% else %}Choose a credit category, then a bundle. Your current balances are available in the header.{% endif %}</p>
+        <span class="credits-eyebrow page-eyebrow">Your account</span>
+        <h1 class="page-title">Credits for the work you need.</h1>
+        <p class="page-lead" id="buy-credits-intro">{% if unified_credits_enabled %}Choose a bundle for all your study tools. Your credit balance is available in the header.{% else %}Choose a credit category, then a bundle. Your current balances are available in the header.{% endif %}</p>
       </section>
       <section class="shell-panel" id="buy-credits-auth-panel" hidden>
         <h2>Sign in to buy credits</h2>

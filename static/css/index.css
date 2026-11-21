@@ -510,7 +510,6 @@
         .hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: linear-gradient(135deg, rgba(37,88,217,0.1) 0%, rgba(14,165,233,0.1) 100%); border: 1px solid rgba(37,88,217,0.2); border-radius: 20px; font-size: 0.875rem; font-weight: 500; color: var(--theme-accent-ink); margin-bottom: 24px; }
         .hero-badge svg { width: 16px; height: 16px; }
 
-.hero-title { font-size: clamp(1.9rem,3vw,2.65rem); font-weight: 800; color: var(--theme-ink); line-height: 1.15; letter-spacing: -.045em; margin-bottom: 10px; }
         .hero-title span { background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 
 .hero-description { font-size: .98rem; color: var(--theme-muted); max-width: 720px; margin: 0; line-height: 1.6; }

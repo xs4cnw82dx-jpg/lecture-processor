@@ -512,3 +512,17 @@ def test_page_titles_share_one_format_and_pages_have_one_h1():
         if path.name.startswith("_") or path.name in {"batch_dashboard.html", "workout_share.html"}:
             continue
         assert len(re.findall(r"<h1\b", source)) <= 1, path.name
+
+
+def test_app_pages_use_the_shared_page_header():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    pages = ["dashboard", "study_plan", "study", "batch_mode", "batch_dashboard", "buy_credits", "voice_notes",
+             "tools", "settings", "reader", "general_transcriber", "lecture_downloader", "index"]
+    for name in pages:
+        source = (root / "templates" / f"{name}.html").read_text(encoding="utf-8")
+        assert "page-title" in source and "page-eyebrow" in source, name
+    shared = (root / "static" / "css" / "shared-ui.css").read_text(encoding="utf-8")
+    for token in ("--fs-display", ".app-shell-page .page-title", ".app-shell-page .page-eyebrow", ".app-shell-page .page-lead"):
+        assert token in shared, token

@@ -2,7 +2,6 @@
 .reader-page { display: grid; gap: 28px; max-width: 1240px; margin: 0 auto; color: var(--theme-ink); }
 .workspace-eyebrow { color: var(--theme-accent-ink); font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 8px; }
 .reader-hero { padding: 8px 0 0; }
-.reader-hero h1 { margin: 0 0 10px; font-size: clamp(1.9rem,3vw,2.65rem); letter-spacing: -.045em; line-height: 1.15; }
 .reader-hero p:not(.workspace-eyebrow) { margin: 0; color: var(--theme-muted); max-width: 720px; line-height: 1.6; }
 .reader-grid { display: grid; grid-template-columns: minmax(320px,1fr) minmax(0,1.1fr); gap: 24px; align-items: start; }
 .reader-input-card, .reader-output-card { padding: 26px; border-radius: 18px; min-width: 0; }

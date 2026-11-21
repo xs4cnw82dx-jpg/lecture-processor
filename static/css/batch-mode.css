@@ -24,7 +24,6 @@
   text-decoration: none;
 }
 
-.batch-hero h1 { margin: 0 0 10px; font-size: clamp(1.9rem,3vw,2.65rem); line-height: 1.15; letter-spacing: -.045em; }
 
 .batch-hero p {
   margin: 0;
@@ -973,7 +972,7 @@ th {
   }
 }
 
-.batch-eyebrow { color: var(--theme-accent-ink) !important; font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 8px !important; }
+.batch-eyebrow { color: var(--theme-accent-ink); font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 8px; }
 .batch-page > .shell-panel { padding: 28px; border-radius: 18px; }
 .batch-defaults { border-top: 1px solid var(--theme-line); border-bottom: 1px solid var(--theme-line); padding: 16px 0; }
 .batch-defaults > summary { display: flex; align-items: center; gap: 12px; list-style: none; color: var(--theme-ink-soft); cursor: pointer; font-size: .88rem; font-weight: 800; min-height: 32px; }
