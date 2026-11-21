@@ -30,16 +30,6 @@
     .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--theme-ink);font-weight:800;font-size:1.2rem;margin-right:auto;letter-spacing:-.01em}
     .logo-icon{width:38px;height:38px;border-radius:var(--radius-md);background:linear-gradient(135deg,var(--primary),var(--secondary));display:flex;align-items:center;justify-content:center;color:#fff}
     .logo-icon svg{width:22px;height:22px}
-    .btn{
-      height:46px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--theme-line);
-      background:var(--theme-surface);color:var(--theme-ink-soft);font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
-      text-decoration:none;font-size:.875rem;transition:all .2s ease;
-    }
-    .btn:hover{border-color:var(--theme-control-border);background:var(--theme-surface-soft);color:var(--theme-ink)}
-    .btn.primary{border:1px solid var(--primary);background:var(--primary);color:var(--white);box-shadow:0 6px 20px rgba(37,88,217,.22)}
-    .btn.primary:hover{border-color:var(--primary-dark);background:var(--primary-dark);color:var(--white)}
-    .btn.ghost{border-color:rgba(37,88,217,.36);background:rgba(37,88,217,.08);color:var(--theme-accent-strong)}
-    .btn.danger{border-color:var(--theme-danger-line);background:rgba(239,68,68,.07);color:var(--theme-danger-ink)}
     .user-email{font-size:.82rem;color:var(--theme-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
 
     .page{padding:14px 0 34px}
