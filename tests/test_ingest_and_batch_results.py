@@ -83,3 +83,37 @@ def test_telemetry_rate_limit_can_stay_in_memory():
     limiter.check_rate_limit('k', 5, 60, runtime=runtime)
     limiter.check_rate_limit('k', 5, 60, runtime=runtime, local_only=True)
     assert [call['firestore_enabled'] for call in calls] == [True, False]
+
+
+def test_in_memory_limiter_enforces_limits_and_stays_bounded(monkeypatch):
+    import threading
+    from lecture_processor.services import rate_limit_service
+    monkeypatch.setattr(rate_limit_service, 'MAX_IN_MEMORY_KEYS', 50)
+    events, lock, now = {}, threading.Lock(), [1000.0]
+    clock = SimpleNamespace(time=lambda: now[0])
+
+    def check(key):
+        return rate_limit_service.check_rate_limit(
+            key, 2, 60, firestore_enabled=False, db=None, firestore_module=None, counter_collection='c',
+            in_memory_events=events, in_memory_lock=lock, time_module=clock)
+
+    assert check('same')[0] and check('same')[0]
+    allowed, retry_after = check('same')
+    assert allowed is False and retry_after >= 1
+    for index in range(200):
+        now[0] += 1
+        check(f'session-{index}')
+    assert len(events) <= 51
+    assert 'session-199' in events  # The most recent caller is kept.
+
+
+def test_analytics_ingest_uses_the_local_limiter(client, monkeypatch):
+    from lecture_processor.domains.analytics import events as analytics_events
+    calls = []
+    monkeypatch.setattr(limiter, 'check_rate_limit', lambda **kwargs: calls.append(kwargs) or (True, 0))
+    monkeypatch.setattr(analytics_events, 'log_analytics_event', lambda *args, **kwargs: True)
+    response = client.post('/api/analytics/event', json={'event': 'page_view', 'session_id': 'session-1'})
+    assert response.status_code != 429
+    # Anonymous telemetry checks the IP and the session, both in process memory.
+    assert [call['key'].split(':')[1] for call in calls] == ['ip', 'session']
+    assert all(call['local_only'] is True for call in calls)
