@@ -27,34 +27,7 @@
 .save-state.is-saving::before { animation: plan-spin .75s linear infinite; border: 2px solid var(--theme-accent-line); border-radius: 50%; border-top-color: var(--plan-blue); content: ''; height: 14px; width: 14px; }
 .save-state.is-failed { color: var(--theme-danger-ink); display: inline-flex; }
 
-.study-plan-page .btn, .plan-overlay .btn {
-  align-items: center;
-  appearance: none;
-  background: var(--theme-surface);
-  border: 1px solid var(--theme-accent-line);
-  border-radius: 11px;
-  box-shadow: 0 2px 5px rgba(31, 48, 83, .045);
-  color: var(--theme-ink-soft);
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  font-size: .86rem;
-  font-weight: 750;
-  gap: 7px;
-  justify-content: center;
-  line-height: 1.15;
-  min-height: 42px;
-  padding: 10px 14px;
-  text-decoration: none;
-  transition: border-color .16s ease, box-shadow .16s ease, color .16s ease, transform .16s ease, background .16s ease;
-}
-.study-plan-page .btn:hover, .plan-overlay .btn:hover { border-color: var(--theme-control-border); box-shadow: 0 6px 14px rgba(30, 49, 85, .09); color: var(--theme-accent-ink); transform: translateY(-1px); }
-.study-plan-page .btn:active, .plan-overlay .btn:active { box-shadow: none; transform: translateY(0); }
-.study-plan-page .btn.primary, .plan-overlay .btn.primary { background: linear-gradient(135deg, #2c66ec, #2352cd); border-color: #2352cd; box-shadow: 0 7px 16px rgba(37, 88, 217, .23); color: #fff; }
-.study-plan-page .btn.primary:hover, .plan-overlay .btn.primary:hover { background: linear-gradient(135deg, #3470f5, #2859d8); border-color: var(--theme-accent-ink); color: #fff; }
-.study-plan-page .btn.danger, .plan-overlay .btn.danger { border-color: var(--theme-danger-line); color: var(--theme-danger-ink); }
-.study-plan-page .btn:disabled, .plan-overlay .btn:disabled { box-shadow: none; cursor: not-allowed; opacity: .55; transform: none; }
-.study-plan-page .btn:focus-visible, .plan-overlay .btn:focus-visible, .study-plan-tab:focus-visible, .availability-preset:focus-visible, .pack-filter:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.study-plan-tab:focus-visible, .availability-preset:focus-visible, .pack-filter:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .btn-icon { font-size: 1.15rem; font-weight: 500; line-height: .8; }
 
 .study-plan-offline { background: var(--theme-warning-soft); border: 1px solid var(--theme-warning-line); border-radius: 12px; color: var(--theme-warning-ink); margin-bottom: 18px; padding: 12px 16px; }

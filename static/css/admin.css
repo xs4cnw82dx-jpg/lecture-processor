@@ -37,21 +37,6 @@
             padding: 10px;
             flex-wrap: wrap;
         }
-        .btn {
-            border: 1px solid var(--theme-line);
-            background: var(--theme-surface);
-            color: var(--theme-ink);
-            padding: 9px 12px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 600;
-        }
-        .btn:hover { background: var(--theme-surface-soft); }
-        .btn.primary {
-            border: none;
-            color: #fff;
-            background: var(--primary);
-        }
         .btn.filter.active {
             border: 1px solid transparent;
             color: #fff;

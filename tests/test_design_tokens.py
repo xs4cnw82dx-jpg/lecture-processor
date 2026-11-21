@@ -97,3 +97,16 @@ def test_dark_tokens_apply_on_screen_so_print_uses_light_values():
     screen = source.index("@media screen")
     assert source.index(':root[data-theme="dark"]') > screen
     assert "initial" not in source
+
+
+def test_only_shared_ui_defines_the_base_button_recipe():
+    # Pages may position buttons inside their own layouts, but the bare .btn
+    # rule (and its primary variant) lives once, in shared-ui.css.
+    offenders = []
+    for path in _stylesheets():
+        if path.name == "shared-ui.css":
+            continue
+        source = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"(?:^|[{};])\s*(\.btn(?:\.primary)?)\s*\{", source):
+            offenders.append(f"{path.name}:{source.count(chr(10), 0, match.start()) + 1}")
+    assert offenders == [], offenders

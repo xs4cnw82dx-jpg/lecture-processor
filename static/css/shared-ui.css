@@ -377,6 +377,71 @@ input[type="file"]::file-selector-button { padding:9px 13px; margin-right:12px; 
 .app-select-upgraded .app-select-item:focus-visible,
 .app-menu-panel :is(button,a[href]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
+/* Buttons: the single shared recipe, based on Study Plan. Pages add layout
+   (width, alignment) but not their own button look. Legacy CTA classes alias
+   the same recipe: .secondary-btn/.ghost-btn = .btn, .primary-btn = .btn.primary. */
+:root {
+  --control-height: 44px;
+  --control-height-small: 36px;
+  --btn-radius: 11px;
+  --btn-primary-start: #2c66ec;
+  --btn-primary-end: #2352cd;
+  --btn-primary-hover-start: #3470f5;
+  --btn-primary-hover-end: #2859d8;
+  --btn-primary-shadow: 0 7px 16px rgba(37, 88, 217, .23);
+}
+.btn, .primary-btn, .secondary-btn, .ghost-btn {
+  align-items: center;
+  appearance: none;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-accent-line);
+  border-radius: var(--btn-radius);
+  box-shadow: 0 2px 5px rgba(31, 48, 83, .045);
+  color: var(--theme-ink-soft);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 700;
+  gap: 7px;
+  justify-content: center;
+  line-height: 1.15;
+  min-height: var(--control-height);
+  padding: 10px 14px;
+  text-decoration: none;
+  transition: border-color .16s ease, box-shadow .16s ease, color .16s ease, transform .16s ease, background .16s ease;
+}
+.btn:hover, .primary-btn:hover, .secondary-btn:hover, .ghost-btn:hover {
+  border-color: var(--theme-control-border);
+  box-shadow: 0 6px 14px rgba(30, 49, 85, .09);
+  color: var(--theme-accent-ink);
+  transform: translateY(-1px);
+}
+.btn:active, .primary-btn:active, .secondary-btn:active, .ghost-btn:active { box-shadow: none; transform: translateY(0); }
+.btn.primary, .primary-btn {
+  background: linear-gradient(135deg, var(--btn-primary-start), var(--btn-primary-end));
+  border-color: var(--btn-primary-end);
+  box-shadow: var(--btn-primary-shadow);
+  color: #fff;
+}
+.btn.primary:hover, .primary-btn:hover {
+  background: linear-gradient(135deg, var(--btn-primary-hover-start), var(--btn-primary-hover-end));
+  border-color: var(--btn-primary-end);
+  color: #fff;
+}
+.btn.danger { border-color: var(--theme-danger-line); color: var(--theme-danger-ink); }
+.btn.danger:hover { border-color: var(--theme-danger-ink); background: var(--theme-danger-soft); color: var(--theme-danger-ink); }
+.btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
+.btn.ghost:hover { background: var(--theme-surface-soft); border-color: var(--theme-line); box-shadow: none; }
+.btn.small { min-height: var(--control-height-small); padding: 7px 11px; font-size: .8rem; border-radius: 9px; }
+.btn:disabled, .btn[aria-disabled="true"],
+.primary-btn:disabled, .secondary-btn:disabled, .ghost-btn:disabled { box-shadow: none; cursor: not-allowed; opacity: .55; transform: none; }
+.btn:focus-visible, .primary-btn:focus-visible, .secondary-btn:focus-visible, .ghost-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .btn, .primary-btn, .secondary-btn, .ghost-btn { transition: none; }
+  .btn:hover, .primary-btn:hover, .secondary-btn:hover, .ghost-btn:hover { transform: none; }
+}
+
 /* Touch screens: every button-like control is at least 44px tall, and icon-only
    controls at least 44px wide. Pages size these controls for a mouse; this
    minimum applies only to coarse pointers and wins over page rules on purpose.
