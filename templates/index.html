@@ -26,7 +26,7 @@
     {% include '_index_purchase_overlays.html' %}
 
     <main class="app-shell-page creation-page" id="main-content" tabindex="-1">
-        <header class="hero"><div class="container"><p class="creation-eyebrow">Create study material</p><h1 class="hero-title">{% if forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Lecture Notes{% endif %}</h1><p class="hero-description">{% if forced_mode == 'slides-only' %}Turn your slides into clear notes, with optional flashcards and practice questions.{% elif forced_mode == 'interview' %}Create a timestamped transcript, with optional summaries and section headings.{% else %}Bring your slides and recording together in one set of notes, flashcards, and practice questions.{% endif %}</p></div></header>
+        <header class="hero"><div class="container"><p class="creation-eyebrow page-eyebrow">Create study material</p><h1 class="hero-title page-title">{% if forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Lecture Notes{% endif %}</h1><p class="hero-description page-lead">{% if forced_mode == 'slides-only' %}Turn your slides into clear notes, with optional flashcards and practice questions.{% elif forced_mode == 'interview' %}Create a timestamped transcript, with optional summaries and section headings.{% else %}Bring your slides and recording together in one set of notes, flashcards, and practice questions.{% endif %}</p></div></header>
         <section class="container"><div class="app-card">
             <div class="quickstart-card" id="quickstart-card" hidden aria-live="polite">
                 <div class="quickstart-title">Getting started</div>

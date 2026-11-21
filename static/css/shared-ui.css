@@ -380,6 +380,49 @@ input[type="file"]::file-selector-button { padding:9px 13px; margin-right:12px; 
 .app-select-upgraded .app-select-item:focus-visible,
 .app-menu-panel :is(button,a[href]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
+/* Type scale and the shared app page header (eyebrow, title, lead). App pages
+   add .page-eyebrow, .page-title and .page-lead to their header; the
+   .app-shell-page prefix lets these win over older page-level heading rules. */
+:root {
+  --fs-xs: .75rem;
+  --fs-sm: .875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.375rem;
+  --fs-2xl: 1.75rem;
+  --fs-display: clamp(1.9rem, 1.3rem + 1.6vw, 2.65rem);
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-heavy: 800;
+}
+.app-shell-page .page-eyebrow {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--theme-accent-ink);
+  font-size: .72rem;
+  font-weight: var(--fw-heavy);
+  letter-spacing: .12em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+.app-shell-page .page-title {
+  margin: 0 0 10px;
+  color: var(--theme-ink);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-bold);
+  letter-spacing: -.045em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.app-shell-page .page-lead {
+  max-width: 720px;
+  margin: 0;
+  color: var(--theme-muted);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+}
+
 /* Buttons: the single shared recipe, based on Study Plan. Pages add layout
    (width, alignment) but not their own button look. Legacy CTA classes alias
    the same recipe: .secondary-btn/.ghost-btn = .btn, .primary-btn = .btn.primary. */

@@ -546,6 +546,7 @@
   "Custom output language": "Eigen uitvoertaal",
   "Voice Notes · Lecture Processor": "Spraaknotities · Lecture Processor",
   "Shared Workout · Lecture Processor": "Gedeelde training · Lecture Processor",
-  "Shared Study Content · Lecture Processor": "Gedeeld studiemateriaal · Lecture Processor"
+  "Shared Study Content · Lecture Processor": "Gedeeld studiemateriaal · Lecture Processor",
+  "Your account": "Je account"
 });
 })(typeof window !== 'undefined' ? window : globalThis);

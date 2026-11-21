@@ -37,7 +37,7 @@ body {
 .voice-app,
 .voice-auth {
   width: min(1180px, 100%);
-  margin: 0 auto;
+  margin: 0;
 }
 
 .voice-header {
@@ -1057,10 +1057,7 @@ body {
     margin-bottom: 14px;
   }
 
-  .voice-header h1 {
-    font-size: 2.05rem;
-  }
-
+  
   .voice-eyebrow {
     font-size: 0.72rem;
   }

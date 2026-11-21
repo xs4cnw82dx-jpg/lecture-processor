@@ -1,8 +1,7 @@
 .settings-page { background: var(--theme-surface-soft); color: var(--theme-ink); min-height: calc(100vh - 76px); min-height: calc(100dvh - 76px); }
-.settings-container { width: min(960px, 100%); margin: 0 auto; padding: 36px 20px 72px; }
+.settings-container { width: min(960px, 100%); margin: 0; padding: 0 0 72px; }
 .settings-header { margin-bottom: 32px; }
 .settings-eyebrow { color: var(--theme-accent-ink); font-size: .72rem; font-weight: 800; letter-spacing: .12em; margin: 0 0 7px; }
-.settings-header h1 { font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.045em; margin: 0 0 10px; line-height: 1.15; }
 .settings-header > p:last-child { color: var(--theme-muted); line-height: 1.65; margin: 0; }
 .settings-controls { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 22px; }
 .settings-credits { margin-bottom: 22px; }
@@ -56,7 +55,7 @@
 .settings-auth { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; margin-bottom: 22px; border-radius: 13px; background: var(--theme-accent-soft); font-size: .9rem; }
 .settings-auth[hidden] { display: none; }
 @media (max-width: 640px) {
-  .settings-container { padding: 26px 4px 48px; }
+  .settings-container { padding: 0 0 48px; }
   .settings-section { padding: 22px 20px; }
   .settings-section-heading { gap: 11px; margin-bottom: 23px; }
   .settings-row { gap: 18px; }

@@ -2,7 +2,6 @@
 .tools-hub-page [hidden] { display: none !important; }
 .hub-hero { padding: 4px 0 0; }
 .hub-eyebrow { color: var(--theme-accent-ink); font-size: .74rem; font-weight: 800; letter-spacing: .13em; }
-.hub-hero h1 { margin: 10px 0; font-size: clamp(1.8rem, 3vw, 2.25rem); letter-spacing: -.045em; color: var(--theme-ink); }
 .hub-hero p, .hub-section-heading p { margin: 0; color: var(--theme-muted); line-height: 1.6; }
 .hub-favorites { border-color: var(--theme-line); box-shadow: 0 5px 22px rgba(24, 47, 91, .035); padding: 24px; }
 .hub-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }

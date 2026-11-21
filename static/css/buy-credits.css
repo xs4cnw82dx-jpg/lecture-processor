@@ -21,7 +21,6 @@
 }
 .credits-heading { padding: 6px 0 4px; max-width: 720px; }
 .credits-eyebrow { color: var(--theme-accent-ink); font-size: .74rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.credits-heading h1 { margin: 10px 0 12px; color: var(--theme-ink); font-size: clamp(1.8rem, 3vw, 2.4rem); line-height: 1.16; letter-spacing: -.045em; }
 .credits-heading p { margin: 0; line-height: 1.65; color: var(--theme-muted); font-size: .95rem; }
 .pricing-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 24px; align-items: start; grid-template-rows: auto auto auto auto; }
 .category { display: grid; grid-row: span 4; grid-template-rows: subgrid; gap: 10px; min-width: 0; }
