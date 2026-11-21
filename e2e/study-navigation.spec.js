@@ -122,10 +122,13 @@ test('large packs create editors on demand and retain edits when switching tabs'
   await page.locator('#editor-tab-flashcards').click();
   await expect(page.locator('#flashcard-editor-list .editor-card')).toHaveCount(165);
   await expect(page.locator('#question-editor-list .editor-card')).toHaveCount(0);
+  await expect(page.locator('#flashcard-editor-list .editor-card[open]')).toHaveCount(0);
+  await page.locator('#flashcard-editor-list .editor-card > summary').first().click();
   const firstCard = await page.locator('#editor-card-front-0').elementHandle();
   await page.locator('#editor-card-front-0').fill('Edited muscle');
   await page.locator('#editor-tab-test').click();
   await expect(page.locator('#question-editor-list .editor-card')).toHaveCount(40);
+  await page.locator('#question-editor-list .editor-card > summary').first().click();
   await page.locator('#editor-question-text-0').fill('Edited question');
   await page.locator('#editor-tab-flashcards').click();
   await expect(page.locator('#editor-card-front-0')).toHaveValue('Edited muscle');
@@ -174,4 +177,63 @@ test('redesigned learning workspace stays readable through library, setup and la
   await expectProductControls(page);
   await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('builder-mobile.png') });
   expect(await page.locator('#builder-overlay').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+});
+
+test('library cards read as a list, open with Edit and delete only after confirmation', async ({ page }) => {
+  const pack = { study_pack_id: 'cards', title: 'Card pack', mode: 'manual', notes_markdown: 'Notes',
+    flashcards_count: 2, test_questions_count: 1,
+    flashcards: [{ front: 'Hip abductor?', back: 'Gluteus medius' }, { front: 'Knee extensor?', back: 'Quadriceps' }],
+    test_questions: [{ question: 'Which nerve?', options: ['Femoral', 'Sciatic', 'Tibial', 'Ulnar'], answer: 'Femoral', explanation: '' }] };
+  await installLibrary(page, { packs: [pack] });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/study?pack_id=cards');
+  await page.locator('#editor-tab-flashcards').click();
+  const rows = page.locator('#flashcard-editor-list .editor-card');
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator('#flashcard-editor-list .editor-card[open]')).toHaveCount(0);
+  await expect(rows.first().locator('[data-item-summary]')).toHaveText('Hip abductor?');
+  await expect(rows.first().locator('[data-item-answer]')).toHaveText('Gluteus medius');
+  await expect(rows.first().locator('[data-delete-card]')).toBeHidden();
+  await rows.first().locator('summary').click();
+  await expect(rows.first()).toHaveAttribute('open', '');
+  await expect(page.locator('#editor-card-front-0')).toBeVisible();
+  await page.locator('#editor-card-back-0').fill('Gluteus medius and minimus');
+  await expect(rows.first().locator('[data-item-answer]')).toHaveText('Gluteus medius and minimus');
+  await rows.first().locator('[data-delete-card]').click();
+  await expect(page.locator('#confirm-modal-overlay')).toBeVisible();
+  await page.locator('#confirm-modal-cancel').click();
+  await expect(rows).toHaveCount(2);
+  await rows.first().locator('[data-delete-card]').click();
+  await page.locator('#confirm-modal-confirm').click();
+  await expect(rows).toHaveCount(1);
+  await expect.poll(() => pack.flashcards.map(card => card.front)).toEqual(['Knee extensor?']);
+  await page.locator('#editor-tab-test').click();
+  const question = page.locator('#question-editor-list .editor-card').first();
+  await expect(question).not.toHaveAttribute('open', '');
+  await expect(question.locator('[data-item-answer]')).toHaveText('Femoral');
+});
+
+for (const width of [606, 375]) {
+  test(`folders stay a single tree with subfolders under their parent at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installLibrary(page);
+    await page.goto('/study');
+    const parent = page.locator('#folder-list [data-folder-id="anatomy"]');
+    const child = page.locator('#folder-list [data-folder-id="muscles"]');
+    await expect(child).toBeVisible();
+    const [parentBox, childBox] = [await parent.boundingBox(), await child.boundingBox()];
+    expect(childBox.y).toBeGreaterThan(parentBox.y + parentBox.height - 1);
+    expect(childBox.x).toBeGreaterThan(parentBox.x);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  });
+}
+
+test('the pack list grows with the page instead of scrolling inside a box', async ({ page }) => {
+  const packs = Array.from({ length: 30 }, (_, index) => ({ study_pack_id: 'p' + index, title: 'Pack ' + (index + 1), mode: 'manual', flashcards_count: 1, test_questions_count: 0, flashcards: [], test_questions: [] }));
+  await installLibrary(page, { packs });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/study');
+  await expect(page.locator('#pack-list .pack-list-item')).toHaveCount(30);
+  const list = await page.locator('#pack-list').evaluate(element => ({ overflow: getComputedStyle(element).overflowY, fits: element.scrollHeight <= element.clientHeight + 1 }));
+  expect(list).toEqual({ overflow: 'visible', fits: true });
 });

@@ -652,5 +652,13 @@
   "Imported audio and credits ready. You can start processing.": "Geïmporteerde audio en credits zijn klaar. Je kunt beginnen met verwerken.",
   "Slides, audio, and credits ready. You can start processing.": "Dia’s, audio en credits zijn klaar. Je kunt beginnen met verwerken.",
   "Slides, imported audio, and credits ready. You can start processing.": "Dia’s, geïmporteerde audio en credits zijn klaar. Je kunt beginnen met verwerken.",
-  "Credits ready. You can start processing.": "Credits zijn klaar. Je kunt beginnen met verwerken."
+  "Credits ready. You can start processing.": "Credits zijn klaar. Je kunt beginnen met verwerken.",
+  "Open a project": "Open een project",
+  "No video overlay projects yet": "Nog geen video-overlayprojecten",
+  "Delete this flashcard?": "Deze flashcard verwijderen?",
+  "The flashcard is removed from this study pack. Your other cards and progress stay.": "De flashcard wordt uit dit studiepakket verwijderd. Je andere kaarten en voortgang blijven bewaard.",
+  "Delete flashcard": "Flashcard verwijderen",
+  "Delete this practice question?": "Deze oefenvraag verwijderen?",
+  "The question is removed from this study pack. Your other questions and progress stay.": "De vraag wordt uit dit studiepakket verwijderd. Je andere vragen en voortgang blijven bewaard.",
+  "Delete question": "Vraag verwijderen"
 }); })(typeof window !== 'undefined' ? window : globalThis);

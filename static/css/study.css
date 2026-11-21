@@ -6105,3 +6105,43 @@
   .pack-edit-review-columns { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .pack-edit-review .modal { padding: 20px 16px; max-height: calc(100dvh - 24px); }
 }
+
+/* ── Study Library layout ──
+   One page scroll: the pack list and the selected pack grow with the page
+   instead of scrolling inside fixed boxes (menus inside the pack can open
+   freely); opening a pack further down the list scrolls its details into view. Folders are a compact tree at every width, so subfolders keep
+   their place under their parent. Card rows read as a list until Edit. */
+.library-folders #folder-list { display:flex; flex-direction:column; gap:3px; }
+.library-folders .item { padding:4px 4px 4px 6px; border:1px solid transparent; border-radius:11px; background:transparent; box-shadow:none; }
+.library-folders .item:hover { background:var(--theme-surface); border-color:var(--theme-line); }
+.library-folders .item.active { background:var(--theme-accent-soft); border-color:var(--theme-accent-line); box-shadow:none; }
+.library-folders .folder-row-main { min-height:38px; }
+.library-folders .item-title { font-size:.86rem; line-height:1.35; }
+.library-folders .folder-depth-1 { margin-left:18px; }
+.library-folders .folder-depth-2,.library-folders .folder-depth-3,.library-folders .folder-depth-4,.library-folders .folder-depth-5,.library-folders .folder-depth-6,.library-folders .folder-depth-7,.library-folders .folder-depth-8 { margin-left:32px; }
+
+.library-pack-browser #pack-list { max-height:none; overflow:visible; gap:6px; }
+.library-pack-browser #pack-list .item-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.library-pack-detail .editor-list { max-height:none; overflow:visible; padding-right:0; }
+
+@media (min-width:761px) {
+  .library-content .split { grid-template-columns:minmax(240px, 290px) minmax(0, 1fr); }
+  .library-pack-browser { padding:16px 12px; }
+  .library-pack-detail { padding:16px 18px; }
+}
+
+/* Card rows: question and answer as a read-only preview; Edit opens the form. */
+.editor-card.builder-expandable > summary { align-items:flex-start; padding:13px 16px; font-weight:400; }
+.editor-card .builder-row-number { flex:none; margin-top:1px; }
+.editor-card.builder-expandable > summary > .editor-card-preview { display:grid; gap:3px; flex:1; min-width:0; overflow:visible; white-space:normal; text-overflow:clip; }
+.editor-card .editor-card-preview [data-item-summary] { color:var(--theme-ink); font-weight:700; font-size:.86rem; line-height:1.4; overflow-wrap:anywhere; }
+.editor-card .editor-card-answer { color:var(--theme-muted); font-size:.82rem; line-height:1.5; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.editor-card .editor-card-answer:empty { display:none; }
+.editor-card[open] .editor-card-answer { display:none; }
+.editor-card .builder-row-expand-label { flex:none; align-self:center; padding:5px 10px; border:1px solid var(--theme-accent-line); border-radius:8px; background:var(--theme-surface); color:var(--theme-accent-ink); font-size:.75rem; font-weight:700; }
+.editor-card > summary:hover .builder-row-expand-label { border-color:var(--theme-accent-line-strong); }
+.editor-card .editor-row-open-label,
+.editor-card[open] .editor-row-closed-label { display:none; }
+.editor-card[open] .editor-row-open-label { display:inline; }
+/* The Edit/Close label is the row's control, so the generic disclosure chevron is not needed. */
+.editor-card > summary .app-disclosure-chevron { display:none; }

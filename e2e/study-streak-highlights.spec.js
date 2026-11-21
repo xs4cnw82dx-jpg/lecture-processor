@@ -106,6 +106,7 @@ for (const edit of ['metadata', 'flashcard']) {
     if (edit === 'metadata') await renamePack(page, state);
     else {
       await page.locator('#editor-tab-flashcards').click();
+      await page.locator('#flashcard-editor-list [data-row-index="0"] > summary').click();
       await page.locator('#editor-card-back-0').fill('Regular cardiac contractions.');
       await expect.poll(() => state.pack.flashcards[0].back).toBe('Regular cardiac contractions.');
       await expect(page.locator('#pack-save-status')).toHaveText('Saved');

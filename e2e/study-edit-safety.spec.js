@@ -463,6 +463,7 @@ test('oversized hidden-page edits stay recoverable until a foreground save', asy
   const state = await installLibrary(page);
   await openInitialPack(page);
   await page.locator('#editor-tab-flashcards').click();
+  await page.locator('#flashcard-editor-list [data-row-index="0"] > summary').click();
   await expect(page.locator('#editor-card-back-0')).toBeVisible();
   await page.clock.pauseAt(await page.evaluate(() => new Date(Date.now() + 50).toISOString()));
   const largeText = '🧠'.repeat(17000);
