@@ -199,3 +199,28 @@ def test_nonpilot_and_unsigned_requests_are_rejected_before_pack_lookup(setup, m
     monkeypatch.setattr(service, 'enabled', lambda *args: False)
     with Flask(__name__).app_context():
         assert service.require_access(runtime, None, 'pack')[1][1] == 403
+
+
+@pytest.mark.parametrize('owner,expected', [('owner', None), ('someone-else', 403), (None, 404)])
+def test_picture_access_checks_ownership_with_a_projected_owner_read(setup, monkeypatch, owner, expected):
+    runtime, db, _, _ = setup
+    monkeypatch.setattr(service.study_api_support, 'require_user', lambda *args: ({'uid': 'owner'}, None, 0))
+    monkeypatch.setattr(service, 'enabled', lambda *args: True)
+    monkeypatch.setattr(service.study_api_support, 'get_owned_study_pack',
+                        lambda *args: pytest.fail('Picture access must not read the whole study pack'))
+    reads = []
+
+    def owner_docs(_db, ids, transaction=None):
+        reads.append(list(ids))
+        payload = {'uid': owner} if owner else None
+        return [SimpleNamespace(id=pack_id, exists=payload is not None, to_dict=lambda: dict(payload or {})) for pack_id in ids]
+
+    monkeypatch.setattr(service.study_repo, 'get_study_pack_owner_docs', owner_docs)
+    with Flask(__name__).app_context():
+        uid, error = service.require_access(runtime, None, 'pack')
+    assert reads == [['pack']]
+    if expected is None:
+        assert uid == 'owner' and error is None
+    else:
+        assert uid is None and error[1] == expected
+        assert error[0].get_json()['error'] == ('Forbidden' if expected == 403 else 'Study pack not found')

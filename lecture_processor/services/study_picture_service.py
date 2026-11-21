@@ -62,9 +62,13 @@ def require_access(runtime, request, pack_id, *, write=False):
         guard = study_api_support.account_write_guard(runtime, uid)
         if guard is not None:
             return None, guard
-    _, error, status = study_api_support.get_owned_study_pack(runtime, uid, pack_id)
-    if error is not None:
-        return None, (error, status)
+    # Ownership needs only the owner field; avoid reading the whole pack per picture.
+    owners = study_repo.get_study_pack_owner_docs(runtime.db, [pack_id])
+    owner = owners[0] if owners else None
+    if owner is None or not getattr(owner, 'exists', False):
+        return None, (jsonify({'error': 'Study pack not found'}), 404)
+    if (owner.to_dict() or {}).get('uid', '') != uid:
+        return None, (jsonify({'error': 'Forbidden'}), 403)
     return uid, None
 
 
