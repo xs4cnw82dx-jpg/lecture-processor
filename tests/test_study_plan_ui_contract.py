@@ -54,7 +54,8 @@ def test_study_plan_uses_polished_native_controls_and_actionable_empty_states():
 
     assert 'data-plan-picker="date"' in template
     assert 'data-plan-picker="time"' in template
-    assert 'data-pretty-select' in template
+    assert 'data-app-select' in template
+    assert 'data-pretty-select' not in template
     assert 'data-pack-filter="flashcards"' in template
     assert '.btn, .primary-btn, .secondary-btn, .ghost-btn {' in _read('static/css/shared-ui.css')
     assert '.plan-overlay input[type="checkbox"]' in styles

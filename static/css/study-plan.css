@@ -211,26 +211,17 @@ body.plan-modal-open { overflow: hidden; }
 .custom-day > span { color: var(--theme-muted); font-size: .74rem; text-align: center; }
 .custom-day input[data-plan-picker] { background: var(--theme-surface); border: 1px solid var(--theme-control-border); border-radius: 9px; font: inherit; min-height: 38px; padding: 7px 34px 7px 9px; width: 100%; }
 .sr-only, .plan-native-control-hidden { border: 0 !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; height: 1px !important; margin: -1px !important; overflow: hidden !important; padding: 0 !important; position: absolute !important; white-space: nowrap !important; width: 1px !important; }
-.pretty-select, .plan-picker-control { display: block; position: relative; width: 100%; }
-.pretty-select-button { align-items: center; appearance: none; background: linear-gradient(var(--theme-surface), var(--theme-surface)); border: 1px solid var(--theme-control-border); border-radius: 11px; color: var(--theme-ink); cursor: pointer; display: flex; font: inherit; justify-content: space-between; min-height: 46px; padding: 10px 42px 10px 12px; position: relative; text-align: left; width: 100%; }
-.pretty-select-button::after { border-bottom: 2px solid #69768d; border-right: 2px solid #69768d; content: ''; height: 7px; position: absolute; right: 16px; top: 16px; transform: rotate(45deg); transition: transform .16s ease; width: 7px; }
-.pretty-select-button[aria-expanded="true"] { border-color: var(--plan-blue); box-shadow: 0 0 0 3px rgba(37, 88, 217, .13); }
-.pretty-select-button[aria-expanded="true"]::after { top: 20px; transform: rotate(225deg); }
+.plan-picker-control { display: block; position: relative; width: 100%; }
 .plan-picker-control input { padding-right: 45px; }
 .plan-picker-trigger { align-items: center; appearance: none; background: transparent; border: 0; border-radius: 8px; color: var(--theme-muted); cursor: pointer; display: flex; height: 34px; justify-content: center; position: absolute; right: 6px; top: 6px; width: 34px; }
 .plan-picker-trigger:hover { background: var(--theme-accent-soft); color: var(--theme-accent-ink); }
-.plan-picker-trigger:focus-visible, .pretty-select-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.plan-picker-trigger:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .plan-picker-trigger svg { height: 18px; width: 18px; }
 
 .plan-control-popover { margin: 0; bottom: auto; right: auto; background: var(--theme-surface); border: 1px solid var(--theme-accent-line); border-radius: 15px; box-shadow: 0 20px 52px rgba(21, 35, 65, .22); color: var(--theme-ink); left: 12px; max-height: min(430px, calc(100dvh - 24px)); overflow: auto; padding: 9px; position: fixed; top: 12px; transform: none; width: min(340px, calc(100vw - 24px)); z-index: 1800; }
 .plan-control-popover { animation: plan-popover-enter .2s ease; }
 .plan-control-popover.is-closing { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
-.plan-picker-search { width: 100%; padding: 11px; margin-bottom: 6px; border: 1px solid var(--theme-line); border-radius: 10px; font: inherit; font-size: .85rem; }
 @keyframes plan-popover-enter { from { opacity: 0; } to { opacity: 1; } }
-.select-popover { display: grid; gap: 4px; max-height: min(360px, calc(100vh - 24px)); }
-.pretty-option { appearance: none; background: var(--theme-surface); border: 0; border-radius: 9px; color: var(--theme-ink-soft); cursor: pointer; font: inherit; font-size: .84rem; min-height: 40px; padding: 9px 11px; text-align: left; width: 100%; }
-.pretty-option:hover, .pretty-option:focus-visible { background: var(--theme-accent-soft); color: var(--theme-accent-ink); }
-.pretty-option.is-selected { background: var(--theme-accent-soft); color: var(--theme-accent-ink); font-weight: 750; }
 .date-picker-header { align-items: center; display: grid; gap: 7px; grid-template-columns: 36px 1fr 36px; margin-bottom: 8px; }
 .date-picker-title { font-size: .9rem; font-weight: 800; text-align: center; }
 .date-picker-nav { align-items: center; appearance: none; background: var(--theme-accent-soft); border: 0; border-radius: 9px; color: var(--theme-muted); cursor: pointer; display: flex; font: inherit; height: 36px; justify-content: center; width: 36px; }
@@ -438,4 +429,4 @@ body.plan-modal-open { overflow: hidden; }
 .study-plan-workspace-tools { display:flex; justify-content:flex-end; margin-bottom:10px; }
 .study-plan-workspace-tools .btn { min-height:36px; font-size:.8rem; color:#6d5260; color:light-dark(#6d5260, var(--theme-muted)); }
 
-.pack-search input:focus-visible, .pretty-option:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.pack-search input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

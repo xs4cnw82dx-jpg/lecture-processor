@@ -142,8 +142,8 @@ test('signed-in user creates a useful plan from many unfiled question-only packs
   await expect(page.locator('.time-picker-popover')).toBeVisible();
   await page.keyboard.press('Escape');
   await page.locator('[data-availability-preset="daily"]').click();
-  await page.locator('label[for="wizard-session-length"] + .pretty-select .pretty-select-button').click();
-  await page.locator('.select-popover .pretty-option', { hasText: '60 minutes' }).click();
+  await page.locator('#wizard-session-length-button').click();
+  await page.locator('#wizard-session-length-menu .app-select-item', { hasText: '60 minutes' }).click();
   await page.locator('#wizard-next-btn').click();
 
   await expect(page.locator('#wizard-preview-sessions')).toContainText('Question pack 1');
@@ -288,11 +288,15 @@ test('session and calendar dialogs contain focus while their pickers remain usab
   await expect(page.locator('#google-calendar-use-link')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.locator('#calendar-feeds-close')).toBeFocused();
-  await page.getByRole('button', { name: 'Remind me: 30 minutes before', exact: true }).click();
-  await expect(page.locator('#calendar-feeds-overlay .select-popover')).toBeVisible();
+  const reminder = page.locator('#calendar-feeds-overlay .app-select-button:visible').first();
+  await expect(reminder).toHaveAccessibleName(/Remind me.*30 minutes before/);
+  await reminder.click();
+  await expect(page.locator('#calendar-feeds-overlay .app-select-menu.visible')).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('button', { name: 'Remind me: 1 hour before', exact: true })).toBeFocused();
+  await expect(reminder).toBeFocused();
+  await expect(reminder).toHaveAccessibleName(/Remind me.*1 hour before/);
+  await expect(page.locator('#calendar-feeds-overlay')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('#calendar-feeds-overlay')).toBeHidden();
   await expect(page.locator('#progress-calendar-connections-btn')).toBeFocused();
@@ -469,7 +473,7 @@ test('searchable planner pack menu preserves text keys and Enter selects without
   await installSignedInPlanner(page);
   await page.goto('/plan?view=schedule');
   await page.locator('[data-calendar-session="session_today"]').click();
-  await page.locator('#session-editor-pack').locator('..').locator('.pretty-select-button').click();
+  await page.locator('#session-editor-pack-button').click();
   const search = page.getByRole('searchbox', { name:'Find a study pack' });
   await search.fill('Question pack 18');
   await search.press('Home');

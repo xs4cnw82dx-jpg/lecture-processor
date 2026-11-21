@@ -137,7 +137,7 @@ const focusExamples = [
   { sheet: 'shared-ui', markup: '<button data-focus>Button</button><input data-focus class="app-toggle" type="checkbox"><div class="app-select-upgraded"><button data-focus class="app-select-button">Select</button><button data-focus class="app-select-item">Option</button></div><details class="app-disclosure"><summary data-focus>Details</summary></details>' },
   { sheet: 'app-shell', markup: '<div class="shell-modal-field"><input data-focus aria-label="Name"></div>' },
   { sheet: 'study', markup: '<button data-focus class="folder-collapse-btn">Folder</button><button data-focus class="pack-row-open">Pack</button><button data-focus class="peek-row">Card</button><button data-focus class="lesson-card">Lesson</button>' },
-  { sheet: 'study-plan', markup: '<div class="study-plan-page"><button data-focus class="btn">Continue</button><button data-focus class="pretty-option">Option</button><button data-focus class="calendar-provider">Calendar</button><div class="plan-field"><input data-focus aria-label="Date"></div></div>' },
+  { sheet: 'study-plan', markup: '<div class="study-plan-page"><button data-focus class="btn">Continue</button><button data-focus class="calendar-provider">Calendar</button><div class="plan-field"><input data-focus aria-label="Date"></div></div>' },
   { sheet: 'reader', markup: '<div class="reader-page"><button data-focus>Read</button></div>' },
   { sheet: 'dashboard', markup: '<button data-focus class="hero-btn">Open</button><button data-focus class="dashboard-text-action">Details</button>' },
   { sheet: 'index', markup: '<button data-focus class="file-download">Download</button><button data-focus class="upload-zone">Upload</button><input data-focus class="form-input" aria-label="Title">' },

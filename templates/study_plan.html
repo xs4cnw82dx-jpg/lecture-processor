@@ -204,7 +204,7 @@
           <p id="wizard-time-summary" aria-live="polite"></p>
         </div>
         <div class="custom-availability" id="custom-availability" hidden></div>
-        <div class="plan-field compact"><label for="wizard-session-length">Session length</label><select id="wizard-session-length" data-pretty-select><option value="30">30 minutes</option><option value="45" selected>45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option></select></div>
+        <div class="plan-field compact"><label for="wizard-session-length">Session length</label><select id="wizard-session-length" data-app-select><option value="30">30 minutes</option><option value="45" selected>45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option></select></div>
         <div class="field-error" id="wizard-availability-error" role="alert" hidden></div>
       </section>
       <section class="wizard-step" data-wizard-step="4" hidden>
@@ -231,7 +231,7 @@
       <h2 id="session-editor-title">Edit session</h2>
       <input type="hidden" id="session-editor-id">
       <div class="plan-field"><label for="session-editor-name">Title</label><input id="session-editor-name" maxlength="160"></div>
-      <div class="plan-field"><label for="session-editor-pack">Study pack</label><select id="session-editor-pack" data-pretty-select><option value="">No linked pack</option></select></div>
+      <div class="plan-field"><label for="session-editor-pack">Study pack</label><select id="session-editor-pack" data-app-select data-app-select-search-label="Find a study pack" data-app-select-search-placeholder="Find a study pack…"><option value="">No linked pack</option></select></div>
       <div class="plan-field-row">
         <div class="plan-field"><label for="session-editor-date">Date</label><input id="session-editor-date" type="text" inputmode="numeric" autocomplete="off" placeholder="Choose a date" data-plan-picker="date"></div>
         <div class="plan-field"><label for="session-editor-time">Start</label><input id="session-editor-time" type="text" inputmode="numeric" autocomplete="off" placeholder="Choose a time" data-plan-picker="time"></div>
@@ -285,7 +285,7 @@
         <p id="google-calendar-description">We create a separate Lecture Processor calendar. Your other calendars stay private. Changes you make here are sent to Google automatically.</p>
         <p id="google-calendar-account" class="calendar-account-detail"></p>
         <div class="calendar-settings-row">
-          <div class="plan-field"><label for="google-calendar-reminder">Remind me</label><select id="google-calendar-reminder" data-pretty-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
+          <div class="plan-field"><label for="google-calendar-reminder">Remind me</label><select id="google-calendar-reminder" data-app-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
           <label class="calendar-deadline-choice"><input type="checkbox" id="google-calendar-deadlines" checked> Include exam deadlines</label>
         </div>
         <div class="calendar-main-actions"><button type="button" class="btn primary" id="google-calendar-connect" disabled>Connect Google account</button><button type="button" class="btn" id="google-calendar-sync" hidden>Sync now</button><button type="button" class="btn" id="google-calendar-save" hidden>Save settings</button><a class="btn" id="google-calendar-open" href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer" hidden>Open Google Calendar ↗</a><button type="button" class="btn danger" id="google-calendar-disconnect" hidden>Disconnect</button></div>
@@ -299,7 +299,7 @@
         <ol class="calendar-setup-steps" id="calendar-subscribe-steps"></ol>
         <div class="calendar-feed-create">
           <div class="plan-field"><label for="calendar-feed-name">Calendar label</label><input id="calendar-feed-name" maxlength="80" placeholder="My Apple Calendar"></div>
-          <div class="plan-field"><label for="calendar-feed-reminder">Remind me</label><select id="calendar-feed-reminder" data-pretty-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
+          <div class="plan-field"><label for="calendar-feed-reminder">Remind me</label><select id="calendar-feed-reminder" data-app-select><option value="10">10 minutes before</option><option value="30" selected>30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="0">No reminder</option></select></div>
           <button type="button" class="btn primary" id="calendar-feed-create-btn">Create calendar link</button>
         </div>
         <div class="calendar-feed-once" id="calendar-feed-once" hidden>
