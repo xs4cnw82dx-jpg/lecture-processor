@@ -1868,8 +1868,7 @@ def _cleanup_empty_batch_folder(batch, runtime=None):
         return False
 
     try:
-        existing_packs = resolved_runtime.study_repo.list_study_packs_by_uid_and_folder(db, uid, folder_id)
-        if existing_packs:
+        if resolved_runtime.study_repo.study_folder_has_packs(db, uid, folder_id):
             return False
         folder_ref = resolved_runtime.study_repo.study_folder_doc_ref(db, folder_id)
         folder_doc = folder_ref.get()

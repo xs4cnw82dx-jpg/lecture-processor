@@ -865,7 +865,7 @@ def update_study_folder(app_ctx, request, folder_id):
                 return app_ctx.jsonify({'error': str(error)}), 400
         pack_updates = []
         if 'name' in updates:
-            packs = app_ctx.repositories.study.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
+            packs = app_ctx.repositories.study.list_study_pack_refs_by_uid_and_folder(app_ctx.db, uid, folder_id)
             for pack_doc in packs:
                 pack_updates.append((pack_doc.reference, {'folder_name': updates['name'], 'updated_at': updates['updated_at']}))
         _commit_firestore_mutations(app_ctx, updates=[(folder_ref, updates)] + pack_updates)
@@ -892,7 +892,7 @@ def delete_study_folder(app_ctx, request, folder_id):
         if folder.get('uid', '') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
         parent_folder_id = str(folder.get('parent_folder_id', '') or '').strip()
-        packs = app_ctx.repositories.study.list_study_packs_by_uid_and_folder(app_ctx.db, uid, folder_id)
+        packs = app_ctx.repositories.study.list_study_pack_refs_by_uid_and_folder(app_ctx.db, uid, folder_id)
         child_docs = app_ctx.repositories.study.list_study_folders_by_uid(app_ctx.db, uid)
         now_ts = app_ctx.time.time()
         related_updates = [
