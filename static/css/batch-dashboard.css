@@ -77,8 +77,8 @@
 .bs-progress-label > span { color: var(--theme-muted); white-space: nowrap; }
 .bs-progress-track { display: flex; width: 100%; height: 7px; background: var(--theme-accent-soft); border-radius: 5px; overflow: hidden; }
 .bs-progress-track > rect { transition: width .3s ease; }
-.bs-progress-ready { fill: var(--theme-success-ink); }
-.bs-progress-failed { fill: var(--theme-danger-ink); }
+.bs-progress-ready { fill: #279674; fill: light-dark(#279674, var(--theme-success-ink)); }
+.bs-progress-failed { fill: #d48b95; fill: light-dark(#d48b95, var(--theme-danger-ink)); }
 .bs-stage { color: var(--theme-muted); font-size: 12px; margin: 10px 0 0; }
 .bs-message { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-left: 3px solid var(--theme-danger-line); border-radius: 0 9px 9px 0; background: var(--theme-danger-soft); color: #824550; color: light-dark(#824550, var(--theme-muted)); font-size: 13px; line-height: 1.6; margin: 0 0 20px; overflow-wrap: anywhere; }
 .bs-message .bs-button { flex-shrink: 0; border: 0; background: transparent; color: #824550; color: light-dark(#824550, var(--theme-muted)); box-shadow: none; min-height: 28px; padding: 4px; font-size: 11px; }

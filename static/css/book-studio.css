@@ -1449,7 +1449,7 @@
   z-index: 4;
 }
 .book-drag-guides path {
-  stroke: var(--theme-violet-ink);
+  stroke: #d15aaf; stroke: light-dark(#d15aaf, var(--theme-violet-ink));
   stroke-width: 0.35;
 }
 .book-drag-guides text {
@@ -1476,7 +1476,7 @@
 }
 .book-ruler-x path,
 .book-ruler-y path {
-  stroke: var(--theme-muted);
+  stroke: #8891a5; stroke: light-dark(#8891a5, var(--theme-muted));
   stroke-width: 0.2;
 }
 .book-ruler-x text,
