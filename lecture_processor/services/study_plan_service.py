@@ -462,14 +462,22 @@ def get_bootstrap(app_ctx, request):
         week_end = week_start + timedelta(days=6)
         progress_end = max([week_end.isoformat()] + [goal['exam_date'] for goal in active_goals])
         # One query from the earlier start serves both ranges when it is complete (not truncated).
+        earliest = min(start_date, week_start.isoformat())
         combined = app_ctx.repositories.planner.list_planner_sessions_by_uid(
-            app_ctx.db, uid, SESSION_QUERY_LIMIT, start_date=min(start_date, week_start.isoformat()))
+            app_ctx.db, uid, SESSION_QUERY_LIMIT, start_date=earliest)
         if len(combined) < SESSION_QUERY_LIMIT:
             sessions = _session_records(app_ctx, uid, start_date, end_date, raw_records=combined)
             progress_sessions = _session_records(app_ctx, uid, week_start.isoformat(), progress_end, raw_records=combined)
         else:
-            sessions = _session_records(app_ctx, uid, start_date, end_date)
-            progress_sessions = _session_records(app_ctx, uid, week_start.isoformat(), progress_end, 2000)
+            # Truncated: the range that starts at the earlier date equals the first 2000 rows of
+            # the same ordered query; only the other range needs its own exact query.
+            first_page = combined[:SESSION_QUERY_LIMIT - 1]
+            sessions = (_session_records(app_ctx, uid, start_date, end_date, raw_records=first_page)
+                        if start_date == earliest else _session_records(app_ctx, uid, start_date, end_date))
+            progress_sessions = (
+                _session_records(app_ctx, uid, week_start.isoformat(), progress_end, raw_records=first_page)
+                if week_start.isoformat() == earliest
+                else _session_records(app_ctx, uid, week_start.isoformat(), progress_end, 2000))
         progress = _activity_summary(
             app_ctx,
             uid,

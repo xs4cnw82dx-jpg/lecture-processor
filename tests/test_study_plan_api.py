@@ -636,6 +636,26 @@ def test_bootstrap_falls_back_to_exact_queries_when_results_are_truncated(client
     assert response.status_code == 200
     today = response.get_json()['range']['from']
     week_start = (date.fromisoformat(today) - timedelta(days=date.fromisoformat(today).weekday())).isoformat()
-    # The truncated combined page is not reused; both original exact queries run.
-    assert session_calls[1:] == [(2000, today), (2000, week_start)]
+    earliest = min(today, week_start)
+    # The range starting at the earlier date reuses the first 2000 rows; only the other range is queried.
+    later = [(2000, value) for value in (today, week_start) if value != earliest]
+    assert session_calls == [(2001, earliest)] + later
     assert active_goal_calls == [1]
+
+
+def test_bootstrap_session_ranges_match_their_own_dates(client, study_plan_runtime):
+    uid, pack_id = study_plan_runtime['uid'], study_plan_runtime['pack_id']
+    today = date.fromisoformat(client.get('/api/study-plan', headers=_headers()).get_json()['range']['from'])
+    week_start = today - timedelta(days=today.weekday())
+    days = [week_start - timedelta(days=3), week_start, today, today + timedelta(days=10), today + timedelta(days=50)]
+    for index, day in enumerate(days):
+        core.planner_repo.set_planner_session(None, uid, f'session-{index}', {
+            'id': f'session-{index}', 'uid': uid, 'pack_id': pack_id, 'title': f'Session {index}',
+            'date': day.isoformat(), 'time': '09:00', 'duration': 30, 'status': 'planned', 'updated_at': 1.0,
+        })
+    to_date = (today + timedelta(days=20)).isoformat()
+    payload = client.get(f'/api/study-plan?from={week_start.isoformat()}&to={to_date}', headers=_headers()).get_json()
+    assert [item['date'] for item in payload['sessions']] == [week_start.isoformat(), today.isoformat(),
+                                                               (today + timedelta(days=10)).isoformat()]
+    narrow = client.get(f'/api/study-plan?from={today.isoformat()}&to={today.isoformat()}', headers=_headers()).get_json()
+    assert [item['date'] for item in narrow['sessions']] == [today.isoformat()]
