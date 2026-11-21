@@ -194,6 +194,25 @@ test('a matching legacy annotated HTML highlight migrates and syncs', async ({ p
   expect(state.errors).toEqual([]);
 });
 
+test('legacy annotated highlight HTML is sanitized before it reaches the page', async ({ page }) => {
+  const state = await installStudy(page);
+  await openPack(page);
+  const legacy = {
+    base_key: `synthetic:1700000000:${NOTES.length}`,
+    annotated_html: '<p>' + HIGHLIGHT_TEXT + '</p><img src="x" onerror="window.__legacyXss = 1"><script>window.__legacyXss = 2</script>',
+  };
+  state.pack.notes_highlights = null;
+  await page.evaluate(payload => {
+    localStorage.removeItem('hl_ranges_synthetic');
+    localStorage.removeItem('lp_ui_v2:user:streak-highlight-fixture:study_cache:highlights:synthetic');
+    localStorage.setItem('hl_html_synthetic', JSON.stringify(payload));
+  }, legacy);
+  await page.reload();
+  await expect(page.locator('#notes-view')).toContainText(HIGHLIGHT_TEXT);
+  await expect(page.locator('#notes-view img[onerror], #notes-view script')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__legacyXss)).toBeUndefined();
+});
+
 test('rating a card on consecutive days grows and syncs the study streak across New Year', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-12-31T12:00:00Z'));
   const state = await installStudy(page);
