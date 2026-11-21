@@ -49,6 +49,15 @@
           <p class="settings-note">Your study materials keep their original language. You can choose an output language when creating new materials.</p>
         </section>
       </fieldset>
+      <section class="settings-section settings-account" id="settings-account" aria-labelledby="account-title" hidden>
+        <div class="settings-section-heading"><span class="settings-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><div><h2 id="account-title">Account</h2><p>Your purchases, your data and your sign-in.</p></div></div>
+        <div class="settings-account-actions">
+          <button type="button" class="btn" data-shell-account-action="shell-purchase-history-btn">Purchase history</button>
+          <button type="button" class="btn" data-shell-account-action="shell-export-data-btn">Export data</button>
+          <button type="button" class="btn" data-shell-account-action="signout-btn">Sign out</button>
+          <button type="button" class="btn danger" data-shell-account-action="shell-delete-account-btn">Delete account</button>
+        </div>
+      </section>
       <div class="settings-save"><span class="settings-save-dot" aria-hidden="true"></span><p id="settings-status" role="status" aria-live="polite">Loading your preferences…</p><button id="settings-retry" type="button" hidden>Try again</button></div>
     </div>
   </main>

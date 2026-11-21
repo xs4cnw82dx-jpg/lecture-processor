@@ -3,7 +3,7 @@
 TOOL_CATEGORIES = (
     ('create', 'Create study material', 'Turn your lectures and slides into something you can study.'),
     ('read', 'Read sources', 'Find the information you need in documents, images, and articles.'),
-    ('transcribe', 'Transcribe audio', 'Turn recordings and conversations into clear text.'),
+    ('transcribe', 'Transcribe audio', 'General Transcriber gives one clean transcript; Interview Transcription adds timestamps and summaries for conversations; Voice Notes in the sidebar records straight from your browser.'),
     ('batch', 'Batch processing', 'Save time when you have several files to work through.'),
     ('media', 'Media and creative', 'Download, illustrate, and bring your material to life.'),
 )

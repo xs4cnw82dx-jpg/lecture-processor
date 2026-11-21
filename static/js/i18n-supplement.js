@@ -471,7 +471,8 @@
   "Lecture import": "College importeren",
   "Troubleshooting": "Problemen oplossen",
   "Go to": "Ga naar",
-  "and choose the processing flow you need.": "en kies de verwerking die je nodig hebt.",
+  "Start from": "Begin bij",
+  "in the sidebar, or pick another tool under Create.": "in de zijbalk, of kies een ander hulpmiddel onder Maken.",
   "when you have slides and audio for the same lecture.": "als je dia’s en audio van hetzelfde college hebt.",
   "when you only need clean text from slides.": "als je alleen leesbare tekst uit dia’s nodig hebt.",
   "when you only have recorded audio.": "als je alleen een audio-opname hebt.",
@@ -547,6 +548,7 @@
   "Voice Notes · Lecture Processor": "Spraaknotities · Lecture Processor",
   "Shared Workout · Lecture Processor": "Gedeelde training · Lecture Processor",
   "Shared Study Content · Lecture Processor": "Gedeeld studiemateriaal · Lecture Processor",
-  "Your account": "Je account"
+  "Your account": "Je account",
+  "Your purchases, your data and your sign-in.": "Je aankopen, je gegevens en je aanmelding."
 });
 })(typeof window !== 'undefined' ? window : globalThis);
