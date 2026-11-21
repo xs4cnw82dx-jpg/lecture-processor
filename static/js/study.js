@@ -2148,18 +2148,26 @@ function focusMenuItem(menu, selector, mode) {
   items[0].focus();
 }
 function updatePackEmptyState() {
+  // Keep the designed empty state (symbol, heading, copy); only its words change.
+  var emptyTitle = document.getElementById('pack-empty-default-title');
+  var emptyCopy = document.getElementById('pack-empty-default-copy');
+  function setEmptyCopy(title, copy) {
+    if (emptyTitle) emptyTitle.textContent = title;
+    if (emptyCopy) emptyCopy.textContent = copy;
+  }
   if (isVideoOverlayFolderSelected()) {
     if (packEmptyDefault) {
-      packEmptyDefault.textContent = videoOverlayProjects.length
-        ? 'Open a video overlay project from the list.'
-        : 'No video overlay projects yet. Create one in the Video Overlay Builder.';
+      setEmptyCopy(videoOverlayProjects.length ? 'Open a project' : 'No video overlay projects yet',
+        videoOverlayProjects.length
+          ? 'Open a video overlay project from the list.'
+          : 'No video overlay projects yet. Create one in the Video Overlay Builder.');
       packEmptyDefault.classList.add('visible');
     }
     if (packEmptyOnboarding) { packEmptyOnboarding.classList.remove('visible'); }
     return;
   }
   var hasPacks = (packs || []).length > 0;
-  if (packEmptyDefault) { packEmptyDefault.textContent = 'Select a study pack to edit and study.'; }
+  setEmptyCopy('Make room for your next idea.', 'Select a pack to read your notes, review flashcards, or start a focused study session.');
   if (packEmptyDefault) { packEmptyDefault.classList.toggle('visible', hasPacks); }
   if (packEmptyOnboarding) { packEmptyOnboarding.classList.toggle('visible', !hasPacks); }
 }
@@ -5224,7 +5232,7 @@ function renderPacks() {
     setSafeInnerHtml(div, '<div class="pack-row-main"><label class="pack-select-control"><input type="checkbox" data-pack-select aria-label="Select ' + titleText + '"' + (isCheckedForDelete ? ' checked' : '') + '><span class="pack-select-box" aria-hidden="true"></span></label><button type="button" class="pack-row-open" data-pack-open><span class="pack-row-content"><span class="item-head"><span class="item-title">' + titleText + planBadge + '</span></span><span class="item-sub">' + ([Number(p.flashcards_count) > 0 ? formatItemCount(Number(p.flashcards_count), 'card') : '', Number(p.test_questions_count) > 0 ? formatItemCount(Number(p.test_questions_count), 'question') : ''].filter(Boolean).join(' · ') || modeText) + '</span><span class="item-sub">' + metaText + '</span></span></button><button type="button" class="pack-quick-learn" data-pack-learn>Learn</button></div>');
     var activatePack = function () {
       document.getElementById('library-grid').classList.add('has-open-pack');
-      openPack(packId);
+      openPack(packId).then(function (opened) { if (opened && selectedPackId === packId) revealPackDetail(); });
     };
     var checkbox = div.querySelector('[data-pack-select]');
     var selectControl = div.querySelector('.pack-select-control');
@@ -5344,14 +5352,48 @@ function resetInlineEditorViews() {
   flashcardCount.textContent = ((selectedPack && selectedPack.flashcards) || []).length + ' flashcards';
   questionCount.textContent = ((selectedPack && selectedPack.test_questions) || []).length + ' practice questions';
 }
-function renderFlashcardEditor(hi) {
+// The confirmed entry may have been replaced by a save while the dialog was
+// open; fall back to the same position only when its content still matches.
+function findEditorEntryIndex(list, entry, fallbackIndex, fields) {
+  var items = Array.isArray(list) ? list : [];
+  var index = items.indexOf(entry);
+  if (index >= 0) return index;
+  var candidate = items[fallbackIndex];
+  if (!candidate || !entry) return -1;
+  return fields.every(function (field) { return String(candidate[field] || '') === String(entry[field] || ''); }) ? fallbackIndex : -1;
+}
+// Library rows read as a list; Edit opens the form and Close collapses it again.
+var EDITOR_ROW_TOGGLE_LABEL = '<span class="builder-row-expand-label"><span class="editor-row-closed-label">Edit</span><span class="editor-row-open-label">Close</span></span>';
+// The Library scrolls as one page. When a pack is opened from further down the
+// list on a wide screen, bring its details (at the top of the column) into view.
+function revealPackDetail() {
+  var detail = document.querySelector('.library-pack-detail');
+  if (!detail || window.innerWidth <= 760) return;
+  var topbar = document.querySelector('.app-shell-topbar');
+  var offset = (topbar ? topbar.getBoundingClientRect().height : 0) + 12;
+  var top = detail.getBoundingClientRect().top;
+  if (top >= offset) return;
+  window.scrollTo({ top: Math.max(0, window.scrollY + top - offset), behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth' });
+}
+function openEditorRows(list, packId, keepOpen) {
+  // Re-rendering the same pack (for example after a picture change) keeps the
+  // cards the student has open; a new pack or a deletion starts closed.
+  if (keepOpen === false || !list || list.dataset.packId !== String(packId || '')) return {};
+  var open = {};
+  list.querySelectorAll('.editor-card[open]').forEach(function (row) { open[row.dataset.rowIndex] = true; });
+  return open;
+}
+function renderFlashcardEditor(hi, keepOpen) {
   renderedEditorPanes.flashcards = true;
   var idx = typeof hi === 'number' ? hi : -1;
   var cards = selectedPack && Array.isArray(selectedPack.flashcards) ? selectedPack.flashcards : [];
+  var packId = selectedPack ? String(selectedPack.study_pack_id || '') : '';
+  var openRows = openEditorRows(flashcardEditorList, packId, keepOpen);
+  flashcardEditorList.dataset.packId = packId;
   flashcardCount.textContent = cards.length + ' flashcards'; flashcardEditorList.innerHTML = '';
   if (!cards.length) { setSafeInnerHtml(flashcardEditorList, '<div class="empty">No flashcards yet. Add one to start editing.</div>'); return; }
   cards.forEach(function (card, ci) {
-    var row = document.createElement('details'); row.open = ci === 0 || ci === idx; row.className = 'editor-card builder-expandable' + (ci === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(ci);
+    var row = document.createElement('details'); row.open = ci === idx || !!openRows[String(ci)]; row.className = 'editor-card builder-expandable' + (ci === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(ci);
     var frontId = 'editor-card-front-' + ci;
     var backId = 'editor-card-back-' + ci;
     var safeFront = escapeHtml(card.front || '');
@@ -5360,7 +5402,7 @@ function renderFlashcardEditor(hi) {
     var cardBody = document.createElement('div'); cardBody.className = 'builder-row-content';
     while (row.firstChild) cardBody.appendChild(row.firstChild);
     var cardSummary = document.createElement('summary');
-    setSafeInnerHtml(cardSummary, '<span class="builder-row-number">' + String(ci + 1) + '</span><span data-item-summary>' + safeFront + '</span><span class="builder-row-expand-label">Edit</span>');
+    setSafeInnerHtml(cardSummary, '<span class="builder-row-number">' + String(ci + 1) + '</span><span class="editor-card-preview"><span data-item-summary>' + (safeFront || 'New flashcard') + '</span><span class="editor-card-answer" data-item-answer>' + safeBack + '</span></span>' + EDITOR_ROW_TOGGLE_LABEL);
     row.append(cardSummary, cardBody);
     flashcardEditorList.appendChild(row);
     if (window.StudyPictures) window.StudyPictures.editor(cardBody, card, selectedPack, queueInlineAutosave, renderFlashcardEditor);
@@ -5369,16 +5411,24 @@ function renderFlashcardEditor(hi) {
     el.addEventListener('input', function () {
       selectedPack.flashcards[parseInt(el.dataset.cardIndex, 10)][el.dataset.cardField] = el.value;
       if (el.dataset.cardField === 'front') el.closest('.editor-card').querySelector('[data-item-summary]').textContent = el.value || 'New flashcard';
+      if (el.dataset.cardField === 'back') el.closest('.editor-card').querySelector('[data-item-answer]').textContent = el.value;
       queueInlineAutosave();
     });
   });
   flashcardEditorList.querySelectorAll('[data-delete-card]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      selectedPack.flashcards.splice(parseInt(btn.dataset.deleteCard, 10), 1);
-      if (learnFlashcardIndex >= selectedPack.flashcards.length) { learnFlashcardIndex = Math.max(0, selectedPack.flashcards.length - 1); }
-      renderFlashcardEditor();
-      queueInlineAutosave();
-      showToast('Flashcard deleted.');
+      var packAtRequest = selectedPack;
+      var cardAtRequest = packAtRequest.flashcards[parseInt(btn.dataset.deleteCard, 10)];
+      openConfirmModal('Delete this flashcard?', 'The flashcard is removed from this study pack. Your other cards and progress stay.', 'Delete flashcard').then(function (confirmed) {
+        if (!confirmed || selectedPack !== packAtRequest) return;
+        var index = findEditorEntryIndex(packAtRequest.flashcards, cardAtRequest, parseInt(btn.dataset.deleteCard, 10), ['front', 'back']);
+        if (index < 0) return;
+        packAtRequest.flashcards.splice(index, 1);
+        if (learnFlashcardIndex >= packAtRequest.flashcards.length) { learnFlashcardIndex = Math.max(0, packAtRequest.flashcards.length - 1); }
+        renderFlashcardEditor(undefined, false);
+        queueInlineAutosave();
+        showToast('Flashcard deleted.');
+      });
     });
   });
   if (idx >= 0) { var row = flashcardEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row) { row.scrollIntoView({ behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' }); var inp = row.querySelector('input[data-card-field="front"]'); if (inp) { inp.focus(); } } }
@@ -5424,15 +5474,18 @@ function syncQuestionAnswerPicker(row, question) {
   });
 }
 
-function renderQuestionEditor(hi) {
+function renderQuestionEditor(hi, keepOpen) {
   renderedEditorPanes.test = true;
   var idx = typeof hi === 'number' ? hi : -1;
+  var questionPackId = selectedPack ? String(selectedPack.study_pack_id || '') : '';
+  var openQuestionRows = openEditorRows(questionEditorList, questionPackId, keepOpen);
+  questionEditorList.dataset.packId = questionPackId;
   selectedPack.test_questions = (selectedPack.test_questions || []).map(normalizeQuestion);
   var questions = selectedPack.test_questions;
   questionCount.textContent = questions.length + ' practice questions'; questionEditorList.innerHTML = '';
   if (!questions.length) { setSafeInnerHtml(questionEditorList, '<div class="empty">No practice questions yet. Add one to start editing.</div>'); return; }
   questions.forEach(function (q, qi) {
-    var row = document.createElement('details'); row.open = qi === 0 || qi === idx; row.className = 'editor-card builder-expandable' + (qi === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(qi);
+    var row = document.createElement('details'); row.open = qi === idx || !!openQuestionRows[String(qi)]; row.className = 'editor-card builder-expandable' + (qi === idx ? ' newly-added' : ''); row.dataset.rowIndex = String(qi);
     var adStr = escapeHtml(getAnswerDisplay(q));
     var answerMenuId = 'q-answer-menu-' + qi;
     var answerButtonId = 'q-answer-button-' + qi;
@@ -5462,13 +5515,14 @@ function renderQuestionEditor(hi) {
     var questionBody = document.createElement('div'); questionBody.className = 'builder-row-content';
     while (row.firstChild) questionBody.appendChild(row.firstChild);
     var questionSummary = document.createElement('summary');
-    setSafeInnerHtml(questionSummary, '<span class="builder-row-number">' + String(qi + 1) + '</span><span data-item-summary>' + escapeHtml(q.question || 'New question') + '</span><span class="builder-row-expand-label">Edit</span>');
+    setSafeInnerHtml(questionSummary, '<span class="builder-row-number">' + String(qi + 1) + '</span><span class="editor-card-preview"><span data-item-summary>' + escapeHtml(q.question || 'New question') + '</span><span class="editor-card-answer" data-item-answer>' + escapeHtml(q.answer || '') + '</span></span>' + EDITOR_ROW_TOGGLE_LABEL);
     row.append(questionSummary, questionBody);
     questionEditorList.appendChild(row);
   });
   questionEditorList.querySelectorAll('[data-question-field="question"],[data-question-field="explanation"]').forEach(function (el) {
     el.addEventListener('input', function () {
       selectedPack.test_questions[parseInt(el.dataset.questionIndex, 10)][el.dataset.questionField] = el.value;
+      if (el.dataset.questionField === 'question') el.closest('.editor-card').querySelector('[data-item-summary]').textContent = el.value || 'New question';
       queueInlineAutosave();
     });
   });
@@ -5478,6 +5532,8 @@ function renderQuestionEditor(hi) {
       var qn = updateQuestionOptionValue(selectedPack.test_questions[qi2], oi2, el.value);
       selectedPack.test_questions[qi2] = qn;
       syncQuestionAnswerPicker(el.closest('[data-row-index]'), qn);
+      var answerPreview = el.closest('.editor-card').querySelector('[data-item-answer]');
+      if (answerPreview) answerPreview.textContent = qn.answer || '';
       queueInlineAutosave();
     });
   });
@@ -5529,11 +5585,18 @@ function renderQuestionEditor(hi) {
   });
   questionEditorList.querySelectorAll('[data-delete-question]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      selectedPack.test_questions.splice(parseInt(btn.dataset.deleteQuestion, 10), 1);
-      if (learnQuestionIndex >= selectedPack.test_questions.length) { learnQuestionIndex = Math.max(0, selectedPack.test_questions.length - 1); }
-      renderQuestionEditor();
-      queueInlineAutosave();
-      showToast('Practice question deleted.');
+      var packAtRequest = selectedPack;
+      var questionAtRequest = packAtRequest.test_questions[parseInt(btn.dataset.deleteQuestion, 10)];
+      openConfirmModal('Delete this practice question?', 'The question is removed from this study pack. Your other questions and progress stay.', 'Delete question').then(function (confirmed) {
+        if (!confirmed || selectedPack !== packAtRequest) return;
+        var index = findEditorEntryIndex(packAtRequest.test_questions, questionAtRequest, parseInt(btn.dataset.deleteQuestion, 10), ['question', 'answer']);
+        if (index < 0) return;
+        packAtRequest.test_questions.splice(index, 1);
+        if (learnQuestionIndex >= packAtRequest.test_questions.length) { learnQuestionIndex = Math.max(0, packAtRequest.test_questions.length - 1); }
+        renderQuestionEditor(undefined, false);
+        queueInlineAutosave();
+        showToast('Practice question deleted.');
+      });
     });
   });
   if (idx >= 0) { var row2 = questionEditorList.querySelector('[data-row-index="' + idx + '"]'); if (row2) { row2.scrollIntoView({ behavior: uxUtils.prefersReducedMotion && uxUtils.prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' }); var ta = row2.querySelector('textarea[data-question-field="question"]'); if (ta) { ta.focus(); } } }

@@ -40,6 +40,7 @@ async function library(page, enabled = true) {
   });
   await page.goto('/study?pack_id=anatomy-pack');
   await page.locator('#editor-tab-flashcards').click();
+  await page.locator('#flashcard-editor-list .editor-card > summary').first().click();
   await expect(page.locator('#editor-card-front-0')).toBeVisible();
   return { pack, saves };
 }
@@ -58,6 +59,7 @@ test('private pictures can be enlarged, uploaded and survive card edits and relo
   await expect.poll(() => pack.flashcards[0].image_ids.length).toBe(2);
   await page.reload();
   await page.locator('#editor-tab-flashcards').click();
+  await page.locator('#flashcard-editor-list .editor-card > summary').first().click();
   await expect(page.locator('#editor-card-front-0')).toHaveValue('Edited muscle question');
   await expect(page.getByRole('button', { name: 'Remove picture', exact: true })).toHaveCount(2);
   await page.getByRole('button', { name: 'Remove picture', exact: true }).last().click();

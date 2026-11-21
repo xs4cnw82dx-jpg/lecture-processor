@@ -242,6 +242,7 @@ test('discarding a rejected flashcard starts the session with its saved answer',
   } });
   await openPack(page);
   await page.locator('#editor-tab-flashcards').click();
+  await page.locator('#flashcard-editor-list [data-row-index="0"] > summary').click();
   await page.locator('#editor-card-back-0').fill('Rejected card answer');
   await page.locator('#open-learn-btn').click();
   for (const card of await page.locator('.lesson-card[data-lesson]').all()) {
@@ -472,6 +473,7 @@ test(`lifecycle flush shares and releases the keepalive budget for a ${backSize}
     if (await page.locator('#notes-view mark[data-hl="green"]').count() === 0) await page.clock.runFor(900);
     await expect(page.locator('#notes-view mark[data-hl="green"]')).toHaveCount(1);
     await page.locator('#editor-tab-flashcards').click();
+    await page.locator('#flashcard-editor-list [data-row-index="0"] > summary').click();
     await page.locator('#editor-card-back-0').fill('x'.repeat(backSize));
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
     await expect.poll(() => state.requests.filter(entry => entry.method === 'PATCH' && entry.path === '/api/study-packs/a').length).toBe(2);

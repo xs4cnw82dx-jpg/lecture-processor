@@ -157,6 +157,8 @@ async function openPack(page) {
 
 async function openCards(page) {
   await page.locator('#editor-tab-flashcards').click();
+  // Library card rows start closed; Edit opens the first one for editing.
+  if (!await page.locator('#editor-card-back-0').isVisible()) await page.locator('#flashcard-editor-list [data-row-index="0"] > summary').click();
   await expect(page.locator('#editor-card-back-0')).toBeVisible();
 }
 
