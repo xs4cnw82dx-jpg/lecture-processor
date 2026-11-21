@@ -1113,6 +1113,79 @@
     return state;
   }
 
+  // One toast behaviour for every page. Pages keep their own element and look
+  // (pass element/show/hide); the timing and announcements are shared:
+  // a new message replaces the old one and its timer, errors stay at least six
+  // seconds, and the timer pauses while the toast is hovered or focused.
+  var TOAST_ERROR_MIN_MS = 6000;
+  var TOAST_DEFAULT_MS = 3200;
+  var sharedToastRegion = null;
+  function ensureToastRegion() {
+    if (sharedToastRegion && sharedToastRegion.isConnected) return sharedToastRegion;
+    if (!document.body) return null;
+    sharedToastRegion = document.createElement('div');
+    sharedToastRegion.className = 'app-toast';
+    sharedToastRegion.setAttribute('aria-atomic', 'true');
+    sharedToastRegion.setAttribute('role', 'status');
+    document.body.appendChild(sharedToastRegion);
+    return sharedToastRegion;
+  }
+  function defaultToastShow(element, type) {
+    element.classList.remove('success', 'error', 'warning', 'info');
+    if (type) element.classList.add(type);
+    element.classList.add('visible');
+  }
+  function defaultToastHide(element) { element.classList.remove('visible'); }
+  function scheduleToastHide(element, delay) {
+    if (element._uxToastTimer) global.clearTimeout(element._uxToastTimer);
+    element._uxToastHideAt = Date.now() + delay;
+    element._uxToastTimer = global.setTimeout(function () {
+      element._uxToastTimer = null;
+      if (element._uxToastHide) element._uxToastHide(element);
+    }, delay);
+  }
+  function bindToastPause(element) {
+    if (element._uxToastPauseBound) return;
+    element._uxToastPauseBound = true;
+    function pause() {
+      if (!element._uxToastTimer) return;
+      element._uxToastRemaining = Math.max(0, element._uxToastHideAt - Date.now());
+      global.clearTimeout(element._uxToastTimer);
+      element._uxToastTimer = null;
+      element._uxToastPaused = true;
+    }
+    function resume() {
+      if (!element._uxToastPaused || element.matches(':hover') || element.contains(document.activeElement)) return;
+      element._uxToastPaused = false;
+      scheduleToastHide(element, Math.max(element._uxToastRemaining || 0, 1500));
+    }
+    element.addEventListener('mouseenter', pause);
+    element.addEventListener('focusin', pause);
+    element.addEventListener('mouseleave', resume);
+    element.addEventListener('focusout', function () { global.setTimeout(resume, 0); });
+  }
+  function toast(message, options) {
+    var opts = options || {};
+    var element = opts.element || ensureToastRegion();
+    if (!element || message === undefined || message === null || String(message) === '') return null;
+    var type = opts.type || 'info';
+    var isError = type === 'error';
+    var target = opts.textElement || element;
+    if (typeof opts.render === 'function') opts.render(target, message);
+    else target.textContent = String(message);
+    element.setAttribute('role', isError ? 'alert' : 'status');
+    element.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+    element.setAttribute('aria-atomic', 'true');
+    element._uxToastHide = typeof opts.hide === 'function' ? opts.hide : defaultToastHide;
+    (typeof opts.show === 'function' ? opts.show : defaultToastShow)(element, type);
+    var duration = Number(opts.duration) > 0 ? Number(opts.duration) : TOAST_DEFAULT_MS;
+    if (isError) duration = Math.max(duration, TOAST_ERROR_MIN_MS);
+    element._uxToastPaused = false;
+    bindToastPause(element);
+    scheduleToastHide(element, duration);
+    return element;
+  }
+
   function requestDialog(options) {
     var opts = options || {};
     return new Promise(function (resolve) {
@@ -1245,6 +1318,7 @@
   }
 
   global.LectureProcessorUx = {
+    toast: toast,
     prefersReducedMotion: prefersReducedMotion,
     setHidden: setHidden,
     setBodyScrollLocked: setBodyScrollLocked,

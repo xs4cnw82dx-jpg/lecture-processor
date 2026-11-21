@@ -70,8 +70,10 @@ def test_study_feedback_regions_are_announced_to_assistive_tech():
     assert 'id="builder-import-summary" role="status" aria-live="polite" aria-atomic="true"' in study_template
     assert 'id="builder-import-errors" role="alert" aria-live="assertive" aria-atomic="true"' in study_template
     assert re.search(r'id="pack-save-status"[\s\S]*?role="status"[\s\S]*?aria-live="polite"[\s\S]*?aria-atomic="true"', study_template)
-    assert "toastEl.setAttribute('role', isError ? 'alert' : 'status');" in study_js
-    assert "toastEl.setAttribute('aria-live', isError ? 'assertive' : 'polite');" in study_js
+    ux_js = _read('static/js/ux-utils.js')
+    assert "uxUtils.toast(msg, { element: toastEl" in study_js
+    assert "element.setAttribute('role', isError ? 'alert' : 'status');" in ux_js
+    assert "element.setAttribute('aria-live', isError ? 'assertive' : 'polite');" in ux_js
 
 
 def test_study_csv_import_auto_applies_saves_and_uses_structured_preview():

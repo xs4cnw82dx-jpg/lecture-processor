@@ -46,7 +46,6 @@
   var lastOutput = '';
   var currentJobId = '';
   var pollTimer = null;
-  var toastTimer = null;
   var dropzoneDragging = false;
 
   function getSignedInUser() {
@@ -64,16 +63,12 @@
 
   function showReaderToast(message, type) {
     if (!readerToast || !message) return;
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: readerToast, type: type || 'info', duration: 2200, show: function (el) { el.className = 'reader-toast visible' + (type ? ' ' + type : ''); }, hide: function (el) { el.className = 'reader-toast'; } });
+      return;
+    }
     readerToast.textContent = String(message);
-    readerToast.className = 'reader-toast visible' + (type ? ' ' + type : '');
-    readerToast.setAttribute('role', type === 'error' ? 'alert' : 'status');
-    readerToast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-    if (toastTimer) window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(function () {
-      readerToast.className = 'reader-toast';
-      readerToast.setAttribute('role', 'status');
-      readerToast.setAttribute('aria-live', 'polite');
-    }, 2200);
   }
 
   function setStatus(message, type) {

@@ -1670,19 +1670,13 @@ var keyboardHints = document.querySelector('.keyboard-hints');
 var STUDY_DUE_CACHE_KEY = 'study_due_today';
 var PLAN_SUMMARY_CACHE_KEY = 'plan_summary';
 var DASHBOARD_SUMMARY_CACHE_KEY = 'dashboard_summary';
-var toastTimer = null;
 
 /* ── Helpers ── */
 function showToast(msg, type) {
   if (!toastEl || !msg) return;
-  var isError = type === 'error';
-  toastEl.setAttribute('role', isError ? 'alert' : 'status');
-  toastEl.setAttribute('aria-live', isError ? 'assertive' : 'polite');
-  toastEl.setAttribute('aria-atomic', 'true');
+  var kind = type || 'success';
+  if (uxUtils.toast) { uxUtils.toast(msg, { element: toastEl, type: kind, duration: 2800, show: function (el) { el.className = 'toast visible ' + kind; } }); return; }
   toastEl.textContent = msg;
-  toastEl.className = 'toast visible ' + (type || 'success');
-  if (toastTimer) { clearTimeout(toastTimer); }
-  toastTimer = setTimeout(function () { toastEl.classList.remove('visible'); }, 2800);
 }
 function setStudyLibraryVisibility(signedIn) {
   if (studyAuthGate) { studyAuthGate.hidden = !!signedIn; }

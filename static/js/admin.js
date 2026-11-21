@@ -80,7 +80,6 @@ let currentWindow = '7d';
 let currentModeView = 'total';
 let latestModeBreakdown = {};
 let activeAdminRoute = 'overview';
-let adminToastTimer = null;
 let currentAdminCreditUser = null;
 let adminCreditBusy = false;
 let pendingAdminGrant = null;
@@ -179,17 +178,12 @@ function formatTokenCount(count) {
 
 function showAdminToast(message, type) {
     if (!message) return;
+    const ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+        ux.toast(message, { element: adminToast, type: type || 'info', duration: 3200 });
+        return;
+    }
     adminToast.textContent = String(message);
-    adminToast.classList.remove('success', 'error', 'visible');
-    if (type === 'success') adminToast.classList.add('success');
-    if (type === 'error') adminToast.classList.add('error');
-    adminToast.setAttribute('role', type === 'error' ? 'alert' : 'status');
-    adminToast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-    adminToast.classList.add('visible');
-    if (adminToastTimer) window.clearTimeout(adminToastTimer);
-    adminToastTimer = window.setTimeout(() => {
-        adminToast.classList.remove('visible');
-    }, 2400);
 }
 
 function setAdminMaintenanceStatus(message, type) {

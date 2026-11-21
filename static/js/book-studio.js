@@ -29,7 +29,6 @@
     localWrites = 0,
     saveTimer,
     pagesTimer,
-    toastTimer,
     leaseToken = "",
     undoStack = [],
     redoStack = [];
@@ -611,16 +610,14 @@
   }
 
   function notify(message, error = false) {
-    clearTimeout(toastTimer);
-    $("book-toast").textContent = message;
-    $("book-toast").classList.toggle("error", error);
-    $("book-toast").hidden = false;
-    toastTimer = setTimeout(
-      () => {
-        $("book-toast").hidden = true;
-      },
-      error ? 9500 : 4200,
-    );
+    const node = $("book-toast");
+    const ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: node, type: error ? "error" : "info", duration: error ? 9500 : 4200, show: (el) => { el.classList.toggle("error", error); el.hidden = false; }, hide: (el) => { el.hidden = true; } });
+      return;
+    }
+    node.textContent = message;
+    node.hidden = false;
   }
   function status(message) {
     $("save-state").textContent = message;

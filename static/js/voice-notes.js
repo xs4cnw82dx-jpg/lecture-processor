@@ -207,13 +207,12 @@
 
   function showToast(message, type) {
     if (!els.toast || !message) return;
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: els.toast, type: type === 'error' ? 'error' : 'info', duration: 2600, show: function (el) { el.classList.toggle('error', type === 'error'); el.classList.add('visible'); } });
+      return;
+    }
     els.toast.textContent = String(message);
-    els.toast.classList.toggle('error', type === 'error');
-    els.toast.classList.add('visible');
-    window.clearTimeout(showToast.timer);
-    showToast.timer = window.setTimeout(function () {
-      els.toast.classList.remove('visible');
-    }, 2600);
   }
 
   function setAudioStatus(message, type) {

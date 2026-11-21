@@ -56,7 +56,6 @@
   var lastOutput = '';
   var currentJobId = '';
   var pollTimer = null;
-  var toastTimer = null;
   var languageUserTouched = false;
 
   function getSignedInUser() {
@@ -74,12 +73,12 @@
 
   function showToast(message, type) {
     if (!toastEl || !message) return;
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: toastEl, type: type || 'info', duration: 2200, show: function (el) { el.className = 'reader-toast visible' + (type ? ' ' + type : ''); }, hide: function (el) { el.className = 'reader-toast'; } });
+      return;
+    }
     toastEl.textContent = String(message);
-    toastEl.className = 'reader-toast visible' + (type ? ' ' + type : '');
-    if (toastTimer) window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(function () {
-      toastEl.className = 'reader-toast';
-    }, 2200);
   }
 
   function setStatus(message, type) {

@@ -2700,10 +2700,12 @@ function renderToastIcon(type) {
     add('line', { x1: '12', y1: '8', x2: '12.01', y2: '8' });
 }
 function showToast(message, type = 'success', duration = 3000) {
+    const ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+        ux.toast(message, { element: toast, textElement: toastText, type, duration, show: (el) => { el.className = `toast visible ${type}`; renderToastIcon(type); } });
+        return;
+    }
     toastText.textContent = message;
-    toast.className = `toast visible ${type}`;
-    renderToastIcon(type);
-    setTimeout(() => toast.classList.remove('visible'), duration);
 }
 function getRetryAfterSeconds(response, data) {
     const bodyValue = Number((data && data.retry_after_seconds) || 0);

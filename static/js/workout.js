@@ -52,11 +52,13 @@
   function getRoutine(routineId) {
     return (state.data && state.data.routines || []).find(function (item) { return item.id === routineId; }) || null;
   }
-  function toast(message) {
+  function toast(message, type) {
+    var ux = global.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(String(message || ''), { element: elements.toast, type: type || 'info', duration: 3000, show: function (el) { el.classList.add('is-visible'); }, hide: function (el) { el.classList.remove('is-visible'); } });
+      return;
+    }
     elements.toast.textContent = String(message || '');
-    elements.toast.classList.add('is-visible');
-    global.clearTimeout(elements.toast._timer);
-    elements.toast._timer = global.setTimeout(function () { elements.toast.classList.remove('is-visible'); }, 3000);
   }
   function setSync(message) { elements.syncPill.textContent = message; }
 

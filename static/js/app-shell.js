@@ -90,7 +90,6 @@
   var lastSignedInUid = auth && auth.currentUser && auth.currentUser.uid ? String(auth.currentUser.uid) : '';
   var authStateResolved = !!(auth && auth.currentUser);
   var authObserverStartedAt = Date.now();
-  var toastTimer = null;
   var deleteAccountInFlight = false;
   var signOutInFlight = false;
   var LOCAL_CLEANUP_WARNING = 'Some study data could not be cleared from this browser. Clear site data before sharing this device.';
@@ -241,19 +240,12 @@
 
   function showToast(message, variant) {
     if (!shellToast || !message) return;
+    var ux = window.LectureProcessorUx;
+    if (ux && ux.toast) {
+      ux.toast(message, { element: shellToast, type: variant || 'info', duration: 2600 });
+      return;
+    }
     shellToast.textContent = String(message);
-    shellToast.classList.remove('error', 'success');
-    if (variant === 'error') shellToast.classList.add('error');
-    if (variant === 'success') shellToast.classList.add('success');
-    shellToast.setAttribute('role', variant === 'error' ? 'alert' : 'status');
-    shellToast.setAttribute('aria-live', variant === 'error' ? 'assertive' : 'polite');
-    shellToast.classList.add('visible');
-    if (toastTimer) window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(function () {
-      shellToast.classList.remove('visible');
-      shellToast.setAttribute('role', 'status');
-      shellToast.setAttribute('aria-live', 'polite');
-    }, 2600);
   }
 
   function isMobileSidebar() {

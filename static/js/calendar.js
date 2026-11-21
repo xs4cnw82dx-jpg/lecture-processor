@@ -55,10 +55,12 @@
     let sessionTimePicker = null;
 
     function showToast(msg, type) {
+      const ux = window.LectureProcessorUx;
+      if (ux && ux.toast) {
+        ux.toast(msg, { element: toastEl, type: type || 'info', duration: 2400, show: (el) => { el.className = 'toast visible' + (type ? ' ' + type : ''); }, hide: (el) => { el.className = 'toast'; } });
+        return;
+      }
       toastEl.textContent = msg;
-      toastEl.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-      toastEl.className = 'toast visible' + (type ? ' ' + type : '');
-      setTimeout(() => toastEl.className = 'toast', 2400);
     }
 
     function setFieldError(input, errorEl, message) {

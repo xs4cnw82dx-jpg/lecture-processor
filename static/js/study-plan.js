@@ -112,13 +112,17 @@
   }
   function toast(message, type, params) {
     if (!els.toast) return;
-    els.toast.textContent = '';
-    toastMessage = { source: message, params: params, node: document.createTextNode('') };
-    els.toast.appendChild(toastMessage.node);
-    renderToastMessage();
-    els.toast.className = 'toast visible' + (type ? ' ' + type : '');
-    els.toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-    window.setTimeout(function () { els.toast.className = 'toast'; }, 3200);
+    var render = function (target) {
+      target.textContent = '';
+      toastMessage = { source: message, params: params, node: document.createTextNode('') };
+      target.appendChild(toastMessage.node);
+      renderToastMessage();
+    };
+    if (ux && ux.toast) {
+      ux.toast(message, { element: els.toast, type: type || 'info', render: render, show: function (el) { el.className = 'toast visible' + (type ? ' ' + type : ''); }, hide: function (el) { el.className = 'toast'; } });
+      return;
+    }
+    render(els.toast);
   }
   function setSaving(kind, message) {
     if (!els.saveState) return;

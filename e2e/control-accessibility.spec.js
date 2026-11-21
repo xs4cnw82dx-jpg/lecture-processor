@@ -74,3 +74,21 @@ test.describe('batch modes on phones', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   });
 });
+
+test('the shared toast keeps errors readable, pauses on hover and replaces older messages', async ({ page }) => {
+  await installAccountFixture(page);
+  await page.goto('/dashboard');
+  await page.clock.install();
+  const state = () => page.evaluate(() => { const el = document.querySelector('.app-toast'); return el ? { visible: el.classList.contains('visible'), text: el.textContent, role: el.getAttribute('role') } : null; });
+  await page.evaluate(() => window.LectureProcessorUx.toast('Saved', { type: 'success' }));
+  await page.evaluate(() => window.LectureProcessorUx.toast('Could not save', { type: 'error', duration: 1000 }));
+  expect(await state()).toEqual({ visible: true, text: 'Could not save', role: 'alert' });
+  await page.clock.runFor(5000);
+  expect((await state()).visible).toBe(true);
+  await page.locator('.app-toast').hover();
+  await page.clock.runFor(10000);
+  expect((await state()).visible).toBe(true);
+  await page.mouse.move(0, 0);
+  await page.clock.runFor(2500);
+  expect((await state()).visible).toBe(false);
+});
