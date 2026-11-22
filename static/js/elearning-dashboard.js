@@ -6,6 +6,7 @@
   var grid = document.getElementById('el-dash-grid');
   var statusEl = document.getElementById('el-dash-status');
   var createDialog = document.getElementById('el-create-dialog');
+  var titleInput = document.getElementById('el-new-title');
   var deleteDialog = document.getElementById('el-delete-dialog');
   var pendingDeleteExp = null;
   var actionsEl = document.getElementById('el-author-actions');
@@ -132,6 +133,7 @@
 
   document.getElementById('el-new-expedition-btn').addEventListener('click', function () {
     document.getElementById('el-create-error').hidden = true;
+    titleInput.value = '';
     createDialog.showModal();
   });
   document.getElementById('el-create-cancel').addEventListener('click', function () {
@@ -171,13 +173,15 @@
     error.hidden = false;
   }
 
-  document.getElementById('el-create-confirm').addEventListener('click', async function () {
-    var title = document.getElementById('el-new-title').value.trim() || 'xPEDitie Pijn — Pilot v1';
+  document.getElementById('el-create-form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    titleInput.value = titleInput.value.trim();
+    if (!titleInput.reportValidity()) return;
     var lang = document.getElementById('el-new-lang').value;
     var preset = document.getElementById('el-new-template').value;
     var confirm = document.getElementById('el-create-confirm');
     confirm.disabled = true;
-    var payload = Model.createExpeditionPreset(preset, title, lang);
+    var payload = Model.createExpeditionPreset(preset, titleInput.value, lang);
     try {
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(payload) });
       createDialog.close();
@@ -218,7 +222,7 @@
     if (createDialog.open) createDialog.close();
     grid.replaceChildren();
     document.getElementById('el-delete-dialog-msg').textContent = '';
-    document.getElementById('el-new-title').value = document.getElementById('el-new-title').defaultValue;
+    titleInput.value = '';
     actionsEl.hidden = !user;
     signIn.hidden = !!user;
     retry.hidden = true;
