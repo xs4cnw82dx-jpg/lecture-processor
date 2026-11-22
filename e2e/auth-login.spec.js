@@ -246,3 +246,24 @@ test('sign-in errors mark the fields invalid and describe them, then clear on a 
   await expect(page.locator('#signin-email')).not.toHaveAttribute('aria-describedby', /signin-error/);
   await expect(page.locator('#signup-password')).toHaveAttribute('aria-describedby', 'signup-password-help');
 });
+
+test('a second sign-in submit while the first is running is ignored', async ({ page }) => {
+  const fixture = await loginFixture(page, { hold: ['/api/verify-email'] });
+  try {
+    await page.goto('/lecture-notes?auth=signin');
+    await expect(page.locator('#auth-overlay')).toBeVisible();
+    await page.locator('#signin-email').fill('student@gmail.com');
+    await page.locator('#signin-password').fill('fixture-password');
+    await page.locator('#signin-submit').click();
+    await expect.poll(() => fixture.pendingPaths()).toContain('/api/verify-email');
+    await expect(page.locator('#signin-submit')).toBeDisabled();
+    await page.locator('#signin-password').press('Enter');
+    await page.locator('#signin-submit').evaluate((button) => button.form && button.form.requestSubmit && button.form.requestSubmit());
+    expect(fixture.calls.filter((url) => url === '/api/verify-email')).toHaveLength(1);
+    fixture.release('/api/verify-email');
+    await expect(page.locator('#auth-overlay')).toBeHidden();
+    expect(await page.evaluate(() => window.firebaseSignIns)).toBe(1);
+    expect(fixture.calls.filter((url) => url === '/api/verify-email')).toHaveLength(1);
+    expect(fixture.errors).toEqual([]);
+  } finally { fixture.release(); }
+});

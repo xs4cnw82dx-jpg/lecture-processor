@@ -297,3 +297,14 @@ test('active, ready, partial and empty layouts keep status and recovery readable
   await page.screenshot({ path: '/tmp/redesign-secondary-evidence/batch/batch-empty-mobile.png', fullPage: true, animations: 'disabled' });
   expect(f.browserErrors).toEqual([]);
 });
+
+test('a ready audio batch reminds people that ZIP files leave out the original audio', async ({ page }) => {
+  const ready = { ...structuredClone(failed), batch_id: 'ready', batch_title: 'Recorded lectures', status: 'complete', completed_rows: 2, failed_rows: 0,
+    credits_refunded: 0, error_message: '', can_download_zip: true,
+    rows: [1, 2].map((n) => ({ row_id: 'row-' + n, ordinal: n, status: 'complete' })) };
+  await fixture(page, [ready]);
+  await page.goto('/batch_status/ready');
+  const notice = page.locator('.bs-results .bs-retention');
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText('not original aud');
+});

@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { withContentRevision } = require('./helpers/study-revision-fixture');
+const { accessibilityProblems, reachableControlsInside } = require('./helpers/a11y-audit');
 
 // Behaviour checks for Study Library (replacing source-text assertions).
 async function installLibrary(page, options = {}) {
@@ -194,4 +195,53 @@ test('a voice note is not handed to Study Plan', async ({ page }) => {
   await expect(page.getByText('Voice notes are kept outside Study Plan', { exact: false })).toBeVisible();
   expect(planOpened).toBe(false);
   await expect(page).toHaveURL(/\/study\?/);
+});
+
+test('Study Library controls are named, not nested, and folder actions name their folder', async ({ page }) => {
+  await installLibrary(page, { packs: [pack('a', { folder_id: 'anatomy' }), pack('b')] });
+  await page.goto('/study?pack_id=a');
+  await expect(page.locator('#pack-title')).toHaveValue('Pack a');
+  await page.waitForLoadState('networkidle');
+  expect(await accessibilityProblems(page)).toEqual([]);
+  const folders = page.locator('#folder-list');
+  const menu = folders.locator('summary[aria-label="Folder actions for Anatomy and physiology"]');
+  await expect(menu).toHaveAccessibleName('Folder actions for Anatomy and physiology');
+  await menu.click();
+  for (const name of ['Pin Anatomy and physiology', 'Edit Anatomy and physiology', 'Share Anatomy and physiology', 'Create subfolder in Anatomy and physiology']) {
+    const action = page.locator('details.folder-action-menu[open] [aria-label="' + name + '"]');
+    await expect(action).toBeVisible();
+    await expect(action).toHaveAccessibleName(name);
+  }
+});
+
+test('collapsed pack details stay out of keyboard reach until opened', async ({ page }) => {
+  await installLibrary(page, { packs: [pack('a')] });
+  await page.goto('/study?pack_id=a');
+  await expect(page.locator('#pack-title')).toHaveValue('Pack a');
+  await page.locator('.pack-details-disclosure > summary').click();
+  const toggle = page.locator('#pack-advanced-meta-btn');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(await reachableControlsInside(page, '#pack-advanced-meta-shell')).toEqual([]);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(async () => (await reachableControlsInside(page, '#pack-advanced-meta-shell')).length).toBeGreaterThan(0);
+  await toggle.click();
+  await expect.poll(() => reachableControlsInside(page, '#pack-advanced-meta-shell')).toEqual([]);
+});
+
+test('the CSV drop area opens the file picker from the keyboard', async ({ page }) => {
+  await installLibrary(page, { packs: [pack('a')] });
+  await page.goto('/study');
+  await expect(page.locator('#pack-list .pack-list-item')).toHaveCount(1);
+  const firstChooser = page.waitForEvent('filechooser');
+  await page.locator('#import-pack-csv-btn').click();
+  await (await firstChooser).setFiles([]);
+  const drop = page.locator('#builder-csv-drop');
+  await expect(drop).toBeVisible();
+  await drop.focus();
+  for (const key of ['Enter', ' ']) {
+    const chooser = page.waitForEvent('filechooser');
+    await page.keyboard.press(key === ' ' ? 'Space' : key);
+    expect((await chooser).isMultiple()).toBe(true);
+  }
 });

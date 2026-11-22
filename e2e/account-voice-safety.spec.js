@@ -5,6 +5,7 @@ const path = require('node:path');
 test.use({ serviceWorkers: 'block' });
 
 const { installAccountFixture } = require('./helpers/batch-fixture');
+const { accessibilityProblems } = require('./helpers/a11y-audit');
 
 async function installVoiceFixture(page) {
   const fixture = await installAccountFixture(page);
@@ -317,4 +318,57 @@ test('failed remote deletion keeps the saved note and audio intact', async ({ pa
   expect(saved.notes).toHaveLength(1);
   expect(saved.audio).toHaveLength(1);
   expect(fixture.browserErrors).toEqual([]);
+});
+
+test('voice note views, filters and note actions tell assistive technology what they do', async ({ page }) => {
+  await installVoiceFixture(page);
+  await page.goto('/voice-notes');
+  await seedVoiceNote(page, true);
+  await page.locator('[data-voice-view="library"]').click();
+  await expect(page.locator('[data-voice-view="library"]')).toHaveAttribute('aria-pressed', 'true');
+  for (const other of await page.locator('[data-voice-view]:not([data-voice-view="library"])').all()) {
+    await expect(other).toHaveAttribute('aria-pressed', 'false');
+  }
+  const filters = page.locator('[data-filter]:visible');
+  expect(await filters.count()).toBeGreaterThan(1);
+  const second = filters.nth(1);
+  await second.click();
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
+  await expect(filters.first()).toHaveAttribute('aria-pressed', 'false');
+  await filters.first().click();
+  await expect(filters.first()).toHaveAttribute('aria-pressed', 'true');
+  const item = page.locator('[data-note-open]').first();
+  await expect(item).toHaveAccessibleName('Open voice note "Important seeded note"');
+  await page.locator('.voice-note-item .voice-note-actions > summary').first().click();
+  await expect(page.locator('[data-note-archive]').first()).toHaveAccessibleName('Archive voice note "Important seeded note"');
+  await expect(page.locator('[data-note-delete]').first()).toHaveAccessibleName('Delete voice note "Important seeded note"');
+  expect(await accessibilityProblems(page)).toEqual([]);
+});
+
+test('a saved recording can be downloaded, and a note without audio says so', async ({ page }) => {
+  await installVoiceFixture(page);
+  await page.goto('/voice-notes');
+  await seedVoiceNote(page, true);
+  const button = page.locator('#voice-download-audio-btn');
+  await expect(button).toBeEnabled();
+  const download = page.waitForEvent('download');
+  await button.click();
+  expect(await (await download).createReadStream().then((stream) => new Promise((resolve) => {
+    const chunks = []; stream.on('data', (chunk) => chunks.push(chunk)); stream.on('end', () => resolve(Buffer.concat(chunks).toString()));
+  }))).toBe('saved audio');
+
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve) => { const request = indexedDB.open('lecture-processor-voice-notes', 2); request.onsuccess = () => resolve(request.result); });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('audio', 'readwrite');
+      tx.objectStore('audio').delete('local-seeded');
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  await page.locator('[data-voice-view="library"]').click();
+  await page.getByText('Important seeded note', { exact: true }).click();
+  await expect(button).toBeDisabled();
+  await expect(page.getByText('No downloadable audio copy is available for this note.')).toBeVisible();
 });
