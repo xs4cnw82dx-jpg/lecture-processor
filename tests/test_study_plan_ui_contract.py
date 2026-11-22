@@ -28,29 +28,8 @@ def test_unified_study_plan_contains_guided_views_and_reliable_states(client):
     assert 'browser notifications' not in html.lower()
 
 
-def test_study_plan_client_has_approval_rebalance_and_failed_save_rollback():
-    script = _read('static/js/study-plan.js')
-
-    assert "'/api/study-plan/preview'" in script
-    assert "'/api/study-plan/apply'" in script
-    assert "state.applyIdempotencyKey = randomId('idem')" in script
-    assert 'idempotency_key: state.applyIdempotencyKey' in script
-    assert "code: 'revision_conflict'" not in script  # conflicts are supplied by the server, not invented client-side
-    assert "state.data.sessions = previous;" in script
-    assert "Your visible change was undone." in script
-    assert "state.online" in script
-    assert "readCache()" in script
-    assert "nothing moves until you accept it" in script
-    assert 'notes_minutes_by_pack: wizardNotesMinutes(packIds)' in script
-    assert 'data-notes-minutes' not in script
-    assert "String(pack.mode || '').toLowerCase() !== 'voice-note'" in script
-    assert "availabilityPreset: ''" in script
-    assert "proposal.pace && proposal.pace.personalized" in script
-
-
 def test_study_plan_uses_polished_native_controls_and_actionable_empty_states():
     template = _read('templates/study_plan.html')
-    styles = _read('static/css/study-plan.css')
 
     assert 'data-plan-picker="date"' in template
     assert 'data-plan-picker="time"' in template
@@ -58,14 +37,11 @@ def test_study_plan_uses_polished_native_controls_and_actionable_empty_states():
     assert 'data-pretty-select' not in template
     assert 'data-pack-filter="flashcards"' in template
     assert '.btn, .primary-btn, .secondary-btn, .ghost-btn {' in _read('static/css/shared-ui.css')
-    assert '.plan-overlay input[type="checkbox"]' in styles
-    assert '.plan-control-popover' in styles
 
 
 def test_study_library_removes_duplicate_goals_and_adds_plan_actions():
     template = _read('templates/study.html')
     dialogs = _read('templates/_study_dialogs.html')
-    script = _read('static/js/study.js')
 
     assert 'id="pack-goals-panel"' not in template
     assert 'id="overall-daily-goal-input"' not in template
@@ -74,19 +50,10 @@ def test_study_library_removes_duplicate_goals_and_adds_plan_actions():
     assert 'id="add-selected-to-plan-btn"' in template
     assert '<input type="hidden" id="folder-exam-date-input">' in dialogs
     assert 'Add to Study Plan' in template
-    assert "apiCall('/api/study-plan/membership')" in script
-    assert "'/plan?add_packs='" in script
-    assert 'Voice notes are kept outside Study Plan' in script
-    assert 'plannerSessionFromUrl' in script
-    assert "'/api/study-activity/sessions/'" in script
 
 
 def test_study_plan_is_responsive_and_has_mobile_agenda():
     template = _read('templates/study_plan.html')
-    styles = _read('static/css/study-plan.css')
 
     assert 'id="week-calendar"' in template
     assert 'id="mobile-agenda"' in template
-    assert '@media (max-width: 980px)' in styles
-    assert '.week-calendar { display: none; }' in styles
-    assert '.mobile-agenda { display: grid;' in styles

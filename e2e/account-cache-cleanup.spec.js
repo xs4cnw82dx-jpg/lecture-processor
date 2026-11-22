@@ -66,8 +66,12 @@ const retainedLegacy = {
   hl_html_pack: '<mark>Unscoped highlight</mark>',
 };
 
+async function voiceNotesDatabaseExists(page) {
+  return page.evaluate(async () => (await indexedDB.databases()).some(database => database.name === 'lecture-processor-voice-notes'));
+}
+
 for (const action of ['sign out', 'delete account']) {
-  test(`explicit ${action} removes only own safe-UID legacy learning keys on a non-Study page`, async ({ page }) => {
+  test(`explicit ${action} removes only own safe-UID legacy learning keys and local voice notes on a non-Study page`, async ({ page }) => {
     const state = await fixture(page);
     await page.goto('/dashboard');
     await expect(page.locator('#signout-btn')).toBeEnabled();
@@ -75,6 +79,13 @@ for (const action of ['sign out', 'delete account']) {
       localStorage.setItem(own, '{resume payload need not parse');
       for (const [key, value] of Object.entries(retained)) localStorage.setItem(key, value);
     }, { own: ownLegacy, retained: retainedLegacy });
+    await page.evaluate(() => new Promise((resolve, reject) => {
+      const request = indexedDB.open('lecture-processor-voice-notes', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('recordings');
+      request.onsuccess = () => { request.result.close(); resolve(); };
+      request.onerror = () => reject(request.error);
+    }));
+    expect(await voiceNotesDatabaseExists(page)).toBe(true);
     const navigation = page.waitForEvent('framenavigated', frame => frame === page.mainFrame());
     if (action === 'sign out') await page.locator('#signout-btn').evaluate(button => button.click());
     else {
@@ -88,6 +99,7 @@ for (const action of ['sign out', 'delete account']) {
     await page.waitForLoadState('domcontentloaded');
     expect(await page.evaluate(keys => Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])), Object.keys(retainedLegacy))).toEqual(retainedLegacy);
     expect(await page.evaluate(key => localStorage.getItem(key), ownLegacy)).toBeNull();
+    await expect.poll(() => voiceNotesDatabaseExists(page)).toBe(false);
     expect(state.errors).toEqual([]);
   });
 }

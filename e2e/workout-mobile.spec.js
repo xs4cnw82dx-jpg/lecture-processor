@@ -241,3 +241,78 @@ test('real Workout template supports navigation, dialogs, progress, settings, an
   await expect(page.locator('#workout-new-routine')).toBeDisabled();
   expect(browserErrors).toEqual([]);
 });
+
+test('finishing a workout offline queues it and does not bring the workout back', async ({ page }) => {
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  const fixture = workoutBootstrapFixture();
+  fixture.active_session = {
+    id: 'session-offline', revision: 1, name: 'Full body', status: 'paused', phase: 'Build', week: 1,
+    elapsed_seconds: 300, notes: '', exercises: [{
+      exercise_id: 'exercise-1', exercise_name: 'Goblet squat', muscle_group: 'Quadriceps',
+      tracking_type: 'weight_reps', load_type: 'Dumbbell', target_sets: 1, rep_min: 8, rep_max: 12,
+      rest_seconds: 90, sets: [{ id: 'set-0', type: 'normal', kg: 10, reps: 10, rpe: 8, completed: true }],
+    }],
+  };
+  await page.addInitScript((bootstrapPayload) => {
+    window.__workoutRequests = [];
+    const jsonResponse = (payload, status = 200) => new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+    window.LectureProcessorBootstrap = {
+      getAuth: () => ({}),
+      onAuthStateReady: (_auth, callback) => queueMicrotask(() => callback({ uid: 'workout-e2e-admin' })),
+    };
+    window.LectureProcessorAuth = {
+      buildSignInUrl: () => '/lecture-notes?auth=signin&next=/admin/workout',
+      createAuthClient: () => ({
+        authFetch: async (url, options = {}) => {
+          window.__workoutRequests.push(`${options.method || 'GET'} ${url}`);
+          if (sessionStorage.getItem('workout-e2e-network-down')) throw new TypeError('Failed to fetch');
+          if (url === '/api/admin/workout/bootstrap') return jsonResponse(bootstrapPayload);
+          return jsonResponse({ ok: true, session: bootstrapPayload.active_session });
+        },
+      }),
+    };
+  }, fixture);
+  await page.route('**/admin/workout', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: workoutTemplateForBrowser() }));
+  await page.route('**/admin/workout/service-worker.js', (route) => route.fulfill({ status: 404, body: '' }));
+
+  await page.goto('/admin/workout');
+  await expect(page.locator('#workout-loading')).toBeHidden();
+  await page.locator('#workout-resume-card').click();
+  await expect(page.locator('#workout-logger')).toBeVisible();
+  // Editing a set saves a local draft of the workout, which finishing must clear.
+  await page.locator('[data-set-field="reps"][data-set-index="0"]').fill('12');
+  await page.locator('[data-set-field="reps"][data-set-index="0"]').blur();
+  await expect.poll(() => page.evaluate(() => window.__workoutRequests.some((entry) => entry.startsWith('PATCH')))).toBe(true);
+  await page.locator('#workout-finish-btn').click();
+  await expect(page.locator('#workout-confirm-finish')).toBeVisible();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    window.dispatchEvent(new Event('offline'));
+  });
+  await page.locator('#workout-confirm-finish').click();
+  await expect(page.locator('#workout-logger')).toBeHidden();
+  await expect(page.getByText('Workout finished offline and queued for sync.')).toBeVisible();
+  await expect(page.locator('#workout-resume-card')).toBeHidden();
+  const requests = await page.evaluate(() => window.__workoutRequests);
+  expect(requests.filter((entry) => entry.includes('/finish'))).toEqual([]);
+
+  // Opening the app again without a connection uses the saved copy: the workout must stay finished.
+  await page.evaluate(() => sessionStorage.setItem('workout-e2e-network-down', '1'));
+  await page.reload();
+  await expect(page.locator('#workout-loading')).toBeHidden();
+  await expect(page.locator('#workout-offline-banner')).toBeVisible();
+  await expect(page.locator('#workout-logger')).toBeHidden();
+  await expect(page.locator('#workout-resume-card')).toBeHidden();
+  const queued = await page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.open('lecture-processor-workout-workout-e2e-admin');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const read = request.result.transaction('mutations', 'readonly').objectStore('mutations').getAll();
+      read.onsuccess = () => { request.result.close(); resolve(read.result.map((item) => `${item.method} ${item.url}`)); };
+      read.onerror = () => reject(read.error);
+    };
+  }));
+  expect(queued).toEqual(['POST /api/admin/workout/sessions/session-offline/finish']);
+  expect(browserErrors).toEqual([]);
+});

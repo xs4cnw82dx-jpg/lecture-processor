@@ -15,6 +15,8 @@ async function installLibrary(page, options = {}) {
     { folder_id: 'muscles', name: 'Muscles of the lower limb', parent_folder_id: 'anatomy', is_pinned: false }];
   const packs = options.packs || [];
   const requests = [];
+  const progressUploads = [];
+  const createdPacks = [];
   page.on('request', request => { if (request.url().includes('/api/')) requests.push(new URL(request.url()).pathname + new URL(request.url()).search); });
   await page.route('**/api/**', route => {
     const request = route.request(), path = new URL(request.url()).pathname;
@@ -24,6 +26,12 @@ async function installLibrary(page, options = {}) {
       Object.assign(folders[0], request.postDataJSON());
       body = { ok: true, folder: folders[0] };
     } else if (path.endsWith('/share')) body = { access_scope: 'private', share_url: '' };
+    else if (path === '/api/study-packs' && request.method() === 'POST') {
+      const created = { ...request.postDataJSON(), study_pack_id: 'imported_' + (createdPacks.length + 1), mode: 'manual' };
+      createdPacks.push(created);
+      packs.push({ ...created, flashcards_count: created.flashcards.length, test_questions_count: created.test_questions.length });
+      body = { ok: true, study_pack_id: created.study_pack_id };
+    }
     else if (path === '/api/study-packs') {
       const cursor = new URL(request.url()).searchParams.get('after') || '';
       body = options.pages ? options.pages[cursor] : { study_packs: packs, has_more: false };
@@ -37,10 +45,14 @@ async function installLibrary(page, options = {}) {
     }
     else if (path === '/api/auth/user') body = { uid: 'owner', email_verified: true, onboarding_completed: true, allowed: true };
     else if (path === '/api/study-plan/membership') body = { pack_ids: [] };
+    else if (path === '/api/study-progress' && request.method() === 'PUT') {
+      progressUploads.push(request.postDataJSON());
+      body = { ok: true };
+    }
     else if (path.includes('progress')) body = { card_states: {}, daily_progress: {} };
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   });
-  return { requests };
+  return { requests, progressUploads, createdPacks };
 }
 
 const card = (front, back) => ({ front, back });
@@ -119,4 +131,67 @@ test('Add to Study Plan hands the open pack to the planner', async ({ page }) =>
   await page.goto('/study?pack_id=a');
   await page.locator('#add-pack-to-plan-btn').click();
   await page.waitForURL(/\/plan\?add_packs=a/);
+});
+
+test('loading Study uploads no progress and one answer uploads only that pack', async ({ page }) => {
+  const { progressUploads } = await installLibrary(page, { packs: [pack('a'), pack('b')] });
+  await page.addInitScript(() => {
+    localStorage.setItem('card_state_owner_b', JSON.stringify({ fc_0: { interval_days: 3, due_date: '2030-01-01', reviews: 2 } }));
+  });
+  await page.clock.install();
+  await page.goto('/study');
+  await expect(page.locator('#pack-list .pack-list-item')).toHaveCount(2);
+  // Progress uploads are debounced; run well past the debounce before checking none was sent.
+  await page.clock.runFor(5000);
+  expect(progressUploads).toEqual([]);
+
+  await page.locator('#pack-list .pack-list-item', { hasText: 'Pack a' }).click();
+  await page.locator('#open-learn-btn').click();
+  for (const lesson of await page.locator('.lesson-card[data-lesson]').all()) {
+    if (await lesson.getAttribute('aria-disabled') === 'true') continue;
+    const selected = await lesson.getAttribute('aria-pressed') === 'true';
+    if (selected !== (await lesson.getAttribute('data-lesson') === 'flashcards')) await lesson.click();
+  }
+  await page.locator('#setup-start-btn').click();
+  await page.locator('#learn-f-flip').click();
+  await page.locator('[data-review-action="good"]').click();
+  await page.clock.runFor(5000);
+  await expect.poll(() => progressUploads.length).toBeGreaterThan(0);
+  for (const upload of progressUploads) expect(Object.keys(upload.card_states)).toEqual(['a']);
+});
+
+test('importing several CSV files creates one saved pack per file and detects practice tests', async ({ page }) => {
+  const { createdPacks } = await installLibrary(page, { packs: [pack('a')] });
+  await page.goto('/study');
+  await expect(page.locator('#pack-list .pack-list-item')).toHaveCount(1);
+  await page.locator('#import-pack-csv-btn').click();
+  await expect(page.locator('#builder-overlay')).toHaveClass(/visible/);
+  await page.locator('#builder-csv-input').setInputFiles([
+    { name: 'Hip muscles.csv', mimeType: 'text/csv', buffer: Buffer.from('front,back\nHip abductor?,Gluteus medius\nHip flexor?,Iliopsoas\n') },
+    { name: 'Nerves quiz.csv', mimeType: 'text/csv',
+      buffer: Buffer.from('question,option_a,option_b,option_c,option_d,answer,explanation\nWhich nerve flexes the hip?,Femoral,Sciatic,Tibial,Ulnar,A,Femoral nerve\n') },
+  ]);
+  await expect(page.locator('#builder-overlay')).not.toHaveClass(/visible/);
+  expect(createdPacks.map(created => created.title)).toEqual(['Hip muscles', 'Nerves quiz']);
+  expect(createdPacks[0].flashcards).toEqual([{ front: 'Hip abductor?', back: 'Gluteus medius' }, { front: 'Hip flexor?', back: 'Iliopsoas' }]);
+  expect(createdPacks[0].test_questions).toEqual([]);
+  expect(createdPacks[1].flashcards).toEqual([]);
+  expect(createdPacks[1].test_questions).toHaveLength(1);
+  expect(createdPacks[1].test_questions[0]).toMatchObject({ question: 'Which nerve flexes the hip?', options: ['Femoral', 'Sciatic', 'Tibial', 'Ulnar'] });
+  await expect(page.locator('#pack-list .pack-list-item')).toHaveCount(3);
+});
+
+test('a voice note is not handed to Study Plan', async ({ page }) => {
+  await installLibrary(page, { packs: [pack('a'), pack('v', { mode: 'voice-note', title: 'Recorded reminder' })] });
+  let planOpened = false;
+  await page.route('**/plan?*', route => { planOpened = true; return route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Plan</title>' }); });
+  await page.goto('/study?pack_id=v');
+  await expect(page.locator('#pack-title')).toHaveValue('Recorded reminder');
+  const addButton = page.locator('#add-pack-to-plan-btn');
+  await expect(addButton).toBeHidden();
+  // The handler itself also refuses voice notes, in case the button is ever shown.
+  await addButton.evaluate(button => button.click());
+  await expect(page.getByText('Voice notes are kept outside Study Plan', { exact: false })).toBeVisible();
+  expect(planOpened).toBe(false);
+  await expect(page).toHaveURL(/\/study\?/);
 });
