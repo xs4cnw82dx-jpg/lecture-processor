@@ -818,6 +818,10 @@ body.el-studio-body {
   border-bottom: 1px solid var(--xped-border);
   flex-shrink: 0;
 }
+.el-unused-files { display: grid; gap: .4rem; max-height: 40vh; overflow-y: auto; }
+.el-unused-files .el-field-check { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
+.el-unused-files span { overflow-wrap: anywhere; }
+.el-unused-files small { white-space: nowrap; }
 .el-dialog-header h2 { margin: 0; font-size: 1.1rem; color: var(--xped-navy); }
 .el-dialog-body { padding: 20px 22px; overflow-y: auto; }
 .el-picker-cat { margin-bottom: 20px; }

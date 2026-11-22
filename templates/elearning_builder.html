@@ -311,6 +311,22 @@
     </div>
   </dialog>
 
+  <dialog class="el-dialog" id="el-unused-media" aria-labelledby="el-unused-title">
+    <div class="el-dialog-header">
+      <h2 id="el-unused-title">Free unused media</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <p class="xped-caption" id="el-unused-help">These files are unused in the saved expedition. Removing a file also clears undo steps that depend on it.</p>
+      <div id="el-unused-files" class="el-unused-files" aria-describedby="el-unused-help"></div>
+      <p id="el-unused-status" class="xped-caption" role="status"></p>
+      <div class="el-btn-row">
+        <button type="button" class="el-btn" id="el-unused-cancel" autofocus>Cancel</button>
+        <button type="button" class="el-btn el-btn-danger" id="el-unused-remove" disabled>Remove selected files</button>
+      </div>
+    </div>
+  </dialog>
+
   <div class="el-toast" id="el-toast" role="status" aria-live="polite" hidden></div>
 
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>

@@ -41,7 +41,9 @@ async function editorFixture(page, options = {}) {
       if (options.waitForTranslation) await options.waitForTranslation(translations.length);
       await route.fulfill({ json: { expedition: { ...exp, revision: ++exp.revision } } });
     } else if (req.method() === 'PUT') {
-      writes.push({ token: req.headers().authorization, body: req.postDataJSON() });
+      const body = req.postDataJSON();
+      writes.push({ token: req.headers().authorization, body });
+      if (options.saveStructure) return options.saveStructure(route, body, exp);
       await route.fulfill({ json: { expedition: { ...exp, revision: ++exp.revision } } });
     } else {
       await route.fulfill({ json: { expedition: exp } });
@@ -141,4 +143,135 @@ test('undo after a successful structural save keeps the acknowledged revision', 
   await expect.poll(() => fixture.writes.length).toBe(2);
   expect(fixture.writes[1].body.base_revision).toBe(2);
   expect(fixture.writes[1].body.modules).toHaveLength(fixture.exp.modules.length);
+});
+
+async function exitWouldPrompt(page) {
+  return page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })));
+}
+
+test('a focused multiline canvas draft stays editable across validation, correction and in-flight saves', async ({ page }) => {
+  let finishFirst;
+  const pending = new Promise(resolve => { finishFirst = resolve; });
+  const accepted = [];
+  const fixture = await editorFixture(page, { async saveStructure(route, body) {
+    const value = body.startPage.subtitle.en;
+    if (value.length > 1000) return route.fulfill({ status: 400, json: { error: 'Use at most 1000 characters.' } });
+    accepted.push(value);
+    if (accepted.length === 1) await pending;
+    return route.fulfill({ json: { expedition: { ...body, revision: body.base_revision + 1 } } });
+  } });
+  await page.goto('/physio/elearning/visual/edit');
+  const subtitle = page.locator('#el-canvas-card .xped-hero-subtitle');
+  await subtitle.fill('x'.repeat(1001));
+  expect(await exitWouldPrompt(page)).toBe(true);
+  await expect(page.locator('#el-save-state')).toHaveText('Save paused');
+  await expect(subtitle).toHaveText('x'.repeat(1001));
+  await expect(subtitle).toBeFocused();
+  await subtitle.fill('First');
+  await subtitle.press('End');
+  await subtitle.press('Enter');
+  await page.keyboard.type('Second');
+  await expect.poll(() => accepted[0]).toBe('First\nSecond');
+  await subtitle.press('ArrowLeft');
+  await page.keyboard.type('!');
+  finishFirst();
+  await expect.poll(() => accepted[1]).toBe('First\nSecon!d');
+  await expect(page.locator('#el-save-state')).toHaveText('Saved');
+  await expect(subtitle).toBeFocused();
+  expect(await exitWouldPrompt(page)).toBe(false);
+  expect(fixture.writes.at(-1).body.base_revision).toBe(2);
+});
+
+test('step titles, block headings and rich text save while focused; visiting an untouched fallback keeps it untouched', async ({ page }) => {
+  const fixture = await editorFixture(page);
+  fixture.exp.modules[0].steps[0].blocks = [model.createBlock('richtext')];
+  await page.goto('/physio/elearning/visual/edit');
+  await page.locator('.el-step-row').first().click();
+  const title = page.locator('#el-canvas-card .xped-step-title');
+  await title.fill('First steps');
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].title.en).toBe('First steps');
+  const body = page.locator('.xped-richtext-editor');
+  await body.fill('Line A\nLine B');
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.body.en).toBe('Line A\nLine B');
+  const heading = page.locator('#el-canvas-card .xped-question-text').first();
+  await heading.fill('Key idea');
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.heading.en).toBe('Key idea');
+  await expect(page.locator('#el-save-state')).toHaveText('Saved');
+  const count = fixture.writes.length;
+  await title.focus();
+  await heading.focus();
+  expect(await exitWouldPrompt(page)).toBe(false);
+  expect(fixture.writes.length).toBe(count);
+});
+
+test('translation review follows the accepted source edit and clears after reviewing the destination', async ({ page }) => {
+  const fixture = await editorFixture(page, { saveStructure(route, body, exp) {
+    Object.assign(exp, body);
+    exp.startPage.title._review = { de: true };
+    return route.fulfill({ json: { expedition: { ...exp, revision: ++exp.revision } } });
+  } });
+  fixture.exp.startPage.title.de = 'Vorhandene Übersetzung';
+  await page.route('**/api/elearning/expeditions/visual/translations', async route => {
+    const changes = route.request().postDataJSON();
+    fixture.exp.startPage.title.de = changes.textUpdates['startPage.title'];
+    delete fixture.exp.startPage.title._review;
+    await route.fulfill({ json: { expedition: { ...fixture.exp, revision: ++fixture.exp.revision } } });
+  });
+  await page.goto('/physio/elearning/visual/edit');
+  await page.locator('#el-canvas-card h1').fill('New source');
+  await page.locator('[data-mode=translate]').click();
+  const row = page.locator('.el-tr-row').filter({ has: page.getByRole('textbox', { name: 'Start Page · Title (DE)', exact: true }) });
+  await expect(row).toHaveAttribute('data-status', 'needs_review');
+  const target = row.getByRole('textbox');
+  await target.fill('Neue Übersetzung');
+  await expect(page.locator('#el-tr-autosave')).toHaveText('Saved');
+  await expect(target).toBeFocused();
+  await expect(row).toHaveAttribute('data-status', 'translated');
+  await expect(row.locator('.el-status-inline')).toHaveText('Done');
+  await page.locator('[data-mode=preview]').click();
+  await page.locator('[data-mode=translate]').click();
+  await expect(row).toHaveAttribute('data-status', 'translated');
+});
+
+test('removing unused uploads confirms the selection and prunes only affected undo history', async ({ page }) => {
+  const fixture = await editorFixture(page);
+  fixture.exp.startPage.heroMedia = { kind: 'asset', assetId: 'old-hero' };
+  const removed = [];
+  const unused = [
+    { id: 'old-hero', kind: 'image', filename: 'Map.webp', size: 125_000 },
+    { id: 'keep-audio', kind: 'audio', filename: 'Narration.ogg', size: 200_000 },
+  ];
+  await page.route('**/api/elearning/expeditions/visual/assets', route => route.fulfill({
+    json: { unused, revision: fixture.exp.revision },
+  }));
+  await page.route('**/api/elearning/expeditions/visual/assets/*', route => {
+    if (route.request().method() === 'DELETE') {
+      removed.push({ id: route.request().url().split('/').pop(), ...route.request().postDataJSON() });
+      return route.fulfill({ json: { deleted: true } });
+    }
+    return route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=', 'base64'),
+    });
+  });
+  await page.goto('/physio/elearning/visual/edit');
+  await page.getByText('Official xPED Illustrations', { exact: true }).click();
+  await page.getByRole('button', { name: 'None', exact: true }).click();
+  await expect.poll(() => fixture.writes.length).toBe(1);
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
+  const open = async () => {
+    await page.getByRole('button', { name: 'More expedition actions' }).click();
+    await page.getByRole('menuitem', { name: 'Free unused media' }).click();
+  };
+  await open();
+  const dialog = page.getByRole('dialog', { name: 'Free unused media' });
+  await expect(dialog.getByLabel(/Map.webp/)).toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  expect(removed).toEqual([]);
+  await open();
+  await dialog.getByLabel(/Narration.ogg/).uncheck();
+  await dialog.getByRole('button', { name: 'Remove selected files' }).click();
+  await expect(dialog).toBeHidden();
+  expect(removed).toEqual([{ id: 'old-hero', lease_token: 'local-lease', base_revision: 2 }]);
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
 });

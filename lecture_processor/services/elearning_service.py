@@ -243,6 +243,9 @@ def list_expeditions(runtime):
 
 
 def _insert_expedition(db, doc):
+    if not doc.get('copying') and model.media_ids(doc):
+        raise model.ElearningError('Create the expedition before attaching uploaded media.', 400)
+
     def insert(tx):
         owner = doc['owner_uid']
         user = tx.get('users/' + owner) or {}
@@ -260,10 +263,13 @@ def create_expedition(runtime):
     user = identity(runtime, required=True)
     raw = payload()
     if raw.get('modules') is not None or raw.get('startPage') is not None:
-        normalized = model.normalize_expedition_payload(raw)
+        normalized = model.validate_authored_expedition(raw)
     else:
+        title = str(raw.get('title') or 'xPEDitie Pijn — Nieuw ontwerp')
+        if len(title.strip()) > 200:
+            raise model.ElearningError('Use at most 200 characters for the expedition title.', 400)
         normalized = model.build_default_expedition(
-            title=str(raw.get('title') or 'xPEDitie Pijn — Nieuw ontwerp'),
+            title=title,
             default_lang=str(raw.get('defaultLanguage') or 'nl'),
         )
     eid = model.new_id('exp')
@@ -364,7 +370,7 @@ def lease(runtime, expedition_id: str):
 def save_expedition(runtime, expedition_id: str):
     db, _, role, who, _ = access(runtime, expedition_id, required='edit')
     body = payload()
-    normalized = model.normalize_expedition_payload(body)
+    normalized = model.validate_authored_expedition(body)
     edited_lang = model.normalize_lang(body.get('editedLanguage') or normalized['defaultLanguage'])
 
     def txn(unit):
@@ -372,6 +378,7 @@ def save_expedition(runtime, expedition_id: str):
         _assert_lease(current, who, body)
         next_exp = deepcopy(current)
         next_exp.update(normalized)
+        elearning_storage.attach_new_media(unit, current, next_exp)
         model.mark_translations_for_review(current, next_exp, edited_lang)
         next_exp['revision'] = int(current.get('revision', 1)) + 1
         next_exp['updated_at'] = now()
@@ -454,7 +461,7 @@ def duplicate_expedition(runtime, expedition_id: str):
 def sharing(runtime, expedition_id: str):
     required = 'owner' if request.method == 'POST' else 'edit'
     db, exp, role, _, _ = access(runtime, expedition_id, required=required)
-    if request.method == 'GET':
+    if request.method != 'POST':
         grants = [
             {
                 'id': g['id'],
@@ -613,6 +620,7 @@ def save_translations(runtime, expedition_id: str):
     def txn(unit):
         _, current, _, _, _ = access(runtime, expedition_id, 'translate', unit=unit)
         patched = model.apply_translation_patch(current, target_lang, text_updates, media_updates)
+        elearning_storage.attach_new_media(unit, current, patched)
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
         unit.put(_exp_path(expedition_id), patched)
@@ -678,7 +686,9 @@ def upload_asset(runtime, expedition_id: str):
     data = uploaded.read(MAX_AUDIO_BYTES + 1)
     content_type = str(uploaded.mimetype or '').lower().split(';')[0].strip()
     aid = model.new_id('ast')
-    meta = {'id': aid, 'expedition_id': expedition_id, 'uploaded_by': who['id'], 'created_at': now()}
+    filename = (uploaded.filename or '').replace('\\', '/').rsplit('/', 1)[-1]
+    meta = {'id': aid, 'expedition_id': expedition_id, 'uploaded_by': who['id'], 'created_at': now(),
+            'filename': model.safe_text(filename, 120), 'pending_session': _media_session(who)}
     if content_type in ALLOWED_AUDIO_MIMES:
         if not data or len(data) > MAX_AUDIO_BYTES:
             raise model.ElearningError('Choose a non-empty audio file of at most 15 MB.', 413)
@@ -701,8 +711,13 @@ def upload_asset(runtime, expedition_id: str):
 def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str):
     aid = model.identifier(asset_id, 'asset id')
     meta = db.get('elearning_assets/' + aid)
-    if not meta or meta.get('expedition_id') != expedition_id:
+    if not meta or meta.get('expedition_id') != expedition_id or not meta.get('ready', True):
         raise model.ElearningError('Asset not found.', 404)
+    if request.method == 'HEAD':
+        response = current_app.response_class(mimetype=meta.get('content_type', 'application/octet-stream'))
+        if 'size' in meta:
+            response.content_length = meta['size']
+        return response
     try:
         raw = elearning_storage.read_asset(db, meta)
     except BookError as err:
@@ -717,13 +732,48 @@ def get_asset(runtime, expedition_id: str, asset_id: str):
     return _serve_asset(db, expedition_id, asset_id)
 
 
+def _media_session(who):
+    return _digest(who['id'] + '|' + request.headers.get('X-Elearning-Session', ''))
+
+
+def unused_assets(runtime, expedition_id):
+    db, course, _, who, _ = access(runtime, expedition_id, required='edit')
+    used = model.media_ids(course)
+    session = _media_session(who)
+    candidates = []
+    for asset in db.list('elearning_assets', 'expedition_id', expedition_id, limit=None):
+        if asset['id'] not in used and elearning_storage.can_reclaim(asset, session):
+            candidates.append({key: asset[key] for key in ('id', 'kind', 'size', 'filename') if key in asset})
+    return jsonify(unused=candidates, revision=course['revision'])
+
+
 def delete_asset(runtime, expedition_id: str, asset_id: str):
-    db, _, _, _, _ = access(runtime, expedition_id, required='edit')
+    db = _store(runtime)
     aid = model.identifier(asset_id, 'asset id')
-    meta = db.get('elearning_assets/' + aid)
-    if not meta or meta.get('expedition_id') != expedition_id:
-        raise model.ElearningError('Asset not found.', 404)
-    elearning_storage.erase_asset(db, meta)
+    key = 'elearning_assets/' + aid
+    body = payload()
+
+    def claim(unit):
+        _, course, _, who, _ = access(runtime, expedition_id, 'edit', unit=unit)
+        _assert_lease(course, who, body)
+        meta = unit.get(key)
+        if not meta or meta.get('expedition_id') != expedition_id:
+            raise model.ElearningError('Asset not found.', 404)
+        if aid in model.media_ids(course):
+            raise model.ElearningError('This file is still used by the expedition.', 409)
+        if not elearning_storage.can_reclaim(meta, _media_session(who)):
+            raise model.ElearningError('Another upload is still finishing. Try again in a moment.', 409)
+        # Prevent a concurrent save from reattaching bytes while the external
+        # deletion is in flight. Keep the path and reservation through retries.
+        meta.update(ready=False, removing=True, upload_until=0)
+        unit.put(key, meta)
+        return meta
+
+    meta = db.atomic(claim)
+    try:
+        elearning_storage.erase_asset(db, meta)
+    except BookError as err:
+        return jsonify(error='File removal is pending. Retry to free the space.', removalPending=True), err.status
     return jsonify(deleted=True)
 
 
@@ -815,12 +865,30 @@ def public_submit_response(runtime, share_token: str):
         path = 'elearning_responses/' + doc_id
         old = tx.get(path) or {}
         answers = dict(old.get('answers') or {})
+        peer_answers = dict(old.get('peerAnswers') or {})
+        disclosed = body.get('peerDisclosureTypes')
+        if not isinstance(disclosed, dict):
+            disclosed = {}
         if isinstance(body.get('answers'), dict):
             for bid, value in body['answers'].items():
-                if bid in blocks:
-                    answer = _learner_answer(blocks[bid], value)
-                    if answer is not None:
-                        answers[bid] = answer
+                if bid not in blocks:
+                    continue
+                block = blocks[bid]
+                kind = block['type']
+                answer = _learner_answer(block, value)
+                if answer is None or (bid in answers and answers[bid] == answer):
+                    continue
+                # A full progress snapshot can include older answers. Only a new answer,
+                # or a revision of an already disclosed answer of this type, can be shared.
+                eligible = bid not in answers or kind in peer_answers.get(bid, {})
+                if (eligible and disclosed.get(bid) == kind and course['shareOptions']['showPeerResults']
+                        and (block.get('settings') or {}).get('showPeerResults')):
+                    # These types only publish counts. Their free text stays in the author's data.
+                    public_value = True if kind in ('reflection', 'mini_plan', 'hotspot') else answer
+                    peer_answers[bid] = {kind: public_value}
+                else:
+                    peer_answers.pop(bid, None)
+                answers[bid] = answer
         visited = list(old.get('visitedStepIds') or [])
         if isinstance(body.get('visitedStepIds'), list):
             visited.extend(s for s in body['visitedStepIds'] if isinstance(s, str) and s in steps)
@@ -846,7 +914,7 @@ def public_submit_response(runtime, share_token: str):
                                  'moduleTitle': module['title'].get(lang, ''), 'stepTitle': step['title'].get(lang, ''),
                                  'createdAt': item['createdAt'] if type(item.get('createdAt')) is int else int(ts)})
         tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], 'session_id': session_id,
-                      'cohort': cohort, 'language': lang, 'answers': answers,
+                      'cohort': cohort, 'language': lang, 'answers': answers, 'peerAnswers': peer_answers,
                       'visitedStepIds': list(dict.fromkeys(visited)), 'completed': bool(body.get('completed') or old.get('completed')),
                       'pilotFeedback': feedback, 'stepComments': comments, 'started_at': old.get('started_at', ts), 'updated_at': ts})
 
@@ -854,10 +922,8 @@ def public_submit_response(runtime, share_token: str):
     return jsonify(saved=True, updatedAt=ts)
 
 
-def _aggregate_block(block: dict, responses: list[dict]) -> dict:
-    bid = block['id']
+def _aggregate_block(block: dict, values: list) -> dict:
     btype = block['type']
-    values = [r.get('answers', {}).get(bid) for r in responses if bid in (r.get('answers') or {})]
     count = len(values)
     if btype in ('mcq', 'myth_fact'):
         counts = Counter()
@@ -932,7 +998,8 @@ def public_get_aggregates(runtime, share_token: str, block_id: str):
                     break
     if not target_block or not (target_block.get('settings') or {}).get('showPeerResults'):
         raise model.ElearningError('Peer results are not enabled for this question.', 403)
-    key = (share_token, exp.get('revision'), bid)
+    kind = target_block['type']
+    key = (share_token, exp.get('revision'), bid, kind)
     with _peer_read_locks[hash(key) % len(_peer_read_locks)]:
         with _peer_lock:
             entry = _peer_cache.get(key)
@@ -940,8 +1007,9 @@ def public_get_aggregates(runtime, share_token: str, block_id: str):
                 _peer_cache.move_to_end(key)
                 return jsonify(aggregate=entry[1])
         rows = db.list('elearning_responses', 'expedition_id', exp['id'], limit=None,
-                       fields=[FieldPath('answers', bid).to_api_repr()])
-        aggregate = _aggregate_block(target_block, rows)
+                       fields=[FieldPath('peerAnswers', bid, kind).to_api_repr()])
+        values = [r['peerAnswers'][bid][kind] for r in rows if kind in r.get('peerAnswers', {}).get(bid, {})]
+        aggregate = _aggregate_block(target_block, values)
         with _peer_lock:
             _peer_cache[key] = (time.monotonic() + PEER_RESULT_SECONDS, aggregate)
             _peer_cache.move_to_end(key)
@@ -984,7 +1052,9 @@ def get_responses(runtime, expedition_id: str):
             })
             for blk in step.get('blocks', []):
                 if blk['type'] in ('mcq', 'myth_fact', 'scale', 'wordcloud', 'ranking', 'reflection', 'balance_scale', 'mini_plan'):
-                    agg = _aggregate_block(blk, rows)
+                    bid = blk['id']
+                    values = [r['answers'][bid] for r in rows if bid in (r.get('answers') or {})]
+                    agg = _aggregate_block(blk, values)
                     if blk['type'] == 'reflection':
                         agg['samples'] = [
                             model.safe_text(r.get('answers', {}).get(blk['id'], ''), 600)

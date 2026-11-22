@@ -158,7 +158,13 @@
     ariaLabel: 'Active editing language',
     items: LANG_OPTIONS,
     value: state.editLang,
-    onChange: function (val) {
+    onChange: async function (val) {
+      if (saveVersion !== savedVersion) {
+        editLangDD.setItems(LANG_OPTIONS, state.editLang);
+        clearTimeout(state.saveTimer);
+        await queueStructureSave();
+        if (saveVersion !== savedVersion) return;
+      }
       state.editLang = val;
       editLangDD.setItems(LANG_OPTIONS, val);
       renderAll();
@@ -369,6 +375,18 @@
     return writing;
   }
 
+  function syncReviewFlags(expedition) {
+    // The server owns review decisions. Update only that metadata, even if the
+    // author has typed more text since this particular write was submitted.
+    var serverRows = Model.extractTranslationRows(expedition, state.trSource, state.trTarget);
+    var flags = new Map(serverRows.map(function (row) { return [row.key, row.locObj._review]; }));
+    Model.extractTranslationRows(state.exp, state.trSource, state.trTarget).forEach(function (row) {
+      var review = flags.get(row.key);
+      if (review) row.locObj._review = Object.assign({}, review);
+      else delete row.locObj._review;
+    });
+  }
+
   async function saveNow() {
     if (leavingAccount || savedVersion === saveVersion || !canEditStructure() || !state.exp) return;
     if (!state.leaseToken) {
@@ -386,6 +404,7 @@
         method: 'PUT', body: JSON.stringify(body),
       });
       state.exp.revision = res.expedition.revision;
+      syncReviewFlags(res.expedition);
       savedVersion = version;
       if (version === saveVersion) setSaveStatus('Saved', true);
     } catch (err) {
@@ -442,7 +461,9 @@
     scheduleSave();
   }
 
+  var uploadsInProgress = 0;
   async function uploadFileForBlock(blk, file) {
+    uploadsInProgress++;
     var fd = new FormData();
     fd.append('file', file);
     try {
@@ -458,6 +479,8 @@
       showToast('Media uploaded!');
     } catch (err) {
       showToast(err.message, 'error');
+    } finally {
+      uploadsInProgress--;
     }
   }
 
@@ -930,15 +953,10 @@
     stepTitle.className = 'xped-step-title';
     var curStepTitle = Model.getLocalized(pair.step.title, lang, defLang);
     stepTitle.textContent = curStepTitle;
-    if (canEditStructure()) {
-      stepTitle.contentEditable = 'true';
-      stepTitle.classList.add('el-inline-edit');
-      stepTitle.setAttribute('data-placeholder', 'Click to write step title…');
-      stepTitle.addEventListener('blur', function () {
-        mutate(function () { pair.step.title = Model.setLocalized(pair.step.title, lang, stepTitle.textContent || ''); }, { recordUndo: false, rerender: false });
-        renderOutline();
-      });
-    }
+    Model.bindEditableText(stepTitle, 'Click to write step title…', canEditStructure(), function (value) {
+      mutate(function () { pair.step.title = Model.setLocalized(pair.step.title, lang, value); }, { recordUndo: false, rerender: false });
+      renderOutline();
+    });
     card.appendChild(stepTitle);
 
     var stack = document.createElement('div');
@@ -1457,8 +1475,6 @@
       inspectorBodyEl.appendChild(fieldCheck('Show anonymous peer average', blk.settings.showPeerResults, function (v) {
         mutate(function () { blk.settings.showPeerResults = v; });
       }));
-    } else if (blk.type === 'reflection') {
-      locField('Privacy Reassurance Note', 'helperNote', false);
     } else if (blk.type === 'wordcloud') {
       inspectorBodyEl.appendChild(fieldCheck('Show anonymous peer word cloud', blk.settings.showPeerResults, function (v) {
         mutate(function () { blk.settings.showPeerResults = v; });
@@ -1647,6 +1663,8 @@
       } else {
         state.exp.revision = res.expedition.revision;
       }
+      syncReviewFlags(res.expedition);
+      refreshTranslationStatuses();
       // A structural undo snapshot predates this translation and could erase it.
       state.undoStack = [];
       state.redoStack = [];
@@ -1717,7 +1735,7 @@
       inp.type = 'text';
       inp.placeholder = 'Paste ' + state.trTarget.toUpperCase() + ' YouTube/Vimeo URL (leave blank to reuse default)';
       inp.value = mr.targetUrl || '';
-      inp.addEventListener('change', function () {
+      inp.addEventListener('input', function () {
         var val = inp.value.trim();
         state.trPendingMedia[mr.blockId] = val;
         var overrides = mr.block.data.mediaOverrides || (mr.block.data.mediaOverrides = {});
@@ -1746,6 +1764,26 @@
     showToast('All visible fields are translated!');
   }
 
+  function updateTranslationProgress(rows) {
+    var stats = Model.getTranslationStats(rows);
+    translateProgressEl.textContent = state.trTarget.toUpperCase() + ': ' + stats.translated + ' / ' + stats.total + ' translated' + (stats.review ? (' · ' + stats.review + ' to review') : '');
+  }
+
+  function updateTranslationBadge(rowElement, badge, status) {
+    rowElement.dataset.status = status;
+    badge.className = 'el-status-inline ' + (status === 'translated' ? 'is-live' : (status === 'needs_review' ? 'is-warn' : ''));
+    badge.textContent = status === 'needs_review' ? 'Review' : (status === 'translated' ? 'Done' : 'Missing');
+  }
+
+  function refreshTranslationStatuses() {
+    var rows = Model.extractTranslationRows(state.exp, state.trSource, state.trTarget);
+    var byKey = new Map(rows.map(function (row) { return [row.key, row.status]; }));
+    translateRowsEl.querySelectorAll('.el-tr-row').forEach(function (node) {
+      updateTranslationBadge(node, node.querySelector('.el-status-inline'), byKey.get(node.dataset.fieldKey) || 'untranslated');
+    });
+    updateTranslationProgress(rows);
+  }
+
   function renderTranslateMode() {
     if (!state.exp) return;
     document.querySelector('#el-tr-welcome p').hidden = (state.role !== 'translate' && !grantToken);
@@ -1755,8 +1793,7 @@
     renderTranslateGlossary();
 
     var rows = Model.extractTranslationRows(state.exp, state.trSource, state.trTarget);
-    var stats = Model.getTranslationStats(rows);
-    translateProgressEl.textContent = state.trTarget.toUpperCase() + ': ' + stats.translated + ' / ' + stats.total + ' translated' + (stats.review ? (' · ' + stats.review + ' to review') : '');
+    updateTranslationProgress(rows);
 
     translateRowsEl.textContent = '';
     var filtered = rows.filter(function (r) { return state.trFilter === 'all' || r.status === state.trFilter; });
@@ -1806,7 +1843,7 @@
       grp.rows.forEach(function (row) {
         var rEl = document.createElement('div');
         rEl.className = 'el-tr-row';
-        rEl.dataset.status = row.status;
+        rEl.dataset.fieldKey = row.key;
 
         var rHead = document.createElement('div');
         rHead.className = 'el-tr-row-head';
@@ -1815,8 +1852,7 @@
         var rightMeta = document.createElement('div');
         rightMeta.className = 'el-btn-row';
         var st = document.createElement('span');
-        st.className = 'el-status-inline ' + (row.status === 'translated' ? 'is-live' : (row.status === 'needs_review' ? 'is-warn' : ''));
-        st.textContent = row.status === 'needs_review' ? 'Review' : (row.status === 'translated' ? 'Done' : 'Missing');
+        updateTranslationBadge(rEl, st, row.status);
         var copySrc = document.createElement('button');
         copySrc.type = 'button';
         copySrc.className = 'el-btn el-btn-sm';
@@ -1881,7 +1917,6 @@
         });
         ta.addEventListener('input', function () {
           updateLocalizedText(ta.value);
-          rEl.dataset.status = ta.value.trim() ? 'translated' : 'untranslated';
           renderTranslatePreview();
           scheduleTranslateAutosave();
         });
@@ -2252,8 +2287,130 @@
     });
   }
 
+  var unusedDialog = document.getElementById('el-unused-media');
+  var unusedFiles = document.getElementById('el-unused-files');
+  var unusedStatus = document.getElementById('el-unused-status');
+  var unusedRemove = document.getElementById('el-unused-remove');
+  var unusedRevision = 0;
+  var unusedLoad = 0;
+  var removingMedia = false;
+
+  function usesMedia(value, assetId) {
+    if (!value || typeof value !== 'object') return false;
+    if (value.kind === 'asset' && value.assetId === assetId) return true;
+    return Object.values(value).some(function (child) { return usesMedia(child, assetId); });
+  }
+
+  function forgetRemovedMedia(assetId) {
+    [state.undoStack, state.redoStack].forEach(function (stack) {
+      for (var i = stack.length - 1; i >= 0; i--) {
+        if (usesMedia(stack[i], assetId)) stack.splice(i, 1);
+      }
+    });
+    updateUndoButtons();
+    // Deletion toasts can retain a separate one-click undo snapshot.
+    toastEl.querySelector('button')?.remove();
+    var url = assetUrl(assetId);
+    var cached = privateMedia.get(url);
+    if (cached) {
+      privateMedia.delete(url);
+      cached.then(function (objectUrl) { URL.revokeObjectURL(objectUrl); }).catch(function () {});
+    }
+  }
+
+  function syncUnusedButton() {
+    unusedRemove.disabled = removingMedia || !unusedFiles.querySelector('input:checked');
+  }
+
+  function mediaSize(bytes) {
+    var small = bytes < 1024 * 1024;
+    return new Intl.NumberFormat(document.documentElement.lang || 'en', {
+      style: 'unit', unit: small ? 'kilobyte' : 'megabyte', maximumFractionDigits: 1,
+    }).format(bytes / (small ? 1024 : 1024 * 1024));
+  }
+
+  async function openUnusedMedia() {
+    var attempt = ++unusedLoad;
+    unusedFiles.replaceChildren();
+    unusedRemove.disabled = true;
+    unusedStatus.textContent = 'Checking saved media…';
+    unusedDialog.showModal();
+    try {
+      if (uploadsInProgress) throw new Error('Wait for the upload to finish before removing media.');
+      await queueStructureSave();
+      if (saveVersion !== savedVersion || !state.leaseToken) throw new Error('Save your changes before removing media.');
+      var result = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/assets');
+      if (attempt !== unusedLoad || !unusedDialog.open) return;
+      if (result.revision !== state.exp.revision) throw new Error('The expedition changed. Reload before removing media.');
+      unusedRevision = result.revision;
+      result.unused.forEach(function (asset) {
+        if (usesMedia(state.exp, asset.id)) return;
+        var row = document.createElement('label');
+        row.className = 'el-field-check';
+        var input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = asset.id;
+        input.checked = true;
+        var label = document.createElement('span');
+        label.textContent = asset.filename || (asset.kind === 'audio' ? 'Audio' : 'Image');
+        if (asset.filename) label.setAttribute('translate', 'no');
+        var size = document.createElement('small');
+        size.textContent = mediaSize(asset.size);
+        row.append(input, label, size);
+        unusedFiles.append(row);
+      });
+      unusedStatus.textContent = unusedFiles.children.length ? '' : 'There are no unused files to remove.';
+      syncUnusedButton();
+    } catch (error) {
+      if (attempt === unusedLoad) unusedStatus.textContent = error.message;
+    }
+  }
+
+  unusedFiles.addEventListener('change', syncUnusedButton);
+  document.getElementById('el-unused-cancel').addEventListener('click', function () { unusedDialog.close(); });
+  unusedDialog.addEventListener('close', function () { unusedLoad++; });
+  unusedDialog.addEventListener('cancel', function (event) { if (removingMedia) { event.preventDefault(); event.stopImmediatePropagation(); } });
+  unusedRemove.addEventListener('click', async function () {
+    var selected = Array.from(unusedFiles.querySelectorAll('input:checked'));
+    if (removingMedia || !selected.length || uploadsInProgress) return;
+    removingMedia = true;
+    unusedRemove.disabled = true;
+    unusedDialog.querySelector('form button').disabled = true;
+    document.getElementById('el-unused-cancel').disabled = true;
+    unusedFiles.inert = true;
+    unusedStatus.textContent = 'Removing files…';
+    try {
+      for (var input of selected) {
+        if (usesMedia(state.exp, input.value) || saveVersion !== savedVersion || state.exp.revision !== unusedRevision) {
+          throw new Error('The expedition changed. Reload before removing media.');
+        }
+        var response = await request(assetUrl(input.value), {
+          method: 'DELETE', body: JSON.stringify({ lease_token: state.leaseToken, base_revision: unusedRevision }),
+        });
+        var result = await response.json();
+        if (response.ok || result.removalPending || response.status === 404) forgetRemovedMedia(input.value);
+        if (!response.ok && response.status !== 404) throw new Error(result.error || 'Could not remove this file.');
+        input.closest('label').remove();
+      }
+      unusedDialog.close();
+      showToast('Unused media removed.');
+    } catch (error) {
+      unusedStatus.textContent = error.message;
+    } finally {
+      removingMedia = false;
+      unusedDialog.querySelector('form button').disabled = false;
+      document.getElementById('el-unused-cancel').disabled = false;
+      unusedFiles.inert = false;
+      syncUnusedButton();
+    }
+  });
+
   function refreshMoreMenu() {
+    var mediaActions = state.mode === 'edit' && state.leaseToken ? [
+      { label: 'Free unused media', icon: 'trash', onClick: openUnusedMedia },
+    ] : [];
     moreMenuDD.setItems([
+      ...mediaActions,
       {
         label: 'Responses & Analytics',
         icon: 'chart',

@@ -3,13 +3,7 @@
 
   function makeEditable(node, placeholder, editable, onCommit) {
     if (!editable) return node;
-    node.contentEditable = 'true';
-    node.spellcheck = true;
-    node.classList.add('el-inline-edit');
-    node.setAttribute('data-placeholder', placeholder || '');
-    node.addEventListener('blur', function () {
-      if (typeof onCommit === 'function') onCommit(node.textContent || '');
-    });
+    root.XpedElearningModel.bindEditableText(node, placeholder, true, onCommit);
     node.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey && node.tagName !== 'P') {
         e.preventDefault();

@@ -44,6 +44,7 @@ EXPECTED_ROUTES = [
     ('POST', '/api/elearning/expeditions/<expedition_id>/translations', 'elearning.api_expedition_translations'),
     ('GET', '/api/elearning/expeditions/<expedition_id>/translations/export.csv', 'elearning.api_expedition_translations_export'),
     ('POST', '/api/elearning/expeditions/<expedition_id>/translations/import', 'elearning.api_expedition_translations_import'),
+    ('GET', '/api/elearning/expeditions/<expedition_id>/assets', 'elearning.api_expedition_upload_asset'),
     ('POST', '/api/elearning/expeditions/<expedition_id>/assets', 'elearning.api_expedition_upload_asset'),
     ('GET', '/api/elearning/expeditions/<expedition_id>/assets/<asset_id>', 'elearning.api_expedition_asset'),
     ('DELETE', '/api/elearning/expeditions/<expedition_id>/assets/<asset_id>', 'elearning.api_expedition_asset'),

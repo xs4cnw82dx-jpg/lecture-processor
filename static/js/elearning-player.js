@@ -37,7 +37,8 @@
     lastStepIdx: 0,
     themePref: 'default',
     sessionId: 'lrn_' + crypto.randomUUID(),
-    answers: {},
+    answers: Object.create(null),
+    peerDisclosureTypes: Object.create(null),
     visitedStepIds: [],
     completedModuleIds: [],
     stepComments: [],
@@ -78,7 +79,10 @@
       if (!raw) return;
       var saved = JSON.parse(raw);
       if (saved.sessionId) state.sessionId = saved.sessionId;
-      if (saved.answers && typeof saved.answers === 'object') state.answers = saved.answers;
+      if (saved.answers && typeof saved.answers === 'object') state.answers = Object.assign(Object.create(null), saved.answers);
+      if (saved.peerDisclosureTypes && typeof saved.peerDisclosureTypes === 'object') {
+        state.peerDisclosureTypes = Object.assign(Object.create(null), saved.peerDisclosureTypes);
+      }
       if (Array.isArray(saved.visitedStepIds)) state.visitedStepIds = saved.visitedStepIds;
       if (Array.isArray(saved.completedModuleIds)) state.completedModuleIds = saved.completedModuleIds;
       if (Array.isArray(saved.stepComments)) state.stepComments = saved.stepComments;
@@ -98,6 +102,7 @@
       localStorage.setItem(storageKey, JSON.stringify({
         sessionId: state.sessionId,
         answers: state.answers,
+        peerDisclosureTypes: state.peerDisclosureTypes,
         pilotSent: state.pilotSent,
         visitedStepIds: state.visitedStepIds,
         completedModuleIds: state.completedModuleIds,
@@ -119,6 +124,7 @@
       cohort: cohort,
       language: state.lang,
       answers: state.answers,
+      peerDisclosureTypes: state.peerDisclosureTypes,
       visitedStepIds: state.visitedStepIds,
       completed: completed || state.view === 'summary',
       pilotFeedback: pilotFeedback,
@@ -228,6 +234,11 @@
     showCurrentView();
   }
 
+  function sharesAnswer(block) {
+    return state.exp.shareOptions && state.exp.shareOptions.showPeerResults && block.settings && block.settings.showPeerResults
+      && (!Object.hasOwn(state.answers, block.id) || state.peerDisclosureTypes[block.id] === block.type);
+  }
+
   function responseDisclosure(blocks, expanded) {
     var notice = document.createElement(expanded ? 'aside' : 'details');
     notice.className = 'el-response-disclosure';
@@ -235,9 +246,7 @@
     heading.textContent = Model.ui(state.lang, 'answerPrivacy');
     var body = document.createElement('p');
     var messages = ['authorAccess', state.canSaveLocally ? 'deviceResume' : 'storageUnavailable'];
-    var shared = state.exp.shareOptions && state.exp.shareOptions.showPeerResults
-      ? blocks.filter(function (block) { return block.settings && block.settings.showPeerResults; })
-      : [];
+    var shared = blocks.filter(sharesAnswer);
     if (shared.some(function (block) { return block.type !== 'wordcloud'; })) messages.push('sharedResults');
     if (shared.some(function (block) { return block.type === 'wordcloud'; })) messages.push('sharedWords');
     body.textContent = messages.map(function (key) { return Model.ui(state.lang, key); }).join(' ');
@@ -355,7 +364,10 @@
         interactive: true,
         stepHasAnswered: stepHasAnswered,
         answers: state.answers,
+        sharedAnswer: sharesAnswer(blk),
         onAnswer: function (bid, val) {
+          if (sharesAnswer(blk)) state.peerDisclosureTypes[bid] = blk.type;
+          else delete state.peerDisclosureTypes[bid];
           state.answers[bid] = val;
           // Progressive Disclosure: gently unfold any waiting revealAfterAnswer blocks!
           stack.querySelectorAll('.xped-reveal-locked').forEach(function (locked) {
@@ -923,7 +935,8 @@
       resetB.addEventListener('click', function () {
         clearTimeout(state.syncTimer);
         state.sessionId = 'lrn_' + crypto.randomUUID();
-        state.answers = {};
+        state.answers = Object.create(null);
+        state.peerDisclosureTypes = Object.create(null);
         state.stepComments = [];
         state.pilotSent = false;
         state.visitedStepIds = [];

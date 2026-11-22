@@ -20,6 +20,7 @@
     nl: {
       courseHighlights: 'Wat je kunt verwachten',
       answerPrivacy: 'Over je antwoorden',
+      reflectionAccess: 'De makers van deze cursus kunnen je reflectie lezen.',
       authorAccess: 'De makers ontvangen je voortgang en antwoorden, ook ingevulde tekst, onder een sessiecode.',
       deviceResume: 'Dit apparaat bewaart je antwoorden zodat je later verder kunt gaan.',
       sharedResults: 'Bij vragen met gedeelde resultaten kunnen anderen groepsuitkomsten zien.',
@@ -104,6 +105,7 @@
     en: {
       courseHighlights: 'What to expect',
       answerPrivacy: 'About your answers',
+      reflectionAccess: 'Course authors can read your reflection.',
       authorAccess: 'Course authors receive your progress and answers, including written responses, under a session ID.',
       deviceResume: 'This device stores your answers so you can return later.',
       sharedResults: 'Other learners can see group results for questions where sharing is enabled.',
@@ -188,6 +190,7 @@
     de: {
       courseHighlights: 'Was dich erwartet',
       answerPrivacy: 'Über deine Antworten',
+      reflectionAccess: 'Die Kursverantwortlichen können deine Reflexion lesen.',
       authorAccess: 'Die Kursverantwortlichen erhalten deinen Fortschritt und deine Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
       deviceResume: 'Deine Antworten werden auf diesem Gerät gespeichert, damit du später weitermachen kannst.',
       sharedResults: 'Bei Fragen mit freigegebenen Ergebnissen können andere Teilnehmende Gruppenergebnisse sehen.',
@@ -305,7 +308,7 @@
     { type: 'mcq', category: 'interactive', label: 'Multiple Choice / Poll', desc: 'Single or multi-select with optional peer stats & feedback.' },
     { type: 'myth_fact', category: 'interactive', label: 'Myth vs. Fact', desc: 'Modern accessible Feit of Fabel reveal card.' },
     { type: 'scale', category: 'interactive', label: 'Confidence Slider', desc: 'Mentimeter-style 0–10 belief or readiness scale.' },
-    { type: 'reflection', category: 'interactive', label: 'Open Reflection', desc: 'Safe personal journal saved to final summary.' },
+    { type: 'reflection', category: 'interactive', label: 'Open Reflection', desc: 'Written response that course authors can read.' },
     { type: 'wordcloud', category: 'interactive', label: 'Word Cloud', desc: 'Quick 1–3 word associations with optional peer cloud.' },
     { type: 'ranking', category: 'interactive', label: 'Priority Ranking', desc: 'Order personal values, activities, or coping tips.' },
     { type: 'hotspot', category: 'interactive', label: 'Pin on Image', desc: 'Interactive diagram hotspots with text fallback.' },
@@ -335,6 +338,21 @@
       if (String(candidate || '').trim()) return candidate;
     }
     return '';
+  }
+
+  function bindEditableText(node, placeholder, editable, onInput) {
+    if (!editable) return node;
+    node.contentEditable = 'plaintext-only';
+    node.spellcheck = true;
+    node.classList.add('el-inline-edit');
+    node.setAttribute('data-placeholder', placeholder || '');
+    node.addEventListener('input', function () {
+      // Browsers can represent a pasted or inserted line break with <br> or
+      // a block. Read its visible separators without replacing the active DOM.
+      var text = node.childElementCount ? node.innerText : node.textContent;
+      onInput(text === '\n' && !node.textContent ? '' : text);
+    });
+    return node;
   }
 
   function setLocalized(map, lang, value) {
@@ -520,7 +538,7 @@
     } else if (type === 'scale') {
       data = { question: loc('', '', ''), min: 0, max: 10, minLabel: loc('Helemaal oneens', 'Strongly disagree', ''), maxLabel: loc('Helemaal eens', 'Strongly agree', ''), feedback: loc('', '', '') };
     } else if (type === 'reflection') {
-      data = { prompt: loc('', '', ''), placeholder: loc('Schrijf hier je gedachten…', 'Write your thoughts here…', ''), helperNote: loc('Alleen jij kunt dit zien; het verschijnt in je eigen samenvatting.', 'Only you see this; it is saved in your personal summary.', '') };
+      data = { prompt: loc('', '', ''), placeholder: loc('Schrijf hier je gedachten…', 'Write your thoughts here…', 'Schreib hier deine Gedanken auf…') };
     } else if (type === 'wordcloud') {
       data = { question: loc('', '', ''), placeholder: loc('Bijv. vermoeidheid, hoop, beweging', 'e.g. fatigue, hope, movement', ''), maxWords: 3 };
     } else if (type === 'ranking') {
@@ -778,6 +796,7 @@
           var bLab = sLab + ' · ' + blk.type + ' #' + (bIdx + 1);
           var data = blk.data || {};
           Object.keys(data).forEach(function (k) {
+            if (blk.type === 'reflection' && k === 'helperNote') return;
             var val = data[k];
             if (val && typeof val === 'object' && !Array.isArray(val) && ('nl' in val && 'en' in val && 'de' in val)) {
               pushField(bKey + '.' + k, bLab + ' · ' + k, val, blk.id);
@@ -981,6 +1000,7 @@
     loc: loc,
     getLocalized: getLocalized,
     setLocalized: setLocalized,
+    bindEditableText: bindEditableText,
     ui: ui,
     detectBrowserLanguage: detectBrowserLanguage,
     parseTimestampSeconds: parseTimestampSeconds,

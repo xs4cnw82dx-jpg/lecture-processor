@@ -10,14 +10,8 @@
 
   function makeEditable(node, placeholder, editable, onCommit) {
     if (!editable) return node;
-    node.contentEditable = 'true';
-    node.spellcheck = true;
-    node.classList.add('el-inline-edit');
-    node.setAttribute('data-placeholder', placeholder || '');
+    root.XpedElearningModel.bindEditableText(node, placeholder, true, onCommit);
     node.addEventListener('click', function (e) { e.stopPropagation(); });
-    node.addEventListener('blur', function () {
-      if (typeof onCommit === 'function') onCommit(node.textContent || '');
-    });
     return node;
   }
 
@@ -224,8 +218,8 @@
         rtTa.addEventListener('click', function (e) { e.stopPropagation(); });
         rtTa.addEventListener('input', function () {
           rtTa.rows = Math.max(3, Math.min(10, rtTa.value.split('\n').length + 1));
+          onEdit(block, 'body', rtTa.value);
         });
-        rtTa.addEventListener('blur', function () { onEdit(block, 'body', rtTa.value); });
 
         function wrapSel(prefix, suffix, fallback) {
           var s = rtTa.selectionStart || 0;
@@ -703,17 +697,21 @@
     if (block.type === 'reflection') {
       var rp = el('h3', 'xped-question-text', Model.getLocalized(data.prompt, lang, defLang));
       makeEditable(rp, 'Click to write your reflection prompt…', editable, function (v) { onEdit(block, 'prompt', v); });
+      rp.id = 'reflection-question-' + block.id;
       wrap.appendChild(rp);
+      var reflectionNote = el('p', 'xped-caption', Model.ui(lang, 'reflectionAccess'));
+      reflectionNote.id = 'reflection-access-' + block.id;
+      wrap.appendChild(reflectionNote);
       var ta = document.createElement('textarea');
       ta.className = 'xped-textarea';
       ta.rows = 4;
+      ta.setAttribute('aria-labelledby', rp.id);
+      ta.setAttribute('aria-describedby', reflectionNote.id);
       ta.placeholder = Model.getLocalized(data.placeholder, lang, defLang);
       ta.value = String(answers[block.id] || '');
       ta.readOnly = !interactive;
       if (interactive) ta.addEventListener('input', function () { onAnswer(block.id, ta.value); });
       wrap.appendChild(ta);
-      var note = Model.getLocalized(data.helperNote, lang, defLang);
-      if (note) wrap.appendChild(el('p', 'xped-caption', note));
       return wrap;
     }
 
@@ -729,6 +727,12 @@
       inp.className = 'xped-input';
       inp.placeholder = Model.getLocalized(data.placeholder, lang, defLang) || Model.ui(lang, 'addWordPlaceholder');
       inp.setAttribute('aria-label', wq.textContent || inp.placeholder);
+      if (ctx.sharedAnswer) {
+        var wordNotice = el('p', 'xped-caption', Model.ui(lang, 'sharedWords'));
+        wordNotice.id = 'wordcloud-access-' + block.id;
+        wrap.appendChild(wordNotice);
+        inp.setAttribute('aria-describedby', wordNotice.id);
+      }
       inp.disabled = !interactive;
       var addBtn = el('button', 'xped-btn xped-btn-secondary', Model.ui(lang, 'addWordBtn'));
       addBtn.type = 'button';

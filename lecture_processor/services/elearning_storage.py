@@ -3,9 +3,35 @@ from __future__ import annotations
 
 import time
 
-from lecture_processor.domains.elearning.model import ElearningError
+from lecture_processor.domains.elearning.model import ElearningError, media_ids
 from lecture_processor.services import book_storage
 from lecture_processor.services.book_service import reserve_transfer
+
+
+def can_reclaim(asset, session):
+    if asset.get('removing'):
+        return True
+    if not asset.get('ready', True):
+        return asset.get('upload_until', 0) <= time.time()
+    # A different tab can finish uploading before its pending edit has reached
+    # the server. The first committed reference releases this temporary hold.
+    return asset.get('pending_session') == session or asset.get('attach_until', 0) <= time.time()
+
+
+def attach_new_media(tx, previous, updated):
+    pending = []
+    for aid in media_ids(updated) - media_ids(previous):
+        key = 'elearning_assets/' + aid
+        asset = tx.get(key)
+        if not asset or asset.get('expedition_id') != previous['id'] or not asset.get('ready', True):
+            raise ElearningError('An attached file is unavailable. Choose the file again before saving.', 409)
+        if asset.get('pending_session'):
+            pending.append((key, asset))
+    # Firestore transactions must finish all reads before staging writes.
+    for key, asset in pending:
+        asset.pop('pending_session')
+        asset.pop('attach_until', None)
+        tx.put(key, asset)
 
 
 def erase_asset(db, meta, *, upload_finished=False):
@@ -46,7 +72,7 @@ def store_asset(db, meta, data):
         usage = tx.get('book_usage/storage') or {'bytes': 0}
         course_bytes = course.get('asset_bytes', 0) + len(data)
         if course_bytes > book_storage.BOOK_BYTES or usage['bytes'] + len(data) > book_storage.GLOBAL_BYTES:
-            raise ElearningError('Media storage is full. Remove unused files before adding more.', 413)
+            raise ElearningError('Media storage is full. Choose Free unused media in the editor tools before uploading again.', 413)
         course['asset_bytes'] = course_bytes
         usage['bytes'] += len(data)
         tx.put(root, course)
@@ -56,9 +82,12 @@ def store_asset(db, meta, data):
     def finish(tx):
         current = tx.get(key)
         course = tx.get(root)
-        if not current or not course or course.get('deleted'):
+        if not current or current.get('removing') or not course or course.get('deleted'):
             raise ElearningError('This upload was removed.', 409)
-        tx.put(key, {**current, 'ready': True})
+        current['ready'] = True
+        if current.get('pending_session'):
+            current['attach_until'] = time.time() + 120
+        tx.put(key, current)
 
     db.atomic(reserve)
     try:

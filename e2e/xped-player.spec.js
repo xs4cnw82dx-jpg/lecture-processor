@@ -145,3 +145,53 @@ test('a temporarily unavailable link can recover without losing the chosen langu
   await retry.click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Op weg met pijn');
 });
+
+test('resuming a course preserves how each word cloud was disclosed when first answered', async ({ page }) => {
+  const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
+  course.shareOptions = { showPeerResults: false };
+  const earlier = Model.createBlock('wordcloud');
+  const fresh = Model.createBlock('wordcloud');
+  earlier.data.question.nl = 'Eerdere woorden';
+  fresh.data.question.nl = 'Nieuwe woorden';
+  course.modules[0].steps[0].blocks = [earlier, fresh];
+  const submissions = [];
+  page.on('request', request => {
+    if (request.url().endsWith('/responses') && request.method() === 'POST') submissions.push(request.postDataJSON());
+  });
+  await openCourse(page, course);
+  await page.getByRole('button', { name: 'Start de xPEDitie' }).click();
+  const original = page.getByRole('textbox', { name: 'Eerdere woorden' });
+  await original.fill('eerder');
+  await original.press('Enter');
+  await expect.poll(() => submissions.some(body => body.answers[earlier.id]?.includes('eerder'))).toBe(true);
+  course.shareOptions.showPeerResults = true;
+  await openCourse(page, course);
+  await page.getByRole('button', { name: 'Verder met je xPEDitie' }).click();
+  await original.fill('later');
+  await original.press('Enter');
+  const later = page.getByRole('textbox', { name: 'Nieuwe woorden' });
+  await later.fill('gedeeld');
+  await later.press('Enter');
+  await expect.poll(() => submissions.find(body => body.answers[fresh.id]?.includes('gedeeld'))?.peerDisclosureTypes)
+    .toEqual({ [fresh.id]: 'wordcloud' });
+  await expect(later).toHaveAccessibleDescription(Model.ui('nl', 'sharedWords'));
+});
+
+for (const [lang, oldNote, expected] of [
+  ['nl', 'Alleen jij kunt dit zien; het verschijnt in je eigen samenvatting.', 'De makers van deze cursus kunnen je reflectie lezen.'],
+  ['en', 'Only you see this; it is saved in your personal summary.', 'Course authors can read your reflection.'],
+  ['de', 'Nur du kannst dies sehen.', 'Die Kursverantwortlichen können deine Reflexion lesen.'],
+]) {
+  test('an imported reflection identifies who can read it in ' + lang, async ({ page }) => {
+    const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
+    const reflection = Model.createBlock('reflection');
+    reflection.data.helperNote = { [lang]: oldNote };
+    reflection.data.prompt = { [lang]: 'Reflection' };
+    course.modules[0].steps[0].blocks = [reflection];
+    await openCourse(page, course, '?lang=' + lang);
+    await page.locator('.xped-hero-cta-row button').click();
+    await expect(page.getByText(oldNote)).toHaveCount(0);
+    await expect(page.getByText(expected)).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Reflection' })).toHaveAccessibleDescription(expected);
+  });
+}

@@ -279,6 +279,7 @@ def test_public_player_sanitization_responses_aggregates_and_scoped_csp(setup):
             'cohort': 'patients-pilot',
             'language': 'nl',
             'answers': {'blk_mf': 'myth'},
+            'peerDisclosureTypes': {'blk_mf': 'myth_fact'},
             'visitedStepIds': ['stp_1'],
             'completed': True,
             'pilotFeedback': {'clarity': 5, 'engagement': 4, 'comment': 'Zeer prettige rustige vormgeving!'},
@@ -420,6 +421,17 @@ def test_public_media_and_results_only_use_visible_course_content(setup, monkeyp
     monkeypatch.setattr(service.book_storage, 'request', lambda *_args, **_kwargs: b'img')
     assert client.get(public + '/assets/visible_media').status_code == 200
     assert client.get(public + '/assets/draft_media').status_code == 404
+    def unexpected_read(*args, **kwargs):
+        pytest.fail('Metadata reads must not download or charge for course media')
+
+    monkeypatch.setattr(service.elearning_storage, 'read_asset', unexpected_read)
+    assert client.head(public + '/assets/visible_media').content_length == 3
+    assert client.head(public + '/assets/draft_media').status_code == 404
+    assert client.head(f'/api/elearning/expeditions/{eid}/assets/visible_media',
+                       headers=auth_headers('stranger')).status_code == 403
+    meta = db.get('elearning_assets/visible_media')
+    db.put('elearning_assets/visible_media', {**meta, 'ready': False})
+    assert client.head(public + '/assets/visible_media').status_code == 404
     assert client.get(public + '/aggregates/blk_hidden').status_code == 403
 
 
@@ -585,6 +597,72 @@ def test_document_limit_fails_with_actionable_status_before_storage():
     assert exc.value.status == 413
 
 
+@pytest.mark.parametrize('disabled_setting', ['course', 'block'])
+def test_peer_word_cloud_only_includes_answers_disclosed_when_first_entered(setup, monkeypatch, disabled_setting):
+    client, db = setup
+    monkeypatch.setattr(service, 'PEER_RESULT_SECONDS', 0)
+    course = _create_sample(client)
+    path = 'elearning_expeditions/' + course['id']
+    url = '/api/elearning/public/' + course['share']['token']
+    cloud = {'id': 'cloud', 'type': 'wordcloud', 'data': {'maxWords': 3}, 'settings': {'showPeerResults': True}}
+    course['modules'][0]['steps'][0]['blocks'] = [cloud]
+    settings = course['share'] if disabled_setting == 'course' else cloud['settings']
+    settings['showPeerResults'] = False
+    db.put(path, course)
+
+    def answer(session, words, disclosed):
+        result = client.post(url + '/responses', json={
+            'sessionId': session, 'answers': {'cloud': words},
+            'peerDisclosureTypes': {'cloud': 'wordcloud'} if disclosed else {},
+        })
+        assert result.status_code == 200
+
+    answer('stored_private', ['private at entry'], True)
+    db.put('elearning_responses/' + course['id'] + '__legacy_learner', {
+        'expedition_id': course['id'], 'answers': {'cloud': ['legacy']}})
+    settings['showPeerResults'] = True
+    db.put(path, course)
+    # Replaying a full progress snapshot cannot promote a previously private answer.
+    answer('stored_private', ['private at entry'], True)
+    answer('legacy_learner', ['legacy', 'added later'], True)
+    # The learner who submitted after the change still saw the private course.
+    answer('delayed_learner', ['delayed private'], False)
+    answer('public_learner', ['shared'], True)
+
+    def aggregate():
+        response = client.get(url + '/aggregates/cloud')
+        assert response.status_code == 200
+        return response.json['aggregate']
+
+    assert aggregate() == {'type': 'wordcloud', 'count': 1, 'words': [{'word': 'shared', 'count': 1}]}
+    owner = client.get('/api/elearning/expeditions/' + course['id'] + '/responses', headers=auth_headers())
+    assert owner.json['blockStats']['cloud']['count'] == 4
+    answer('public_learner', ['updated shared'], True)
+    assert aggregate()['words'] == [{'word': 'updated shared', 'count': 1}]
+    answer('public_learner', ['private edit'], False)
+    answer('public_learner', ['private edit'], True)
+    assert aggregate() == {'type': 'wordcloud', 'count': 0, 'words': []}
+
+
+def test_peer_results_cannot_reinterpret_an_existing_answer_as_public_words(setup):
+    client, db = setup
+    course = _create_sample(client)
+    path = 'elearning_expeditions/' + course['id']
+    bid = 'reused_block'
+    block = {'id': bid, 'type': 'reflection', 'data': {}, 'settings': {'showPeerResults': True}}
+    course['modules'][0]['steps'][0]['blocks'] = [block]
+    db.put(path, course)
+    url = '/api/elearning/public/' + course['share']['token']
+    posted = client.post(url + '/responses', json={
+        'sessionId': 'answer_session', 'answers': {bid: 'reflection content'},
+        'peerDisclosureTypes': {bid: 'reflection'},
+    })
+    assert posted.status_code == 200
+    block['type'] = 'wordcloud'
+    db.put(path, course)
+    assert client.get(url + '/aggregates/' + bid).json['aggregate'] == {'type': 'wordcloud', 'count': 0, 'words': []}
+
+
 def test_large_pilot_totals_csv_and_repeated_peer_reads(setup, monkeypatch):
     import csv
     import io
@@ -603,7 +681,8 @@ def test_large_pilot_totals_csv_and_repeated_peer_reads(setup, monkeypatch):
     monkeypatch.setattr(db, 'list', counted)
     for i in range(501):
         db.put(f'elearning_responses/{eid}_{i}', {'expedition_id': eid, 'session_id': f'session_{i}',
-                                                  'answers': {'blk_mf': 'myth'}, 'completed': True})
+                                                  'answers': {'blk_mf': 'myth'}, 'completed': True,
+                                                  'peerAnswers': {'blk_mf': {'myth_fact': 'myth'}}})
     for _ in range(2):
         assert client.get(peer_url).json['aggregate']['counts'] == {'myth': 501}
     assert len(queries) == 1
@@ -693,3 +772,147 @@ def test_learner_response_size_errors_describe_the_learning_request(setup):
     result = client.post(url, json={'sessionId': 'learner_001', 'answers': {'reflection': 'a' * (512 * 1024)}})
     assert result.status_code == 413
     assert result.json['error'] == 'This learning response is too large to save.'
+
+
+@pytest.mark.parametrize('path', ['', '/{eid}', '/{eid}/sharing', '/{eid}/assets/illustration'])
+def test_course_metadata_reads_preserve_the_course_and_media(setup, monkeypatch, path):
+    client, db = setup
+    eid = _create_sample(client)['id']
+    db.put('elearning_assets/illustration', {
+        'id': 'illustration', 'expedition_id': eid, 'size': 3, 'content_type': 'image/png', 'ready': True,
+    })
+    saved = deepcopy(db.data)
+
+    def unexpected_write(*args, **kwargs):
+        pytest.fail('A metadata request must stay on the read path')
+
+    for method in ('create_expedition', 'delete_expedition', 'delete_asset'):
+        monkeypatch.setattr(service, method, unexpected_write)
+    monkeypatch.setattr(service.elearning_storage, 'read_asset', unexpected_write)
+    response = client.head('/api/elearning/expeditions' + path.format(eid=eid), headers=auth_headers())
+    assert response.status_code == 200
+    assert response.data == b''
+    if '/assets/' in path:
+        assert response.content_type == 'image/png'
+        assert response.content_length == 3
+    assert db.data == saved
+
+
+def test_media_cleanup_checks_all_references_and_retries_storage(setup, monkeypatch):
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    url = '/api/elearning/expeditions/' + eid
+    root = 'elearning_expeditions/' + eid
+    exp = db.get(root)
+    exp['startPage']['heroMediaOverrides'] = {'de': {'kind': 'asset', 'assetId': 'held_asset'}}
+    exp['modules'][1]['steps'][0]['blocks'] = [{
+        'id': 'draft_block', 'type': 'image', 'data': {'media': {'kind': 'asset', 'assetId': 'draft_asset'}}}]
+    db.put(root, exp)
+    for aid in ('held_asset', 'draft_asset', 'old_asset'):
+        db.put('elearning_assets/' + aid, {'id': aid, 'expedition_id': eid, 'path': aid, 'ready': True,
+                                          'size': 5, 'kind': 'image', 'reserved': True})
+    db.put('book_usage/storage', {'bytes': 15})
+    edit = client.post(url + '/lease', headers=auth_headers(), json={}).json
+    args = {'lease_token': edit['lease_token'], 'base_revision': course['revision']}
+    def erase(aid):
+        return client.delete(url + '/assets/' + aid, headers=auth_headers(), json=args)
+
+    inventory = client.get(url + '/assets', headers=auth_headers())
+    assert inventory.status_code == 200
+    assert [asset['id'] for asset in inventory.json['unused']] == ['old_asset']
+    assert erase('held_asset').status_code == 409 and erase('draft_asset').status_code == 409
+    assert client.delete(url + '/assets/old_asset', headers=auth_headers('owner', 'other-tab'), json=args).status_code == 409
+    def unavailable(*_args, **_kwargs):
+        raise service.BookError('Temporary failure', 503)
+    monkeypatch.setattr(service.book_storage, 'request', unavailable)
+    failed = erase('old_asset')
+    assert failed.status_code == 503 and failed.json['removalPending']
+    assert db.get('book_usage/storage')['bytes'] == 15
+    # A concurrent structural edit or translation cannot reattach a file after cleanup claimed it.
+    stale = deepcopy(exp)
+    stale['startPage']['heroMedia'] = {'kind': 'asset', 'assetId': 'old_asset'}
+    assert client.put(url, headers=auth_headers(), json={**stale, **args}).status_code == 409
+    rejected = client.post(url + '/translations', headers=auth_headers(), json={
+        'targetLanguage': 'de', 'mediaUpdates': {'startPage.heroMedia': {'kind': 'asset', 'assetId': 'old_asset'}}})
+    assert rejected.status_code == 409
+    assert db.get(root)['revision'] == 1
+    monkeypatch.setattr(service.book_storage, 'request', lambda *_args, **_kwargs: b'')
+    assert erase('old_asset').status_code == 200
+    assert db.get('book_usage/storage')['bytes'] == 10 and db.get('elearning_assets/old_asset') is None
+    assert erase('old_asset').status_code == 404
+
+
+def test_pending_collaborator_upload_and_newly_attached_file_survive_cleanup(setup, monkeypatch):
+    import io
+
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    url = '/api/elearning/expeditions/' + eid
+    monkeypatch.setattr(service.book_storage, 'configured', lambda: True)
+    monkeypatch.setattr(service.book_storage, 'request', lambda *args, **kwargs: b'')
+    client.post(url + '/sharing', headers=auth_headers(), json={
+        'action': 'add_member', 'role': 'edit', 'email': 'partner@example.com'})
+    media = client.post(url + '/assets', headers=auth_headers('partner', 'partner-tab'),
+                        data={'file': (io.BytesIO(b'OggScontent'), 'lesson.ogg', 'audio/ogg')}).json['asset']
+    aid = media['id']
+    lease = client.post(url + '/lease', headers=auth_headers(), json={}).json['lease_token']
+    args = {'lease_token': lease, 'base_revision': 1}
+    assert client.get(url + '/assets', headers=auth_headers()).json['unused'] == []
+    assert client.delete(url + '/assets/' + aid, headers=auth_headers(), json=args).status_code == 409
+    draft = deepcopy(course)
+    draft['startPage']['heroMedia'] = {'kind': 'asset', 'assetId': aid}
+    assert client.put(url, headers=auth_headers(), json={**draft, **args}).status_code == 200
+    result = client.put(url, headers=auth_headers(), json={**course, **args, 'base_revision': 2})
+    assert result.status_code == 200
+    assert client.get(url + '/assets', headers=auth_headers()).json['unused'][0]['id'] == aid
+    assert client.delete(url + '/assets/' + aid, headers=auth_headers(), json={**args, 'base_revision': 3}).status_code == 200
+    assert db.get('book_usage/storage')['bytes'] == 0
+
+
+def test_rejected_author_and_translation_sizes_leave_revision_and_draft_intact(setup):
+    client, _ = setup
+    headers = auth_headers()
+    endpoint = '/api/elearning/expeditions'
+    assert client.post(endpoint, headers=headers, json={'title': 'T' * 201}).status_code == 400
+    exp = _create_sample(client)
+    url = endpoint + '/' + exp['id']
+    lease = client.post(url + '/lease', headers=headers, json={'action': 'acquire'}).json
+    changed = deepcopy(exp)
+    changed['startPage']['highlights'] = [{'text': {'en': 'Highlight'}}] * 9
+    failed_save = client.put(url, headers=headers, json={
+        **changed, 'lease_token': lease['lease_token'], 'base_revision': exp['revision'],
+    })
+    assert failed_save.status_code == 400 and '8' in failed_save.json['error']
+    failed_translation = client.post(url + '/translations', headers=headers, json={
+        'targetLanguage': 'de', 'textUpdates': {'startPage.eyebrow': 'W' * 121},
+    })
+    assert failed_translation.status_code == 400 and '120' in failed_translation.json['error']
+    unchanged = client.get(url, headers=headers).json['expedition']
+    assert unchanged['revision'] == exp['revision']
+    assert unchanged['startPage'] == exp['startPage']
+
+
+def test_translation_attachment_between_inventory_and_cleanup_keeps_its_file(setup, monkeypatch):
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    url = '/api/elearning/expeditions/' + eid
+    key = 'elearning_assets/clip_asset'
+    db.put(key, {'id': 'clip_asset', 'ready': True, 'kind': 'image', 'expedition_id': eid,
+                 'size': 8, 'path': 'clip.webp'})
+    client.post(url + '/sharing', headers=auth_headers(), json={
+        'action': 'add_member', 'role': 'translate', 'email': 'partner@example.com'})
+    lease = client.post(url + '/lease', headers=auth_headers(), json={}).json['lease_token']
+    listed = client.get(url + '/assets', headers=auth_headers()).json
+    assert listed['unused'][0]['id'] == 'clip_asset'
+    assert client.get(url + '/assets', headers=auth_headers('partner')).status_code == 403
+    edit = client.post(url + '/translations', headers=auth_headers('partner'), json={
+        'targetLanguage': 'de', 'mediaUpdates': {'startPage.heroMedia': {'kind': 'asset', 'assetId': 'clip_asset'}}})
+    assert edit.status_code == 200
+    monkeypatch.setattr(service.book_storage, 'request', lambda *args, **kwargs: pytest.fail('File must remain'))
+    for revision in (listed['revision'], edit.json['expedition']['revision']):
+        assert client.delete(url + '/assets/clip_asset', headers=auth_headers(), json={
+            'lease_token': lease, 'base_revision': revision}).status_code == 409
+    assert db.get(key)['ready']

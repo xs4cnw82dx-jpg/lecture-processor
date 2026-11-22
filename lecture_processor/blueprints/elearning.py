@@ -27,7 +27,7 @@ _VIDEO_FRAME_SOURCES = (
 
 @elearning_bp.before_request
 def _guard_rate_limits():
-    if request.path.startswith('/api/elearning') and request.method != 'GET':
+    if request.path.startswith('/api/elearning') and request.method in ('POST', 'PUT', 'DELETE'):
         runtime = get_runtime()
         # Bound public submissions independently of the app-wide lecture upload limit.
         if request.endpoint == 'elearning.api_expedition_upload_asset':
@@ -168,9 +168,9 @@ def public_player_page(share_token: str):
 @elearning_bp.route('/api/elearning/expeditions', methods=['GET', 'POST'])
 def api_expeditions():
     runtime = get_runtime()
-    if request.method == 'GET':
-        return service.list_expeditions(runtime)
-    return service.create_expedition(runtime)
+    if request.method == 'POST':
+        return service.create_expedition(runtime)
+    return service.list_expeditions(runtime)
 
 
 @elearning_bp.route('/api/elearning/grant-session', methods=['POST'])
@@ -181,11 +181,11 @@ def api_grant_session():
 @elearning_bp.route('/api/elearning/expeditions/<expedition_id>', methods=['GET', 'PUT', 'DELETE'])
 def api_expedition_detail(expedition_id: str):
     runtime = get_runtime()
-    if request.method == 'GET':
-        return service.get_expedition(runtime, expedition_id)
     if request.method == 'PUT':
         return service.save_expedition(runtime, expedition_id)
-    return service.delete_expedition(runtime, expedition_id)
+    if request.method == 'DELETE':
+        return service.delete_expedition(runtime, expedition_id)
+    return service.get_expedition(runtime, expedition_id)
 
 
 @elearning_bp.route('/api/elearning/expeditions/<expedition_id>/duplicate', methods=['POST'])
@@ -223,17 +223,19 @@ def api_expedition_translations_import(expedition_id: str):
     return service.import_translations_csv(get_runtime(), expedition_id)
 
 
-@elearning_bp.route('/api/elearning/expeditions/<expedition_id>/assets', methods=['POST'])
+@elearning_bp.route('/api/elearning/expeditions/<expedition_id>/assets', methods=['GET', 'POST'])
 def api_expedition_upload_asset(expedition_id: str):
-    return service.upload_asset(get_runtime(), expedition_id)
+    if request.method == 'POST':
+        return service.upload_asset(get_runtime(), expedition_id)
+    return service.unused_assets(get_runtime(), expedition_id)
 
 
 @elearning_bp.route('/api/elearning/expeditions/<expedition_id>/assets/<asset_id>', methods=['GET', 'DELETE'])
 def api_expedition_asset(expedition_id: str, asset_id: str):
     runtime = get_runtime()
-    if request.method == 'GET':
-        return service.get_asset(runtime, expedition_id, asset_id)
-    return service.delete_asset(runtime, expedition_id, asset_id)
+    if request.method == 'DELETE':
+        return service.delete_asset(runtime, expedition_id, asset_id)
+    return service.get_asset(runtime, expedition_id, asset_id)
 
 
 @elearning_bp.route('/api/elearning/expeditions/<expedition_id>/responses', methods=['GET'])

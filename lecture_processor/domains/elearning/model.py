@@ -5,6 +5,7 @@ import csv
 import io
 import re
 import secrets
+from contextvars import ContextVar
 from copy import deepcopy
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree as ET
@@ -70,10 +71,31 @@ def identifier(value: object, label: str = 'identifier') -> str:
     return raw
 
 
+# Read-time normalization is also used for older stored documents. New author
+# writes use the same schema but report limits instead of clipping a draft.
+_strict_author_limits = ContextVar('elearning_strict_author_limits', default=False)
+
+
+def validate_authored_expedition(raw: object) -> dict:
+    token = _strict_author_limits.set(True)
+    try:
+        return normalize_expedition_payload(raw)
+    finally:
+        _strict_author_limits.reset(token)
+
+
+def _bounded_items(items: list, limit: int, label: str) -> list:
+    if len(items) > limit and _strict_author_limits.get():
+        raise ElearningError(f'Use at most {limit} {label}.', 400)
+    return items[:limit]
+
+
 def safe_text(value: object, max_len: int = 4000) -> str:
     if value is None:
         return ''
     text = str(value).replace('\r\n', '\n').replace('\r', '\n')
+    if len(text) > max_len and _strict_author_limits.get():
+        raise ElearningError(f'Text is {len(text)} characters long. Use at most {max_len}.', 400)
     return text[:max_len]
 
 
@@ -294,7 +316,7 @@ def _normalize_option_list(raw: object, default_lang: str, max_items: int = MAX_
     items = raw if isinstance(raw, list) else []
     result = []
     seen = set()
-    for entry in items[:max_items]:
+    for entry in _bounded_items(items, max_items, 'items per block'):
         if not isinstance(entry, dict):
             continue
         oid = str(entry.get('id') or '').strip()
@@ -412,7 +434,7 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
     elif btype == 'sources':
         raw_items = data.get('items') if isinstance(data.get('items'), list) else []
         items = []
-        for entry in raw_items[:20]:
+        for entry in _bounded_items(raw_items, 20, 'references per block'):
             if not isinstance(entry, dict):
                 continue
             sid = str(entry.get('id') or '').strip()
@@ -563,7 +585,7 @@ def normalize_step(raw: object, default_lang: str = 'nl') -> dict:
 
     raw_branching = raw.get('branching') if isinstance(raw.get('branching'), list) else []
     branching = []
-    for rule in raw_branching[:10]:
+    for rule in _bounded_items(raw_branching, 10, 'branching rules per step'):
         if not isinstance(rule, dict):
             continue
         block_id = str(rule.get('blockId') or '').strip()
@@ -651,7 +673,7 @@ def normalize_expedition_payload(raw: object) -> dict:
     raw_start = raw.get('startPage') if isinstance(raw.get('startPage'), dict) else {}
     raw_highlights = raw_start.get('highlights') if isinstance(raw_start.get('highlights'), list) else []
     highlights = []
-    for entry in raw_highlights[:8]:
+    for entry in _bounded_items(raw_highlights, 8, 'start page highlights'):
         if isinstance(entry, dict) and ('text' in entry or 'id' in entry):
             hid = str(entry.get('id') or '').strip()
             if not _ID_RE.fullmatch(hid):
@@ -690,7 +712,7 @@ def normalize_expedition_payload(raw: object) -> dict:
 
     raw_glossary = raw.get('glossary') if isinstance(raw.get('glossary'), list) else []
     glossary = []
-    for entry in raw_glossary[:30]:
+    for entry in _bounded_items(raw_glossary, 30, 'glossary entries'):
         if not isinstance(entry, dict):
             continue
         gid = str(entry.get('id') or '').strip()
@@ -807,13 +829,16 @@ def mark_translations_for_review(previous_exp: dict, next_exp: dict, edited_lang
         old_loc = prev_map.get(key)
         if not old_loc:
             continue
+        review = dict(old_loc.get('_review') or {})
         if old_loc.get(safe_lang, '') != loc.get(safe_lang, ''):
-            review = dict(loc.get('_review') or {})
+            review.pop(safe_lang, None)
             for other in SUPPORTED_LANGUAGES:
                 if other != safe_lang and loc.get(other, '').strip():
                     review[other] = True
-            if review:
-                loc['_review'] = review
+        if review:
+            loc['_review'] = review
+        else:
+            loc.pop('_review', None)
     return next_exp
 
 
@@ -861,11 +886,22 @@ def apply_translation_patch(
         if key not in field_index:
             raise ElearningError(f'Unknown translation field: {key}', 400)
         loc = field_index[key]
-        loc[tgt] = safe_text(raw_value, 8000)
+        loc[tgt] = str(raw_value or '').replace('\r\n', '\n').replace('\r', '\n')
         if isinstance(loc.get('_review'), dict) and tgt in loc['_review']:
             loc['_review'].pop(tgt, None)
             if not loc['_review']:
                 loc.pop('_review', None)
+
+    if text_updates:
+        # Apply each destination field's existing structural limit. Compare
+        # only the submitted translations so legacy drafts remain editable.
+        canonical = normalize_expedition_payload(updated)
+        normalized_fields = {key: loc for key, _, loc in _walk_localized_fields(canonical)}
+        for key in text_updates:
+            value = field_index[key][tgt]
+            normalized = normalized_fields.get(key, {}).get(tgt, '')
+            if value != normalized:
+                raise ElearningError(f'Translation for {key} exceeds its {len(normalized)} character limit.', 400)
 
     if media_updates:
         block_index = {}
@@ -897,6 +933,8 @@ def apply_translation_patch(
                 if not url.strip():
                     overrides.pop(tgt, None)
                 else:
+                    if len(url.strip()) > 500:
+                        raise ElearningError('Use at most 500 characters for a video link.', 400)
                     overrides[tgt] = {'url': url.strip(), **parse_video_url(url)}
             else:
                 ref = safe_media_ref(raw_media)
