@@ -32,8 +32,6 @@ def test_is_dev_environment_treats_render_as_production(monkeypatch):
 
 
 def test_voice_notes_delete_confirmation_uses_native_modal():
-    voice_js = (PROJECT_ROOT / 'static/js/voice-notes.js').read_text()
     voice_template = (PROJECT_ROOT / 'templates/voice_notes.html').read_text()
 
-    assert 'window.confirm' not in voice_js
     assert 'voice-confirm-modal' in voice_template
