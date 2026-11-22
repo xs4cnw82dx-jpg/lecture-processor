@@ -4,16 +4,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 
-
-
-def _load_workbook_class():
-    """Import openpyxl only for the admin Excel export, keeping it off the startup path."""
-    try:
-        from openpyxl import Workbook
-    except Exception:
-        return None
-    return Workbook
-
 from lecture_processor.services import admin_dashboard_service
 from lecture_processor.services import admin_support
 from lecture_processor.domains.admin import metrics as admin_metrics
@@ -32,6 +22,7 @@ def _load_workbook_class():
     except Exception:
         return None
     return Workbook
+
 
 ADMIN_CREDIT_GRANT_MAX = 10000
 ADMIN_CREDIT_FIELDS_BY_CATEGORY = {

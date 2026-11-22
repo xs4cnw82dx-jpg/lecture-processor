@@ -2,6 +2,10 @@
 (function (root) {
   'use strict';
   var catalog = { nl: {}, en: {} };
+  var urls = root.LectureI18nCatalogUrls;
+  var preload = root.LectureI18nPreload || {};
+  var catalogComplete = urls ? preload.complete === true : Boolean(root.LectureI18nCatalog);
+  var loadedFiles = 0;
   var catalogLoad = null;
   function useCatalog() {
     catalog = root.LectureI18nCatalog || { nl: {}, en: {} };
@@ -14,28 +18,35 @@
       if (translated !== source && !Object.prototype.hasOwnProperty.call(catalog.en, translated)) catalog.en[translated] = source;
     });
   }
-  function catalogReady() { return Object.keys((root.LectureI18nCatalog || {}).nl || {}).length > 0; }
-  useCatalog();
-  // English pages skip the Dutch catalogs; load them in order on the first switch to Dutch.
+  if (catalogComplete) useCatalog();
   function loadCatalog() {
-    if (catalogReady()) return Promise.resolve();
-    if (catalogLoad) return catalogLoad;
-    var urls = Array.isArray(root.LectureI18nCatalogUrls) ? root.LectureI18nCatalogUrls : [];
-    catalogLoad = urls.reduce(function (previous, src) {
+    if (catalogLoad) return;
+    // Resume at the failed file. The supplements extend the base catalog in order.
+    catalogLoad = urls.slice(loadedFiles).reduce(function (previous, src) {
       return previous.then(function () {
         return new Promise(function (resolve, reject) {
           var script = root.document.createElement('script');
           script.src = src;
-          script.onload = resolve;
+          script.onload = function () { loadedFiles += 1; resolve(); };
           script.onerror = function () { reject(new Error('Language files could not be loaded.')); };
           root.document.head.appendChild(script);
         });
       });
-    }, Promise.resolve()).then(useCatalog, function (error) { catalogLoad = null; throw error; });
-    return catalogLoad;
+    }, Promise.resolve()).then(function () {
+      useCatalog();
+      catalogComplete = true;
+      language = requestedLanguage;
+      applyLanguage();
+    }, function () {
+      // Keep the displayed language and allow a later preference event to retry.
+      catalogLoad = null;
+    });
   }
-  var language = 'en';
-  try { language = JSON.parse(root.localStorage.getItem('lp-preferences') || '{}').language === 'nl' ? 'nl' : 'en'; } catch (_error) { /* Storage can be unavailable in private windows. */ }
+  var requestedLanguage = 'en';
+  try {
+    requestedLanguage = JSON.parse(root.localStorage.getItem('lp-preferences') || '{}').language === 'nl' ? 'nl' : 'en';
+  } catch (_error) { /* Storage can be unavailable in private windows. */ }
+  var language = catalogComplete || !urls ? requestedLanguage : (preload.dutchSource ? 'nl' : 'en');
   var originals = new WeakMap();
   var attributeOriginals = new WeakMap();
   var observer;
@@ -162,18 +173,15 @@
     root.dispatchEvent(new CustomEvent('lp:language-changed', { detail: { language: language, locale: locale() } }));
   }
   function setLanguage(value) {
-    var next = value === 'nl' ? 'nl' : 'en';
-    if (!root.document) { language = next; return language; }
-    if (next === 'nl' && !catalogReady() && root.LectureI18nCatalogUrls) {
-      loadCatalog().then(function () {
-        language = next;
-        applyLanguage();
-      }, function () { /* Keep the current language when the files are unavailable (for example offline). */ });
-      return next;
+    requestedLanguage = value === 'nl' ? 'nl' : 'en';
+    if (!root.document) { language = requestedLanguage; return language; }
+    if (!catalogComplete && urls && (requestedLanguage === 'nl' || preload.dutchSource)) {
+      loadCatalog();
+    } else {
+      language = requestedLanguage;
+      applyLanguage();
     }
-    language = next;
-    applyLanguage();
-    return language;
+    return requestedLanguage;
   }
   function locale() { return language === 'nl' ? 'nl-NL' : 'en-GB'; }
   var api = { t: translate, setLanguage: setLanguage, getLanguage: function () { return language; }, locale: locale, localize: localize, isContent: excluded };
@@ -184,7 +192,7 @@
   var started = false;
   function startObserver() {
     // Only Dutch, or a page that has already used the catalogs, needs DOM translation.
-    if (observer || !started || (language !== 'nl' && !catalogReady())) return;
+    if (observer || !started || (language !== 'nl' && !catalogComplete)) return;
     localize(root.document.documentElement);
     observer = new MutationObserver(function (records) {
       records.forEach(function (record) {
@@ -197,12 +205,13 @@
   }
   function start() {
     started = true;
+    if (!catalogComplete && urls && (requestedLanguage === 'nl' || preload.dutchSource)) loadCatalog();
     startObserver();
   }
   if (root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
   root.addEventListener('lp:preferences-changed', function (event) {
     var next = event.detail && event.detail.language === 'nl' ? 'nl' : 'en';
-    if (next !== language) setLanguage(next);
+    if (next !== requestedLanguage || next !== language) setLanguage(next);
   });
 })(typeof window !== 'undefined' ? window : globalThis);
