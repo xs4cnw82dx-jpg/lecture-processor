@@ -172,3 +172,7 @@ The expedition library and response report use the app’s shared theme, page he
 The isolated preview was inspected at 1440px and 375px across the library, authoring canvas, translation workspace, learner journey and report. Checks included the dark app theme, German large-text and high-contrast reading, keyboard navigation, account switching and failed saves. Production verification is pending.
 
 The Studio sidebar now expands the group containing the current page on entry and keeps the user's manual choice through account refreshes. The creation dialog starts with an empty title and rejects whitespace-only input. The isolated preview covered signed-in and signed-out views at 1280px and 375px in both themes, plus keyboard creation with a German three-station outline and JSON import. Live verification of this follow-up is pending.
+
+## Settings account shortcuts — 22 November
+
+Closing Export data or Delete account returns keyboard focus to the Settings button that opened the dialog. Opening either dialog from the account menu returns focus to the menu toggle. Isolated checks covered Escape, Cancel, a completed export, an export finishing after reopening the dialog, and an account change. The focus ring was inspected at 375px and 1280px in both themes. Live verification is pending.
