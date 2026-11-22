@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from flask import Flask, jsonify
 
+from lecture_processor.services import access_service
 from lecture_processor.services import study_library_service as library
 from lecture_processor.services import study_picture_service as pictures
 
@@ -44,8 +45,8 @@ def make_retention(study_pictures, monkeypatch):
         list_interview_quotations_by_uid_and_pack=lambda *_args, **_kwargs: [],
     ))
     runtime.get_study_card_state_doc = lambda uid, pack_id: PackRef(db, f'study_card_states/{uid}__{pack_id}')
-    monkeypatch.setattr(library.study_api_support, 'require_user', lambda *_args: ({'uid': 'owner'}, None, 0))
-    monkeypatch.setattr(library.study_api_support, 'account_write_guard', lambda *_args: None)
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': 'owner'}, None, 0))
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_args: None)
     monkeypatch.setattr(library.study_audio, 'ensure_pack_audio_storage_key', lambda *_args, **_kwargs: '')
     monkeypatch.setattr(library.study_audio, 'audio_storage_key_has_file', lambda *_args, **_kwargs: False)
     monkeypatch.setattr(library.study_audio, 'remove_pack_audio_file', lambda *_args, **_kwargs: None)

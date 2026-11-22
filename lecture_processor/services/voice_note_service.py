@@ -16,10 +16,6 @@ from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 from lecture_processor.services import access_service, upload_batch_support, upload_quota_service
 
 
-def _account_write_guard_response(app_ctx, uid):
-    return upload_batch_support.account_write_guard_response(app_ctx, uid)
-
-
 def _require_ai_processing_ready(app_ctx):
     return upload_batch_support.require_ai_processing_ready(app_ctx)
 
@@ -133,30 +129,11 @@ def _resolve_output_language(app_ctx, request, user):
     )
 
 
-def _authorized_user(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(
-        app_ctx,
-        request,
-        unauthorized_error='Please sign in to continue',
-    )
-    if error_response is not None:
-        return None, error_response, status
-    uid = decoded_token['uid']
-    deletion_guard = _account_write_guard_response(app_ctx, uid)
-    if deletion_guard is not None:
-        response, status_code = deletion_guard
-        return None, response, status_code
-    return decoded_token, None, None
-
-
-def list_voice_notes(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(
-        app_ctx,
-        request,
-        unauthorized_error='Please sign in to continue',
-    )
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(
+    allowlist=True, writes=False,
+    unauthorized_error='Please sign in to continue',
+)
+def list_voice_notes(app_ctx, request, decoded_token):
 
     uid = decoded_token['uid']
     try:
@@ -211,10 +188,11 @@ def list_voice_notes(app_ctx, request):
     })
 
 
-def create_voice_note(app_ctx, request):
-    decoded_token, error_response, status = _authorized_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue',
+)
+def create_voice_note(app_ctx, request, decoded_token):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
@@ -407,10 +385,11 @@ def get_voice_note_job_status(app_ctx, request, job_id):
     return upload_runtime_service.get_status(app_ctx, request, job_id)
 
 
-def update_voice_note_metadata(app_ctx, request, pack_id):
-    decoded_token, error_response, status = _authorized_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue',
+)
+def update_voice_note_metadata(app_ctx, request, decoded_token, pack_id):
 
     uid = decoded_token['uid']
     payload = request.get_json(silent=True) or {}
@@ -440,10 +419,11 @@ def update_voice_note_metadata(app_ctx, request, pack_id):
     return app_ctx.jsonify({'ok': True, 'updates': updates})
 
 
-def regenerate_voice_note_study_tools(app_ctx, request, pack_id):
-    decoded_token, error_response, status = _authorized_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue',
+)
+def regenerate_voice_note_study_tools(app_ctx, request, decoded_token, pack_id):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')

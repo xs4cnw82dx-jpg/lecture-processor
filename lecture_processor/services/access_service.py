@@ -1,5 +1,8 @@
 """Shared authentication and allowlist guards for service handlers."""
 
+from functools import wraps
+
+from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.services import auth_service
 
@@ -60,6 +63,39 @@ def require_allowed_user(
     if message:
         payload['message'] = message
     return None, app_ctx.jsonify(payload), 403
+
+
+def account_write_guard(app_ctx, uid):
+    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
+    if allowed:
+        return None
+    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
+
+
+def require_user(*, allowlist, writes, unauthorized_error='Unauthorized',
+                 email_not_allowed_message='Please use your university email.'):
+    """Authenticate a service request and pass its verified identity to the handler."""
+    def decorate(handler):
+        @wraps(handler)
+        def protected(app_ctx, request, *args, **kwargs):
+            if allowlist:
+                user, error, status = require_allowed_user(
+                    app_ctx, request, unauthorized_error=unauthorized_error,
+                    email_not_allowed_message=email_not_allowed_message,
+                )
+            else:
+                user, error, status = require_authenticated_user(
+                    app_ctx, request, unauthorized_error=unauthorized_error,
+                )
+            if error is not None:
+                return error, status
+            if writes:
+                denied = account_write_guard(app_ctx, user['uid'])
+                if denied is not None:
+                    return denied
+            return handler(app_ctx, request, user, *args, **kwargs)
+        return protected
+    return decorate
 
 
 def require_recent_allowed_user(

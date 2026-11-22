@@ -6,6 +6,7 @@ from google.cloud import firestore
 
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.repositories import study_repo
+from lecture_processor.services import access_service
 from lecture_processor.services import study_library_service as library
 from lecture_processor.services import study_picture_service as pictures
 from lecture_processor.services.study_run_service import fingerprint
@@ -35,8 +36,8 @@ def make_editor(monkeypatch):
         ], 500),
     }
     monkeypatch.setattr(firestore, 'transactional', store.transactional)
-    monkeypatch.setattr(library.study_api_support, 'require_user', lambda *_: ({'uid': 'owner'}, None, 0))
-    monkeypatch.setattr(library.study_api_support, 'account_write_guard', lambda *_: None)
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_, **_kwargs: ({'uid': 'owner'}, None, 0))
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_: None)
     monkeypatch.setattr(library.study_audio, 'ensure_pack_audio_storage_key', lambda *_args, **_kwargs: '')
     monkeypatch.setattr(library.study_audio, 'get_audio_storage_key_from_pack', lambda *_args, **_kwargs: '')
     monkeypatch.setattr(library.study_audio, 'audio_storage_key_has_file', lambda *_args, **_kwargs: False)

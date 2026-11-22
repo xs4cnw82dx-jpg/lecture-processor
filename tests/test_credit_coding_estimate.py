@@ -1,3 +1,4 @@
+from lecture_processor.services import access_service
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -22,7 +23,7 @@ def test_owned_coding_estimate_names_its_units_and_actual_charge(monkeypatch, en
     runtime, store = make_credit_runtime(users={'one': user}, unified_enabled=enabled)
     runtime.repositories = SimpleNamespace(study=study_repo, users=users_repo)
     runtime.jsonify = jsonify
-    monkeypatch.setattr(service.study_api_support, 'require_user', lambda *_args: ({'uid': 'one'}, None, None))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': 'one'}, None, None))
     monkeypatch.setattr(service, '_require_interview_pack', lambda *_args: ({'mode': 'interview', 'uid': 'one'}, transcript, None, None))
     before = deepcopy(store.documents)
     app = Flask(__name__)

@@ -1,5 +1,6 @@
 """Public coding feedback against synthetic providers and the real credit policy."""
 
+from lecture_processor.services import access_service
 from copy import deepcopy
 import logging
 from types import SimpleNamespace
@@ -29,7 +30,7 @@ def test_coding_estimate_exemption_matches_the_configured_charge(monkeypatch, sc
     runtime, state = make_credit_runtime(users={'owner': user}, unified_enabled=False)
     runtime.repositories = SimpleNamespace(study=study_repo, users=users_repo)
     runtime.jsonify = jsonify
-    monkeypatch.setattr(coding.study_api_support, 'require_user', lambda *_args: ({'uid': 'owner'}, None, None))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': 'owner'}, None, None))
     monkeypatch.setattr(coding, '_require_interview_pack', lambda *_args: (
         {'uid': 'owner', 'mode': 'interview'}, 'Synthetic transcript', None, None,
     ))

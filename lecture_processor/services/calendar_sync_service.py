@@ -148,10 +148,8 @@ def _settings(body):
     return {'include_deadlines': bool(body.get('include_deadlines', True)), 'reminder_offset_minutes': reminder}
 
 
-def handle(ctx, request, action):
-    user, error, status = access_service.require_allowed_user(ctx, request)
-    if error is not None:
-        return error, status
+@access_service.require_user(allowlist=True, writes=False)
+def handle(ctx, request, user, action):
     uid = user['uid']
     if action == 'status':
         return ctx.jsonify(public_state(ctx, uid))

@@ -2,12 +2,10 @@
 
 import secrets
 
-from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import progress as study_progress
-from lecture_processor.services import access_service
 
 
 def build_audio_unavailable_message():
@@ -31,17 +29,6 @@ def pack_item_count(pack, count_key, items_key):
 
 def account_unavailable_response(app_ctx):
     return app_ctx.jsonify({'error': 'Account is unavailable.', 'status': 'account_deletion_in_progress'}), 409
-
-
-def account_write_guard(app_ctx, uid):
-    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if allowed:
-        return None
-    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
-
-
-def require_user(app_ctx, request):
-    return access_service.require_allowed_user(app_ctx, request)
 
 
 def parse_daily_card_goal_input(raw_value, runtime=None):

@@ -1,5 +1,6 @@
 """Runtime status and download handlers for upload-related APIs."""
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai.providers.usage_view import public_stage_usage
 from lecture_processor.domains.billing import receipts as billing_receipts
@@ -14,10 +15,8 @@ def _require_admin_bypass(app_ctx, request):
     return admin_support.require_admin(app_ctx, request)
 
 
-def get_status(app_ctx, request, job_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=False, writes=False)
+def get_status(app_ctx, request, decoded_token, job_id):
     uid = decoded_token['uid']
     job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
@@ -121,10 +120,8 @@ def _serialize_active_runtime_job(job_id, job):
     }
 
 
-def get_active_runtime_jobs(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=False, writes=False)
+def get_active_runtime_jobs(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
 
     jobs_by_id = {}
@@ -161,10 +158,8 @@ def get_active_runtime_jobs(app_ctx, request):
     return app_ctx.jsonify({'jobs': jobs})
 
 
-def download_docx(app_ctx, request, job_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=False, writes=False)
+def download_docx(app_ctx, request, decoded_token, job_id):
     uid = decoded_token['uid']
     job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:
@@ -212,10 +207,8 @@ def download_docx(app_ctx, request, job_id):
     )
 
 
-def download_flashcards_csv(app_ctx, request, job_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=False, writes=False)
+def download_flashcards_csv(app_ctx, request, decoded_token, job_id):
     uid = decoded_token['uid']
     job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job:

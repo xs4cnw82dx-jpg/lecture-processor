@@ -1,15 +1,14 @@
 """Study export routes extracted from study API service."""
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.domains.study import export as study_export
 
 from lecture_processor.services import study_api_support
 
 
-def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def export_study_pack_flashcards_csv(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     try:
         doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
@@ -55,10 +54,8 @@ def export_study_pack_flashcards_csv(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not export CSV'}), 500
 
 
-def export_study_pack_notes(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def export_study_pack_notes(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     try:
         doc = app_ctx.repositories.study.get_study_pack_doc(app_ctx.db, pack_id)
@@ -104,10 +101,8 @@ def export_study_pack_notes(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not export notes'}), 500
 
 
-def export_study_pack_source(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def export_study_pack_source(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     try:
         pack_result, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
@@ -175,10 +170,8 @@ def export_study_pack_source(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not export source output'}), 500
 
 
-def export_study_pack_pdf(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def export_study_pack_pdf(app_ctx, request, decoded_token, pack_id):
     if not study_export.REPORTLAB_AVAILABLE:
         return app_ctx.jsonify({
             'error': "PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"
@@ -209,10 +202,8 @@ def export_study_pack_pdf(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not export PDF'}), 500
 
 
-def export_study_pack_annotated_pdf(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def export_study_pack_annotated_pdf(app_ctx, request, decoded_token, pack_id):
     if not study_export.REPORTLAB_AVAILABLE:
         return app_ctx.jsonify({
             'error': "Annotated PDF export is currently unavailable on this server. Install dependency: pip install reportlab==4.2.5"

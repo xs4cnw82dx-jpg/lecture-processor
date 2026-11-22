@@ -7,7 +7,7 @@ from lecture_processor.services import access_service
 @pytest.fixture
 def favorite_account(monkeypatch, core):
     user = {'uid': 'tools-user', 'email': 'tools@example.test'}
-    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_: ({'uid': user['uid'], 'email': user['email']}, None, 200))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_, **_kwargs: ({'uid': user['uid'], 'email': user['email']}, None, 200))
     monkeypatch.setattr(core, 'get_or_create_user', lambda *_: user.copy())
     monkeypatch.setattr(core.repositories.users, 'set_doc', lambda _db, uid, updates, merge=True: user.update(updates))
     return user

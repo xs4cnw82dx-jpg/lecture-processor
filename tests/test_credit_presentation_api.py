@@ -1,3 +1,4 @@
+from lecture_processor.services import access_service
 from html.parser import HTMLParser
 from types import SimpleNamespace
 
@@ -5,7 +6,6 @@ import pytest
 
 from lecture_processor.domains.billing import policy
 from lecture_processor.repositories import purchases_repo
-from lecture_processor.services import payments_api_service
 
 
 def test_server_rendered_bundle_order_does_not_depend_on_catalog_key_order(client, core, monkeypatch):
@@ -52,7 +52,7 @@ def test_config_bundle_badges_come_from_the_active_catalog(client, core, monkeyp
 
 def test_history_keeps_recorded_unified_and_original_purchase_units(client, core, monkeypatch):
     monkeypatch.setattr(core, 'verify_firebase_token', lambda _request: {'uid': 'one', 'email': 'one@example.test'})
-    monkeypatch.setattr(payments_api_service, '_require_allowed_email', lambda *_args: None)
+    monkeypatch.setattr(access_service, 'is_email_allowed', lambda *_args: True)
     records = {
         'converted-old': {'credit_scheme': 2, 'credits': 40, 'legacy_credits': {'lecture_credits_standard': 5}, 'bundle_name': 'Original lecture bundle'},
         'new': {'credit_scheme': 2, 'credits': 80, 'bundle_name': '80 credits'},

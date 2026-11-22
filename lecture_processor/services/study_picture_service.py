@@ -10,13 +10,14 @@ import uuid
 
 from flask import jsonify, send_file
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.books.model import BookError
 from lecture_processor.domains.study.content_revision import fingerprint
 from lecture_processor.domains.study.picture_refs import IMAGE_ID, PENDING_PICTURES, card_image_ids
 from lecture_processor.repositories.books_repo import BookStore
 from lecture_processor.repositories import study_repo
-from lecture_processor.services import book_service, book_storage, study_api_support
+from lecture_processor.services import book_service, book_storage
 
 MAX_CARD_IMAGES = 8
 UPLOAD_LEASE_SECONDS = 180
@@ -52,14 +53,14 @@ def enabled(runtime, uid):
 
 
 def require_access(runtime, request, pack_id, *, write=False):
-    user, error, status = study_api_support.require_user(runtime, request)
+    user, error, status = access_service.require_allowed_user(runtime, request)
     if error is not None:
         return None, (error, status)
     uid = user['uid']
     if not enabled(runtime, uid):
         return None, (jsonify(error='Pictures are not enabled for this account.'), 403)
     if write:
-        guard = study_api_support.account_write_guard(runtime, uid)
+        guard = access_service.account_write_guard(runtime, uid)
         if guard is not None:
             return None, guard
     # Ownership needs only the owner field; avoid reading the whole pack per picture.

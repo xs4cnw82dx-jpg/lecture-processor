@@ -4,7 +4,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 
-from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.services import access_service
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.analytics import events as analytics_events
@@ -72,10 +72,6 @@ def _sum_retry_attempts(retry_tracker):
 
 def _require_ai_processing_ready(app_ctx):
     return upload_batch_support.require_ai_processing_ready(app_ctx)
-
-
-def _account_write_guard_response(app_ctx, uid):
-    return upload_batch_support.account_write_guard_response(app_ctx, uid)
 
 
 def _cleanup_upload_files(app_ctx, paths, *, imported_audio_used=False, imported_audio_path=''):
@@ -303,17 +299,13 @@ def download_batch_zip(app_ctx, request, batch_id):
     return upload_batch_service.download_batch_zip(app_ctx, request, batch_id)
 
 
-def upload_files(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue', email_not_allowed_message='',
+)
+def upload_files(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    deletion_guard = _account_write_guard_response(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
         analytics_events.log_rate_limit_hit('upload', 10, runtime=app_ctx)
@@ -784,14 +776,13 @@ def tools_transcribe(app_ctx, request):
     return tools_transcription_service.create_general_transcription(app_ctx, request)
 
 
-def tools_export(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+@access_service.require_user(
+    allowlist=True, writes=False,
+    unauthorized_error='Please sign in to continue', email_not_allowed_message='',
+)
+def tools_export(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
 
     payload = request.get_json(silent=True) or {}
     export_format = str(payload.get('format', 'docx') or '').strip().lower()

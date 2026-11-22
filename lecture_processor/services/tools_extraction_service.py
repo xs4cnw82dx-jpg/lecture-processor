@@ -227,18 +227,14 @@ def _tools_job_payload(app_ctx, *, uid: str, email: str, staged_input: _StagedTo
     }
 
 
-def tools_extract(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue', email_not_allowed_message='',
+)
+def tools_extract(app_ctx, request, decoded_token):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    if not access_service.is_email_allowed(app_ctx, email):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    deletion_guard = upload_api_service._account_write_guard_response(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     active_jobs = account_lifecycle.count_active_jobs_for_user(uid, runtime=app_ctx)
     if active_jobs >= app_ctx.MAX_ACTIVE_JOBS_PER_USER:
         analytics_events.log_rate_limit_hit('tools', 10, runtime=app_ctx)

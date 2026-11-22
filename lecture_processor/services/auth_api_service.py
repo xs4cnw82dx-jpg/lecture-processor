@@ -208,10 +208,8 @@ def ingest_analytics_event(app_ctx, request):
     return app_ctx.jsonify({'ok': True})
 
 
-def get_user(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_user(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
     user = app_ctx.get_or_create_user(uid, email)
@@ -234,20 +232,16 @@ def get_user(app_ctx, request):
     return app_ctx.jsonify(payload)
 
 
-def get_user_preferences(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_user_preferences(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
     user = app_ctx.get_or_create_user(uid, email)
     return app_ctx.jsonify({'preferences': shared_parsing.build_user_preferences_payload(user, runtime=app_ctx)})
 
 
-def update_user_preferences(app_ctx, request):
-    decoded_token, error_response, status = access_service.require_allowed_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def update_user_preferences(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
 

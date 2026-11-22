@@ -153,7 +153,7 @@ def test_profile_keeps_converted_balance_after_activation_is_disabled(credit_run
     runtime, store = credit_runtime
     users.get_or_create_user('u1', 'u1@example.com', runtime=runtime)
     runtime.UNIFIED_CREDITS_ENABLED = False
-    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args: ({'uid': 'u1', 'email': 'u1@example.com'}, None, None))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': 'u1', 'email': 'u1@example.com'}, None, None))
     monkeypatch.setattr(auth_api_service.shared_parsing, 'build_user_preferences_payload', lambda *_args, **_kwargs: {})
     payload = auth_api_service.get_user(runtime, SimpleNamespace())
     assert payload['credits'] == 90
@@ -165,7 +165,7 @@ def test_profile_keeps_converted_balance_after_activation_is_disabled(credit_run
 def test_disabled_unconverted_profile_retains_existing_credit_object(credit_runtime, monkeypatch):
     runtime, _store = credit_runtime
     runtime.UNIFIED_CREDITS_ENABLED = False
-    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args: ({'uid': 'u1', 'email': 'u1@example.com'}, None, None))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': 'u1', 'email': 'u1@example.com'}, None, None))
     monkeypatch.setattr(auth_api_service.shared_parsing, 'build_user_preferences_payload', lambda *_args, **_kwargs: {})
     payload = auth_api_service.get_user(runtime, SimpleNamespace())
     assert payload['credits'] == {
@@ -197,8 +197,8 @@ def test_request_cannot_choose_an_inactive_checkout_catalog(credit_runtime, monk
     runtime.verify_firebase_token = lambda _request: {'uid': 'u1', 'email': 'u1@example.com'}
     runtime.CHECKOUT_RATE_LIMIT_MAX_REQUESTS = 10
     runtime.CHECKOUT_RATE_LIMIT_WINDOW_SECONDS = 60
-    monkeypatch.setattr(payments_api_service, '_require_allowed_email', lambda *_args: None)
-    monkeypatch.setattr(payments_api_service, '_require_account_write_access', lambda *_args: None)
+    monkeypatch.setattr(access_service, 'is_email_allowed', lambda *_args: True)
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_args: None)
     monkeypatch.setattr(payments_api_service.rate_limiter, 'check_rate_limit', lambda **_kwargs: (True, 0))
     request = SimpleNamespace(get_json=lambda **_kwargs: {'bundle_id': bundle_id, 'unified_credits_enabled': not enabled})
     payload, status = payments_api_service.create_checkout_session(runtime, request)

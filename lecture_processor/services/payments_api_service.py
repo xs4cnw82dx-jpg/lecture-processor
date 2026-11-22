@@ -3,11 +3,11 @@
 
 from urllib.parse import urlparse
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.analytics import events as analytics_events
-from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
 
@@ -35,19 +35,6 @@ def get_config(app_ctx):
         payload.update(credit_scheme=2, action_costs=billing_policy.ACTION_COSTS,
                        free_signup_credits=billing_policy.FREE_SIGNUP_CREDITS)
     return app_ctx.jsonify(payload)
-
-
-def _require_allowed_email(app_ctx, email):
-    if auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return None
-    return app_ctx.jsonify({'error': 'Email not allowed', 'message': 'Please use your university email.'}), 403
-
-
-def _require_account_write_access(app_ctx, uid):
-    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if allowed:
-        return None
-    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
 
 
 def _checkout_failure_response(app_ctx, status):
@@ -119,19 +106,14 @@ def _retrieve_checkout_session_for_fulfillment(app_ctx, session_id):
         return app_ctx.stripe.checkout.Session.retrieve(session_id)
 
 
-def create_checkout_session(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue',
+)
+def create_checkout_session(app_ctx, request, decoded_token):
 
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    disallowed_response = _require_allowed_email(app_ctx, email)
-    if disallowed_response is not None:
-        return disallowed_response
-    deletion_guard = _require_account_write_access(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     allowed_checkout, retry_after = rate_limiter.check_rate_limit(
         key=f"checkout:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
         limit=app_ctx.CHECKOUT_RATE_LIMIT_MAX_REQUESTS,
@@ -197,16 +179,10 @@ def create_checkout_session(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not create checkout session. Please try again.'}), 500
 
 
-def confirm_checkout_session(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=True, writes=False)
+def confirm_checkout_session(app_ctx, request, decoded_token):
 
     uid = decoded_token.get('uid', '')
-    email = decoded_token.get('email', '')
-    disallowed_response = _require_allowed_email(app_ctx, email)
-    if disallowed_response is not None:
-        return disallowed_response
     session_id = str(request.args.get('session_id', '') or '').strip()
     if not session_id:
         return app_ctx.jsonify({'error': 'Missing session_id'}), 400
@@ -298,16 +274,10 @@ def stripe_webhook(app_ctx, request):
     return '', 200
 
 
-def get_purchase_history(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=True, writes=False)
+def get_purchase_history(app_ctx, request, decoded_token):
 
     uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    disallowed_response = _require_allowed_email(app_ctx, email)
-    if disallowed_response is not None:
-        return disallowed_response
     try:
         purchases_docs = app_ctx.repositories.purchases.list_by_uid_recent(app_ctx.db, uid, 50, app_ctx.firestore)
         purchases = []

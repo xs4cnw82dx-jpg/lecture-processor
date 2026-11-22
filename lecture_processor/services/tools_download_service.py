@@ -246,16 +246,12 @@ def _run_lecture_download_in_context(app_ctx, job_id, uid, fetch_target, request
             media_lease.release()
 
 
-def download_lecture_media(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue', email_not_allowed_message='',
+)
+def download_lecture_media(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
-    if not access_service.is_email_allowed(app_ctx, decoded_token.get('email', '')):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    allowed_account, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if not allowed_account:
-        return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
     if 'application/json' not in str(request.headers.get('Accept', '')).lower():
         return app_ctx.jsonify({'error': 'Please refresh this page before starting a download.'}), 409
     allowed, retry_after = rate_limiter.check_rate_limit(
@@ -343,9 +339,11 @@ def download_lecture_media(app_ctx, request):
 
 
 def _owned_job(app_ctx, request, job_id):
-    token = app_ctx.verify_firebase_token(request)
-    if not token:
-        return None, (app_ctx.jsonify({'error': 'Please sign in to continue'}), 401)
+    token, error, status = access_service.require_authenticated_user(
+        app_ctx, request, unauthorized_error='Please sign in to continue',
+    )
+    if error is not None:
+        return None, (error, status)
     job = runtime_jobs_store.get_job_snapshot(job_id, runtime=app_ctx)
     if not job or job.get('job_scope') != JOB_SCOPE or job.get('user_id') != token['uid']:
         return None, (app_ctx.jsonify({'error': 'Lecture download not found.'}), 404)

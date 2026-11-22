@@ -1,12 +1,12 @@
 """Audio import routes extracted from upload API service."""
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.analytics import events as analytics_events
-from lecture_processor.domains.auth import policy as auth_policy
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 
-from lecture_processor.services import upload_batch_support, upload_quota_service, upload_redaction_service
+from lecture_processor.services import upload_quota_service, upload_redaction_service
 
 
 def _audio_import_job_store(app_ctx):
@@ -160,17 +160,12 @@ def _run_audio_import_job(app_ctx, job_id, uid, fetch_target, prefix, quota_rese
         upload_quota_service.release_uncommitted_upload_quota(app_ctx, quota_reservation)
 
 
-def import_audio_from_url(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
+@access_service.require_user(
+    allowlist=True, writes=True,
+    unauthorized_error='Please sign in to continue', email_not_allowed_message='',
+)
+def import_audio_from_url(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    deletion_guard = upload_batch_support.account_write_guard_response(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
 
     allowed_import, retry_after = rate_limiter.check_rate_limit(
         key=f"audio_import:{rate_limiter.normalize_rate_limit_key_part(uid, fallback='anon_uid', runtime=app_ctx)}",
@@ -260,10 +255,8 @@ def import_audio_from_url(app_ctx, request):
     }), 202
 
 
-def get_imported_audio_status(app_ctx, request, job_id):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=False, writes=False)
+def get_imported_audio_status(app_ctx, request, decoded_token, job_id):
     uid = decoded_token['uid']
     job = _get_audio_import_job(app_ctx, uid, job_id)
     if not job:
@@ -271,10 +264,8 @@ def get_imported_audio_status(app_ctx, request, job_id):
     return app_ctx.jsonify(_audio_import_job_payload(job))
 
 
-def download_imported_audio(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=False, writes=False)
+def download_imported_audio(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     payload = request.get_json(silent=True) or {}
     token = str(payload.get('audio_import_token', '') or '').strip()
@@ -299,10 +290,8 @@ def download_imported_audio(app_ctx, request):
     )
 
 
-def release_imported_audio(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return app_ctx.jsonify({'error': 'Unauthorized'}), 401
+@access_service.require_user(allowlist=False, writes=False)
+def release_imported_audio(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     payload = request.get_json(silent=True) or {}
     token = str(payload.get('audio_import_token', '') or '').strip()
