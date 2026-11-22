@@ -12,10 +12,13 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from lecture_processor.domains.books.model import BookError
 
-MAX_BYTES = min(10, int(os.getenv('BOOK_IMAGE_MAX_MB', '10'))) * 1024 * 1024
-BOOK_BYTES = int(os.getenv('BOOK_ASSETS_MAX_MB', '25')) * 1024 * 1024
-GLOBAL_BYTES = int(os.getenv('BOOK_STORAGE_MAX_MB', '750')) * 1024 * 1024
-MONTHLY_BYTES = int(os.getenv('BOOK_TRANSFER_MAX_MB', '4096')) * 1024 * 1024
+from lecture_processor.runtime.environment import strict_int_env
+
+
+MAX_BYTES = min(10, strict_int_env('BOOK_IMAGE_MAX_MB', 10)) * 1024 * 1024
+BOOK_BYTES = strict_int_env('BOOK_ASSETS_MAX_MB', 25) * 1024 * 1024
+GLOBAL_BYTES = strict_int_env('BOOK_STORAGE_MAX_MB', 750) * 1024 * 1024
+MONTHLY_BYTES = strict_int_env('BOOK_TRANSFER_MAX_MB', 4096) * 1024 * 1024
 
 
 def configured():

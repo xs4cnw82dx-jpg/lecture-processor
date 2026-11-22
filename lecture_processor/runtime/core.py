@@ -70,7 +70,9 @@ import firebase_admin
 
 from firebase_admin import credentials, auth, firestore
 
-from lecture_processor.config import resolve_sentry_environment
+from lecture_processor.runtime.environment import (
+    env_list, env_text, env_truthy, env_value, parse_cors_allowed_origins, resolve_sentry_environment, safe_float_env, safe_int_env,
+)
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.ai import pipelines as ai_pipelines
 from lecture_processor.domains.ai import provider as ai_provider
@@ -118,10 +120,10 @@ def create_flask_app(*, flask_secret_key=''):
         template_folder=os.path.join(PROJECT_ROOT_DIR, 'templates'),
         static_folder=os.path.join(PROJECT_ROOT_DIR, 'static'),
     )
-    safe_secret_key = str(flask_secret_key or os.getenv('FLASK_SECRET_KEY', '') or '').strip()
+    safe_secret_key = str(flask_secret_key or env_text('FLASK_SECRET_KEY') or '').strip()
     if safe_secret_key:
         app_obj.secret_key = safe_secret_key
-    elif os.getenv('RENDER'):
+    elif env_value('RENDER'):
         raise RuntimeError('FLASK_SECRET_KEY must be set in deployed environments.')
     else:
         app_obj.secret_key = 'dev-only-secret-key-change-me'
@@ -130,31 +132,9 @@ def create_flask_app(*, flask_secret_key=''):
     app_obj.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
     return app_obj
 
-LOG_LEVEL = (os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper()
+LOG_LEVEL = runtime_environment.log_level()
 
 logger = runtime_bootstrap.configure_logging(LOG_LEVEL)
-
-
-def safe_int_env(name, default=0, minimum=1, maximum=100000):
-    raw = str(os.getenv(name, str(default)) or str(default)).strip()
-    try:
-        value = int(raw)
-    except Exception:
-        value = int(default)
-    return min(max(value, int(minimum)), int(maximum))
-
-
-def safe_float_env(name, default=0.0, minimum=None, maximum=None):
-    raw = str(os.getenv(name, str(default)) or str(default)).strip()
-    try:
-        value = float(raw)
-    except Exception:
-        value = float(default)
-    if minimum is not None:
-        value = max(float(minimum), value)
-    if maximum is not None:
-        value = min(float(maximum), value)
-    return value
 
 
 JOB_WORKERS = safe_int_env('JOB_WORKERS', 2, minimum=1, maximum=32)
@@ -233,21 +213,21 @@ firebase_runtime = runtime_bootstrap.initialize_firebase(
 db = firebase_runtime.db
 firebase_init_error = firebase_runtime.init_error
 
-runtime_bootstrap.configure_stripe(stripe, os.getenv('STRIPE_SECRET_KEY'))
+runtime_bootstrap.configure_stripe(stripe, env_value('STRIPE_SECRET_KEY'))
 
-STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
+STRIPE_PUBLISHABLE_KEY = env_value('STRIPE_PUBLISHABLE_KEY', '')
 
-STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_WEBHOOK_SECRET = env_value('STRIPE_WEBHOOK_SECRET', '')
 
-ADMIN_EMAILS = {email.strip().lower() for email in os.getenv('ADMIN_EMAILS', '').split(',') if email.strip()}
+ADMIN_EMAILS = set(env_list('ADMIN_EMAILS', lowercase=True))
 
-ADMIN_UIDS = {uid.strip() for uid in os.getenv('ADMIN_UIDS', '').split(',') if uid.strip()}
+ADMIN_UIDS = set(env_list('ADMIN_UIDS'))
 
 ADMIN_SESSION_COOKIE_NAME = 'lp_admin_session'
 
 ADMIN_SESSION_DURATION_SECONDS = safe_int_env('ADMIN_SESSION_DURATION_SECONDS', 8 * 60 * 60, minimum=5 * 60, maximum=30 * 24 * 60 * 60)
 
-ADMIN_PAGE_UNAUTHORIZED_MODE = str(os.getenv('ADMIN_PAGE_UNAUTHORIZED_MODE', 'redirect')).strip().lower()
+ADMIN_PAGE_UNAUTHORIZED_MODE = env_value('ADMIN_PAGE_UNAUTHORIZED_MODE', 'redirect').strip().lower()
 
 jobs = {}
 
@@ -259,11 +239,11 @@ RUNTIME_JOB_RECOVERY_BATCH_LIMIT = safe_int_env('RUNTIME_JOB_RECOVERY_BATCH_LIMI
 
 RUNTIME_JOB_RECOVERY_STALE_SECONDS = safe_int_env('RUNTIME_JOB_RECOVERY_STALE_SECONDS', 0, minimum=0, maximum=7 * 24 * 60 * 60)
 
-RUNTIME_JOB_RECOVERY_ENABLED = str(os.getenv('ENABLE_RUNTIME_JOB_RECOVERY', '1')).strip().lower() in {'1', 'true', 'yes', 'on'}
+RUNTIME_JOB_RECOVERY_ENABLED = env_truthy('ENABLE_RUNTIME_JOB_RECOVERY', '1', blank_uses_default=False)
 
-RUNTIME_JOB_RECOVERY_LEASE_COLLECTION = str(os.getenv('RUNTIME_JOB_RECOVERY_LEASE_COLLECTION', 'runtime_job_recovery_leases') or 'runtime_job_recovery_leases').strip()
+RUNTIME_JOB_RECOVERY_LEASE_COLLECTION = env_text('RUNTIME_JOB_RECOVERY_LEASE_COLLECTION', 'runtime_job_recovery_leases')
 
-RUNTIME_JOB_RECOVERY_LEASE_ID = str(os.getenv('RUNTIME_JOB_RECOVERY_LEASE_ID', 'startup') or 'startup').strip()
+RUNTIME_JOB_RECOVERY_LEASE_ID = env_text('RUNTIME_JOB_RECOVERY_LEASE_ID', 'startup')
 
 RUNTIME_JOB_RECOVERY_LEASE_SECONDS = safe_int_env('RUNTIME_JOB_RECOVERY_LEASE_SECONDS', 300, minimum=30, maximum=3600)
 
@@ -273,11 +253,11 @@ RUNTIME_JOB_RECOVERY_DONE = False
 
 BATCH_JOB_RECOVERY_BATCH_LIMIT = safe_int_env('BATCH_JOB_RECOVERY_BATCH_LIMIT', 100, minimum=1, maximum=5000)
 
-BATCH_JOB_RECOVERY_ENABLED = str(os.getenv('ENABLE_BATCH_JOB_RECOVERY', '1')).strip().lower() in {'1', 'true', 'yes', 'on'}
+BATCH_JOB_RECOVERY_ENABLED = env_truthy('ENABLE_BATCH_JOB_RECOVERY', '1', blank_uses_default=False)
 
-BATCH_JOB_RECOVERY_LEASE_COLLECTION = str(os.getenv('BATCH_JOB_RECOVERY_LEASE_COLLECTION', 'batch_job_recovery_leases') or 'batch_job_recovery_leases').strip()
+BATCH_JOB_RECOVERY_LEASE_COLLECTION = env_text('BATCH_JOB_RECOVERY_LEASE_COLLECTION', 'batch_job_recovery_leases')
 
-BATCH_JOB_RECOVERY_LEASE_ID = str(os.getenv('BATCH_JOB_RECOVERY_LEASE_ID', 'startup') or 'startup').strip()
+BATCH_JOB_RECOVERY_LEASE_ID = env_text('BATCH_JOB_RECOVERY_LEASE_ID', 'startup')
 
 BATCH_JOB_RECOVERY_LEASE_SECONDS = safe_int_env('BATCH_JOB_RECOVERY_LEASE_SECONDS', 300, minimum=30, maximum=3600)
 
@@ -297,7 +277,7 @@ AUDIO_STREAM_TOKENS = {}
 
 AUDIO_STREAM_LOCK = threading.Lock()
 
-ALLOW_LEGACY_AUDIO_STREAM_TOKENS = str(os.getenv('ALLOW_LEGACY_AUDIO_STREAM_TOKENS', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
+ALLOW_LEGACY_AUDIO_STREAM_TOKENS = env_truthy('ALLOW_LEGACY_AUDIO_STREAM_TOKENS', '0', blank_uses_default=False)
 
 AUDIO_IMPORT_TOKEN_TTL_SECONDS = 30 * 60
 
@@ -311,7 +291,7 @@ AUDIO_IMPORT_JOBS = {}
 
 AUDIO_IMPORT_JOB_LOCK = threading.Lock()
 
-FEATURE_AUDIO_SECTION_SYNC = os.getenv('FEATURE_AUDIO_SECTION_SYNC', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
+FEATURE_AUDIO_SECTION_SYNC = env_truthy('FEATURE_AUDIO_SECTION_SYNC', '0', blank_uses_default=False)
 
 
 MAX_PROGRESS_PACKS_PER_SYNC = 300
@@ -404,43 +384,27 @@ RATE_LIMIT_LOCK = threading.Lock()
 
 RATE_LIMIT_COUNTER_COLLECTION = 'rate_limit_counters'
 
-RATE_LIMIT_FIRESTORE_ENABLED = str(os.getenv('RATE_LIMIT_FIRESTORE_ENABLED', '1')).strip().lower() in {'1', 'true', 'yes', 'on'}
+RATE_LIMIT_FIRESTORE_ENABLED = env_truthy('RATE_LIMIT_FIRESTORE_ENABLED', '1', blank_uses_default=False)
 
-SENTRY_BACKEND_DSN = os.getenv('SENTRY_DSN_BACKEND', '').strip()
+SENTRY_BACKEND_DSN = env_text('SENTRY_DSN_BACKEND')
 
-SENTRY_FRONTEND_DSN = os.getenv('SENTRY_DSN_FRONTEND', '').strip()
+SENTRY_FRONTEND_DSN = env_text('SENTRY_DSN_FRONTEND')
 
 SENTRY_ENVIRONMENT = resolve_sentry_environment()
 
-SENTRY_RELEASE = (os.getenv('SENTRY_RELEASE', 'lecture-processor') or 'lecture-processor').strip()
+SENTRY_RELEASE = runtime_environment.sentry_release()
 
-SENTRY_CAPTURE_LOCAL = str(os.getenv('SENTRY_CAPTURE_LOCAL', '0')).strip().lower() in {'1', 'true', 'yes', 'on'}
+SENTRY_CAPTURE_LOCAL = env_truthy('SENTRY_CAPTURE_LOCAL', '0', blank_uses_default=False)
 
 LEGAL_CONTACT_EMAIL = 'email@lectureprocessor.com'
 
-DEV_ENV_NAMES = {'development', 'dev', 'local', 'test'}
+DEV_ENV_NAMES = runtime_environment.DEV_ENV_NAMES
 
 APP_BOOT_TS = time.time()
 
 
 def _self_runtime():
     return sys.modules[__name__]
-
-def parse_cors_allowed_origins():
-    raw = (os.getenv('CORS_ALLOWED_ORIGINS', '') or '').strip()
-    if raw:
-        origins = [part.strip().lower() for part in raw.split(',') if part.strip()]
-        return set(origins)
-    return {
-        'http://127.0.0.1:5000',
-        'http://localhost:5000',
-        'http://127.0.0.1:10000',
-        'http://localhost:10000',
-        'https://lecture-processor.onrender.com',
-        'https://lecture-processor-1.onrender.com',
-        'https://lectureprocessor.com',
-        'https://www.lectureprocessor.com',
-    }
 
 CORS_ALLOWED_ORIGINS = parse_cors_allowed_origins()
 
@@ -479,43 +443,32 @@ def get_public_base_url():
 PUBLIC_BASE_URL = get_public_base_url()
 
 
-def _env_truthy(name, default='0'):
-    return runtime_bootstrap.env_truthy(name, default, environ=os.environ)
+BATCH_EMAIL_NOTIFICATIONS_ENABLED = env_truthy('BATCH_EMAIL_NOTIFICATIONS_ENABLED', '1')
 
-
-BATCH_EMAIL_NOTIFICATIONS_ENABLED = _env_truthy('BATCH_EMAIL_NOTIFICATIONS_ENABLED', '1')
-
-UNIFIED_CREDITS_ENABLED = _env_truthy(
+UNIFIED_CREDITS_ENABLED = env_truthy(
     'UNIFIED_CREDITS_ENABLED',
     '1' if billing_policy.DEFAULT_UNIFIED_CREDITS_ENABLED else '0',
 )
-SMTP_HOST = (os.getenv('SMTP_HOST', '') or '').strip()
+SMTP_HOST = env_text('SMTP_HOST')
 SMTP_PORT = safe_int_env('SMTP_PORT', 587, minimum=1, maximum=65535)
-SMTP_USERNAME = (os.getenv('SMTP_USERNAME', '') or '').strip()
-SMTP_PASSWORD = (os.getenv('SMTP_PASSWORD', '') or '').strip()
-SMTP_USE_TLS = _env_truthy('SMTP_USE_TLS', '1')
-SMTP_USE_SSL = _env_truthy('SMTP_USE_SSL', '0')
-SMTP_FROM_EMAIL = (os.getenv('SMTP_FROM_EMAIL', '') or '').strip()
-SMTP_FROM_NAME = (os.getenv('SMTP_FROM_NAME', 'Lecture Processor') or 'Lecture Processor').strip()
-SMTP_REPLY_TO = (os.getenv('SMTP_REPLY_TO', '') or '').strip()
+SMTP_USERNAME = env_text('SMTP_USERNAME')
+SMTP_PASSWORD = env_text('SMTP_PASSWORD')
+SMTP_USE_TLS = env_truthy('SMTP_USE_TLS', '1')
+SMTP_USE_SSL = env_truthy('SMTP_USE_SSL', '0')
+SMTP_FROM_EMAIL = env_text('SMTP_FROM_EMAIL')
+SMTP_FROM_NAME = env_text('SMTP_FROM_NAME', 'Lecture Processor')
+SMTP_REPLY_TO = env_text('SMTP_REPLY_TO')
 SMTP_TIMEOUT_SECONDS = safe_int_env('SMTP_TIMEOUT_SECONDS', 12, minimum=1, maximum=120)
 
 def should_use_minified_js_assets():
-    raw = str(os.getenv('USE_MINIFIED_JS_ASSETS', '') or '').strip().lower()
-    if raw:
-        return raw in {'1', 'true', 'yes', 'on'}
-    return not is_dev_environment()
+    return runtime_environment.should_use_minified_js_assets(sentry_environment=SENTRY_ENVIRONMENT)
+
 
 def resolve_js_asset(filename):
-    """Use minified JS outside development when a built bundle exists."""
-    safe_name = str(filename or '').strip()
-    if not safe_name.endswith('.js') or not should_use_minified_js_assets():
-        return safe_name
-    min_name = safe_name[:-3] + '.min.js'
-    min_path = Path(PROJECT_ROOT_DIR) / 'static' / min_name
-    if min_path.exists():
-        return min_name
-    return safe_name
+    return runtime_environment.resolve_js_asset(
+        filename, project_root_dir=PROJECT_ROOT_DIR, sentry_environment=SENTRY_ENVIRONMENT,
+    )
+
 
 def infer_stripe_key_mode(key_value):
     key = str(key_value or '').strip()
@@ -571,7 +524,7 @@ def apply_cors_headers(response):
 def apply_security_headers(response):
     return runtime_apply_security_headers(
         response,
-        request_is_secure=bool(request.is_secure or os.getenv('RENDER')),
+        request_is_secure=bool(request.is_secure or env_value('RENDER')),
         sentry_frontend_dsn=SENTRY_FRONTEND_DSN,
         script_nonce=getattr(g, 'csp_nonce', ''),
     )
@@ -636,7 +589,7 @@ MAX_OUTPUT_LANGUAGE_CUSTOM_LENGTH = 40
 
 VIDEO_IMPORT_MAX_URL_LENGTH = 4096
 
-VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES = tuple((part.strip().lower() for part in (os.getenv('VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES', 'kaltura.com,ovp.kaltura.com,brightspace.com,d2l.com') or '').split(',') if part.strip()))
+VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES = env_list('VIDEO_IMPORT_ALLOWED_HOST_SUFFIXES', 'kaltura.com,ovp.kaltura.com,brightspace.com,d2l.com', lowercase=True)
 
 PROMPT_REGISTRY_VERSION = prompt_registry.PROMPT_REGISTRY_VERSION
 

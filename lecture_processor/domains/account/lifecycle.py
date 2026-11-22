@@ -1,15 +1,9 @@
 import os
 
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.repositories.query_utils import apply_where
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 ACTIVE_ACCOUNT_JOB_STATES = {'preparing', 'queued', 'starting', 'processing'}

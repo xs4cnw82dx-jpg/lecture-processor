@@ -1,10 +1,4 @@
-from lecture_processor.runtime.container import get_runtime
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
 def extract_bearer_token(auth_header='', payload=None, runtime=None):

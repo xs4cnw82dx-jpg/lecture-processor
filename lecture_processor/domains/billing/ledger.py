@@ -12,7 +12,7 @@ import json
 
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.billing import credits, policy
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime
 
 
 CHARGES_COLLECTION = 'credit_charges'
@@ -58,7 +58,7 @@ class PreparedCharge:
 
 
 def _runtime(runtime):
-    resolved = runtime if runtime is not None else get_runtime()
+    resolved = resolve_runtime(runtime)
     if getattr(resolved, 'db', None) is None or not hasattr(resolved.db, 'transaction'):
         raise LedgerUnavailable('Credit storage is unavailable.')
     return resolved

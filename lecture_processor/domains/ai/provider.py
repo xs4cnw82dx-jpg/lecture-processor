@@ -2,7 +2,8 @@ import os
 import random
 import time
 
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.environment import parse_int
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.domains.ai.providers import gemini
 from lecture_processor.domains.ai.providers.contracts import GenerationResult
 from lecture_processor.domains.ai.providers.errors import ProviderRequestError
@@ -14,24 +15,13 @@ except Exception:
     genai_types = None
 
 
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
-
-
 def _get_types_module(runtime):
     return getattr(runtime, 'types', None) or genai_types
 
 
 def _safe_int_env(runtime, name, default=0, minimum=1, maximum=100000):
     os_module = getattr(runtime, 'os', os)
-    raw = str(os_module.getenv(name, str(default))).strip()
-    try:
-        value = int(raw)
-    except Exception:
-        value = int(default)
-    return min(max(value, minimum), maximum)
+    return parse_int(os_module.getenv(name, str(default)), default, minimum, maximum)
 
 
 def _build_thinking_config(model_name, runtime=None):

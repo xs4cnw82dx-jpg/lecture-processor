@@ -6,7 +6,7 @@ import inspect
 import threading
 
 from lecture_processor.domains.runtime_jobs import store
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime
 
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 _ACTIVE_STATUSES = {'queued', 'starting', 'processing'}
@@ -78,7 +78,7 @@ def _heartbeat_job(job_id, runtime):
 
 
 def submit_job(dispatcher, target, *args, execution_runtime=None, **kwargs):
-    resolved_runtime = execution_runtime if execution_runtime is not None else get_runtime()
+    resolved_runtime = resolve_runtime(execution_runtime)
     try:
         job_id = inspect.signature(target).bind_partial(*args, **kwargs).arguments.get('job_id')
     except (TypeError, ValueError):

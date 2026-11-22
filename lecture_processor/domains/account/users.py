@@ -1,13 +1,7 @@
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.account import lifecycle as account_lifecycle
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def build_default_user_data(uid, email, runtime=None):

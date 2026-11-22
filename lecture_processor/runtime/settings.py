@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
-from lecture_processor.config import AppConfig, resolve_runtime_environment
+from lecture_processor.config import AppConfig
+from lecture_processor.runtime.environment import env_text, log_level, resolve_runtime_environment
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,8 @@ def load_runtime_settings(config: AppConfig | None = None) -> AppSettings:
 
     environment = resolve_runtime_environment(default_local='development').strip().lower()
     return AppSettings(
-        log_level=(os.getenv('LOG_LEVEL', 'INFO') or 'INFO').strip().upper(),
+        log_level=log_level(),
         environment=environment,
-        flask_secret_key=(os.getenv('FLASK_SECRET_KEY', '') or '').strip(),
-        public_base_url=(os.getenv('PUBLIC_BASE_URL', '') or '').strip(),
+        flask_secret_key=env_text('FLASK_SECRET_KEY'),
+        public_base_url=env_text('PUBLIC_BASE_URL'),
     )

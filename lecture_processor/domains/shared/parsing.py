@@ -1,11 +1,5 @@
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.domains.shared.tool_catalog import sanitize_favorite_tools
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def parse_requested_amount(raw_value, allowed, default, runtime=None):

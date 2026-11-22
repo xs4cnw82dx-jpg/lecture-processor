@@ -1,10 +1,4 @@
-from lecture_processor.runtime.container import get_runtime
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
 def sanitize_analytics_event_name(raw_name, runtime=None):

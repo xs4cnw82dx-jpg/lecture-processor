@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from lecture_processor.domains.billing import receipts as billing_receipts
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 HOURLY_COLLECTION = 'admin_rollups_hourly'
 DAILY_COLLECTION = 'admin_rollups_daily'
@@ -22,12 +22,6 @@ KNOWN_RATE_LIMITS = (
     'verify_email',
 )
 KNOWN_MODES = ('lecture-notes', 'slides-only', 'interview', 'audio-transcription', 'other')
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def _bucket_period_for_window(window_key):

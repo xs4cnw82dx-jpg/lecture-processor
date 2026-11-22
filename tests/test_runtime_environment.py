@@ -18,9 +18,7 @@ def test_get_public_base_url_prefers_valid_configured_value():
     assert environment.get_public_base_url(environ=environ) == 'https://lectureprocessor.com'
 
 
-def test_get_public_base_url_uses_dev_default_when_runtime_is_local(monkeypatch):
-    monkeypatch.setattr(environment, 'resolve_runtime_environment', lambda default_local='development': 'development')
-
+def test_get_public_base_url_uses_dev_default_when_runtime_is_local():
     assert environment.get_public_base_url(environ={}) == 'http://127.0.0.1:5000'
 
 
@@ -61,3 +59,27 @@ def test_build_admin_deployment_info_reports_host_status():
     assert info['host_status'] == 'custom-domain'
     assert info['service_name'] == 'lecture-processor'
     assert info['app_uptime_seconds'] == 60.0
+
+
+def test_injected_public_url_fallback_uses_the_supplied_environment(monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'development')
+    assert environment.get_public_base_url(environ={'APP_ENV': 'production'}) == ''
+    assert environment.get_public_base_url(environ={'RENDER': 'true', 'APP_ENV': 'test'}) == ''
+
+
+def test_legacy_environment_names_retain_their_distinct_precedence():
+    local = {'ENV': 'staging', 'FLASK_ENV': 'development'}
+    assert environment.resolve_sentry_environment(environ=local) == 'staging'
+    assert environment.resolve_runtime_environment(environ=local) == 'development'
+    assert environment.resolve_sentry_environment(environ={}) == 'production'
+    assert environment.resolve_runtime_environment(environ={}) == 'development'
+    on_render = {**local, 'RENDER': '1', 'SENTRY_ENVIRONMENT': 'test'}
+    assert environment.resolve_runtime_environment(environ=on_render) == 'production'
+    assert environment.resolve_sentry_environment(environ=on_render) == 'production'
+
+
+def test_enabled_by_default_flags_keep_their_legacy_blank_behavior():
+    assert environment.env_truthy('SMTP_USE_TLS', '1', environ={'SMTP_USE_TLS': ''})
+    assert not environment.env_truthy(
+        'ENABLE_BATCH_JOB_RECOVERY', '1', environ={'ENABLE_BATCH_JOB_RECOVERY': ''}, blank_uses_default=False,
+    )

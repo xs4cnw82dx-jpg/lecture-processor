@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import threading
 import time
@@ -22,6 +21,7 @@ from google.auth.transport.requests import Request as GoogleRequest
 from google.auth.exceptions import GoogleAuthError
 from google.oauth2 import id_token
 
+from lecture_processor.runtime.environment import env_list, env_text
 from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.repositories.query_utils import apply_where
@@ -43,13 +43,9 @@ class CalendarError(Exception):
         self.code, self.retry, self.retry_after = code, retry, retry_after
 
 
-def _env(name):
-    return os.environ.get(name, '').strip()
-
-
 def _cipher():
     try:
-        return MultiFernet([Fernet(key.strip()) for key in _env('CALENDAR_TOKEN_ENCRYPTION_KEYS').split(',') if key.strip()])
+        return MultiFernet([Fernet(key) for key in env_list('CALENDAR_TOKEN_ENCRYPTION_KEYS')])
     except (ValueError, TypeError):
         raise CalendarError('Google Calendar encryption is not configured.', 'configuration') from None
 
@@ -57,7 +53,7 @@ def _cipher():
 def available():
     required = ('GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_SECRET', 'GOOGLE_CALENDAR_REDIRECT_URI',
                 'CALENDAR_TOKEN_ENCRYPTION_KEYS', 'CALENDAR_WORKER_SERVICE_ACCOUNT_EMAIL', 'CALENDAR_WORKER_AUDIENCE')
-    if _env('GOOGLE_CALENDAR_ENABLED').lower() not in {'1', 'true'} or not all(_env(key) for key in required):
+    if env_text('GOOGLE_CALENDAR_ENABLED').lower() not in {'1', 'true'} or not all(env_text(key) for key in required):
         return False
     try:
         _cipher()
@@ -178,7 +174,7 @@ def handle(ctx, request, action):
                 'settings': _settings(body), 'used': False,
                 'expected_epoch': connection.get('epoch', ''), 'expected_connection_id': connection.get('connection_id', ''),
             }, merge=False)
-            params = {'client_id': _env('GOOGLE_CALENDAR_CLIENT_ID'), 'redirect_uri': _env('GOOGLE_CALENDAR_REDIRECT_URI'),
+            params = {'client_id': env_text('GOOGLE_CALENDAR_CLIENT_ID'), 'redirect_uri': env_text('GOOGLE_CALENDAR_REDIRECT_URI'),
                       'response_type': 'code', 'scope': ' '.join(SCOPES), 'access_type': 'offline',
                       'prompt': 'consent select_account', 'state': state, 'nonce': nonce}
             response = ctx.jsonify({'authorization_url': 'https://accounts.google.com/o/oauth2/v2/auth?' + urlencode(params)})
@@ -235,8 +231,8 @@ def callback(ctx, request):
                 outcome = 'cancelled'
             else:
                 token = _token_request({'code': request.args.get('code', ''), 'grant_type': 'authorization_code',
-                                        'redirect_uri': _env('GOOGLE_CALENDAR_REDIRECT_URI')})
-                claims = id_token.verify_oauth2_token(token.get('id_token', ''), GoogleRequest(), _env('GOOGLE_CALENDAR_CLIENT_ID'))
+                                        'redirect_uri': env_text('GOOGLE_CALENDAR_REDIRECT_URI')})
+                claims = id_token.verify_oauth2_token(token.get('id_token', ''), GoogleRequest(), env_text('GOOGLE_CALENDAR_CLIENT_ID'))
                 if not claims.get('email_verified') or claims.get('nonce') != nonce:
                     raise CalendarError('Google identity could not be verified.', 'identity')
                 if SCOPE not in token.get('scope', '').split():
@@ -277,7 +273,7 @@ def callback(ctx, request):
 
 def _token_request(body):
     response = requests.post('https://oauth2.googleapis.com/token', data={**body,
-        'client_id': _env('GOOGLE_CALENDAR_CLIENT_ID'), 'client_secret': _env('GOOGLE_CALENDAR_CLIENT_SECRET')}, timeout=12)
+        'client_id': env_text('GOOGLE_CALENDAR_CLIENT_ID'), 'client_secret': env_text('GOOGLE_CALENDAR_CLIENT_SECRET')}, timeout=12)
     if response.status_code != 200:
         retry = response.status_code == 429 or response.status_code >= 500
         raise CalendarError('Google access needs to be reconnected.' if not retry else 'Google is temporarily unavailable.',
@@ -662,8 +658,8 @@ def drain_user(ctx, uid, budget_seconds=40):
 
 
 def internal_drain(ctx, request):
-    expected = _env('CALENDAR_WORKER_SERVICE_ACCOUNT_EMAIL')
-    audience = _env('CALENDAR_WORKER_AUDIENCE')
+    expected = env_text('CALENDAR_WORKER_SERVICE_ACCOUNT_EMAIL')
+    audience = env_text('CALENDAR_WORKER_AUDIENCE')
     if not expected or not audience:
         return ctx.jsonify({'error': 'Worker is not configured.'}), 503
     try:
