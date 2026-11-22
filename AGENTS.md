@@ -27,3 +27,13 @@ The user authorized parallel subagents and the full development workflow. Coordi
 ## Preview isolation
 
 Never run the normal application against workspace uploads for visual QA. Use the isolated preview/test runner prepared for this redesign, with temporary storage, disabled background cleanup/recovery, and fake external services. Preserve the recent study-run, favorite, and calendar features; do not activate deferred external services.
+
+## Tests
+
+Test behaviour, not source text. Do not add tests that read JavaScript or CSS
+files and assert that a substring, selector, or function name appears in them;
+such tests break on harmless refactors and pass when the feature is broken.
+Use a Playwright spec in `e2e/` for page behaviour, a `tests_js/` unit test for
+pure client logic, and Python tests against routes and rendered templates for
+server behaviour. Guard tests that check shared design rules across many files
+(for example `tests/test_design_tokens.py`) are the exception.

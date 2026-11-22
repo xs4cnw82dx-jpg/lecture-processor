@@ -144,11 +144,19 @@ test('signed-in user creates a useful plan from many unfiled question-only packs
   await page.locator('[data-availability-preset="daily"]').click();
   await page.locator('#wizard-session-length-button').click();
   await page.locator('#wizard-session-length-menu .app-select-item', { hasText: '60 minutes' }).click();
+  const previewRequest = page.waitForRequest(request => request.url().endsWith('/api/study-plan/preview'));
   await page.locator('#wizard-next-btn').click();
+  const preview = (await previewRequest).postDataJSON();
+  expect(preview.goal.pack_ids).toContain('pack_question_1');
+  expect(preview.goal.notes_minutes_by_pack).toEqual(expect.any(Object));
+  expect(Array.isArray(preview.goal.notes_minutes_by_pack)).toBe(false);
 
   await expect(page.locator('#wizard-preview-sessions')).toContainText('Question pack 1');
   await expect(page.locator('#wizard-capacity-warning')).toContainText('stays within your availability');
+  const applyRequest = page.waitForRequest(request => request.url().endsWith('/api/study-plan/apply'));
   await page.locator('#wizard-next-btn').click();
+  const apply = (await applyRequest).postDataJSON();
+  expect(apply.idempotency_key).toMatch(/^idem/);
   await expect(page.locator('#plan-wizard-overlay')).toBeHidden();
   await expect(page.locator('#next-session-content')).toContainText('Question pack 1');
   await expect(page.locator('#next-session-content a[href*="focus=test"][href*="plan_item_id="]')).toBeVisible();
