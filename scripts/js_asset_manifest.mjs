@@ -45,6 +45,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/book-zip.min.js',
   'static/js/vendor/dompurify-3.3.2/purify.min.js',
   'static/js/vendor/flatpickr-4.6.13/flatpickr.min.js',
+  'static/js/vendor/qrcode-generator-2.0.4/qrcode.min.js',
   'static/js/vendor/papaparse-5.5.3/papaparse.min.js',
   'static/js/book-model.js',
   'static/js/book-path-editor.js',

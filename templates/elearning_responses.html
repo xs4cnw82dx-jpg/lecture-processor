@@ -1,33 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <meta charset="UTF-8">
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Responses &amp; Analytics · xPEDitie Pijn Studio</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <title>Pilot responses · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
 </head>
-<body data-expedition-id="{{ expedition_id }}">
+<body class="el-library-body" data-expedition-id="{{ expedition_id }}">
   {% set shell_title = 'Responses & Pilot Analytics' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
+      <a href="/physio/elearning/{{ expedition_id }}/edit" class="el-back-link">← Back to Builder</a>
       <header class="el-dash-header">
         <div>
-          <a href="/physio/elearning/{{ expedition_id }}/edit" class="el-btn el-btn-sm">← Back to Builder</a>
-          <h1 id="el-resp-title">Pilot Responses</h1>
-          <p>Review completion funnel, anonymized learner responses, and thesis usability feedback.</p>
+          <h1 id="el-resp-title" class="page-title">Pilot responses</h1>
+          <p class="page-lead" id="el-resp-expedition" translate="no"></p>
         </div>
-        <div class="el-dash-actions">
-          <div id="el-resp-cohort-host"></div>
-          <div id="el-resp-lang-host"></div>
-          <button type="button" class="el-btn el-btn-primary" id="el-resp-export-csv">Export CSV</button>
+        <div class="el-dash-actions" id="el-response-actions" hidden>
+          <select data-app-select id="el-resp-cohort" aria-label="Filter by cohort">
+            <option value="">All cohorts</option>
+          </select>
+          <select data-app-select id="el-resp-lang" aria-label="Filter by language">
+            <option value="">All languages</option>
+            <option value="nl">Nederlands (NL)</option>
+            <option value="en">English (EN)</option>
+            <option value="de">Deutsch (DE)</option>
+          </select>
+          <button type="button" class="btn primary" id="el-resp-export-csv">Export CSV</button>
         </div>
       </header>
 
+      <div id="el-resp-status" role="status">Loading responses…</div>
+      <button class="btn small" id="el-resp-retry" type="button" hidden>Try again</button>
+      <a class="btn" id="el-signin" href="/lecture-notes?auth=signin" data-sign-in-return hidden>Sign in</a>
+      <div id="el-response-report" hidden>
       <section class="el-kpi-grid" id="el-resp-kpis"></section>
       <section class="el-exp-card" id="el-resp-funnel-card">
         <h2>Step Completion Funnel</h2>
@@ -42,6 +53,7 @@
         <h2>Pilot Usability Feedback</h2>
         <div id="el-resp-feedback"></div>
       </section>
+      </div>
     </main>
     {% include '_shell_footer.html' %}
   </div>

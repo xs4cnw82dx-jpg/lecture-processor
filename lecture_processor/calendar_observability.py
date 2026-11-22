@@ -1,4 +1,4 @@
-"""Keep private subscription URLs and OAuth callback secrets out of telemetry."""
+"""Keep private subscription, learning and OAuth links out of telemetry."""
 from __future__ import annotations
 
 import logging
@@ -6,13 +6,15 @@ import re
 
 _FEED = re.compile(r'(/calendar/feed/)[^\s?\"<>]+')
 _CALLBACK = re.compile(r'(/api/study-plan/calendar/google/callback)\?[^\s\"<>]*')
+_LEARNING_LINK = re.compile(r'(/elearning/(?:p|translate|public)/)[A-Za-z0-9_-]+')
 _PRIVATE_KEYS = {'authorization', 'cookie', 'cookies', 'access_token', 'refresh_token', 'id_token',
                  'client_secret', 'credentials', 'nonce', 'code', 'state', 'query_string', 'http.query',
                  'http.request.header.authorization', 'http.request.header.cookie'}
 
 
 def redact_calendar_url(value):
-    return _CALLBACK.sub(r'\1?[redacted]', _FEED.sub(r'\1[redacted].ics', str(value)))
+    value = _LEARNING_LINK.sub(r'\1[redacted]', str(value))
+    return _CALLBACK.sub(r'\1?[redacted]', _FEED.sub(r'\1[redacted].ics', value))
 
 
 def scrub_calendar_event(event, hint=None):
@@ -22,6 +24,13 @@ def scrub_calendar_event(event, hint=None):
     calendar_request = ('/calendar/feed/' in location or '/api/study-plan/calendar/' in location
                         or '/internal/study-plan/calendar-sync/' in location)
 
+    learning_request = '/api/elearning/' in location or '/elearning/' in location
+    private_request = calendar_request or learning_request
+    private_keys = _PRIVATE_KEYS | {'x-elearning-access', 'http.request.header.x-elearning-access'}
+    if learning_request:
+        # The request body can contain an invitation or a learner's reflection.
+        event = {**event, 'request': {k: v for k, v in request.items() if k not in ('data', 'body')}}
+
     def scrub(value):
         if isinstance(value, str):
             return redact_calendar_url(value)
@@ -29,8 +38,8 @@ def scrub_calendar_event(event, hint=None):
             return [scrub(item) for item in value]
         if isinstance(value, dict):
             # Calendar exceptions can contain refresh tokens in frame locals.
-            return {key: ('[redacted]' if calendar_request and str(key).lower() in _PRIVATE_KEYS else scrub(item))
-                    for key, item in value.items() if not (calendar_request and key == 'vars')}
+            return {key: ('[redacted]' if private_request and str(key).lower() in private_keys else scrub(item))
+                    for key, item in value.items() if not (private_request and key == 'vars')}
         return value
 
     return scrub(event)

@@ -109,6 +109,7 @@
 
   function isActiveNavPath(href, currentPath) {
     if (href === currentPath) return true;
+    if (href === '/physio/elearning' && currentPath.indexOf('/physio/elearning/') === 0) return true;
     if (href === '/plan' && currentPath === '/stats') return true;
     if (href === '/batch_status' && currentPath.indexOf('/batch_status/') === 0) return true;
     if (href === '/batch_mode') {

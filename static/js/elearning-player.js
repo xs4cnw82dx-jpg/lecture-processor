@@ -10,7 +10,6 @@
   var params = new URLSearchParams(window.location.search);
   var cohort = params.get('cohort') || 'default';
   var queryLang = params.get('lang') || '';
-  var reviewModeQuery = params.get('review') === '1' || params.get('mode') === 'review';
 
   var mainEl = document.getElementById('el-player-main');
   var langHost = document.getElementById('el-player-lang-host');
@@ -27,6 +26,9 @@
   var state = {
     exp: null,
     lang: 'nl',
+    hasSavedLanguage: false,
+    canSaveLocally: true,
+    responseQueue: Promise.resolve(),
     view: 'start',
     navDir: 'next',
     modIdx: 0,
@@ -34,7 +36,7 @@
     lastModIdx: 0,
     lastStepIdx: 0,
     themePref: 'default',
-    sessionId: 'lrn_' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36),
+    sessionId: 'lrn_' + crypto.randomUUID(),
     answers: {},
     visitedStepIds: [],
     completedModuleIds: [],
@@ -55,6 +57,7 @@
       render();
     },
   });
+  langDD.el.hidden = true;
   langHost.appendChild(langDD.el);
 
   function updateLangDropdown() {
@@ -81,11 +84,12 @@
       if (Array.isArray(saved.stepComments)) state.stepComments = saved.stepComments;
       if (typeof saved.lastModIdx === 'number') state.lastModIdx = saved.lastModIdx;
       if (typeof saved.lastStepIdx === 'number') state.lastStepIdx = saved.lastStepIdx;
-      if (saved.lang) state.lang = saved.lang;
+      if (saved.lang) { state.lang = saved.lang; state.hasSavedLanguage = true; }
+      state.pilotSent = saved.pilotSent === true;
       if (saved.textScale) setTextScale(saved.textScale);
       if (saved.themePref) state.themePref = saved.themePref;
     } catch (_err) {
-      // Ignore private mode storage errors
+      state.canSaveLocally = false;
     }
   }
 
@@ -94,6 +98,7 @@
       localStorage.setItem(storageKey, JSON.stringify({
         sessionId: state.sessionId,
         answers: state.answers,
+        pilotSent: state.pilotSent,
         visitedStepIds: state.visitedStepIds,
         completedModuleIds: state.completedModuleIds,
         stepComments: state.stepComments,
@@ -104,29 +109,36 @@
         themePref: state.themePref,
       }));
     } catch (_err) {
-      // Ignore quota errors
+      state.canSaveLocally = false;
     }
   }
 
-  function scheduleSync(completed, pilotFeedback) {
-    saveLocalProgress();
-    clearTimeout(state.syncTimer);
-    state.syncTimer = setTimeout(function () {
-      fetch('/api/elearning/public/' + encodeURIComponent(shareToken) + '/responses', {
+  function sendResponse(completed, pilotFeedback) {
+    var body = JSON.stringify({
+      sessionId: state.sessionId,
+      cohort: cohort,
+      language: state.lang,
+      answers: state.answers,
+      visitedStepIds: state.visitedStepIds,
+      completed: completed || state.view === 'summary',
+      pilotFeedback: pilotFeedback,
+      stepComments: state.stepComments.length ? state.stepComments : undefined,
+    });
+    var request = state.responseQueue.then(function () {
+      return fetch('/api/elearning/public/' + encodeURIComponent(shareToken) + '/responses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: state.sessionId,
-          cohort: cohort,
-          language: state.lang,
-          answers: state.answers,
-          visitedStepIds: state.visitedStepIds,
-          completed: !!completed || state.view === 'summary',
-          pilotFeedback: pilotFeedback || undefined,
-          stepComments: state.stepComments.length ? state.stepComments : undefined,
-        }),
-      }).catch(function () {});
-    }, 350);
+        body: body,
+      });
+    });
+    state.responseQueue = request.catch(function () {});
+    return request;
+  }
+
+  function scheduleSync(completed) {
+    saveLocalProgress();
+    clearTimeout(state.syncTimer);
+    state.syncTimer = setTimeout(function () { sendResponse(completed); }, 350);
   }
 
   async function fetchAggregate(blockId) {
@@ -139,9 +151,12 @@
   }
 
   function setTextScale(scale) {
+    document.documentElement.dataset.readingSize = scale;
     document.body.setAttribute('data-text-scale', scale);
     document.querySelectorAll('.el-text-scale-group button').forEach(function (btn) {
-      btn.classList.toggle('is-active', btn.getAttribute('data-scale') === scale);
+      var selected = btn.getAttribute('data-scale') === scale;
+      btn.classList.toggle('is-active', selected);
+      btn.setAttribute('aria-pressed', String(selected));
     });
   }
 
@@ -153,7 +168,8 @@
   function updateProgressBar() {
     var total = Math.max(1, totalStepsCount());
     var pct = state.view === 'summary' ? 100 : (state.view === 'start' ? 0 : Math.min(100, Math.round((state.visitedStepIds.length / total) * 100)));
-    progressFillEl.style.width = pct + '%';
+    progressFillEl.value = pct;
+    progressFillEl.setAttribute('aria-label', Model.ui(state.lang, 'progress'));
   }
 
   function evaluateBranching(mod, step) {
@@ -174,6 +190,12 @@
     return -1;
   }
 
+  function showCurrentView() {
+    render();
+    mainEl.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
   function goBack() {
     var mods = (state.exp && state.exp.modules) || [];
     state.navDir = 'prev';
@@ -182,8 +204,7 @@
       state.modIdx -= 1;
       state.stepIdx = Math.max(0, (mods[state.modIdx].steps || []).length - 1);
     } else state.view = 'start';
-    render();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showCurrentView();
   }
 
   function goNext() {
@@ -204,8 +225,24 @@
       if (!isLastMod) state.view = 'milestone';
       else { state.view = 'summary'; scheduleSync(true); }
     }
-    render();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showCurrentView();
+  }
+
+  function responseDisclosure(blocks, expanded) {
+    var notice = document.createElement(expanded ? 'aside' : 'details');
+    notice.className = 'el-response-disclosure';
+    var heading = document.createElement(expanded ? 'strong' : 'summary');
+    heading.textContent = Model.ui(state.lang, 'answerPrivacy');
+    var body = document.createElement('p');
+    var messages = ['authorAccess', state.canSaveLocally ? 'deviceResume' : 'storageUnavailable'];
+    var shared = state.exp.shareOptions && state.exp.shareOptions.showPeerResults
+      ? blocks.filter(function (block) { return block.settings && block.settings.showPeerResults; })
+      : [];
+    if (shared.some(function (block) { return block.type !== 'wordcloud'; })) messages.push('sharedResults');
+    if (shared.some(function (block) { return block.type === 'wordcloud'; })) messages.push('sharedWords');
+    body.textContent = messages.map(function (key) { return Model.ui(state.lang, key); }).join(' ');
+    notice.append(heading, body);
+    return notice;
   }
 
   function renderStartPage() {
@@ -213,6 +250,9 @@
     document.body.removeAttribute('data-active-domain');
     RouteMap.renderStartPage(mainEl, {
       exp: state.exp,
+      disclosure: responseDisclosure(state.exp.modules.flatMap(function (module) {
+        return module.steps.flatMap(function (step) { return step.blocks; });
+      }), true),
       lang: state.lang,
       editable: false,
       hasProgress: state.visitedStepIds.length > 0,
@@ -231,16 +271,14 @@
           state.stepIdx = 0;
         }
         state.view = 'step';
-        render();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        showCurrentView();
       },
       onSelectModule: function (_m, idx) {
         state.navDir = 'next';
         state.modIdx = idx;
         state.stepIdx = 0;
         state.view = 'step';
-        render();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        showCurrentView();
       },
     });
   }
@@ -331,6 +369,9 @@
       }));
     });
     card.appendChild(stack);
+    if ((step.blocks || []).some(function (block) { return interactiveTypes[block.type]; })) {
+      card.appendChild(responseDisclosure(step.blocks, false));
+    }
 
     var nav = document.createElement('div');
     nav.className = 'el-player-nav';
@@ -355,8 +396,7 @@
     card.appendChild(nav);
     mainEl.appendChild(card);
 
-    // Optional Per-Slide Reviewer Comment Mode (?review=1 or shareOptions.allowStepComments)
-    if (reviewModeQuery || (exp.shareOptions && exp.shareOptions.allowStepComments)) {
+    if (exp.shareOptions && exp.shareOptions.allowStepComments) {
       var revWrap = document.createElement('div');
       revWrap.className = 'el-review-wrap el-no-print';
       var revBtn = document.createElement('button');
@@ -364,6 +404,7 @@
       revBtn.className = 'xped-btn xped-btn-ghost';
       revBtn.appendChild(Icons.icon('messageCircle', 16));
       revBtn.appendChild(document.createTextNode(Model.ui(lang, 'stepCommentBtn')));
+      revBtn.setAttribute('aria-expanded', 'false');
       var revPanel = document.createElement('div');
       revPanel.className = 'el-review-panel';
       revPanel.hidden = true;
@@ -372,17 +413,18 @@
       var revTa = document.createElement('textarea');
       revTa.className = 'xped-textarea';
       revTa.rows = 3;
+      revTa.maxLength = 1200;
       revTa.placeholder = Model.ui(lang, 'stepCommentPlaceholder');
+      revTa.setAttribute('aria-label', revTitle.textContent);
       var revRow = document.createElement('div');
       revRow.className = 'el-btn-row';
       var revSend = document.createElement('button');
       revSend.type = 'button';
       revSend.className = 'xped-btn xped-btn-primary';
-      revSend.style.minHeight = '38px';
-      revSend.style.padding = '6px 16px';
       revSend.textContent = Model.ui(lang, 'stepCommentSend');
       var revStat = document.createElement('span');
       revStat.className = 'xped-caption';
+      revStat.setAttribute('role', 'status');
       revRow.appendChild(revSend);
       revRow.appendChild(revStat);
       revPanel.appendChild(revTitle);
@@ -391,12 +433,13 @@
 
       revBtn.addEventListener('click', function () {
         revPanel.hidden = !revPanel.hidden;
+        revBtn.setAttribute('aria-expanded', String(!revPanel.hidden));
         if (!revPanel.hidden) revTa.focus();
       });
-      revSend.addEventListener('click', function () {
+      revSend.addEventListener('click', async function () {
         var txt = revTa.value.trim();
         if (!txt) return;
-        state.stepComments.push({
+        var comment = {
           moduleId: mod.id,
           stepId: step.id,
           moduleTitle: Model.getLocalized(mod.title, lang, defLang),
@@ -404,10 +447,23 @@
           reviewer: cohort,
           comment: txt,
           createdAt: Math.floor(Date.now() / 1000),
-        });
-        revTa.value = '';
-        revStat.textContent = Model.ui(lang, 'stepCommentSent');
-        scheduleSync(false);
+        };
+        state.stepComments.push(comment);
+        revSend.disabled = true;
+        revTa.readOnly = true;
+        try {
+          var result = await sendResponse(false);
+          if (!result.ok) throw new Error('Comment unavailable');
+          saveLocalProgress();
+          revTa.value = '';
+          revStat.textContent = Model.ui(lang, 'stepCommentSent');
+        } catch (_err) {
+          state.stepComments = state.stepComments.filter(function (item) { return item !== comment; });
+          revStat.textContent = Model.ui(lang, 'feedbackFailed');
+        } finally {
+          revSend.disabled = false;
+          revTa.readOnly = false;
+        }
       });
       revWrap.appendChild(revBtn);
       revWrap.appendChild(revPanel);
@@ -416,7 +472,7 @@
 
     var saveNote = document.createElement('p');
     saveNote.className = 'el-player-save-note';
-    saveNote.textContent = Model.ui(lang, 'savedAutomatically');
+    saveNote.textContent = Model.ui(lang, state.canSaveLocally ? 'savedAutomatically' : 'storageUnavailable');
     mainEl.appendChild(saveNote);
   }
 
@@ -534,8 +590,7 @@
       state.modIdx += 1;
       state.stepIdx = 0;
       state.view = 'step';
-      render();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showCurrentView();
     });
     acts.appendChild(btn);
 
@@ -548,8 +603,7 @@
       state.lastStepIdx = 0;
       saveLocalProgress();
       state.view = 'start';
-      render();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showCurrentView();
     });
     acts.appendChild(pauseBtn);
 
@@ -686,7 +740,7 @@
         q.textContent = ref.q;
         var a = document.createElement('p');
         a.textContent = ref.a;
-        a.style.whiteSpace = 'pre-wrap';
+        a.className = 'el-reflection-answer';
         rSec.appendChild(q);
         rSec.appendChild(a);
       });
@@ -699,7 +753,7 @@
     homeB.type = 'button';
     homeB.className = 'xped-btn xped-btn-secondary';
     homeB.textContent = Model.ui(lang, 'restart');
-    homeB.addEventListener('click', function () { state.view = 'start'; render(); });
+    homeB.addEventListener('click', function () { state.view = 'start'; showCurrentView(); });
     var printB = document.createElement('button');
     printB.type = 'button';
     printB.className = 'xped-btn xped-btn-sun';
@@ -720,26 +774,32 @@
 
       if (state.pilotSent) {
         var thx = document.createElement('p');
+        thx.setAttribute('role', 'status');
         thx.textContent = Model.ui(lang, 'pilotThanks');
         pilot.appendChild(thx);
       } else {
         var scores = { clarity: 0, engagement: 0 };
         function ratingGroup(labelText, key) {
           var p = document.createElement('p');
-          p.style.margin = '14px 0 4px';
-          p.style.fontWeight = '700';
+          p.className = 'el-rating-label';
           p.textContent = labelText;
           pilot.appendChild(p);
           var row = document.createElement('div');
           row.className = 'el-rating-row';
+          row.setAttribute('role', 'group');
+          row.setAttribute('aria-label', labelText);
           [1, 2, 3, 4, 5].forEach(function (n) {
             var rb = document.createElement('button');
             rb.type = 'button';
             rb.className = 'el-rating-btn';
+            rb.setAttribute('aria-pressed', 'false');
             rb.textContent = String(n);
             rb.addEventListener('click', function () {
               scores[key] = n;
-              Array.prototype.forEach.call(row.children, function (c, idx) { c.classList.toggle('is-selected', idx + 1 === n); });
+              Array.prototype.forEach.call(row.children, function (button, index) {
+                button.classList.toggle('is-selected', index + 1 === n);
+                button.setAttribute('aria-pressed', String(index + 1 === n));
+              });
             });
             row.appendChild(rb);
           });
@@ -752,19 +812,34 @@
         ta.className = 'xped-textarea';
         ta.rows = 3;
         ta.placeholder = Model.ui(lang, 'pilotComment');
+        ta.setAttribute('aria-label', ta.placeholder);
         pilot.appendChild(ta);
 
         var subBtn = document.createElement('button');
         subBtn.type = 'button';
         subBtn.className = 'xped-btn xped-btn-primary';
-        subBtn.style.marginTop = '12px';
+        subBtn.classList.add('el-pilot-submit');
         subBtn.textContent = Model.ui(lang, 'pilotSubmit');
-        subBtn.addEventListener('click', function () {
-          state.pilotSent = true;
-          scheduleSync(true, { clarity: scores.clarity || null, engagement: scores.engagement || null, comment: ta.value });
-          renderSummary();
+        var submitError = document.createElement('p');
+        submitError.setAttribute('role', 'alert');
+        submitError.hidden = true;
+        subBtn.addEventListener('click', async function () {
+          subBtn.disabled = true;
+          submitError.hidden = true;
+          clearTimeout(state.syncTimer);
+          try {
+            var result = await sendResponse(true, { clarity: scores.clarity || null, engagement: scores.engagement || null, comment: ta.value });
+            if (!result.ok) throw new Error('Feedback unavailable');
+            state.pilotSent = true;
+            saveLocalProgress();
+            if (state.view === 'summary') renderSummary();
+          } catch (_err) {
+            subBtn.disabled = false;
+            submitError.textContent = Model.ui(lang, 'feedbackFailed');
+            submitError.hidden = false;
+          }
         });
-        pilot.appendChild(subBtn);
+        pilot.append(subBtn, submitError);
       }
       mainEl.appendChild(pilot);
     }
@@ -775,7 +850,9 @@
     var effective = state.themePref === 'high-contrast' ? 'high-contrast' : baseTheme;
     document.body.setAttribute('data-xped-theme', effective);
     document.querySelectorAll('.el-theme-toggle-group button').forEach(function (b) {
-      b.classList.toggle('is-active', b.getAttribute('data-theme-pref') === state.themePref);
+      var selected = b.getAttribute('data-theme-pref') === state.themePref;
+      b.classList.toggle('is-active', selected);
+      b.setAttribute('aria-pressed', String(selected));
     });
   }
 
@@ -784,6 +861,14 @@
     var thLbl = document.getElementById('el-comfort-theme-lbl');
     var wBtn = document.getElementById('el-theme-warm-btn');
     var cBtn = document.getElementById('el-theme-contrast-btn');
+    homeBtn.setAttribute('aria-label', Model.ui(state.lang, 'returnHome'));
+    comfortTrigger.setAttribute('aria-label', Model.ui(state.lang, 'readingComfort'));
+    langDD.trigger.setAttribute('aria-label', Model.ui(state.lang, 'language'));
+    routeDialog.querySelector('form button').setAttribute('aria-label', Model.ui(state.lang, 'close'));
+    var sizes = { sm: 'smallText', md: 'defaultText', lg: 'largeText' };
+    document.querySelectorAll('[data-scale]').forEach(function (button) {
+      button.setAttribute('aria-label', Model.ui(state.lang, sizes[button.dataset.scale]));
+    });
     if (szLbl) szLbl.textContent = Model.ui(state.lang, 'textSize');
     if (thLbl) thLbl.textContent = Model.ui(state.lang, 'themeMode');
     if (wBtn) wBtn.textContent = Model.ui(state.lang, 'themeWarm');
@@ -797,17 +882,18 @@
     mapBtn.textContent = '';
     mapBtn.appendChild(Icons.icon('map', 16));
     mapBtn.appendChild(document.createTextNode(Model.ui(state.lang, 'routeButton')));
-    mapBtn.hidden = !(state.exp.modules && state.exp.modules.length);
+    mapBtn.hidden = !state.exp.modules.length || (state.view === 'start' && !state.visitedStepIds.length);
     updateComfortLabels();
     applyThemePref();
-    updateProgressBar();
+    courseLabelEl.hidden = state.view === 'start';
     if (state.view === 'start') renderStartPage();
     else if (state.view === 'step') renderStep();
     else if (state.view === 'milestone') renderMilestone();
     else renderSummary();
+    updateProgressBar();
   }
 
-  homeBtn.addEventListener('click', function () { state.view = 'start'; render(); });
+  homeBtn.addEventListener('click', function () { state.view = 'start'; showCurrentView(); });
   mapBtn.addEventListener('click', function () {
     if (!state.exp) return;
     document.getElementById('el-player-route-title').textContent = Model.ui(state.lang, 'routeTitle');
@@ -823,8 +909,7 @@
         state.modIdx = idx;
         state.stepIdx = 0;
         state.view = 'step';
-        Icons.closeDialogAnimated(routeDialog);
-        render();
+        Icons.closeDialogAnimated(routeDialog).then(showCurrentView);
       },
     });
     if (state.visitedStepIds.length > 0) {
@@ -836,7 +921,11 @@
       resetB.appendChild(Icons.icon('refresh', 15));
       resetB.appendChild(document.createTextNode(Model.ui(state.lang, 'replayFresh')));
       resetB.addEventListener('click', function () {
+        clearTimeout(state.syncTimer);
+        state.sessionId = 'lrn_' + crypto.randomUUID();
         state.answers = {};
+        state.stepComments = [];
+        state.pilotSent = false;
         state.visitedStepIds = [];
         state.completedModuleIds = [];
         state.modIdx = 0;
@@ -845,8 +934,7 @@
         state.lastStepIdx = 0;
         state.view = 'start';
         try { localStorage.removeItem(storageKey); } catch (_e) {}
-        Icons.closeDialogAnimated(routeDialog);
-        render();
+        Icons.closeDialogAnimated(routeDialog).then(showCurrentView);
       });
       foot.appendChild(resetB);
       routeBody.appendChild(foot);
@@ -859,9 +947,7 @@
     comfortTrigger.addEventListener('click', function (e) {
       e.stopPropagation();
       var opening = !comfortDd.classList.contains('is-open');
-      document.querySelectorAll('.el-dd.is-open').forEach(function (other) {
-        if (other !== comfortDd) other.classList.remove('is-open');
-      });
+      langDD.setOpen(false);
       comfortDd.classList.toggle('is-open', opening);
       comfortTrigger.setAttribute('aria-expanded', opening ? 'true' : 'false');
     });
@@ -890,8 +976,14 @@
 
   // Keyboard arrow navigation between steps when not typing in an input
   document.addEventListener('keydown', function (e) {
-    if (state.view !== 'step') return;
-    if (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+    if (e.key === 'Escape' && comfortDd.classList.contains('is-open')) {
+      comfortDd.classList.remove('is-open');
+      comfortTrigger.setAttribute('aria-expanded', 'false');
+      comfortTrigger.focus();
+      return;
+    }
+    if (state.view !== 'step' || routeDialog.open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (document.activeElement.closest('input, textarea, select, button, [contenteditable="true"], .el-dd')) return;
     if (e.key === 'ArrowRight') goNext();
     else if (e.key === 'ArrowLeft') goBack();
   });
@@ -900,18 +992,23 @@
   Model.enableDialogLightDismissFallback();
 
   async function init() {
+    setTextScale('md');
     loadLocalProgress();
+    state.lang = Model.detectBrowserLanguage(Model.SUPPORTED_LANGS, 'nl', queryLang || (state.hasSavedLanguage ? state.lang : ''), navigator.languages);
+    document.documentElement.lang = state.lang;
+    updateComfortLabels();
     try {
       var resp = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
       var data = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
+        if (resp.status !== 404 && resp.status !== 410 && resp.status !== 403) throw new Error('Course unavailable');
         mainEl.textContent = '';
         var errCard = document.createElement('div');
         errCard.className = 'xped-card el-player-state';
         var h1 = document.createElement('h1');
-        h1.textContent = resp.status === 410 ? 'Module gepauzeerd' : 'Link niet gevonden';
+        h1.textContent = Model.ui(state.lang, 'unavailable');
         var p = document.createElement('p');
-        p.textContent = data.error || Model.ui(state.lang, 'notFound');
+        p.textContent = resp.status === 410 ? (data.error || Model.ui(state.lang, 'pausedFallback')) : Model.ui(state.lang, 'notFound');
         errCard.appendChild(h1);
         errCard.appendChild(p);
         mainEl.appendChild(errCard);
@@ -923,17 +1020,24 @@
       var navLangs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'nl'];
       if (queryLang) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, queryLang, navLangs);
-      } else if (!localStorage.getItem(storageKey) || enabled.indexOf(state.lang) < 0) {
+      } else if (!state.hasSavedLanguage || enabled.indexOf(state.lang) < 0) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, '', navLangs);
       }
       updateLangDropdown();
-      document.title = state.exp.title || 'xPEDitie Pijn';
+      document.title = (state.exp.title || 'xPEDitie Pijn') + ' · Lecture Processor';
       render();
     } catch (_err) {
       mainEl.textContent = '';
       var fail = document.createElement('div');
       fail.className = 'xped-card el-player-state';
-      fail.textContent = 'Could not load this expedition. Please refresh and try again.';
+      var errorTitle = document.createElement('h1');
+      errorTitle.textContent = Model.ui(state.lang, 'unavailable');
+      var retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'xped-btn xped-btn-secondary';
+      retry.textContent = Model.ui(state.lang, 'retry');
+      retry.addEventListener('click', function () { retry.disabled = true; init(); });
+      fail.append(errorTitle, retry);
       mainEl.appendChild(fail);
     }
   }

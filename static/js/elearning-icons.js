@@ -76,6 +76,8 @@
   }
 
   /* Smooth animated accessible dropdown menu component (replaces raw OS selects & menus). */
+  var closeActiveMenu = null;
+
   function createDropdown(options) {
     var wrap = document.createElement('div');
     wrap.className = 'el-dd' + (options.className ? (' ' + options.className) : '');
@@ -99,11 +101,28 @@
     menu.setAttribute('role', 'menu');
 
     var isOpen = false;
+    function close() { setOpen(false); }
+    function outside(event) {
+      if (!wrap.contains(event.target)) close();
+    }
     function setOpen(next) {
+      if (!!next === isOpen) return;
+      if (next && closeActiveMenu) closeActiveMenu();
       isOpen = !!next;
       wrap.classList.toggle('is-open', isOpen);
-      trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      menu.inert = !isOpen;
+      trigger.setAttribute('aria-expanded', String(isOpen));
+      if (isOpen) {
+        closeActiveMenu = close;
+        document.addEventListener('pointerdown', outside);
+        document.addEventListener('focusin', outside);
+      } else {
+        closeActiveMenu = null;
+        document.removeEventListener('pointerdown', outside);
+        document.removeEventListener('focusin', outside);
+      }
     }
+    menu.inert = true;
 
     function setItems(items, currentValue) {
       menu.textContent = '';
@@ -116,8 +135,9 @@
           menu.appendChild(sep);
           return;
         }
-        var btn = document.createElement('button');
-        btn.type = 'button';
+        var btn = document.createElement(item.href ? 'a' : 'button');
+        if (item.href) { btn.href = item.href; btn.target = '_blank'; btn.rel = 'noopener'; }
+        else btn.type = 'button';
         btn.className = 'el-dd-item' + (item.danger ? ' is-danger' : '') + (item.value !== undefined && item.value === currentValue ? ' is-selected' : '');
         btn.setAttribute('role', 'menuitem');
         if (item.icon) btn.appendChild(icon(item.icon, 15));
@@ -131,7 +151,8 @@
           btn.appendChild(chk);
         }
         btn.addEventListener('click', function () {
-          setOpen(false);
+          trigger.focus();
+          close();
           if (typeof item.onClick === 'function') item.onClick();
           else if (typeof options.onChange === 'function') options.onChange(item.value);
         });
@@ -141,29 +162,30 @@
       else if (activeLabel) labelSpan.textContent = activeLabel;
     }
 
-    trigger.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var opening = !isOpen;
-      document.querySelectorAll('.el-dd.is-open').forEach(function (other) {
-        if (other !== wrap) {
-          other.classList.remove('is-open');
-          var t = other.querySelector('.el-dd-trigger');
-          if (t) t.setAttribute('aria-expanded', 'false');
-        }
-      });
-      setOpen(opening);
+    trigger.addEventListener('click', function () {
+      setOpen(!isOpen);
+      if (isOpen) menu.querySelector('[role="menuitem"]')?.focus();
     });
-
-    document.addEventListener('click', function (e) {
-      if (isOpen && !wrap.contains(e.target)) setOpen(false);
-    });
-    document.addEventListener('keydown', function (e) {
-      if (isOpen && e.key === 'Escape') {
-        setOpen(false);
+    wrap.addEventListener('keydown', function (event) {
+      var items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+      if (!items.length) return;
+      if (event.key === 'Escape' && isOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
         trigger.focus();
+        return;
       }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      setOpen(true);
+      var index = items.indexOf(document.activeElement);
+      if (event.key === 'Home') index = 0;
+      if (event.key === 'End') index = items.length - 1;
+      if (event.key === 'ArrowDown') index = (index + 1) % items.length;
+      if (event.key === 'ArrowUp') index = index <= 0 ? items.length - 1 : index - 1;
+      items[index].focus();
     });
-
     wrap.appendChild(trigger);
     wrap.appendChild(menu);
     setItems(options.items || [], options.value);
@@ -177,24 +199,8 @@
   }
 
   /* Modern Web Guidance: Top-layer <dialog> smooth exit helper for browsers lacking overlay/discrete display transition. */
-  var _displayTransitionOk;
-  function canTransitionDisplay() {
-    if (_displayTransitionOk !== undefined) return _displayTransitionOk;
-    if (!window.CSS || !window.CSS.supports || !window.CSS.supports('transition-behavior', 'allow-discrete') || !document.body) {
-      return false;
-    }
-    var probe = document.createElement('div');
-    probe.style.cssText = 'transition: display 1s allow-discrete !important; display: block;';
-    document.body.appendChild(probe);
-    void getComputedStyle(probe).display;
-    probe.style.display = 'none';
-    _displayTransitionOk = getComputedStyle(probe).display === 'block';
-    probe.remove();
-    return _displayTransitionOk;
-  }
-
   function supportsTopLayerExit() {
-    return !!(window.CSS && window.CSS.supports && window.CSS.supports('overlay', 'auto') && canTransitionDisplay());
+    return window.CSS && window.CSS.supports('overlay', 'auto') && window.CSS.supports('transition-behavior', 'allow-discrete');
   }
 
   async function closeDialogAnimated(dialog) {

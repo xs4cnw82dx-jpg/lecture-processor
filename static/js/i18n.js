@@ -82,8 +82,8 @@
     var translated = Object.prototype.hasOwnProperty.call(catalog[language] || {}, key) ? catalog[language][key] : key;
     if (translated === key && language === 'nl') {
       // Only bounded UI count formats, never arbitrary substitutions inside prose or user text.
-      var count = /^(\d+) (cards?|flashcards?|questions?|practice questions?|sessions?|minutes?|hours?|days?|workouts?|notes?|tools?|selected)$/.exec(key);
-      var nouns = { card: 'kaart', cards: 'kaarten', flashcard: 'leerkaart', flashcards: 'leerkaarten', question: 'vraag', questions: 'vragen', 'practice question': 'oefenvraag', 'practice questions': 'oefenvragen', session: 'sessie', sessions: 'sessies', minute: 'minuut', minutes: 'minuten', hour: 'uur', hours: 'uur', day: 'dag', days: 'dagen', workout: 'training', workouts: 'trainingen', note: 'notitie', notes: 'notities', tool: 'hulpmiddel', tools: 'hulpmiddelen', selected: 'geselecteerd' };
+      var count = /^(\d+) (cards?|flashcards?|questions?|practice questions?|sessions?|minutes?|hours?|days?|workouts?|notes?|tools?|stations?|steps?|expeditions?|selected)$/.exec(key);
+      var nouns = { card: 'kaart', cards: 'kaarten', flashcard: 'leerkaart', flashcards: 'leerkaarten', question: 'vraag', questions: 'vragen', 'practice question': 'oefenvraag', 'practice questions': 'oefenvragen', session: 'sessie', sessions: 'sessies', minute: 'minuut', minutes: 'minuten', hour: 'uur', hours: 'uur', day: 'dag', days: 'dagen', workout: 'training', workouts: 'trainingen', note: 'notitie', notes: 'notities', tool: 'hulpmiddel', tools: 'hulpmiddelen', station: 'station', stations: 'stations', step: 'stap', steps: 'stappen', expedition: 'expeditie', expeditions: 'expedities', selected: 'geselecteerd' };
       if (count) translated = count[1] + ' ' + nouns[count[2]];
       var advancedSummary = /^(No study tools|Flashcards only|Practice test only|Flashcards \+ test|No extras|\d+ extras?) · (.+)$/.exec(key);
       if (advancedSummary) translated = translate(advancedSummary[1]) + ' · ' + translate(advancedSummary[2]);

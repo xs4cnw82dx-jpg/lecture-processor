@@ -43,7 +43,8 @@ def register_runtime_hooks(app, runtime) -> None:
     def _redirect_render_pages_to_public_origin():
         if request.method not in {'GET', 'HEAD'}:
             return None
-        if request.blueprint != 'pages':
+        learning_page = request.blueprint == 'elearning' and not request.path.startswith('/api/')
+        if request.blueprint != 'pages' and not learning_page:
             if not isinstance(request.routing_exception, NotFound):
                 return None
             # Unmatched pages have no blueprint. Keep API/webhook, health,

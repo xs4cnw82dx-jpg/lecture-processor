@@ -4,21 +4,32 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import re
 import secrets
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
+from statistics import median
+from threading import Lock
 from copy import deepcopy
 
-from flask import current_app, jsonify, request, send_file
+from flask import current_app, g, jsonify, request, send_file
+from google.cloud.firestore_v1.field_path import FieldPath
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.books.model import BookError
 from lecture_processor.domains.elearning import model
-from lecture_processor.repositories.elearning_repo import ElearningStore, invalidate
-from lecture_processor.services import access_service, book_storage
+from lecture_processor.domains.shared import sanitize_csv_cell, sanitize_csv_row
+from lecture_processor.repositories.elearning_repo import ElearningStore
+from lecture_processor.services import access_service, book_storage, elearning_storage
 
+# Cache only already-public totals. Access, share settings and visibility are
+# checked before looking up a value, including on a cache hit.
+_peer_cache = OrderedDict()
+_peer_lock = Lock()
+_peer_read_locks = [Lock() for _ in range(8)]
+PEER_RESULT_SECONDS = 20
 LEASE_SECONDS = 60
 MAX_AUDIO_BYTES = 15 * 1024 * 1024
 ALLOWED_AUDIO_MIMES = {
@@ -63,13 +74,22 @@ def payload() -> dict:
 
 
 def identity(runtime, required: bool = False):
+    if hasattr(g, 'elearning_user'):
+        user = g.elearning_user
+    else:
+        user = _request_identity(runtime)
+        g.elearning_user = user
+    if required and not user:
+        raise model.ElearningError('Sign in to open xPEDitie Pijn Studio.', 401)
+    return user
+
+
+def _request_identity(runtime):
     user = None
     if request.headers.get('Authorization'):
         user, error, status = access_service.require_authenticated_user(runtime, request)
         if error is not None:
             raise model.ElearningError('Please sign in again to continue.', status)
-    if required and not user:
-        raise model.ElearningError('Sign in to open xPEDitie Pijn Studio.', 401)
     if user:
         allowed, message = lifecycle.ensure_account_allows_writes(user['uid'], runtime=runtime)
         if not allowed:
@@ -81,10 +101,10 @@ def _role_rank(role: str) -> int:
     return {'owner': 3, 'edit': 2, 'translate': 1}.get(role, 0)
 
 
-def access(runtime, expedition_id: str, required: str = 'translate', cached: bool = False):
-    db = _store(runtime)
-    exp = db.cached(_exp_path(expedition_id)) if cached else db.get(_exp_path(expedition_id))
-    if not exp or exp.get('deleted'):
+def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
+    db = unit if unit is not None else _store(runtime)
+    exp = db.get(_exp_path(expedition_id))
+    if not exp or exp.get('deleted') or exp.get('copying'):
         raise model.ElearningError('This expedition is unavailable.', 404)
 
     user = identity(runtime, required=False)
@@ -146,7 +166,10 @@ def _public_studio_view(exp: dict, role: str, grant_lang: str = '') -> dict:
         if k not in ('lease', 'member_emails', '_id') and not k.startswith('_')
     }
     if role != 'owner':
-        view.pop('members', None)
+        for key in ('members', 'owner_uid', 'owner_email'):
+            view.pop(key, None)
+    if role == 'translate':
+        view.pop('share', None)
     lease = exp.get('lease') or {}
     view['editor'] = (
         {'name': lease.get('name', ''), 'expires_at': lease.get('expires_at', 0), 'user_id': lease.get('user_id', '')}
@@ -172,7 +195,8 @@ def _summary_card(exp: dict, role: str) -> dict:
         'stepCount': step_count,
         'revision': exp.get('revision', 1),
         'role': role,
-        'shareEnabled': bool(share.get('enabled')),
+        'deletionPending': bool(exp.get('deleted')),
+        'shareEnabled': bool(share.get('enabled') and not exp.get('deleted')),
         'shareToken': share.get('token', '') if role in ('owner', 'edit') else '',
         'updatedAt': exp.get('updated_at', 0),
         'createdAt': exp.get('created_at', 0),
@@ -192,7 +216,8 @@ def _assert_lease(exp: dict, who: dict, body: dict) -> None:
         or lease.get('session') != session_hdr
     ):
         raise model.ElearningError('Your editing turn has expired. Click Resume Editing to continue.', 409)
-    if body.get('base_revision') is not None and int(body.get('base_revision')) != int(exp.get('revision', 1)):
+    revision = body.get('base_revision')
+    if type(revision) is not int or revision != exp.get('revision', 1):
         raise model.ElearningError('A newer version was saved by a collaborator. Reload before saving.', 409)
 
 
@@ -204,7 +229,7 @@ def list_expeditions(runtime):
     shared = db.list('elearning_expeditions', 'member_emails', email, 'array_contains') if email else []
     combined = {}
     for exp in owned + shared:
-        if exp.get('deleted'):
+        if exp.get('copying') or (exp.get('deleted') and exp.get('owner_uid') != user['uid']):
             continue
         eid = exp.get('id') or exp.get('_id')
         if not eid:
@@ -215,6 +240,20 @@ def list_expeditions(runtime):
         combined[eid] = _summary_card(exp, role)
     items = sorted(combined.values(), key=lambda x: x.get('updatedAt', 0), reverse=True)
     return jsonify(expeditions=items, storageAvailable=book_storage.configured())
+
+
+def _insert_expedition(db, doc):
+    def insert(tx):
+        owner = doc['owner_uid']
+        user = tx.get('users/' + owner) or {}
+        deleting = tx.get(lifecycle.ACCOUNT_DELETIONS_COLLECTION + '/' + owner) or {}
+        if user.get('account_status') in ('deleting', 'deleted') or (deleting and deleting.get('status') != 'cancelled'):
+            raise model.ElearningError('This account is being removed.', 409)
+        tx.put(_exp_path(doc['id']), doc)
+        tx.put('elearning_share_index/' + doc['share']['token'], {
+            'expedition_id': doc['id'], 'updated_at': doc['updated_at'],
+        })
+    db.atomic(insert)
 
 
 def create_expedition(runtime):
@@ -251,8 +290,7 @@ def create_expedition(runtime):
         'lease': {},
     }
     db = _store(runtime)
-    db.put(_exp_path(eid), doc)
-    db.put('elearning_share_index/' + share_token, {'expedition_id': eid, 'updated_at': ts})
+    _insert_expedition(db, doc)
     return jsonify(expedition=_public_studio_view(doc, 'owner')), 201
 
 
@@ -262,7 +300,7 @@ def get_expedition(runtime, expedition_id: str):
 
 
 def revision(runtime, expedition_id: str):
-    _, exp, _, _, _ = access(runtime, expedition_id, required='translate', cached=True)
+    _, exp, _, _, _ = access(runtime, expedition_id, required='translate')
     lease = exp.get('lease') or {}
     editor = {
         'name': lease.get('name', ''),
@@ -282,9 +320,7 @@ def lease(runtime, expedition_id: str):
     token = secrets.token_urlsafe(24)
 
     def txn(unit):
-        current = unit.get(_exp_path(expedition_id))
-        if not current or current.get('deleted'):
-            raise model.ElearningError('This expedition is unavailable.', 404)
+        _, current, _, _, _ = access(runtime, expedition_id, 'edit', unit=unit)
         cur_lease = current.get('lease') or {}
         active = cur_lease.get('expires_at', 0) > now()
         is_mine = active and cur_lease.get('user_id') == who['id'] and cur_lease.get('session') == session_hdr
@@ -322,7 +358,6 @@ def lease(runtime, expedition_id: str):
         }
 
     result = db.atomic(txn)
-    invalidate(expedition_id)
     return jsonify(result)
 
 
@@ -333,7 +368,7 @@ def save_expedition(runtime, expedition_id: str):
     edited_lang = model.normalize_lang(body.get('editedLanguage') or normalized['defaultLanguage'])
 
     def txn(unit):
-        current = unit.get(_exp_path(expedition_id))
+        _, current, _, _, _ = access(runtime, expedition_id, 'edit', unit=unit)
         _assert_lease(current, who, body)
         next_exp = deepcopy(current)
         next_exp.update(normalized)
@@ -344,19 +379,12 @@ def save_expedition(runtime, expedition_id: str):
         return next_exp
 
     saved = db.atomic(txn)
-    invalidate(expedition_id)
     return jsonify(expedition=_public_studio_view(saved, role))
 
 
 def delete_expedition(runtime, expedition_id: str):
-    db, exp, _, _, _ = access(runtime, expedition_id, required='owner')
-    exp['deleted'] = True
-    exp['updated_at'] = now()
-    share_token = (exp.get('share') or {}).get('token', '')
-    db.put(_exp_path(expedition_id), exp)
-    if share_token:
-        db.delete('elearning_share_index/' + share_token)
-    invalidate(expedition_id)
+    user = identity(runtime, required=True)
+    elearning_storage.delete_expedition(_store(runtime), model.identifier(expedition_id), user['uid'])
     return jsonify(deleted=True)
 
 
@@ -388,8 +416,38 @@ def duplicate_expedition(runtime, expedition_id: str):
         'deleted': False,
         'lease': {},
     }
-    db.put(_exp_path(new_eid), doc)
-    db.put('elearning_share_index/' + share_token, {'expedition_id': new_eid, 'updated_at': ts})
+    asset_ids = model.media_ids(doc)
+    if asset_ids:
+        doc['copying'] = True
+    _insert_expedition(db, doc)
+    if asset_ids:
+        try:
+            cloned = {}
+            for source_id in asset_ids:
+                original = db.get('elearning_assets/' + source_id)
+                if not original or original['expedition_id'] != expedition_id:
+                    raise model.ElearningError('A referenced media file is unavailable.', 409)
+                aid = model.new_id('ast')
+                ext = original['path'].rsplit('.', 1)[-1]
+                meta = {**original, 'id': aid, 'expedition_id': new_eid, 'uploaded_by': user['uid'],
+                        'created_at': ts, 'path': f'elearning/{new_eid}/{aid}.{ext}'}
+                elearning_storage.store_asset(db, meta, elearning_storage.read_asset(db, original))
+                cloned[source_id] = aid
+            def publish_copy(unit):
+                access(runtime, expedition_id, 'edit', unit=unit)
+                copy = unit.get(_exp_path(new_eid))
+                if not copy or copy.get('deleted'):
+                    raise model.ElearningError('This copy is no longer available.', 409)
+                for ref in model.media_refs(copy):
+                    if isinstance(ref, dict) and ref.get('kind') == 'asset':
+                        ref['assetId'] = cloned[ref['assetId']]
+                copy.pop('copying', None)
+                unit.put(_exp_path(new_eid), copy)
+                return copy
+            doc = db.atomic(publish_copy)
+        except Exception:
+            elearning_storage.delete_expedition(db, new_eid, user['uid'])
+            raise
     return jsonify(expedition=_public_studio_view(doc, 'owner')), 201
 
 
@@ -416,100 +474,101 @@ def sharing(runtime, expedition_id: str):
     body = payload()
     action = str(body.get('action') or 'update_public').strip()
 
-    if action == 'update_public':
-        share = dict(exp.get('share') or {})
-        if 'enabled' in body:
-            share['enabled'] = bool(body['enabled'])
-        if 'showPeerResults' in body:
-            share['showPeerResults'] = bool(body['showPeerResults'])
-        if 'collectPilotFeedback' in body:
-            share['collectPilotFeedback'] = bool(body['collectPilotFeedback'])
-        if 'allowStepComments' in body:
-            share['allowStepComments'] = bool(body['allowStepComments'])
-        if 'pausedMessage' in body:
-            share['pausedMessage'] = model.safe_text(body['pausedMessage'], 400)
-        if body.get('rotateToken'):
-            old_token = share.get('token', '')
-            new_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
-            share['token'] = new_token
-            if old_token:
-                db.delete('elearning_share_index/' + old_token)
-            db.put('elearning_share_index/' + new_token, {'expedition_id': expedition_id, 'updated_at': now()})
-        exp['share'] = share
-        exp['updated_at'] = now()
-        db.put(_exp_path(expedition_id), exp)
-        invalidate(expedition_id)
-        return jsonify(share=share)
+    def change(unit):
+        _, exp, _, _, _ = access(runtime, expedition_id, 'owner', unit=unit)
+        if action == 'update_public':
+            share = dict(exp.get('share') or {})
+            if 'enabled' in body:
+                share['enabled'] = bool(body['enabled'])
+            if 'showPeerResults' in body:
+                share['showPeerResults'] = bool(body['showPeerResults'])
+            if 'collectPilotFeedback' in body:
+                share['collectPilotFeedback'] = bool(body['collectPilotFeedback'])
+            if 'allowStepComments' in body:
+                share['allowStepComments'] = bool(body['allowStepComments'])
+            if 'pausedMessage' in body:
+                share['pausedMessage'] = model.safe_text(body['pausedMessage'], 400)
+            if body.get('rotateToken'):
+                old_token = share.get('token', '')
+                new_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
+                share['token'] = new_token
+                if old_token:
+                    unit.delete('elearning_share_index/' + old_token)
+                unit.put('elearning_share_index/' + new_token, {'expedition_id': expedition_id, 'updated_at': now()})
+            exp['share'] = share
+            exp['updated_at'] = now()
+            unit.put(_exp_path(expedition_id), exp)
+            return jsonify(share=share)
 
-    if action == 'add_member':
-        email = model.safe_email(body.get('email'))
-        member_role = str(body.get('role') or 'edit').strip()
-        if member_role not in ('edit', 'translate'):
-            raise model.ElearningError('Role must be edit or translate.', 400)
-        members = dict(exp.get('members') or {})
-        if len(members) >= 20 and email not in members:
-            raise model.ElearningError('Maximum 20 collaborators per expedition.', 400)
-        members[email] = member_role
-        exp['members'] = members
-        exp['member_emails'] = sorted(members.keys())
-        exp['updated_at'] = now()
-        db.put(_exp_path(expedition_id), exp)
-        invalidate(expedition_id)
-        return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())])
+        if action == 'add_member':
+            email = model.safe_email(body.get('email'))
+            member_role = str(body.get('role') or 'edit').strip()
+            if member_role not in ('edit', 'translate'):
+                raise model.ElearningError('Role must be edit or translate.', 400)
+            members = dict(exp.get('members') or {})
+            if len(members) >= 20 and email not in members:
+                raise model.ElearningError('Maximum 20 collaborators per expedition.', 400)
+            members[email] = member_role
+            exp['members'] = members
+            exp['member_emails'] = sorted(members.keys())
+            exp['updated_at'] = now()
+            unit.put(_exp_path(expedition_id), exp)
+            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())])
 
-    if action == 'remove_member':
-        email = model.safe_email(body.get('email'))
-        members = dict(exp.get('members') or {})
-        members.pop(email, None)
-        exp['members'] = members
-        exp['member_emails'] = sorted(members.keys())
-        exp['updated_at'] = now()
-        db.put(_exp_path(expedition_id), exp)
-        invalidate(expedition_id)
-        return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())])
+        if action == 'remove_member':
+            email = model.safe_email(body.get('email'))
+            members = dict(exp.get('members') or {})
+            members.pop(email, None)
+            exp['members'] = members
+            exp['member_emails'] = sorted(members.keys())
+            exp['updated_at'] = now()
+            unit.put(_exp_path(expedition_id), exp)
+            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())])
 
-    if action == 'create_grant':
-        grant_role = str(body.get('role') or 'translate').strip()
-        if grant_role not in ('translate', 'edit'):
-            raise model.ElearningError('Grant role must be translate or edit.', 400)
-        target_lang = model.normalize_lang(body.get('targetLanguage') or 'de')
-        label = model.safe_text(body.get('label') or f'{target_lang.upper()} Editor', 80).strip()
-        gid = model.new_id('grt')
-        raw_token = secrets.token_urlsafe(24)
-        grant_doc = {
-            'id': gid,
-            'expedition_id': expedition_id,
-            'role': grant_role,
-            'target_language': target_lang,
-            'label': label,
-            'token': raw_token,
-            'token_hash': _digest(raw_token),
-            'revoked': False,
-            'created_at': now(),
-            'expires_at': 0,
-        }
-        db.put('elearning_grants/' + gid, grant_doc)
-        db.put('elearning_grant_tokens/' + _digest(raw_token), {'grant_id': gid, 'expedition_id': expedition_id})
-        return jsonify(grant={
-            'id': gid,
-            'role': grant_role,
-            'targetLanguage': target_lang,
-            'label': label,
-            'urlPath': '/elearning/translate/' + raw_token,
-        }), 201
+        if action == 'create_grant':
+            grant_role = str(body.get('role') or 'translate').strip()
+            if grant_role not in ('translate', 'edit'):
+                raise model.ElearningError('Grant role must be translate or edit.', 400)
+            target_lang = model.normalize_lang(body.get('targetLanguage') or 'de')
+            label = model.safe_text(body.get('label') or f'{target_lang.upper()} Editor', 80).strip()
+            gid = model.new_id('grt')
+            raw_token = secrets.token_urlsafe(24)
+            grant_doc = {
+                'id': gid,
+                'expedition_id': expedition_id,
+                'role': grant_role,
+                'target_language': target_lang,
+                'label': label,
+                'token': raw_token,
+                'token_hash': _digest(raw_token),
+                'revoked': False,
+                'created_at': now(),
+                'expires_at': 0,
+            }
+            unit.put('elearning_grants/' + gid, grant_doc)
+            unit.put('elearning_grant_tokens/' + _digest(raw_token), {'grant_id': gid, 'expedition_id': expedition_id})
+            return jsonify(grant={
+                'id': gid,
+                'role': grant_role,
+                'targetLanguage': target_lang,
+                'label': label,
+                'urlPath': '/elearning/translate/' + raw_token,
+            }), 201
 
-    if action == 'revoke_grant':
-        gid = model.identifier(body.get('grantId'), 'grant id')
-        grant = db.get('elearning_grants/' + gid)
-        if not grant or grant.get('expedition_id') != expedition_id:
-            raise model.ElearningError('Invite link not found.', 404)
-        grant['revoked'] = True
-        db.put('elearning_grants/' + gid, grant)
-        if grant.get('token_hash'):
-            db.delete('elearning_grant_tokens/' + grant['token_hash'])
-        return jsonify(revoked=True)
+        if action == 'revoke_grant':
+            gid = model.identifier(body.get('grantId'), 'grant id')
+            grant = unit.get('elearning_grants/' + gid)
+            if not grant or grant.get('expedition_id') != expedition_id:
+                raise model.ElearningError('Invite link not found.', 404)
+            grant['revoked'] = True
+            unit.put('elearning_grants/' + gid, grant)
+            if grant.get('token_hash'):
+                unit.delete('elearning_grant_tokens/' + grant['token_hash'])
+            return jsonify(revoked=True)
 
-    raise model.ElearningError('Unsupported sharing action.', 400)
+        raise model.ElearningError('Unsupported sharing action.', 400)
+
+    return db.atomic(change)
 
 
 def exchange_grant(runtime):
@@ -552,9 +611,7 @@ def save_translations(runtime, expedition_id: str):
     media_updates = body.get('mediaUpdates') if isinstance(body.get('mediaUpdates'), dict) else {}
 
     def txn(unit):
-        current = unit.get(_exp_path(expedition_id))
-        if not current or current.get('deleted'):
-            raise model.ElearningError('This expedition is unavailable.', 404)
+        _, current, _, _, _ = access(runtime, expedition_id, 'translate', unit=unit)
         patched = model.apply_translation_patch(current, target_lang, text_updates, media_updates)
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
@@ -562,7 +619,6 @@ def save_translations(runtime, expedition_id: str):
         return patched
 
     saved = db.atomic(txn)
-    invalidate(expedition_id)
     return jsonify(expedition=_public_studio_view(saved, role, grant_lang))
 
 
@@ -597,11 +653,11 @@ def import_translations_csv(runtime, expedition_id: str):
         raise model.ElearningError('No translation rows found for the target language.', 400)
 
     def txn(unit):
-        current = unit.get(_exp_path(expedition_id))
-        if not current or current.get('deleted'):
-            raise model.ElearningError('This expedition is unavailable.', 404)
-        known_keys = {r['key'] for r in model.extract_translation_rows(current, target_lang=target_lang)}
-        filtered = {k: v for k, v in updates.items() if k in known_keys}
+        _, current, _, _, _ = access(runtime, expedition_id, 'translate', unit=unit)
+        original = {r['key']: r['target'] for r in model.extract_translation_rows(current, target_lang=target_lang)}
+        # An unedited exported cell must keep its original author text on import.
+        filtered = {k: original[k] if v == sanitize_csv_cell(original[k]) else v
+                    for k, v in updates.items() if k in original}
         if not filtered:
             raise model.ElearningError('No matching translation keys found in this CSV.', 400)
         patched = model.apply_translation_patch(current, target_lang, filtered)
@@ -611,7 +667,6 @@ def import_translations_csv(runtime, expedition_id: str):
         return patched, len(filtered)
 
     saved, applied_count = db.atomic(txn)
-    invalidate(expedition_id)
     return jsonify(expedition=_public_studio_view(saved, role, grant_lang), appliedCount=applied_count)
 
 
@@ -623,48 +678,18 @@ def upload_asset(runtime, expedition_id: str):
     data = uploaded.read(MAX_AUDIO_BYTES + 1)
     content_type = str(uploaded.mimetype or '').lower().split(';')[0].strip()
     aid = model.new_id('ast')
-    storage_path = f'elearning/{expedition_id}/{aid}'
-
+    meta = {'id': aid, 'expedition_id': expedition_id, 'uploaded_by': who['id'], 'created_at': now()}
     if content_type in ALLOWED_AUDIO_MIMES:
-        if len(data) > MAX_AUDIO_BYTES:
-            raise model.ElearningError('Audio file must be at most 15 MB.', 413)
+        if not data or len(data) > MAX_AUDIO_BYTES:
+            raise model.ElearningError('Choose a non-empty audio file of at most 15 MB.', 413)
         ext = ALLOWED_AUDIO_MIMES[content_type]
-        storage_path = f'{storage_path}.{ext}'
-        try:
-            book_storage.request('POST', storage_path, data=data, content_type=content_type)
-        except BookError as err:
-            raise model.ElearningError(str(err), err.status) from err
-        meta = {
-            'id': aid,
-            'expedition_id': expedition_id,
-            'kind': 'audio',
-            'content_type': content_type,
-            'size': len(data),
-            'path': storage_path,
-            'uploaded_by': who['id'],
-            'created_at': now(),
-        }
+        meta.update(kind='audio', content_type=content_type)
     else:
-        try:
-            size_xy, preview_webp, _ = book_storage.validate_image(data)
-            storage_path = f'{storage_path}.webp'
-            book_storage.request('POST', storage_path, data=preview_webp, content_type='image/webp')
-        except BookError as err:
-            raise model.ElearningError(str(err), err.status) from err
-        meta = {
-            'id': aid,
-            'expedition_id': expedition_id,
-            'kind': 'image',
-            'content_type': 'image/webp',
-            'width': size_xy[0],
-            'height': size_xy[1],
-            'size': len(preview_webp),
-            'path': storage_path,
-            'uploaded_by': who['id'],
-            'created_at': now(),
-        }
-
-    db.put('elearning_assets/' + aid, meta)
+        size_xy, data, _ = book_storage.validate_image(data)
+        ext = 'webp'
+        meta.update(kind='image', content_type='image/webp', width=size_xy[0], height=size_xy[1])
+    meta['path'] = f'elearning/{expedition_id}/{aid}.{ext}'
+    elearning_storage.store_asset(db, meta, data)
     return jsonify(asset={
         'id': aid,
         'kind': meta['kind'],
@@ -679,11 +704,11 @@ def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str):
     if not meta or meta.get('expedition_id') != expedition_id:
         raise model.ElearningError('Asset not found.', 404)
     try:
-        raw = book_storage.request('GET', meta['path'])
+        raw = elearning_storage.read_asset(db, meta)
     except BookError as err:
         raise model.ElearningError(str(err), err.status) from err
     response = send_file(io.BytesIO(raw), mimetype=meta.get('content_type', 'application/octet-stream'))
-    response.headers['Cache-Control'] = 'private, max-age=3600'
+    response.headers['Cache-Control'] = 'private, no-store'
     return response
 
 
@@ -698,24 +723,20 @@ def delete_asset(runtime, expedition_id: str, asset_id: str):
     meta = db.get('elearning_assets/' + aid)
     if not meta or meta.get('expedition_id') != expedition_id:
         raise model.ElearningError('Asset not found.', 404)
-    try:
-        book_storage.request('DELETE', meta['path'])
-    except BookError:
-        pass
-    db.delete('elearning_assets/' + aid)
+    elearning_storage.erase_asset(db, meta)
     return jsonify(deleted=True)
 
 
-def _resolve_public_expedition(runtime, share_token: str):
+def _resolve_public_expedition(runtime, share_token: str, unit=None):
     safe_token = str(share_token or '').strip()
     if not _SHARE_TOKEN_RE.fullmatch(safe_token):
         raise model.ElearningError('Invalid share link.', 404)
-    db = _store(runtime)
+    db = unit if unit is not None else _store(runtime)
     idx = db.get('elearning_share_index/' + safe_token)
     if not idx or not idx.get('expedition_id'):
         raise model.ElearningError('This expedition link was not found.', 404)
     exp = db.get(_exp_path(idx['expedition_id']))
-    if not exp or exp.get('deleted'):
+    if not exp or exp.get('deleted') or exp.get('copying'):
         raise model.ElearningError('This expedition is no longer available.', 404)
     share = exp.get('share') or {}
     if share.get('token') != safe_token:
@@ -735,11 +756,46 @@ def public_get_expedition(runtime, share_token: str):
 
 def public_get_asset(runtime, share_token: str, asset_id: str):
     db, exp = _resolve_public_expedition(runtime, share_token)
+    public = model.sanitize_public_expedition(exp)
+    if asset_id not in model.media_ids(public):
+        raise model.ElearningError('Asset not found.', 404)
     return _serve_asset(db, exp['id'], asset_id)
 
 
+def _learner_answer(block, value):
+    kind = block['type']
+    data = block.get('data') or {}
+    if kind == 'reflection' and isinstance(value, str):
+        return value[:4000]
+    if kind == 'myth_fact' and value in ('myth', 'fact'):
+        return value
+    if kind == 'scale' and type(value) is int and data['min'] <= value <= data['max']:
+        return value
+    if kind == 'balance_scale' and isinstance(value, dict):
+        return {item['id']: value[item['id']] for item in data.get('factors', [])
+                if type(value.get(item['id'])) is int and 0 <= value[item['id']] <= 3}
+    if kind in ('mcq', 'hotspot', 'ranking'):
+        field = {'mcq': 'options', 'hotspot': 'pins', 'ranking': 'items'}[kind]
+        ids = {item['id'] for item in data.get(field, [])}
+        if isinstance(value, str) and value in ids:
+            return value
+        if isinstance(value, list) and kind != 'hotspot':
+            return list(dict.fromkeys(v for v in value if isinstance(v, str) and v in ids))
+    if kind in ('wordcloud', 'mini_plan') and isinstance(value, list):
+        count = data.get('maxWords', 3) if kind == 'wordcloud' else data.get('maxSelect', 3)
+        width = 40 if kind == 'wordcloud' else 300
+        return [v[:width] for v in value[:count] if isinstance(v, str)]
+    return None
+
+
+def _rating(value):
+    try:
+        return max(1, min(5, int(value))) if value else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def public_submit_response(runtime, share_token: str):
-    db, exp = _resolve_public_expedition(runtime, share_token)
     body = payload()
     session_id = str(body.get('sessionId') or '').strip()
     if not _SESSION_ID_RE.fullmatch(session_id):
@@ -747,73 +803,54 @@ def public_submit_response(runtime, share_token: str):
     cohort = str(body.get('cohort') or 'default').strip()
     if not _COHORT_RE.fullmatch(cohort):
         cohort = 'default'
-    lang = model.normalize_lang(body.get('language') or exp.get('defaultLanguage', 'nl'))
-    raw_answers = body.get('answers') if isinstance(body.get('answers'), dict) else {}
-    answers = {}
-    for bid, val in list(raw_answers.items())[:150]:
-        if isinstance(bid, str) and re.fullmatch(r'^[a-zA-Z0-9_-]{2,80}$', bid):
-            answers[bid] = val
-
-    raw_visited = body.get('visitedStepIds') if isinstance(body.get('visitedStepIds'), list) else []
-    visited = [str(s) for s in raw_visited[:200] if isinstance(s, str) and len(s) <= 80]
-
-    pilot = body.get('pilotFeedback') if isinstance(body.get('pilotFeedback'), dict) else None
-    clean_pilot = None
-    if pilot:
-        try:
-            clarity = max(1, min(5, int(pilot.get('clarity', 0)))) if pilot.get('clarity') else None
-            engagement = max(1, min(5, int(pilot.get('engagement', 0)))) if pilot.get('engagement') else None
-        except (TypeError, ValueError):
-            clarity, engagement = None, None
-        clean_pilot = {
-            'clarity': clarity,
-            'engagement': engagement,
-            'comment': model.safe_text(pilot.get('comment', ''), 2000),
-        }
-
-    raw_step_comments = body.get('stepComments') if isinstance(body.get('stepComments'), list) else None
-    clean_step_comments = []
-    if raw_step_comments is not None:
-        for sc in raw_step_comments[:60]:
-            if not isinstance(sc, dict):
-                continue
-            comment_txt = model.safe_text(sc.get('comment', ''), 1200).strip()
-            if not comment_txt:
-                continue
-            clean_step_comments.append({
-                'moduleId': model.safe_text(sc.get('moduleId', ''), 80),
-                'stepId': model.safe_text(sc.get('stepId', ''), 80),
-                'moduleTitle': model.safe_text(sc.get('moduleTitle', ''), 200),
-                'stepTitle': model.safe_text(sc.get('stepTitle', ''), 200),
-                'reviewer': model.safe_text(sc.get('reviewer', ''), 80),
-                'comment': comment_txt,
-                'createdAt': int(sc.get('createdAt') or now()),
-            })
-
-    doc_id = f"{exp['id']}__{session_id}"
     ts = now()
-    existing = db.get('elearning_responses/' + doc_id) or {}
-    merged_answers = dict(existing.get('answers') or {})
-    merged_answers.update(answers)
-    merged_visited = list(dict.fromkeys(list(existing.get('visitedStepIds') or []) + visited))
-    merged_comments = clean_step_comments if raw_step_comments is not None else list(existing.get('stepComments') or [])
 
-    record = {
-        'id': doc_id,
-        'expedition_id': exp['id'],
-        'share_token': share_token,
-        'session_id': session_id,
-        'cohort': cohort,
-        'language': lang,
-        'answers': merged_answers,
-        'visitedStepIds': merged_visited,
-        'completed': bool(body.get('completed', existing.get('completed', False))),
-        'pilotFeedback': clean_pilot or existing.get('pilotFeedback'),
-        'stepComments': merged_comments,
-        'started_at': existing.get('started_at', ts),
-        'updated_at': ts,
-    }
-    db.put('elearning_responses/' + doc_id, record)
+    def save(tx):
+        _, exp = _resolve_public_expedition(runtime, share_token, unit=tx)
+        course = model.sanitize_public_expedition(exp)
+        lang = model.normalize_lang(body.get('language'), course['defaultLanguage'])
+        steps = {step['id']: (module, step) for module in course['modules'] for step in module['steps']}
+        blocks = {blk['id']: blk for _, step in steps.values() for blk in step['blocks']}
+        doc_id = f"{exp['id']}__{session_id}"
+        path = 'elearning_responses/' + doc_id
+        old = tx.get(path) or {}
+        answers = dict(old.get('answers') or {})
+        if isinstance(body.get('answers'), dict):
+            for bid, value in body['answers'].items():
+                if bid in blocks:
+                    answer = _learner_answer(blocks[bid], value)
+                    if answer is not None:
+                        answers[bid] = answer
+        visited = list(old.get('visitedStepIds') or [])
+        if isinstance(body.get('visitedStepIds'), list):
+            visited.extend(s for s in body['visitedStepIds'] if isinstance(s, str) and s in steps)
+        options = course['shareOptions']
+        feedback = old.get('pilotFeedback')
+        pilot = body.get('pilotFeedback')
+        if options['collectPilotFeedback'] and isinstance(pilot, dict):
+            feedback = {'clarity': _rating(pilot.get('clarity')), 'engagement': _rating(pilot.get('engagement')),
+                        'comment': model.safe_text(pilot.get('comment'), 2000)}
+        comments = list(old.get('stepComments') or [])
+        if options['allowStepComments'] and isinstance(body.get('stepComments'), list):
+            comments = []
+            for item in body['stepComments'][:60]:
+                if not isinstance(item, dict):
+                    continue
+                sid = model.safe_text(item.get('stepId'), 80)
+                comment = model.safe_text(item.get('comment'), 1200).strip()
+                if not comment or sid not in steps:
+                    continue
+                module, step = steps[sid]
+                comments.append({'moduleId': module['id'], 'stepId': sid, 'comment': comment,
+                                 'reviewer': model.safe_text(item.get('reviewer'), 80),
+                                 'moduleTitle': module['title'].get(lang, ''), 'stepTitle': step['title'].get(lang, ''),
+                                 'createdAt': item['createdAt'] if type(item.get('createdAt')) is int else int(ts)})
+        tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], 'session_id': session_id,
+                      'cohort': cohort, 'language': lang, 'answers': answers,
+                      'visitedStepIds': list(dict.fromkeys(visited)), 'completed': bool(body.get('completed') or old.get('completed')),
+                      'pilotFeedback': feedback, 'stepComments': comments, 'started_at': old.get('started_at', ts), 'updated_at': ts})
+
+    _store(runtime).atomic(save)
     return jsonify(saved=True, updatedAt=ts)
 
 
@@ -887,23 +924,37 @@ def public_get_aggregates(runtime, share_token: str, block_id: str):
         raise model.ElearningError('Peer results are disabled for this expedition.', 403)
     bid = model.identifier(block_id, 'block id')
     target_block = None
-    for mod in exp.get('modules', []):
-        for step in mod.get('steps', []):
-            for blk in step.get('blocks', []):
+    for mod in model.sanitize_public_expedition(exp)['modules']:
+        for step in mod['steps']:
+            for blk in step['blocks']:
                 if blk['id'] == bid:
                     target_block = blk
                     break
     if not target_block or not (target_block.get('settings') or {}).get('showPeerResults'):
         raise model.ElearningError('Peer results are not enabled for this question.', 403)
-    rows = db.list('elearning_responses', 'expedition_id', exp['id'], limit=500)
-    return jsonify(aggregate=_aggregate_block(target_block, rows))
+    key = (share_token, exp.get('revision'), bid)
+    with _peer_read_locks[hash(key) % len(_peer_read_locks)]:
+        with _peer_lock:
+            entry = _peer_cache.get(key)
+            if entry and entry[0] > time.monotonic():
+                _peer_cache.move_to_end(key)
+                return jsonify(aggregate=entry[1])
+        rows = db.list('elearning_responses', 'expedition_id', exp['id'], limit=None,
+                       fields=[FieldPath('answers', bid).to_api_repr()])
+        aggregate = _aggregate_block(target_block, rows)
+        with _peer_lock:
+            _peer_cache[key] = (time.monotonic() + PEER_RESULT_SECONDS, aggregate)
+            _peer_cache.move_to_end(key)
+            if len(_peer_cache) > 128:
+                _peer_cache.popitem(last=False)
+    return jsonify(aggregate=aggregate)
 
 
 def get_responses(runtime, expedition_id: str):
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     cohort_filter = str(request.args.get('cohort') or '').strip()
     lang_filter = str(request.args.get('language') or '').strip().lower()
-    all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=500)
+    all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
     cohorts = sorted({str(r.get('cohort') or 'default') for r in all_rows})
     rows = [
         r for r in all_rows
@@ -917,8 +968,7 @@ def get_responses(runtime, expedition_id: str):
         for r in rows
         if r.get('started_at') and r.get('updated_at')
     ]
-    durations.sort()
-    median_sec = round(durations[len(durations) // 2]) if durations else 0
+    median_sec = round(median(durations)) if durations else 0
 
     funnel = []
     block_stats = {}
@@ -992,7 +1042,7 @@ def get_responses(runtime, expedition_id: str):
 
 def export_responses_csv(runtime, expedition_id: str):
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
-    rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=500)
+    rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
     block_ids = []
     for mod in exp.get('modules', []):
         for step in mod.get('steps', []):
@@ -1018,10 +1068,9 @@ def export_responses_csv(runtime, expedition_id: str):
         for bid in block_ids:
             val = ans.get(bid, '')
             if isinstance(val, (list, dict)):
-                import json
                 val = json.dumps(val, ensure_ascii=False)
             row_out.append(str(val))
-        writer.writerow(row_out)
+        writer.writerow(sanitize_csv_row(row_out))
 
     return send_file(
         io.BytesIO(buf.getvalue().encode('utf-8-sig')),

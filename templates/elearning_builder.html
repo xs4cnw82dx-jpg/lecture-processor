@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   {% include '_preferences_head.html' %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Builder · xPEDitie Pijn Studio</title>
+  <title>xPEDitie Pijn Studio · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
@@ -33,11 +34,14 @@
     </div>
 
     <div class="el-topbar-right">
-      <div id="el-edit-lang-host"></div>
+      <button type="button" class="el-icon-btn el-utilities-toggle" id="el-utilities-toggle" aria-label="Editor tools" aria-controls="el-editor-utilities" aria-expanded="false"></button>
+      <div id="el-editor-utilities" class="el-utilities">
+        <div id="el-edit-lang-host"></div>
       <div class="el-topbar-sep" aria-hidden="true"></div>
       <button type="button" class="el-icon-btn" id="el-undo-btn" aria-label="Undo" title="Undo" disabled></button>
       <button type="button" class="el-icon-btn" id="el-redo-btn" aria-label="Redo" title="Redo" disabled></button>
       <div id="el-more-menu-host"></div>
+      </div>
       <button type="button" class="el-btn el-btn-primary" id="el-share-btn">Share</button>
     </div>
   </header>
@@ -50,8 +54,13 @@
   </div>
 
   <!-- Mode 1: Full-Viewport 3-Zone Mentimeter-Style Builder -->
-  <main class="el-workspace" id="el-mode-edit" tabindex="-1">
-    <aside class="el-outline-rail" aria-label="Expedition outline">
+  <main class="el-workspace" id="el-mode-edit" tabindex="-1" data-pane="canvas">
+    <div class="el-pane-nav" role="group" aria-label="Workspace">
+      <button type="button" class="el-pane-btn" data-pane="outline" aria-controls="el-outline" aria-pressed="false">Outline</button>
+      <button type="button" class="el-pane-btn" data-pane="canvas" aria-controls="el-stage" aria-pressed="true">Canvas</button>
+      <button type="button" class="el-pane-btn" data-pane="inspector" aria-controls="el-inspector" aria-pressed="false">Inspector</button>
+    </div>
+    <aside class="el-outline-rail" id="el-outline" aria-label="Expedition outline">
       <div class="el-rail-head"><span>Expedition</span></div>
       <button type="button" class="el-outline-item is-active" id="el-nav-start-page">
         <span id="el-nav-start-icon"></span>
@@ -65,7 +74,7 @@
       <div id="el-outline-modules"></div>
     </aside>
 
-    <section class="el-stage" aria-label="Live canvas">
+    <section class="el-stage" id="el-stage" aria-label="Live canvas">
       <div class="el-stage-bar">
         <span class="el-stage-crumb" id="el-canvas-crumb">Start Page</span>
         <div class="el-vp-switch" role="group" aria-label="Canvas width">
@@ -75,7 +84,7 @@
       </div>
 
       <div class="el-canvas-frame xped-surface-scope" id="el-canvas-frame" data-xped-theme="xped-warm-sand">
-        <div id="el-canvas-card"></div>
+        <div id="el-canvas-card" data-i18n-ignore></div>
       </div>
 
       <div class="el-stage-footer" id="el-stage-footer" hidden>
@@ -92,7 +101,7 @@
       </div>
     </section>
 
-    <aside class="el-inspector" aria-label="Inspector">
+    <aside class="el-inspector" id="el-inspector" aria-label="Inspector">
       <div class="el-insp-tabs" role="tablist">
         <button type="button" role="tab" class="el-insp-tab is-active" data-insp="block" aria-selected="true">Settings</button>
         <button type="button" role="tab" class="el-insp-tab" data-insp="step" aria-selected="false">Station</button>
@@ -104,12 +113,12 @@
 
   <!-- Mode 2: Split-Screen Translation Studio (For German Editor & NL/EN) -->
   <section class="el-translate-shell" id="el-mode-translate" hidden>
-    <div class="el-translate-welcome" id="el-tr-welcome" hidden>
+    <div class="el-translate-welcome" id="el-tr-welcome">
       <div>
-        <strong>Translation Studio</strong>
+        <h1>Translation Studio</h1>
         <p>Edit translations directly below — module structure stays safely locked and changes save automatically.</p>
       </div>
-      <span class="el-status-inline is-live" id="el-tr-autosave">Saved</span>
+      <span class="el-status-inline is-live" role="status" id="el-tr-autosave">Saved</span>
     </div>
 
     <div class="el-translate-toolbar">
@@ -119,7 +128,7 @@
         <div id="el-tr-target-host"></div>
         <span class="el-status-inline is-live" id="el-tr-progress">0 / 0 translated</span>
       </div>
-      <div class="el-btn-row">
+      <div class="el-btn-row el-tr-actions">
         <div id="el-tr-filter-host"></div>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-next-missing">Next missing</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-toggle-preview" aria-pressed="true">Live Preview</button>
@@ -145,7 +154,7 @@
           <span>Live Slide Preview</span>
           <span id="el-tr-preview-lang-tag">DE</span>
         </div>
-        <div class="xped-surface-scope" id="el-tr-preview-stage" data-xped-theme="xped-warm-sand"></div>
+        <div class="xped-surface-scope" id="el-tr-preview-stage" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
       </aside>
     </div>
   </section>
@@ -153,8 +162,8 @@
   <!-- Mode 3: Full Interactive Learner Preview -->
   <section class="el-stage" id="el-mode-preview" hidden>
     <div class="el-stage-bar">
-      <div class="el-btn-row">
-        <strong>Interactive Preview</strong>
+      <div class="el-btn-row el-preview-controls">
+        <h2>Interactive Preview</h2>
         <div id="el-preview-lang-host"></div>
         <div class="el-vp-switch" role="group" aria-label="Preview width">
           <button type="button" class="el-vp-btn is-active" id="el-pv-desktop" aria-pressed="true">Desktop</button>
@@ -163,7 +172,7 @@
       </div>
       <button type="button" class="el-btn el-btn-sm" id="el-preview-reset">Reset preview</button>
     </div>
-    <div class="el-canvas-frame xped-surface-scope" id="el-preview-container" data-xped-theme="xped-warm-sand"></div>
+    <div class="el-canvas-frame xped-surface-scope" id="el-preview-container" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
   </section>
 
   <!-- Categorized + Add Block Dialog with Search -->
@@ -286,7 +295,7 @@
 
       <div class="el-insp-section-title">2. Co-Editors (Thesis Partner) &amp; Translators</div>
       <div class="el-share-inline-row">
-        <input type="email" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
+        <input type="email" aria-label="Collaborator email" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
         <div id="el-member-role-host"></div>
         <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-add-member-btn">Add</button>
       </div>
@@ -294,7 +303,7 @@
 
       <div class="el-insp-section-title">3. Direct Translator Link (No Account Needed)</div>
       <div class="el-share-inline-row">
-        <input type="text" id="el-grant-label" class="xped-input" placeholder="German Editor (DE)">
+        <input type="text" aria-label="Translator link label" id="el-grant-label" class="xped-input" placeholder="German Editor (DE)">
         <div id="el-grant-lang-host"></div>
         <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">Create Link</button>
       </div>
@@ -307,8 +316,11 @@
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename='js/vendor/qrcode-generator-2.0.4/qrcode.min.js') }}"></script>
   <script src="{{ url_for('static', filename=elearning_qr_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_route_map_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_blocks_js) }}"></script>

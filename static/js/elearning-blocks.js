@@ -70,11 +70,11 @@
         var pct = Math.round((c / Math.max(1, agg.count)) * 100);
         var row = el('div', 'xped-bar-row');
         row.appendChild(el('span', '', Model.getLocalized(opt.label, lang, defaultLang) + ' — ' + pct + '%'));
-        var track = el('div', 'xped-bar-track');
-        var fill = el('div', 'xped-bar-fill');
-        fill.style.width = pct + '%';
-        track.appendChild(fill);
-        row.appendChild(track);
+        var meter = el('progress', 'xped-peer-progress');
+        meter.max = 100;
+        meter.value = pct;
+        meter.setAttribute('aria-hidden', 'true');
+        row.appendChild(meter);
         box.appendChild(row);
       });
     } else if (block.type === 'scale') {
@@ -101,8 +101,7 @@
     // Sleek light stand on deep navy stage
     svg.appendChild(sEl('path', { d: 'M 142 134 L 218 134 L 190 120 L 170 120 Z', fill: 'rgba(255,255,255,0.22)' }));
     svg.appendChild(sEl('rect', { x: 176, y: 46, width: 8, height: 76, rx: 4, fill: 'rgba(255,255,255,0.34)' }));
-    var beam = sEl('g', { class: 'xped-balance-beam' });
-    beam.style.transform = 'rotate(' + diff + 'deg)';
+    var beam = sEl('g', { class: 'xped-balance-beam', transform: 'rotate(' + diff + ' 180 48.5)' });
     beam.appendChild(sEl('rect', { x: 52, y: 44, width: 256, height: 9, rx: 4.5, fill: '#ffffff' }));
     beam.appendChild(sEl('circle', { cx: 180, cy: 48.5, r: 9, fill: '#ffd617', stroke: '#062940', 'stroke-width': 3 }));
     // Left pan (Load - coral)
@@ -175,6 +174,7 @@
     var lang = ctx.lang || 'nl';
     var defLang = ctx.defaultLang || 'nl';
     var interactive = !!ctx.interactive;
+    var setMediaSource = ctx.setMediaSource || function (element, url) { element.src = url; };
     var editable = !!ctx.editable;
     var answers = ctx.answers || {};
     var onAnswer = ctx.onAnswer || function () {};
@@ -333,7 +333,7 @@
       var fig = el('figure', 'xped-image-figure');
       if (url) {
         var img = document.createElement('img');
-        img.src = url;
+        setMediaSource(img, url);
         img.alt = Model.getLocalized(data.alt, lang, defLang) || '';
         img.loading = 'lazy';
         fig.appendChild(img);
@@ -385,7 +385,7 @@
       if (aUrl) {
         var audio = document.createElement('audio');
         audio.controls = true;
-        audio.src = aUrl;
+        setMediaSource(audio, aUrl);
         card.appendChild(audio);
       } else {
         card.appendChild(createDropzone(
@@ -422,7 +422,7 @@
       if (sUrl) {
         var av = document.createElement('img');
         av.className = 'xped-story-avatar';
-        av.src = sUrl;
+        setMediaSource(av, sUrl);
         av.alt = data.speakerName || 'Speaker';
         sc.appendChild(av);
       }
@@ -568,7 +568,6 @@
       if (editable) {
         var addOptBtn = el('button', 'el-quiet-add-step', '+ Add option');
         addOptBtn.type = 'button';
-        addOptBtn.style.marginTop = '8px';
         addOptBtn.addEventListener('click', function (e) {
           e.stopPropagation();
           onEdit(block, 'addOption', '');
@@ -724,12 +723,12 @@
       wrap.appendChild(wq);
       var maxW = data.maxWords || 3;
       var words = Array.isArray(answers[block.id]) ? answers[block.id].slice() : [];
-      var rowW = el('div', 'el-btn-row');
+      var rowW = el('div', 'xped-input-actions');
       var inp = document.createElement('input');
       inp.type = 'text';
       inp.className = 'xped-input';
-      inp.style.flex = '1';
       inp.placeholder = Model.getLocalized(data.placeholder, lang, defLang) || Model.ui(lang, 'addWordPlaceholder');
+      inp.setAttribute('aria-label', wq.textContent || inp.placeholder);
       inp.disabled = !interactive;
       var addBtn = el('button', 'xped-btn xped-btn-secondary', Model.ui(lang, 'addWordBtn'));
       addBtn.type = 'button';
@@ -803,6 +802,7 @@
             var acts = el('div', 'el-btn-row');
             var up = el('button', 'el-icon-btn');
             up.type = 'button';
+            up.setAttribute('aria-label', Model.ui(lang, 'up') + ' - ' + Model.getLocalized(item.label, lang, defLang));
             up.disabled = idx === 0;
             if (Icons) up.appendChild(Icons.icon('chevronUp', 16));
             up.addEventListener('click', function () {
@@ -814,6 +814,7 @@
             });
             var dn = el('button', 'el-icon-btn');
             dn.type = 'button';
+            dn.setAttribute('aria-label', Model.ui(lang, 'down') + ' - ' + Model.getLocalized(item.label, lang, defLang));
             dn.disabled = idx === order.length - 1;
             if (Icons) dn.appendChild(Icons.icon('chevronDown', 16));
             dn.addEventListener('click', function () {
@@ -858,10 +859,22 @@
         detailBox.appendChild(box);
       }
 
+      function selectPin(pin) {
+        activePinId = pin.id;
+        if (interactive) onAnswer(block.id, pin.id);
+        wrap.querySelectorAll('.xped-hotspot-pin').forEach(function (point, index) {
+          point.classList.toggle('is-active', pins[index].id === pin.id);
+        });
+        fbBar.querySelectorAll('button').forEach(function (button, index) {
+          button.setAttribute('aria-pressed', String(pins[index].id === pin.id));
+        });
+        drawPinDetail(pin.id);
+      }
+
       if (hUrl) {
         var stage = el('div', 'xped-hotspot-stage' + (editable ? ' is-placeable' : ''));
         var himg = document.createElement('img');
-        himg.src = hUrl;
+        setMediaSource(himg, hUrl);
         himg.alt = Model.getLocalized(data.alt, lang, defLang) || '';
         stage.appendChild(himg);
         if (editable) {
@@ -874,34 +887,41 @@
             onEdit(block, 'addPin', { x: x, y: y });
           });
         }
+        var ns = 'http://www.w3.org/2000/svg';
+        var overlay = document.createElementNS(ns, 'svg');
+        overlay.classList.add('xped-hotspot-overlay');
+        overlay.setAttribute('aria-hidden', 'true');
         pins.forEach(function (pin, idx) {
-          var isCue = interactive && !answers[block.id] && idx === 0;
-          var pBtn = el('button', 'xped-hotspot-pin' + (pin.id === activePinId ? ' is-active' : '') + (isCue ? ' is-cue-pulse' : ''), String(idx + 1));
-          pBtn.type = 'button';
-          pBtn.style.left = (pin.x || 50) + '%';
-          pBtn.style.top = (pin.y || 50) + '%';
-          pBtn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            activePinId = pin.id;
-            if (interactive) onAnswer(block.id, pin.id);
-            Array.prototype.forEach.call(stage.querySelectorAll('.xped-hotspot-pin'), function (n, i) {
-              n.classList.toggle('is-active', pins[i].id === activePinId);
-            });
-            drawPinDetail(activePinId);
+          var point = document.createElementNS(ns, 'svg');
+          point.setAttribute('x', (pin.x ?? 50) + '%');
+          point.setAttribute('y', (pin.y ?? 50) + '%');
+          point.setAttribute('width', '1');
+          point.setAttribute('height', '1');
+          point.setAttribute('overflow', 'visible');
+          point.classList.add('xped-hotspot-pin');
+          point.classList.toggle('is-active', pin.id === activePinId);
+          var circle = document.createElementNS(ns, 'circle');
+          circle.setAttribute('r', '16');
+          var number = document.createElementNS(ns, 'text');
+          number.setAttribute('text-anchor', 'middle');
+          number.setAttribute('dy', '.35em');
+          number.textContent = String(idx + 1);
+          point.append(circle, number);
+          point.addEventListener('click', function (event) {
+            event.stopPropagation();
+            selectPin(pin);
           });
-          stage.appendChild(pBtn);
+          overlay.appendChild(point);
         });
+        stage.appendChild(overlay);
         wrap.appendChild(stage);
       }
       var fbBar = el('div', 'xped-hotspot-fallback');
       pins.forEach(function (pin, idx) {
-        var chip = el('button', 'el-btn el-btn-sm', (idx + 1) + '. ' + (Model.getLocalized(pin.label, lang, defLang) || ('Point ' + (idx + 1))));
+        var chip = el('button', 'xped-btn xped-btn-secondary', (idx + 1) + '. ' + (Model.getLocalized(pin.label, lang, defLang) || ('Point ' + (idx + 1))));
         chip.type = 'button';
-        chip.addEventListener('click', function () {
-          activePinId = pin.id;
-          if (interactive) onAnswer(block.id, pin.id);
-          drawPinDetail(activePinId);
-        });
+        chip.setAttribute('aria-pressed', String(pin.id === activePinId));
+        chip.addEventListener('click', function () { selectPin(pin); });
         fbBar.appendChild(chip);
       });
       wrap.appendChild(fbBar);
@@ -921,7 +941,6 @@
       var bintro = Model.getLocalized(data.intro, lang, defLang);
       if (bintro || editable) {
         var bi = el('p', 'xped-caption', bintro);
-        bi.style.marginBottom = '14px';
         makeEditable(bi, 'Short friendly instruction…', editable, function (v) { onEdit(block, 'intro', v); });
         wrap.appendChild(bi);
       }
@@ -1097,13 +1116,12 @@
       drawChips();
       wrap.appendChild(chips);
       if (data.allowCustom && interactive) {
-        var customRow = el('div', 'el-btn-row');
-        customRow.style.marginTop = '12px';
+        var customRow = el('div', 'xped-input-actions');
         var cinp = document.createElement('input');
         cinp.type = 'text';
         cinp.className = 'xped-input';
-        cinp.style.flex = '1';
         cinp.placeholder = Model.ui(lang, 'customGoalPlaceholder');
+        cinp.setAttribute('aria-label', cinp.placeholder);
         var cadd = el('button', 'xped-btn xped-btn-secondary', Model.ui(lang, 'addGoal'));
         cadd.type = 'button';
         cadd.addEventListener('click', function () {
@@ -1122,6 +1140,11 @@
     }
 
     if (block.type === 'custom_visual') {
+      // Placeholder briefs belong to the authoring canvas.
+      if (!editable && !['alarm-dial', 'breathing-circle'].includes(data.preset)
+          && !(data.preset === 'custom-svg' && data.svgMarkup)) {
+        return document.createDocumentFragment();
+      }
       var cvt = Model.getLocalized(data.title, lang, defLang);
       if (cvt || editable) {
         var cvh = el('h3', 'xped-question-text', cvt);
@@ -1165,23 +1188,10 @@
         cvStage.classList.add('is-navy');
         cvStage.appendChild(svgB);
       } else if (preset === 'custom-svg' && data.svgMarkup) {
-        try {
-          var parser = new DOMParser();
-          var doc = parser.parseFromString(data.svgMarkup, 'image/svg+xml');
-          var svgNode = doc.documentElement;
-          if (svgNode && svgNode.tagName && svgNode.tagName.toLowerCase() === 'svg') {
-            svgNode.querySelectorAll('script, foreignObject, iframe, object, embed').forEach(function (n) { n.remove(); });
-            svgNode.querySelectorAll('*').forEach(function (n) {
-              Array.prototype.slice.call(n.attributes || []).forEach(function (attr) {
-                if (/^on/i.test(attr.name) || /javascript:/i.test(attr.value)) n.removeAttribute(attr.name);
-              });
-            });
-            svgNode.classList.add('xped-custom-svg-art');
-            cvStage.appendChild(document.importNode(svgNode, true));
-          }
-        } catch (_err) {
-          cvStage.appendChild(el('p', 'xped-caption', 'Invalid SVG markup — check Settings.'));
-        }
+        var illustration = el('img', 'xped-custom-svg-art');
+        illustration.alt = Model.getLocalized(data.alt, lang, defLang) || cvt || '';
+        illustration.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data.svgMarkup);
+        cvStage.appendChild(illustration);
       } else {
         cvStage.classList.add('is-blueprint');
         var bpTop = el('div', 'xped-bp-head');

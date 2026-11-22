@@ -74,8 +74,9 @@ def export_account_data(app_ctx, request):
     email = decoded_token.get('email', '')
     try:
         payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
-        from lecture_processor.services import book_account_service
+        from lecture_processor.services import book_account_service, elearning_account_service
         payload.setdefault('collections', {})['books'] = book_account_service.collect(app_ctx, uid)
+        payload['collections']['elearning'] = elearning_account_service.collect(app_ctx, uid)
         from lecture_processor.services import study_picture_service
         payload['collections']['study_images'] = study_picture_service.collect(app_ctx, uid)
         date_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -210,13 +211,14 @@ def _build_account_bundle_archive(app_ctx, uid, email, include):
 
             if include.get('account_json'):
                 account_payload = account_lifecycle.collect_user_export_payload(uid, email, runtime=app_ctx)
-                from lecture_processor.services import book_account_service
+                from lecture_processor.services import book_account_service, elearning_account_service
                 account_payload.setdefault('collections', {})['books'] = book_account_service.collect(app_ctx, uid)
+                account_payload['collections']['elearning'] = elearning_account_service.collect(app_ctx, uid)
                 from lecture_processor.services import study_picture_service
                 account_payload['collections']['study_images'] = study_picture_service.collect(app_ctx, uid)
                 account_bytes = json.dumps(account_payload, ensure_ascii=False, indent=2, default=str).encode('utf-8')
                 archive.writestr('account_json/account-export.json', account_bytes)
-                from lecture_processor.services import book_account_service
+                elearning_account_service.add_bundle_assets(app_ctx, archive, account_payload['collections']['elearning'])
                 book_account_service.add_bundle_assets(app_ctx, archive, account_payload.get('collections', {}).get('books', []))
                 study_picture_service.add_bundle_assets(app_ctx, archive, uid)
             if collection_truncated:
@@ -667,7 +669,8 @@ def delete_account_data(app_ctx, request):
             deleted['batch_jobs'] = deleted_batches
             deleted['batch_rows'] = deleted_rows
 
-        from lecture_processor.services import book_account_service
+        from lecture_processor.services import book_account_service, elearning_account_service
+        deleted['elearning'] = elearning_account_service.delete_owned(app_ctx, uid, email)
         deleted['books'] = book_account_service.delete_owned(app_ctx, uid, email)
         deleted['study_images'] = study_picture_service.delete_owned(app_ctx, uid)
         _delete_uid_collection('job_logs')
@@ -726,6 +729,7 @@ def delete_account_data(app_ctx, request):
         remaining = []
         verification_targets = [
             ('books', 'owner_uid', uid, 'books'),
+            ('elearning_expeditions', 'owner_uid', uid, 'elearning'),
             ('book_shares', 'owner_uid', uid, 'book_shares'),
             ('job_logs', 'uid', uid, 'job_logs'),
             ('credit_charges', 'uid', uid, 'credit_charges'),

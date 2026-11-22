@@ -1,14 +1,6 @@
 (function (root) {
   'use strict';
 
-  var NS = 'http://www.w3.org/2000/svg';
-
-  function sEl(tag, attrs) {
-    var node = document.createElementNS(NS, tag);
-    Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, String(attrs[k])); });
-    return node;
-  }
-
   function makeEditable(node, placeholder, editable, onCommit) {
     if (!editable) return node;
     node.contentEditable = 'true';
@@ -48,7 +40,6 @@
     var shell = document.createElement('div');
     shell.className = 'xped-start-shell';
 
-    // 1. Clean Deep-Navy xPED Hero (Zero random crossing lines, zero accent bar, zero neon glow)
     var band = document.createElement('section');
     band.className = 'xped-hero-band';
 
@@ -63,11 +54,6 @@
     if (eyText || editable) {
       var kicker = document.createElement('div');
       kicker.className = 'xped-hero-kicker';
-      var brandMark = document.createElement('img');
-      brandMark.src = '/static/images/xped/logo_nl.svg';
-      brandMark.alt = '';
-      brandMark.className = 'xped-hero-brand-mark';
-      kicker.appendChild(brandMark);
       var eySpan = document.createElement('span');
       eySpan.textContent = eyText;
       makeEditable(eySpan, 'xPEDitie Pijn', editable, function (v) { onEditField('eyebrow', v); });
@@ -93,6 +79,9 @@
     var visibleMods = (exp.modules || []).filter(function (m) { return m.visibleToLearners !== false; });
     var totalMin = visibleMods.reduce(function (acc, m) { return acc + (m.estimatedMinutes || 5); }, 0);
 
+    var details = document.createElement('div');
+    details.className = 'xped-course-details';
+    var highlights;
     if (sp.highlights && sp.highlights.length) {
       var ul = document.createElement('ul');
       ul.className = 'xped-hero-highlights';
@@ -140,7 +129,13 @@
         }
         ul.appendChild(li);
       });
-      if (ul.children.length) col.appendChild(ul);
+      if (ul.children.length) {
+        highlights = document.createElement('section');
+        highlights.className = 'xped-highlights-section';
+        var heading = document.createElement('h2');
+        heading.textContent = Model.ui(lang, 'courseHighlights');
+        highlights.append(heading, ul);
+      }
     }
 
     var ctaRow = document.createElement('div');
@@ -157,6 +152,7 @@
     }
     cta.appendChild(ctaSpan);
     if (Icons) cta.appendChild(Icons.icon('arrowRight', 18));
+    cta.disabled = !visibleMods.length && !editable;
     if (!editable && typeof onStart === 'function') cta.addEventListener('click', function () { onStart(); });
     ctaRow.appendChild(cta);
     col.appendChild(ctaRow);
@@ -167,18 +163,16 @@
       var art = document.createElement('div');
       art.className = 'xped-hero-art';
       var img = document.createElement('img');
-      img.src = mediaUrl;
+      if (options.setMediaSource) options.setMediaSource(img, mediaUrl);
+      else img.src = mediaUrl;
       img.alt = '';
       art.appendChild(img);
       grid.appendChild(art);
     }
     band.appendChild(grid);
 
-    // Subtle organic horizon arc transitioning smoothly into the journey below
-    var wave = sEl('svg', { viewBox: '0 0 1200 44', preserveAspectRatio: 'none', class: 'xped-hero-wave', 'aria-hidden': 'true' });
-    wave.appendChild(sEl('path', { d: 'M0,8 Q600,48 1200,8 L1200,44 L0,44 Z', fill: 'var(--xped-canvas, #f6f1e9)' }));
-    band.appendChild(wave);
     shell.appendChild(band);
+    if (options.disclosure) shell.appendChild(options.disclosure);
 
     if (sp.heroVideoEmbedUrl) {
       var vSec = document.createElement('div');
@@ -194,16 +188,9 @@
       shell.appendChild(vSec);
     }
 
-    // 2. Unified Connected Expedition Journey (flows seamlessly from hero, scales 1..12+ stations, zero doubled numbers!)
     if (visibleMods.length && (!exp.theme || exp.theme.showRouteMap !== false)) {
       var rSec = document.createElement('section');
       rSec.className = 'xped-route-section';
-
-      // Trail stem visually linking the hero edge directly into Station 1
-      var stem = document.createElement('div');
-      stem.className = 'xped-route-stem';
-      stem.setAttribute('aria-hidden', 'true');
-      rSec.appendChild(stem);
 
       var intro = document.createElement('div');
       intro.className = 'xped-route-intro';
@@ -212,7 +199,7 @@
       intro.appendChild(rh2);
       var rSub = document.createElement('span');
       rSub.className = 'xped-route-count';
-      rSub.textContent = visibleMods.length + ' ' + Model.ui(lang, 'stations') + ' · ~' + totalMin + ' ' + Model.ui(lang, 'minutes');
+      rSub.textContent = visibleMods.length + ' ' + Model.ui(lang, visibleMods.length === 1 ? 'station' : 'stations') + ' · ~' + totalMin + ' ' + Model.ui(lang, 'minutes');
       intro.appendChild(rSub);
       rSec.appendChild(intro);
 
@@ -227,9 +214,11 @@
         compact: false,
       });
       rSec.appendChild(host);
-      shell.appendChild(rSec);
+      details.appendChild(rSec);
     }
 
+    if (highlights) details.appendChild(highlights);
+    if (details.childElementCount) shell.appendChild(details);
     container.appendChild(shell);
   }
 
@@ -260,10 +249,9 @@
 
       var li = document.createElement('li');
       li.className = 'xped-journey-stop domain-' + dom + (isDone ? ' is-done' : '') + (isActive ? ' is-active' : '');
-      li.style.setProperty('--stop-index', String(idx));
+      if (isActive) li.setAttribute('aria-current', 'step');
 
-      // Single Waypoint Marker anchored to the connecting trail line
-      var markerCol = document.createElement('div');
+        var markerCol = document.createElement('div');
       markerCol.className = 'xped-journey-marker-col';
       var node = document.createElement('span');
       node.className = 'xped-journey-node';
@@ -281,13 +269,17 @@
       }
       li.appendChild(markerCol);
 
-      // Station Card (zero repeated number badge!)
-      var btn = document.createElement('button');
-      btn.type = 'button';
+      var btn = document.createElement(typeof onSelect === 'function' ? 'button' : 'div');
+      if (typeof onSelect === 'function') btn.type = 'button';
       btn.className = 'xped-journey-card';
 
       var cardMain = document.createElement('div');
       cardMain.className = 'xped-journey-card-main';
+
+      var title = document.createElement('strong');
+      title.className = 'xped-journey-title';
+      title.textContent = Model.getLocalized(mod.title, lang, defaultLang) || ('Station ' + (idx + 1));
+      cardMain.appendChild(title);
 
       var topMeta = document.createElement('div');
       topMeta.className = 'xped-journey-card-meta';
@@ -306,11 +298,6 @@
       topMeta.appendChild(mins);
       cardMain.appendChild(topMeta);
 
-      var title = document.createElement('strong');
-      title.className = 'xped-journey-title';
-      title.textContent = Model.getLocalized(mod.title, lang, defaultLang) || ('Station ' + (idx + 1));
-      cardMain.appendChild(title);
-
       var subTxt = Model.getLocalized(mod.subtitle, lang, defaultLang);
       if (subTxt) {
         var sub = document.createElement('p');
@@ -323,7 +310,7 @@
       var arrowWrap = document.createElement('span');
       arrowWrap.className = 'xped-journey-arrow';
       if (Icons) arrowWrap.appendChild(Icons.icon('arrowRight', 17));
-      btn.appendChild(arrowWrap);
+      if (typeof onSelect === 'function') btn.appendChild(arrowWrap);
 
       if (typeof onSelect === 'function') {
         btn.addEventListener('click', function () { onSelect(mod, idx); });

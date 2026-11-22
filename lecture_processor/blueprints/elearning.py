@@ -6,14 +6,15 @@ import os
 
 from flask import Blueprint, g, jsonify, render_template, request
 from google.api_core.exceptions import GoogleAPICallError
+from werkzeug.exceptions import RequestEntityTooLarge
 
-from lecture_processor.domains.billing import policy as billing_policy
+from lecture_processor.domains.books.model import BookError
 from lecture_processor.domains.elearning.model import ElearningError
 from lecture_processor.domains.rate_limit import limiter
-from lecture_processor.repositories.elearning_repo import invalidate
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.runtime.http_security import build_content_security_policy
 from lecture_processor.services import elearning_service as service
+from lecture_processor.web.pages import _shell_context
 
 elearning_bp = Blueprint('elearning', __name__)
 logger = logging.getLogger(__name__)
@@ -24,23 +25,17 @@ _VIDEO_FRAME_SOURCES = (
 )
 
 
-def _shell_context(runtime, *, page_key: str = 'physio-elearning') -> dict:
-    return {
-        'shell_page_key': page_key,
-        'shell_show_credits_pill': False,
-        'study_plan_v2': bool(runtime.STUDY_PLAN_V2),
-        'legal_contact_email': runtime.LEGAL_CONTACT_EMAIL,
-        'unified_credits_enabled': billing_policy.is_unified_enabled(runtime),
-        'free_signup_credits': billing_policy.FREE_SIGNUP_CREDITS,
-    }
-
-
 @elearning_bp.before_request
 def _guard_rate_limits():
     if request.path.startswith('/api/elearning') and request.method != 'GET':
         runtime = get_runtime()
-        if request.view_args and request.view_args.get('expedition_id'):
-            invalidate(request.view_args['expedition_id'])
+        # Bound public submissions independently of the app-wide lecture upload limit.
+        if request.endpoint == 'elearning.api_expedition_upload_asset':
+            request.max_content_length = service.MAX_AUDIO_BYTES + 1024 * 1024
+        elif request.endpoint == 'elearning.api_public_submit':
+            request.max_content_length = 512 * 1024
+        else:
+            request.max_content_length = 2 * 1024 * 1024
         is_public = request.path.startswith('/api/elearning/public/')
         allowed, retry = limiter.check_rate_limit(
             key='elearning:' + ('public:' if is_public else 'write:') + (request.remote_addr or 'unknown'),
@@ -54,6 +49,8 @@ def _guard_rate_limits():
 
 @elearning_bp.after_request
 def _apply_video_frame_csp(response):
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['Referrer-Policy'] = 'strict-origin'
     if not request.path.startswith('/api/'):
         runtime = get_runtime()
         response.headers['Content-Security-Policy'] = build_content_security_policy(
@@ -64,6 +61,16 @@ def _apply_video_frame_csp(response):
     return response
 
 
+@elearning_bp.errorhandler(RequestEntityTooLarge)
+def _request_too_large(_error):
+    messages = {
+        'elearning.api_public_submit': 'This learning response is too large to save.',
+        'elearning.api_expedition_upload_asset': 'Choose an image of at most 10 MB or audio of at most 15 MB.',
+    }
+    return jsonify(error=messages.get(request.endpoint, 'This expedition update is too large to save.')), 413
+
+
+@elearning_bp.errorhandler(BookError)
 @elearning_bp.errorhandler(ElearningError)
 def _handle_elearning_error(error: ElearningError):
     if error.status >= 409:
@@ -88,7 +95,7 @@ def studio_dashboard_page():
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_dashboard_js=runtime.resolve_js_asset('js/elearning-dashboard.js'),
-        **_shell_context(runtime),
+        **_shell_context(runtime=runtime, page_key='physio-elearning'),
     )
 
 
@@ -106,7 +113,7 @@ def studio_builder_page(expedition_id: str):
         elearning_route_map_js=runtime.resolve_js_asset('js/elearning-route-map.js'),
         elearning_blocks_js=runtime.resolve_js_asset('js/elearning-blocks.js'),
         elearning_builder_js=runtime.resolve_js_asset('js/elearning-builder.js'),
-        **_shell_context(runtime),
+        **_shell_context(runtime=runtime, page_key='physio-elearning'),
     )
 
 
@@ -124,7 +131,7 @@ def translator_page(grant_token: str):
         elearning_route_map_js=runtime.resolve_js_asset('js/elearning-route-map.js'),
         elearning_blocks_js=runtime.resolve_js_asset('js/elearning-blocks.js'),
         elearning_builder_js=runtime.resolve_js_asset('js/elearning-builder.js'),
-        **_shell_context(runtime),
+        **_shell_context(runtime=runtime, page_key='physio-elearning'),
     )
 
 
@@ -137,7 +144,7 @@ def studio_responses_page(expedition_id: str):
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_responses_js=runtime.resolve_js_asset('js/elearning-responses.js'),
-        **_shell_context(runtime),
+        **_shell_context(runtime=runtime, page_key='physio-elearning'),
     )
 
 

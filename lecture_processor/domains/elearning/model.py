@@ -7,6 +7,9 @@ import re
 import secrets
 from copy import deepcopy
 from urllib.parse import parse_qs, urlparse
+from xml.etree import ElementTree as ET
+
+from lecture_processor.domains.shared import sanitize_csv_row
 
 SCHEMA_VERSION = 1
 SUPPORTED_LANGUAGES = ('nl', 'en', 'de')
@@ -180,27 +183,64 @@ def parse_video_url(raw_url: object) -> dict:
     return {'provider': provider, 'videoId': video_id, 'embedUrl': embed_url, 'startSeconds': start_hint}
 
 
-_SAFE_SVG_TAGS = {
-    'svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon',
-    'text', 'tspan', 'defs', 'lineargradient', 'radialgradient', 'stop', 'clippath',
-    'mask', 'title', 'desc', 'style', 'animate', 'animatetransform', 'set',
-}
+_SVG_NS = '{http://www.w3.org/2000/svg}'
+_SVG_TAGS = set(
+    'svg g path circle ellipse rect line polyline polygon text tspan defs linearGradient '
+    'radialGradient stop clipPath mask title desc animate animateTransform'.split()
+)
+_SVG_ATTRS = set(
+    'id viewBox preserveAspectRatio x y x1 y1 x2 y2 cx cy r rx ry d points width height '
+    'fill fill-opacity fill-rule stroke stroke-width stroke-linejoin stroke-linecap '
+    'stroke-dasharray stroke-dashoffset stroke-opacity opacity transform clip-path mask '
+    'offset stop-color stop-opacity gradientUnits gradientTransform fx fy '
+    'font-size font-weight text-anchor dominant-baseline'.split()
+)
+_ANIM_ATTRS = {'attributeName', 'type', 'from', 'to', 'values', 'dur', 'repeatCount', 'keyTimes'}
+_ANIM_TARGETS = {'opacity', 'fill-opacity', 'stroke-opacity', 'transform', 'r', 'rx', 'ry', 'cx', 'cy', 'x', 'y'}
 
 
 def sanitize_svg_markup(raw: object) -> str:
-    """Safely validate & strip unsafe tags/attributes from pasted SVG artwork."""
+    """Rebuild standalone drawing elements and numeric animation tracks."""
     text = safe_text(raw, 45000).strip()
-    if not text:
+    if not text or '<!' in text:
         return ''
-    if '<svg' not in text.lower():
+    try:
+        source = ET.fromstring(text)
+    except (ET.ParseError, ValueError):
         return ''
-    # Strip any script, foreignObject, iframe, event handlers, or javascript: URLs
-    cleaned = re.sub(r'<\s*(script|foreignobject|iframe|object|embed)[^>]*>.*?<\s*/\s*\1\s*>', '', text, flags=re.I | re.S)
-    cleaned = re.sub(r'<\s*(script|foreignobject|iframe|object|embed)[^>]*/?\s*>', '', cleaned, flags=re.I)
-    cleaned = re.sub(r'\son[a-z]+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)', '', cleaned, flags=re.I)
-    cleaned = re.sub(r'(?:xlink:)?href\s*=\s*(?:"\s*javascript:[^"]*"|\'\s*javascript:[^\']*\')', '', cleaned, flags=re.I)
-    cleaned = re.sub(r'@import\s+', '', cleaned, flags=re.I)
-    return cleaned.strip()
+    if source.tag.removeprefix(_SVG_NS) != 'svg':
+        return ''
+
+    def drawing(node, depth):
+        tag = node.tag.removeprefix(_SVG_NS)
+        if depth > 32 or tag not in _SVG_TAGS:
+            return None
+        if tag in ('animate', 'animateTransform'):
+            if node.get('attributeName') not in _ANIM_TARGETS:
+                return None
+            allowed = _ANIM_ATTRS
+        else:
+            allowed = _SVG_ATTRS
+        clean = ET.Element(tag)
+        for name, value in node.attrib.items():
+            if name not in allowed:
+                continue
+            # Paint servers are confined to fragment references in this drawing.
+            if any(c in value for c in '()') and name in ('fill', 'stroke', 'clip-path', 'mask'):
+                if not re.fullmatch(r'(?:url\(#[a-zA-Z_][\w.-]*\)|rgba?\([\d .,/%]+\))', value):
+                    continue
+            clean.set(name, value)
+        clean.text = node.text
+        for child in node:
+            safe_child = drawing(child, depth + 1)
+            if safe_child is not None:
+                safe_child.tail = child.tail
+                clean.append(safe_child)
+        return clean
+
+    root = drawing(source, 0)
+    root.set('xmlns', _SVG_NS[1:-1])
+    return ET.tostring(root, encoding='unicode')
 
 
 def safe_external_url(raw: object) -> str:
@@ -874,14 +914,14 @@ def translation_rows_to_csv(rows: list[dict], target_lang: str) -> str:
     writer = csv.writer(buf)
     writer.writerow(['field_key', 'location', 'nl', 'en', f'target_{target_lang}', 'status'])
     for row in rows:
-        writer.writerow([
+        writer.writerow(sanitize_csv_row([
             row['key'],
             row['location'],
             row.get('nl', ''),
             row.get('en', ''),
             row.get('target', ''),
             row.get('status', ''),
-        ])
+        ]))
     return buf.getvalue()
 
 
@@ -911,11 +951,19 @@ def sanitize_public_expedition(expedition: dict) -> dict:
             continue
         clean_steps = []
         for step in mod.get('steps', []):
+            blocks = []
+            for block in step.get('blocks', []):
+                if block.get('type') == 'custom_visual':
+                    data = block.get('data') or {}
+                    if data.get('preset', 'placeholder') == 'placeholder':
+                        continue
+                    block = {**block, 'data': {k: v for k, v in data.items() if k not in ('agentBrief', 'slotId')}}
+                blocks.append(deepcopy(block))
             clean_steps.append({
                 'id': step['id'],
                 'title': deepcopy(step.get('title', {})),
                 'layout': step.get('layout', 'focused'),
-                'blocks': deepcopy(step.get('blocks', [])),
+                'blocks': blocks,
                 'branching': deepcopy(step.get('branching', [])),
             })
         clean_modules.append({
@@ -943,3 +991,20 @@ def sanitize_public_expedition(expedition: dict) -> dict:
             'allowStepComments': bool(share.get('allowStepComments', False)),
         },
     }
+
+
+def media_refs(expedition):
+    start = expedition.get('startPage', {})
+    yield start.get('heroMedia')
+    yield from (start.get('heroMediaOverrides') or {}).values()
+    for module in expedition.get('modules', []):
+        for step in module.get('steps', []):
+            for block in step.get('blocks', []):
+                data = block.get('data') or {}
+                yield data.get('media')
+                yield from (data.get('mediaOverrides') or {}).values()
+
+
+def media_ids(expedition):
+    return {ref['assetId'] for ref in media_refs(expedition)
+            if isinstance(ref, dict) and ref.get('kind') == 'asset' and ref.get('assetId')}

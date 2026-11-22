@@ -3,17 +3,18 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from collections import Counter
-from copy import deepcopy
 
 from google.cloud import firestore
+from google.cloud.firestore_v1 import _helpers
+from google.cloud.firestore_v1.types import Document
+
+from lecture_processor.domains.elearning.model import ElearningError
 
 from .query_utils import apply_where
 
 _activity = Counter()
 _lock = threading.Lock()
-_cache: dict[str, tuple[float, object]] = {}
 
 
 def record(kind: str, count: int = 1) -> None:
@@ -26,11 +27,6 @@ def record(kind: str, count: int = 1) -> None:
                 _activity['writes'],
             )
             _activity.clear()
-
-
-def invalidate(expedition_id: str) -> None:
-    with _lock:
-        _cache.pop('elearning_expeditions/' + str(expedition_id), None)
 
 
 def encode(value):
@@ -52,6 +48,15 @@ def decode(value):
     return value
 
 
+def document_fields(value):
+    fields = encode(value)
+    # Keep room for the Firestore document name and encoding overhead at its 1 MiB limit.
+    wire = Document(fields=_helpers.encode_dict(fields))
+    if Document.pb(wire).ByteSize() > 1024 * 1024 - 8192:
+        raise ElearningError('This expedition or response is too large to save. Shorten it and try again.', 413)
+    return fields
+
+
 class ElearningStore:
     def __init__(self, db):
         if db is None:
@@ -66,31 +71,23 @@ class ElearningStore:
         snap = self.ref(path).get()
         return decode(snap.to_dict()) if snap.exists else None
 
-    def cached(self, path: str):
-        with _lock:
-            entry = _cache.get(path)
-        if entry and time.monotonic() - entry[0] < 2:
-            return deepcopy(entry[1])
-        value = self.get(path)
-        with _lock:
-            if len(_cache) > 500:
-                _cache.clear()
-            _cache[path] = (time.monotonic(), value)
-        return deepcopy(value)
-
     def put(self, path: str, value: dict) -> None:
         record('writes')
-        self.ref(path).set(encode(value))
+        self.ref(path).set(document_fields(value))
 
     def delete(self, path: str) -> None:
         record('writes')
         self.ref(path).delete()
 
-    def list(self, collection: str, field=None, value=None, operator: str = '==', limit: int = 200):
+    def list(self, collection: str, field=None, value=None, operator: str = '==', limit: int | None = 200, fields=None):
         query = self.db.collection(collection)
         if field:
             query = apply_where(query, field, operator, value)
-        rows = [dict(decode(doc.to_dict()), _id=doc.id) for doc in query.limit(limit).stream()]
+        if fields:
+            query = query.select(fields)
+        if limit is not None:
+            query = query.limit(limit)
+        rows = [dict(decode(doc.to_dict()), _id=doc.id) for doc in query.stream()]
         record('reads', max(1, len(rows)))
         return rows
 
@@ -103,17 +100,9 @@ class ElearningStore:
                 snap = self.ref(path).get(transaction=transaction)
                 return decode(snap.to_dict()) if snap.exists else None
 
-            def list(_, collection: str, field=None, value=None, operator: str = '==', limit: int = 200):
-                query = self.db.collection(collection)
-                if field:
-                    query = apply_where(query, field, operator, value)
-                rows = [dict(decode(doc.to_dict()), _id=doc.id) for doc in query.limit(limit).stream(transaction=transaction)]
-                record('reads', max(1, len(rows)))
-                return rows
-
             def put(_, path: str, value: dict) -> None:
                 record('writes')
-                transaction.set(self.ref(path), encode(value))
+                transaction.set(self.ref(path), document_fields(value))
 
             def delete(_, path: str) -> None:
                 record('writes')

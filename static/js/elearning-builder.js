@@ -11,16 +11,28 @@
   var expeditionId = bodyData.expeditionId || '';
   var grantToken = bodyData.grantToken || '';
   var initialMode = bodyData.initialMode || 'edit';
+  var ux = window.LectureProcessorUx;
+  var bootstrap = window.LectureProcessorBootstrap;
+  var auth = grantToken ? null : bootstrap.getAuth();
+  var authClient = grantToken ? null : window.LectureProcessorAuth.createAuthClient(auth);
+  var accountSession = null;
+  var activeUser = null;
+  var loadedAccount = false;
+  var leavingAccount = false;
+  var privateMedia = new Map();
+  var saveVersion = 0;
+  var savedVersion = 0;
+  var writing = Promise.resolve();
 
   var state = {
     exp: null,
-    role: 'owner',
+    role: '',
     mode: initialMode,
     editLang: 'nl',
     trSource: 'nl',
     trTarget: 'de',
     trFilter: 'all',
-    trShowPreview: true,
+    trShowPreview: !window.matchMedia('(max-width: 720px)').matches,
     trActiveContext: { type: 'startPage', moduleId: '', stepId: '', blockId: '' },
     trPendingTexts: {},
     trPendingMedia: {},
@@ -181,11 +193,12 @@
     ariaLabel: 'Target language',
     items: LANG_OPTIONS,
     value: state.trTarget,
-    onChange: function (val) {
-      if (state.grantTargetLang) return;
+    onChange: async function (val) {
+      if (state.grantTargetLang || val === state.trTarget) return;
+      trTargetDD.setItems(LANG_OPTIONS, state.trTarget);
+      if (hasPendingTranslations() && !(await saveTranslationsNow())) return;
+      if (hasPendingTranslations()) return;
       state.trTarget = val;
-      state.trPendingTexts = {};
-      state.trPendingMedia = {};
       trTargetDD.setItems(LANG_OPTIONS, val);
       renderTranslateMode();
     },
@@ -224,46 +237,43 @@
   document.getElementById('el-preview-lang-host').appendChild(previewLangDD.el);
 
   function showToast(msg, undoCb) {
-    toastEl.textContent = '';
-    var span = document.createElement('span');
-    span.textContent = msg;
-    toastEl.appendChild(span);
-    if (typeof undoCb === 'function') {
-      var ubtn = document.createElement('button');
-      ubtn.type = 'button';
-      ubtn.className = 'el-btn el-btn-sm';
-      ubtn.textContent = 'Undo';
-      ubtn.addEventListener('click', function () {
-        toastEl.hidden = true;
-        undoCb();
-      });
-      toastEl.appendChild(ubtn);
-    }
-    toastEl.hidden = false;
-    clearTimeout(toastEl._t);
-    toastEl._t = setTimeout(function () { toastEl.hidden = true; }, 4200);
+    ux.toast(msg, {
+      element: toastEl,
+      type: undoCb === 'error' ? 'error' : 'info',
+      show: function () { toastEl.hidden = false; },
+      hide: function () { toastEl.hidden = true; },
+    });
+    if (typeof undoCb !== 'function') return;
+    var ubtn = document.createElement('button');
+    ubtn.type = 'button';
+    ubtn.className = 'el-btn el-btn-sm';
+    ubtn.textContent = 'Undo';
+    ubtn.addEventListener('click', function () {
+      toastEl.hidden = true;
+      undoCb();
+    });
+    toastEl.appendChild(ubtn);
   }
 
   function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
   function canEditStructure() { return state.role === 'owner' || state.role === 'edit'; }
 
-  async function apiHeaders(isJson) {
-    var headers = { 'X-Elearning-Session': state.sessionId };
-    if (isJson !== false) headers['Content-Type'] = 'application/json';
-    if (state.grantAccessToken) {
-      headers['X-Elearning-Access'] = state.grantAccessToken;
-    } else if (window.firebase && firebase.auth && firebase.auth().currentUser) {
-      headers.Authorization = 'Bearer ' + (await firebase.auth().currentUser.getIdToken());
+  function request(url, options) {
+    var opts = Object.assign({}, options);
+    opts.headers = Object.assign({ 'X-Elearning-Session': state.sessionId }, opts.headers);
+    if (typeof opts.body === 'string') opts.headers['Content-Type'] = 'application/json';
+    if (grantToken) {
+      if (state.grantAccessToken) opts.headers['X-Elearning-Access'] = state.grantAccessToken;
+      return fetch(url, opts);
     }
-    return headers;
+    if (!accountSession || leavingAccount) throw new Error('Sign in required');
+    accountSession.assertCurrent();
+    return authClient.authFetch(url, opts);
   }
 
   async function api(url, opts) {
-    var options = Object.assign({ method: 'GET' }, opts || {});
-    var isForm = (typeof FormData !== 'undefined' && options.body instanceof FormData);
-    options.headers = Object.assign(await apiHeaders(!isForm), options.headers || {});
-    var resp = await fetch(url, options);
-    var data = await resp.json().catch(function () { return {}; });
+    var resp = await request(url, opts);
+    var data = await resp.json();
     if (!resp.ok) {
       var err = new Error(data.error || ('Request failed (' + resp.status + ')'));
       err.status = resp.status;
@@ -274,6 +284,35 @@
 
   function assetUrl(assetId) {
     return '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/assets/' + encodeURIComponent(assetId);
+  }
+
+  function setMediaSource(element, url) {
+    if (!url.startsWith('/api/elearning/')) {
+      element.src = url;
+      return;
+    }
+    if (!privateMedia.has(url)) {
+      var resource = request(url).then(function (response) {
+        if (!response.ok) throw new Error('Could not load media.');
+        return response.blob();
+      }).then(function (blob) {
+        if (leavingAccount) throw new Error('Sign in required');
+        return URL.createObjectURL(blob);
+      });
+      privateMedia.set(url, resource);
+    }
+    privateMedia.get(url).then(function (objectUrl) {
+      if (!leavingAccount) element.src = objectUrl;
+    }).catch(function (error) {
+      if (privateMedia.delete(url) && !leavingAccount) showToast(error.message, 'error');
+    });
+  }
+
+  function resetMedia() {
+    privateMedia.forEach(function (resource) {
+      resource.then(function (url) { URL.revokeObjectURL(url); }).catch(function () {});
+    });
+    privateMedia.clear();
   }
 
   function currentModuleAndStep() {
@@ -298,6 +337,14 @@
     updateUndoButtons();
   }
 
+  function restoreSnapshot(snapshot) {
+    snapshot.revision = state.exp.revision;
+    state.exp = snapshot;
+    updateUndoButtons();
+    renderAll();
+    scheduleSave();
+  }
+
   function updateUndoButtons() {
     document.getElementById('el-undo-btn').disabled = !state.undoStack.length;
     document.getElementById('el-redo-btn').disabled = !state.redoStack.length;
@@ -311,18 +358,24 @@
   }
 
   function scheduleSave() {
-    if (!canEditStructure() || !state.leaseToken) return;
+    saveVersion++;
     setSaveStatus('Saving…', false);
     clearTimeout(state.saveTimer);
-    state.saveTimer = setTimeout(saveNow, 700);
+    state.saveTimer = setTimeout(queueStructureSave, 700);
+  }
+
+  function queueStructureSave() {
+    writing = writing.then(saveNow);
+    return writing;
   }
 
   async function saveNow() {
-    if (!canEditStructure() || !state.exp) return;
+    if (leavingAccount || savedVersion === saveVersion || !canEditStructure() || !state.exp) return;
     if (!state.leaseToken) {
       await acquireLease(false);
-      if (!state.leaseToken) return;
+      if (!state.leaseToken) { setSaveStatus('Save paused', false); return; }
     }
+    var version = saveVersion;
     try {
       var body = Object.assign({}, state.exp, {
         lease_token: state.leaseToken,
@@ -330,14 +383,14 @@
         editedLanguage: state.editLang,
       });
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId), {
-        method: 'PUT',
-        body: JSON.stringify(body),
+        method: 'PUT', body: JSON.stringify(body),
       });
       state.exp.revision = res.expedition.revision;
-      setSaveStatus('Saved', true);
+      savedVersion = version;
+      if (version === saveVersion) setSaveStatus('Saved', true);
     } catch (err) {
       setSaveStatus('Save paused', false);
-      showToast(err.message);
+      showToast(err.message, 'error');
     }
   }
 
@@ -350,12 +403,16 @@
       });
       if (res.granted) {
         state.leaseToken = res.lease_token;
+        titleInput.disabled = false;
+        workspace.inert = false;
         leaseBanner.hidden = true;
-        setSaveStatus('Saved', true);
+        if (savedVersion === saveVersion) setSaveStatus('Saved', true);
         clearInterval(state.leaseTimer);
         state.leaseTimer = setInterval(function () { acquireLease(false); }, 40000);
       } else {
         state.leaseToken = '';
+        titleInput.disabled = true;
+        workspace.inert = true;
         var edName = (res.editor && res.editor.name) || 'A collaborator';
         var agoSec = (res.editor && res.editor.updated_at) ? Math.max(1, Math.round(Date.now() / 1000 - res.editor.updated_at)) : 0;
         var agoTxt = agoSec ? (' (active ' + (agoSec < 60 ? (agoSec + 's') : (Math.round(agoSec / 60) + 'm')) + ' ago)') : '';
@@ -364,16 +421,23 @@
         saveStateEl.textContent = edName + ' editing';
         saveStateEl.className = 'el-save-chip is-warn';
       }
-    } catch (_err) {
-      // Ignore transient heartbeat errors
+    } catch (err) {
+      if (!state.leaseToken) {
+        leaseMsg.textContent = err.message;
+        leaseBanner.hidden = false;
+        setSaveStatus('Save paused', false);
+      }
     }
   }
 
   function mutate(fn, opts) {
-    if (!canEditStructure()) return;
+    if (!canEditStructure() || !state.leaseToken || !state.exp || leavingAccount) return;
     if (!opts || opts.recordUndo !== false) pushUndo();
     fn();
-    if (!opts || opts.rerender !== false) renderAll();
+    if (opts && opts.recordUndo === false && inspectorBodyEl.contains(document.activeElement)) {
+      renderCanvas();
+      renderOutline();
+    } else if (!opts || opts.rerender !== false) renderAll();
     else updateReadabilityCue();
     scheduleSave();
   }
@@ -393,7 +457,7 @@
       });
       showToast('Media uploaded!');
     } catch (err) {
-      showToast(err.message);
+      showToast(err.message, 'error');
     }
   }
 
@@ -412,9 +476,7 @@
     document.getElementById('el-edit-lang-host').hidden = nextMode !== 'edit';
     var topSep = document.querySelector('.el-topbar-sep');
     if (topSep) topSep.hidden = nextMode !== 'edit';
-    if (nextMode === 'translate') renderTranslateMode();
-    if (nextMode === 'preview') renderPreviewMode();
-    if (nextMode === 'edit') renderAll();
+    renderAll();
   }
 
   /* ---- Left Rail with Real Drag-and-Drop ---- */
@@ -482,6 +544,7 @@
       var dot = document.createElement('span');
       dot.className = 'xped-domain-dot domain-' + (mod.domain || 'general');
       var label = document.createElement('span');
+      label.setAttribute('translate', 'no');
       label.textContent = Model.getLocalized(mod.title, state.editLang, state.exp.defaultLanguage) || ('Station ' + (mIdx + 1));
       headBtn.appendChild(dot);
       headBtn.appendChild(label);
@@ -544,7 +607,11 @@
       stepList.className = 'el-step-list';
       (mod.steps || []).forEach(function (step, sIdx) {
         var active = state.selectedTarget.type === 'step' && state.selectedTarget.stepId === step.id;
+        var stepLine = document.createElement('div');
+        stepLine.className = 'el-step-line' + (active ? ' is-active' : '');
         var sbtn = document.createElement('button');
+        stepLine.appendChild(sbtn);
+        if (active) sbtn.setAttribute('aria-current', 'step');
         sbtn.type = 'button';
         sbtn.className = 'el-step-row' + (active ? ' is-active' : '');
         if (canEditStructure()) {
@@ -588,6 +655,7 @@
 
         var titleSpan = document.createElement('span');
         titleSpan.className = 'el-outline-item-text';
+        titleSpan.setAttribute('translate', 'no');
         titleSpan.textContent = (sIdx + 1) + '. ' + (Model.getLocalized(step.title, state.editLang, state.exp.defaultLanguage) || 'Untitled step');
         sbtn.appendChild(titleSpan);
 
@@ -624,12 +692,12 @@
           });
           stepMove.appendChild(sUp);
           stepMove.appendChild(sDn);
-          sbtn.appendChild(stepMove);
+          stepLine.appendChild(stepMove);
         }
 
         if (step.authorNotes && step.authorNotes.trim()) {
           var noteIco = Icons.icon('note', 13);
-          noteIco.style.opacity = '0.55';
+          noteIco.classList.add('el-note-icon');
           sbtn.appendChild(noteIco);
         }
         var stDot = document.createElement('span');
@@ -642,7 +710,7 @@
           state.selectedBlockId = (step.blocks && step.blocks[0]) ? step.blocks[0].id : '';
           renderAll();
         });
-        stepList.appendChild(sbtn);
+        stepList.appendChild(stepLine);
       });
 
       if (canEditStructure()) {
@@ -784,17 +852,18 @@
   function renderCanvas() {
     var lang = state.editLang;
     var defLang = state.exp.defaultLanguage || 'nl';
+    canvasCardEl.lang = lang;
     canvasFrameEl.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
     canvasFrameEl.classList.toggle('is-mobile', state.viewport === 'mobile');
 
     if (state.selectedTarget.type === 'startPage') {
-      canvasCrumbEl.textContent = 'Start Page & Expedition Route · ' + lang.toUpperCase() + ' (Click any text to edit directly)';
+      canvasCrumbEl.textContent = 'Start Page · ' + lang.toUpperCase();
       stageFooterEl.hidden = true;
       RouteMap.renderStartPage(canvasCardEl, {
         exp: state.exp,
         lang: lang,
         editable: canEditStructure(),
-        assetUrl: assetUrl,
+        assetUrl: assetUrl, setMediaSource: setMediaSource,
         onEditField: function (key, val) {
           var sp = state.exp.startPage;
           if (key.indexOf('highlight:') === 0) {
@@ -927,7 +996,7 @@
           { ic: 'trash', title: 'Delete block', fn: function () {
             var snap = clone(state.exp);
             mutate(function () { pair.step.blocks.splice(bIdx, 1); state.selectedBlockId = ''; });
-            showToast('Block deleted.', function () { state.exp = snap; renderAll(); scheduleSave(); });
+            showToast('Block deleted.', function () { restoreSnapshot(snap); });
           } },
         ].forEach(function (a) {
           var b = document.createElement('button');
@@ -950,7 +1019,7 @@
         editable: canEditStructure(),
         onEdit: handleBlockInlineEdit,
         onUploadFile: uploadFileForBlock,
-        assetUrl: assetUrl,
+        assetUrl: assetUrl, setMediaSource: setMediaSource,
       }));
       stack.appendChild(wrap);
     });
@@ -969,9 +1038,7 @@
       stack.appendChild(empty);
     } else if (canEditStructure()) {
       var addRow = document.createElement('div');
-      addRow.style.display = 'flex';
-      addRow.style.justifyContent = 'center';
-      addRow.style.marginTop = '8px';
+      addRow.className = 'el-add-block-row';
       var addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'el-btn';
@@ -997,7 +1064,10 @@
     if (!multiline) inp.type = 'text';
     else inp.rows = 3;
     inp.value = value || '';
-    inp.addEventListener('input', function () { onChange(inp.value); });
+    lab.htmlFor = inp.id = Model.uid('field');
+    inp.addEventListener('input', function () {
+      onChange(inp.value);
+    });
     wrap.appendChild(lab);
     wrap.appendChild(inp);
     return wrap;
@@ -1050,11 +1120,19 @@
     ));
 
     if (!audioOnly) {
-      var sub = document.createElement('div');
-      sub.className = 'el-insp-section-title';
-      sub.style.marginTop = '12px';
-      sub.textContent = 'Official xPED Illustrations';
-      box.appendChild(sub);
+      var library = document.createElement('details');
+      library.className = 'el-asset-library';
+      var summary = document.createElement('summary');
+      var current = Model.XPED_ASSETS.find(function (asset) { return currentRef?.staticPath === asset.path; });
+      if (current) {
+        var thumbnail = document.createElement('img');
+        thumbnail.src = current.path;
+        thumbnail.alt = '';
+        summary.appendChild(thumbnail);
+      }
+      summary.append('Official xPED Illustrations');
+      library.appendChild(summary);
+      box.appendChild(library);
 
       var grid = document.createElement('div');
       grid.className = 'el-asset-grid';
@@ -1062,6 +1140,7 @@
       noneBtn.type = 'button';
       noneBtn.className = 'el-asset-thumb' + (!currentRef || currentRef.kind === 'none' ? ' is-selected' : '');
       noneBtn.textContent = 'None';
+      noneBtn.setAttribute('aria-pressed', String(!currentRef || currentRef.kind === 'none'));
       noneBtn.addEventListener('click', function () { onPick({ kind: 'none', assetId: '', staticPath: '' }); });
       grid.appendChild(noneBtn);
 
@@ -1071,7 +1150,9 @@
         btn.className = 'el-asset-thumb' + (currentRef && currentRef.staticPath === asset.path ? ' is-selected' : '');
         var img = document.createElement('img');
         img.src = asset.path;
-        img.alt = asset.label;
+        img.alt = '';
+        img.loading = 'lazy';
+        btn.setAttribute('aria-pressed', String(currentRef?.staticPath === asset.path));
         var sp = document.createElement('span');
         sp.textContent = asset.label;
         btn.appendChild(img);
@@ -1079,7 +1160,7 @@
         btn.addEventListener('click', function () { onPick({ kind: 'xped', assetId: '', staticPath: asset.path }); });
         grid.appendChild(btn);
       });
-      box.appendChild(grid);
+      library.appendChild(grid);
     }
     return box;
   }
@@ -1233,7 +1314,7 @@
 
       var dangerRow = document.createElement('div');
       dangerRow.className = 'el-btn-row';
-      dangerRow.style.marginTop = '14px';
+      dangerRow.classList.add('el-danger-row');
       var delStep = document.createElement('button');
       delStep.type = 'button';
       delStep.className = 'el-btn el-btn-danger el-btn-sm';
@@ -1245,7 +1326,7 @@
           mod.steps = mod.steps.filter(function (s) { return s.id !== step.id; });
           state.selectedTarget = { type: 'step', moduleId: mod.id, stepId: mod.steps[0].id };
         });
-        showToast('Step deleted.', function () { state.exp = snap; renderAll(); scheduleSave(); });
+        showToast('Step deleted.', function () { restoreSnapshot(snap); });
       });
       var delMod = document.createElement('button');
       delMod.type = 'button';
@@ -1257,7 +1338,7 @@
           state.exp.modules = state.exp.modules.filter(function (m) { return m.id !== mod.id; });
           state.selectedTarget = { type: 'startPage' };
         });
-        showToast('Station deleted.', function () { state.exp = snap; renderAll(); scheduleSave(); });
+        showToast('Station deleted.', function () { restoreSnapshot(snap); });
       });
       dangerRow.appendChild(delStep);
       dangerRow.appendChild(delMod);
@@ -1286,7 +1367,7 @@
 
     var editTip = document.createElement('p');
     editTip.className = 'xped-caption';
-    editTip.style.marginBottom = '12px';
+    editTip.classList.add('el-edit-tip');
     editTip.textContent = 'Click directly on the slide to edit visible text.';
     inspectorBodyEl.appendChild(editTip);
 
@@ -1479,6 +1560,7 @@
   function renderTranslatePreview() {
     if (!state.exp || !state.trShowPreview) return;
     document.getElementById('el-tr-preview-lang-tag').textContent = state.trTarget.toUpperCase();
+    translatePreviewStage.lang = state.trTarget;
     translatePreviewStage.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
 
     var ctx = state.trActiveContext;
@@ -1487,14 +1569,14 @@
         exp: state.exp,
         lang: state.trTarget,
         editable: false,
-        assetUrl: assetUrl,
+        assetUrl: assetUrl, setMediaSource: setMediaSource,
       });
       return;
     }
     var mod = (state.exp.modules || []).find(function (m) { return m.id === ctx.moduleId; });
     var step = mod && (mod.steps || []).find(function (s) { return s.id === ctx.stepId; });
     if (!mod || !step) {
-      RouteMap.renderStartPage(translatePreviewStage, { exp: state.exp, lang: state.trTarget, editable: false, assetUrl: assetUrl });
+      RouteMap.renderStartPage(translatePreviewStage, { exp: state.exp, lang: state.trTarget, editable: false, assetUrl: assetUrl, setMediaSource: setMediaSource });
       return;
     }
     translatePreviewStage.textContent = '';
@@ -1514,7 +1596,7 @@
         stepTitle: stTitle,
         interactive: false,
         highlightBlockId: ctx.blockId || '',
-        assetUrl: assetUrl,
+        assetUrl: assetUrl, setMediaSource: setMediaSource,
       }));
     });
     card.appendChild(stack);
@@ -1522,7 +1604,7 @@
     if (ctx.blockId) {
       var targetEl = translatePreviewStage.querySelector('[data-block-id="' + ctx.blockId + '"]');
       if (targetEl && typeof targetEl.scrollIntoView === 'function') {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        targetEl.scrollIntoView({ behavior: ux.prefersReducedMotion() ? 'auto' : 'smooth', block: 'nearest' });
       }
     }
   }
@@ -1534,26 +1616,57 @@
     state.trSaveTimer = setTimeout(saveTranslationsNow, 900);
   }
 
-  async function saveTranslationsNow() {
-    if (!Object.keys(state.trPendingTexts).length && !Object.keys(state.trPendingMedia).length) return;
+  function hasPendingTranslations() {
+    return Object.keys(state.trPendingTexts).length || Object.keys(state.trPendingMedia).length;
+  }
+
+  function saveTranslationsNow() {
+    writing = writing.then(persistTranslations);
+    return writing;
+  }
+
+  async function persistTranslations() {
+    if (leavingAccount || !hasPendingTranslations()) return true;
+    var target = state.trTarget;
+    var previousRevision = state.exp.revision;
+    var texts = Object.assign({}, state.trPendingTexts);
+    var media = Object.assign({}, state.trPendingMedia);
     try {
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/translations', {
         method: 'POST',
-        body: JSON.stringify({
-          targetLanguage: state.trTarget,
-          textUpdates: state.trPendingTexts,
-          mediaUpdates: state.trPendingMedia,
-        }),
+        body: JSON.stringify({ targetLanguage: target, textUpdates: texts, mediaUpdates: media }),
       });
-      state.exp = res.expedition;
-      state.trPendingTexts = {};
-      state.trPendingMedia = {};
-      translateAutosaveEl.textContent = 'Saved';
-      translateAutosaveEl.className = 'el-status-inline is-live';
-      setSaveStatus('Saved', true);
+      if (res.expedition.revision !== previousRevision + 1) {
+        // Another contributor saved since this document was loaded. Keep the
+        // current textareas intact while adopting the server's latest structure.
+        var localRows = Model.extractTranslationRows(res.expedition, state.trSource, target);
+        localRows.forEach(function (row) {
+          if (Object.hasOwn(state.trPendingTexts, row.key)) row.locObj[target] = state.trPendingTexts[row.key];
+        });
+        state.exp = res.expedition;
+      } else {
+        state.exp.revision = res.expedition.revision;
+      }
+      // A structural undo snapshot predates this translation and could erase it.
+      state.undoStack = [];
+      state.redoStack = [];
+      updateUndoButtons();
+      Object.keys(texts).forEach(function (key) {
+        if (state.trPendingTexts[key] === texts[key]) delete state.trPendingTexts[key];
+      });
+      Object.keys(media).forEach(function (key) {
+        if (state.trPendingMedia[key] === media[key]) delete state.trPendingMedia[key];
+      });
+      if (!hasPendingTranslations()) {
+        translateAutosaveEl.textContent = 'Saved';
+        translateAutosaveEl.className = 'el-status-inline is-live';
+        if (saveVersion === savedVersion) setSaveStatus('Saved', true);
+      }
+      return true;
     } catch (err) {
       translateAutosaveEl.textContent = 'Save failed';
-      showToast(err.message);
+      showToast(err.message, 'error');
+      return false;
     }
   }
 
@@ -1606,7 +1719,10 @@
       inp.value = mr.targetUrl || '';
       inp.addEventListener('change', function () {
         var val = inp.value.trim();
-        state.trPendingMedia[mr.key] = val;
+        state.trPendingMedia[mr.blockId] = val;
+        var overrides = mr.block.data.mediaOverrides || (mr.block.data.mediaOverrides = {});
+        if (val) overrides[state.trTarget] = Object.assign({ url: val }, Model.parseVideoUrl(val));
+        else delete overrides[state.trTarget];
         scheduleTranslateAutosave();
       });
       row.appendChild(lbl);
@@ -1623,7 +1739,7 @@
       var candidate = tas[(activeIdx + i) % tas.length];
       if (!candidate.value.trim() || candidate.closest('.el-tr-row').dataset.status === 'needs_review') {
         candidate.focus();
-        candidate.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        candidate.scrollIntoView({ behavior: ux.prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
         return;
       }
     }
@@ -1632,7 +1748,8 @@
 
   function renderTranslateMode() {
     if (!state.exp) return;
-    document.getElementById('el-tr-welcome').hidden = (state.role !== 'translate' && !grantToken);
+    document.querySelector('#el-tr-welcome p').hidden = (state.role !== 'translate' && !grantToken);
+    document.getElementById('el-tr-toggle-preview').setAttribute('aria-pressed', String(state.trShowPreview));
     translatePreviewPane.hidden = !state.trShowPreview;
     translateSplit.classList.toggle('no-preview', !state.trShowPreview);
     renderTranslateGlossary();
@@ -1677,6 +1794,7 @@
       det.open = true;
       var sum = document.createElement('summary');
       var left = document.createElement('span');
+      if (grp.title !== 'Start Page') left.setAttribute('translate', 'no');
       left.textContent = grp.title;
       var cnt = document.createElement('span');
       cnt.className = 'xped-caption';
@@ -1713,6 +1831,8 @@
         var pair = document.createElement('div');
         pair.className = 'el-tr-pair';
         var srcBox = document.createElement('div');
+        srcBox.setAttribute('translate', 'no');
+        srcBox.lang = state.trSource;
         srcBox.className = 'el-tr-source';
         var srcPrimary = document.createElement('div');
         srcPrimary.textContent = row.source || '(empty)';
@@ -1729,10 +1849,18 @@
 
         var ta = document.createElement('textarea');
         ta.className = 'xped-textarea';
+        ta.lang = state.trTarget;
+        ta.setAttribute('aria-label', row.location + ' (' + state.trTarget.toUpperCase() + ')');
         ta.rows = row.source.length > 90 ? 3 : 2;
         ta.placeholder = 'Write ' + state.trTarget.toUpperCase() + ' translation… (Ctrl/Cmd+Enter for next)';
         ta.value = state.trPendingTexts[row.key] !== undefined ? state.trPendingTexts[row.key] : row.target;
 
+        var rowExp = state.exp;
+        function updateLocalizedText(value) {
+          var activeRow = rowExp === state.exp ? row : Model.extractTranslationRows(state.exp, state.trSource, state.trTarget).find(function (item) { return item.key === row.key; });
+          if (activeRow) activeRow.locObj[state.trTarget] = value;
+          state.trPendingTexts[row.key] = value;
+        }
         function focusContext() {
           document.querySelectorAll('.el-tr-row.is-active').forEach(function (n) { n.classList.remove('is-active'); });
           rEl.classList.add('is-active');
@@ -1752,16 +1880,14 @@
           }
         });
         ta.addEventListener('input', function () {
-          state.trPendingTexts[row.key] = ta.value;
-          row.locObj[state.trTarget] = ta.value;
+          updateLocalizedText(ta.value);
           rEl.dataset.status = ta.value.trim() ? 'translated' : 'untranslated';
           renderTranslatePreview();
           scheduleTranslateAutosave();
         });
         copySrc.addEventListener('click', function () {
           ta.value = row.source;
-          state.trPendingTexts[row.key] = ta.value;
-          row.locObj[state.trTarget] = ta.value;
+          updateLocalizedText(ta.value);
           focusContext();
           scheduleTranslateAutosave();
         });
@@ -1801,6 +1927,7 @@
   function renderPreviewMode() {
     if (!state.exp) return;
     var pLang = state.previewLang || state.editLang;
+    previewContainerEl.lang = pLang;
     previewContainerEl.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
     previewContainerEl.classList.toggle('is-mobile', state.previewViewport === 'mobile');
     previewContainerEl.textContent = '';
@@ -1812,7 +1939,7 @@
         lang: pLang,
         editable: false,
         completedModuleIds: state.previewPos.completedIds || [],
-        assetUrl: assetUrl,
+        assetUrl: assetUrl, setMediaSource: setMediaSource,
         onStart: function () {
           state.previewPos.view = 'step';
           state.previewPos.modIdx = 0;
@@ -1833,7 +1960,7 @@
     if (state.previewPos.view === 'milestone') {
       var mCard = document.createElement('div');
       mCard.className = 'xped-card domain-accent-' + (mod.domain || 'general') + ' anim-next';
-      mCard.style.textAlign = 'center';
+      mCard.classList.add('el-milestone-preview');
       var mh = document.createElement('h1');
       mh.className = 'xped-step-title';
       mh.textContent = Model.ui(pLang, 'milestoneTitle');
@@ -1889,7 +2016,7 @@
             locked.classList.add('xped-reveal-unlocked');
           });
         },
-        assetUrl: assetUrl,
+        assetUrl: assetUrl, setMediaSource: setMediaSource,
       }));
     });
     card.appendChild(stack);
@@ -2064,7 +2191,7 @@
       renderGrantsList(data.grants || []);
       shareDialog.showModal();
     } catch (err) {
-      showToast(err.message);
+      showToast(err.message, 'error');
     }
   }
 
@@ -2104,7 +2231,7 @@
       inp.type = 'text';
       inp.readOnly = true;
       inp.value = url;
-      inp.style.flex = '1';
+      inp.classList.add('el-grant-url');
       var lbl = document.createElement('span');
       lbl.textContent = (g.label || 'Translator') + ' (' + String(g.targetLanguage || 'de').toUpperCase() + ')';
       var rev = document.createElement('button');
@@ -2151,11 +2278,15 @@
   function renderAll() {
     if (!state.exp) return;
     titleInput.value = state.exp.title || '';
-    titleInput.disabled = !canEditStructure();
+    titleInput.disabled = !canEditStructure() || !state.leaseToken;
+    workspace.inert = !state.leaseToken;
     document.getElementById('el-share-btn').hidden = !canEditStructure();
     moreMenuDD.el.hidden = !canEditStructure();
     var editTab = document.querySelector('.el-mode-tab[data-mode="edit"]');
     if (editTab) editTab.hidden = !canEditStructure();
+    utilitiesButton.hidden = !canEditStructure();
+    document.getElementById('el-undo-btn').hidden = !canEditStructure();
+    document.getElementById('el-redo-btn').hidden = !canEditStructure();
     refreshMoreMenu();
 
     if (state.mode === 'edit') {
@@ -2168,6 +2299,37 @@
       renderPreviewMode();
     }
   }
+
+  /* On smaller screens the same outline, canvas and inspector share the stage. */
+  var workspace = document.getElementById('el-mode-edit');
+  function selectPane(pane) {
+    workspace.dataset.pane = pane;
+    workspace.querySelectorAll('.el-pane-btn').forEach(function (button) {
+      button.setAttribute('aria-pressed', String(button.dataset.pane === pane));
+    });
+  }
+  workspace.querySelector('.el-pane-nav').addEventListener('click', function (event) {
+    var button = event.target.closest('.el-pane-btn');
+    if (button) selectPane(button.dataset.pane);
+  });
+  workspace.querySelector('.el-outline-rail').addEventListener('click', function (event) {
+    if (event.target.closest('.el-step-row, .el-module-title-btn, #el-nav-start-page, .el-quiet-add-step')) selectPane('canvas');
+  });
+  var utilitiesButton = document.getElementById('el-utilities-toggle');
+  utilitiesButton.appendChild(Icons.icon('sliders', 17));
+  var utilities = document.getElementById('el-editor-utilities');
+  utilitiesButton.addEventListener('click', function () {
+    utilitiesButton.setAttribute('aria-expanded', String(utilitiesButton.getAttribute('aria-expanded') !== 'true'));
+  });
+  document.addEventListener('click', function (event) {
+    if (!utilities.contains(event.target) && !utilitiesButton.contains(event.target)) utilitiesButton.setAttribute('aria-expanded', 'false');
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && utilitiesButton.getAttribute('aria-expanded') === 'true') {
+      utilitiesButton.setAttribute('aria-expanded', 'false');
+      utilitiesButton.focus();
+    }
+  });
 
   /* ---- Wire Controls ---- */
   titleInput.addEventListener('input', function () {
@@ -2201,7 +2363,19 @@
   });
 
   document.querySelectorAll('.el-mode-tab').forEach(function (tab) {
-    tab.addEventListener('click', function () { setMode(tab.getAttribute('data-mode')); });
+    tab.addEventListener('click', async function () {
+      if (!state.exp) return;
+      if (state.mode === 'edit' && savedVersion !== saveVersion) {
+        clearTimeout(state.saveTimer);
+        await queueStructureSave();
+        if (savedVersion !== saveVersion) return;
+      }
+      if (state.mode === 'translate' && hasPendingTranslations()) {
+        clearTimeout(state.trSaveTimer);
+        if (!(await saveTranslationsNow()) || hasPendingTranslations()) return;
+      }
+      setMode(tab.getAttribute('data-mode'));
+    });
   });
   document.querySelectorAll('.el-insp-tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
@@ -2230,18 +2404,12 @@
   document.getElementById('el-undo-btn').addEventListener('click', function () {
     if (!state.undoStack.length) return;
     state.redoStack.push(clone(state.exp));
-    state.exp = state.undoStack.pop();
-    updateUndoButtons();
-    renderAll();
-    scheduleSave();
+    restoreSnapshot(state.undoStack.pop());
   });
   document.getElementById('el-redo-btn').addEventListener('click', function () {
     if (!state.redoStack.length) return;
     state.undoStack.push(clone(state.exp));
-    state.exp = state.redoStack.pop();
-    updateUndoButtons();
-    renderAll();
-    scheduleSave();
+    restoreSnapshot(state.redoStack.pop());
   });
 
   document.getElementById('el-takeover-btn').addEventListener('click', function () { acquireLease(true); });
@@ -2259,7 +2427,7 @@
       await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', { method: 'POST', body: JSON.stringify(body) });
       showToast('Share settings updated.');
       if (extra && extra.rotateToken) openShareDialog();
-    } catch (err) { showToast(err.message); }
+    } catch (err) { showToast(err.message, 'error'); }
   }
   document.getElementById('el-share-enabled').addEventListener('change', function () { savePublicShareSettings(); });
   document.getElementById('el-share-peer-results').addEventListener('change', function () { savePublicShareSettings(); });
@@ -2318,7 +2486,7 @@
       document.getElementById('el-member-email').value = '';
       renderMembersList(res.members || []);
       showToast('Collaborator added!');
-    } catch (err) { showToast(err.message); }
+    } catch (err) { showToast(err.message, 'error'); }
   });
   document.getElementById('el-create-grant-btn').addEventListener('click', async function () {
     var label = document.getElementById('el-grant-label').value.trim() || 'German Editor';
@@ -2330,7 +2498,7 @@
       });
       showToast('Translator link created!');
       openShareDialog();
-    } catch (err) { showToast(err.message); }
+    } catch (err) { showToast(err.message, 'error'); }
   });
 
   document.getElementById('el-tr-toggle-preview').addEventListener('click', function () {
@@ -2341,9 +2509,8 @@
   document.getElementById('el-tr-save-btn').addEventListener('click', saveTranslationsNow);
   document.getElementById('el-tr-export-csv').addEventListener('click', async function () {
     try {
-      var headers = await apiHeaders(false);
       var url = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/translations/export.csv?source=' + encodeURIComponent(state.trSource) + '&target=' + encodeURIComponent(state.trTarget);
-      var resp = await fetch(url, { headers: headers });
+      var resp = await request(url);
       if (!resp.ok) throw new Error('Could not export CSV.');
       var blob = await resp.blob();
       var a = document.createElement('a');
@@ -2351,25 +2518,40 @@
       a.download = 'xped-translations-' + state.trTarget + '.csv';
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-    } catch (err) { showToast(err.message); }
+    } catch (err) { showToast(err.message, 'error'); }
   });
   var csvInp = document.getElementById('el-tr-import-csv-input');
   document.getElementById('el-tr-import-csv-btn').addEventListener('click', function () { csvInp.click(); });
   csvInp.addEventListener('change', async function () {
     var file = csvInp.files && csvInp.files[0];
     if (!file) return;
+    var toolbar = document.querySelector('.el-topbar');
+    var form = document.getElementById('el-mode-translate');
+    toolbar.inert = true;
+    form.inert = true;
     var fd = new FormData();
     fd.append('file', file);
     fd.append('targetLanguage', state.trTarget);
     try {
+      clearTimeout(state.trSaveTimer);
+      if (!(await saveTranslationsNow())) return;
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/translations/import?target=' + encodeURIComponent(state.trTarget), {
         method: 'POST',
         body: fd,
       });
       state.exp = res.expedition;
+      state.undoStack = [];
+      state.redoStack = [];
+      updateUndoButtons();
       showToast('Imported ' + (res.appliedCount || 0) + ' translated fields!');
       renderTranslateMode();
-    } catch (err) { showToast(err.message); } finally { csvInp.value = ''; }
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      csvInp.value = '';
+      toolbar.inert = false;
+      form.inert = false;
+    }
   });
 
   document.getElementById('el-preview-reset').addEventListener('click', function () {
@@ -2384,6 +2566,24 @@
   Model.enableDialogLightDismissFallback();
   Model.setupCopyButtons();
 
+  function showUnavailable(message) {
+    setSaveStatus(message, false);
+    ['el-mode-edit', 'el-mode-translate', 'el-mode-preview'].forEach(function (id) { document.getElementById(id).hidden = true; });
+    document.querySelector('.el-topbar-center').hidden = true;
+    document.querySelector('.el-topbar-right').hidden = true;
+    titleInput.hidden = true;
+    var panel = document.createElement('p');
+    panel.className = 'el-editor-unavailable';
+    panel.textContent = message;
+    if (!grantToken && !activeUser) {
+      var link = document.createElement('a');
+      link.href = window.LectureProcessorAuth.buildSignInUrl(window.location.pathname);
+      link.textContent = 'Sign in';
+      panel.append(' ', link);
+    }
+    document.querySelector('.el-topbar').after(panel);
+  }
+
   async function loadExpedition() {
     try {
       if (grantToken && !state.grantAccessToken) {
@@ -2395,11 +2595,11 @@
         expeditionId = ex.expeditionId;
         state.grantTargetLang = ex.targetLanguage || 'de';
         state.trTarget = state.grantTargetLang;
-        trTargetDD.setItems(LANG_OPTIONS, state.trTarget);
+        trTargetDD.setItems(LANG_OPTIONS.filter(function (item) { return item.value === state.trTarget; }), state.trTarget);
       }
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId));
       state.exp = res.expedition;
-      state.role = res.expedition.role || 'owner';
+      state.role = res.expedition.role || '';
       state.editLang = state.exp.defaultLanguage || 'nl';
       state.previewLang = state.editLang;
       editLangDD.setItems(LANG_OPTIONS, state.editLang);
@@ -2409,19 +2609,35 @@
       if (canEditStructure()) await acquireLease(false);
       setMode(state.mode);
     } catch (err) {
-      setSaveStatus('Unavailable', false);
-      showToast(err.message);
+      showUnavailable(err.message);
     }
   }
 
+  window.addEventListener('beforeunload', function (event) {
+    if (!leavingAccount && (savedVersion !== saveVersion || Object.keys(state.trPendingTexts).length || Object.keys(state.trPendingMedia).length)) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  });
   if (grantToken) {
     loadExpedition();
-  } else if (window.firebase && firebase.auth) {
-    firebase.auth().onAuthStateChanged(function (user) {
-      if (user) loadExpedition();
-      else setSaveStatus('Sign in required', false);
-    });
   } else {
-    loadExpedition();
+    bootstrap.onAuthStateReady(auth, function (user) {
+      if (loadedAccount && (activeUser?.uid || '') !== (user?.uid || '')) {
+        leavingAccount = true;
+        clearTimeout(state.saveTimer);
+        clearTimeout(state.trSaveTimer);
+        clearInterval(state.leaseTimer);
+        resetMedia();
+        document.body.hidden = true;
+        window.location.reload();
+        return;
+      }
+      activeUser = user;
+      accountSession = authClient.captureSession();
+      loadedAccount = true;
+      if (user) loadExpedition();
+      else showUnavailable('Sign in required');
+    });
   }
 })();

@@ -35,7 +35,9 @@ pytestmark = pytest.mark.usefixtures("disable_sentry")
 @pytest.fixture(autouse=True)
 def isolate_book_account_boundary(monkeypatch):
     # Book ownership cleanup has its own transactional tests; these tests isolate account orchestration.
-    from lecture_processor.services import book_account_service
+    from lecture_processor.services import book_account_service, elearning_account_service
+    monkeypatch.setattr(elearning_account_service, 'delete_owned', lambda *args: 0)
+    monkeypatch.setattr(elearning_account_service, 'collect', lambda *args: [])
     monkeypatch.setattr(book_account_service, 'delete_owned', lambda *args: 0)
     monkeypatch.setattr(book_account_service, 'collect', lambda *args: [])
     from lecture_processor.services import study_picture_service

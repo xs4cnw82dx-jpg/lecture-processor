@@ -8,33 +8,31 @@
   var createDialog = document.getElementById('el-create-dialog');
   var deleteDialog = document.getElementById('el-delete-dialog');
   var pendingDeleteExp = null;
-  var toastEl = document.getElementById('el-toast');
-  var currentToken = '';
+  var actionsEl = document.getElementById('el-author-actions');
+  var retry = document.getElementById('el-retry');
+  var signIn = document.getElementById('el-signin');
+  var auth;
+  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  var client = window.LectureProcessorAuth.createAuthClient(auth);
+  var listRequest = 0;
 
-  function showToast(message) {
-    if (!toastEl) return;
-    toastEl.textContent = message;
-    toastEl.hidden = false;
-    clearTimeout(toastEl._t);
-    toastEl._t = setTimeout(function () { toastEl.hidden = true; }, 3200);
+  function toast(message, type) {
+    window.LectureProcessorUx.toast(message, { type: type });
   }
 
-  async function authHeaders() {
-    var headers = { 'Content-Type': 'application/json' };
-    if (window.firebase && firebase.auth && firebase.auth().currentUser) {
-      currentToken = await firebase.auth().currentUser.getIdToken();
-    }
-    if (currentToken) headers.Authorization = 'Bearer ' + currentToken;
-    return headers;
-  }
-
-  async function api(url, opts) {
-    var options = Object.assign({ method: 'GET' }, opts || {});
-    options.headers = Object.assign(await authHeaders(), options.headers || {});
-    var resp = await fetch(url, options);
-    var data = await resp.json().catch(function () { return {}; });
-    if (!resp.ok) throw new Error(data.error || ('Request failed (' + resp.status + ')'));
+  async function api(url, options) {
+    var response = await client.authFetch(url, options, { ensureJsonContentType: true });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not complete this request.');
     return data;
+  }
+
+  function actionLink(label, url, primary) {
+    var link = document.createElement('a');
+    link.className = primary ? 'btn small' : 'el-action-link';
+    link.href = url;
+    link.textContent = label;
+    return link;
   }
 
   function renderExpeditions(items) {
@@ -43,26 +41,12 @@
       statusEl.textContent = '';
       var empty = document.createElement('div');
       empty.className = 'el-dash-empty';
-      var img = document.createElement('img');
-      img.src = '/static/images/xped/xped-wandelaar-met-kaart.png';
-      img.alt = '';
       var body = document.createElement('div');
       var h2 = document.createElement('h2');
-      h2.textContent = 'Start your first xPEDitie Pijn module';
+      h2.textContent = 'Create your first expedition';
       var p = document.createElement('p');
-      p.textContent = 'Begin with a blank shell ready for your thesis partner, or launch the interactive showcase to explore Myth/Fact, Draagkracht Balance Scale, and multilingual DE translation.';
-      var row = document.createElement('div');
-      row.className = 'el-dash-actions';
-      var b1 = document.createElement('button');
-      b1.type = 'button';
-      b1.className = 'xped-btn xped-btn-sun';
-      b1.textContent = '+ Create Expedition';
-      b1.addEventListener('click', function () { createDialog.showModal(); });
-      row.appendChild(b1);
-      body.appendChild(h2);
-      body.appendChild(p);
-      body.appendChild(row);
-      empty.appendChild(img);
+      p.textContent = 'Use New expedition to start with a blank station or explore an interactive example.';
+      body.append(h2, p);
       empty.appendChild(body);
       grid.appendChild(empty);
       return;
@@ -70,95 +54,84 @@
     statusEl.textContent = items.length + (items.length === 1 ? ' expedition' : ' expeditions');
     items.forEach(function (exp) {
       var card = document.createElement('article');
-      card.className = 'el-exp-card';
-
+      card.className = 'el-exp-row';
+      var editUrl = '/physio/elearning/' + encodeURIComponent(exp.id) + '/edit';
+      var detail = document.createElement('div');
       var top = document.createElement('div');
       top.className = 'el-exp-card-top';
       var h2 = document.createElement('h2');
-      h2.textContent = exp.title || 'Untitled Expedition';
+      var title = document.createElement(exp.deletionPending ? 'span' : 'a');
+      if (!exp.deletionPending) title.href = editUrl;
+      title.textContent = exp.title || 'Untitled Expedition';
+      title.setAttribute('translate', 'no');
+      h2.appendChild(title);
       var badge = document.createElement('span');
       badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
-      badge.textContent = exp.shareEnabled ? 'Test link live' : 'Draft';
-      top.appendChild(h2);
-      top.appendChild(badge);
-      card.appendChild(top);
-
-      var meta = document.createElement('div');
+      badge.textContent = exp.deletionPending ? 'Removal pending' : (exp.shareEnabled ? 'Test link live' : 'Draft');
+      top.append(h2, badge);
+      var meta = document.createElement('p');
       meta.className = 'el-exp-meta';
-      var roleTxt = exp.role === 'owner' ? 'Owner' : (exp.role === 'translate' ? 'Translator' : 'Co-Editor');
-      meta.textContent = roleTxt + ' · ' + exp.moduleCount + ' stations · ' + exp.stepCount + ' steps · ' + (exp.enabledLanguages || ['nl']).map(function (l) { return l.toUpperCase(); }).join('/');
-      card.appendChild(meta);
-
+      var role = exp.role === 'owner' ? 'Owner' : (exp.role === 'translate' ? 'Translator' : 'Co-Editor');
+      var languages = (exp.enabledLanguages || ['nl']).map(function (l) { return l.toUpperCase(); });
+      [role, exp.moduleCount + (exp.moduleCount === 1 ? ' station' : ' stations'),
+        exp.stepCount + (exp.stepCount === 1 ? ' step' : ' steps'), languages.join(' / ')].forEach(function (value, i) {
+        if (i) meta.append(' · ');
+        var item = document.createElement('span');
+        item.textContent = value;
+        meta.appendChild(item);
+      });
+      detail.append(top, meta);
       var actions = document.createElement('div');
       actions.className = 'el-exp-card-actions';
-
-      var openBtn = document.createElement('a');
-      openBtn.href = '/physio/elearning/' + encodeURIComponent(exp.id) + '/edit';
-      openBtn.className = 'el-btn el-btn-primary el-btn-sm';
-      openBtn.textContent = exp.role === 'translate' ? 'Open Translator' : 'Open Builder';
-      actions.appendChild(openBtn);
-
-      if (exp.role !== 'translate') {
-        var respBtn = document.createElement('a');
-        respBtn.href = '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses';
-        respBtn.className = 'el-btn el-btn-sm';
-        respBtn.textContent = 'Responses';
-        actions.appendChild(respBtn);
-
-        if (exp.shareToken) {
-          var playBtn = document.createElement('a');
-          playBtn.href = '/elearning/p/' + encodeURIComponent(exp.shareToken);
-          playBtn.target = '_blank';
-          playBtn.rel = 'noopener';
-          playBtn.className = 'el-btn el-btn-sm';
-          playBtn.textContent = 'Test Link ↗';
-          actions.appendChild(playBtn);
+      var menuItems = [];
+      if (!exp.deletionPending) actions.appendChild(actionLink(exp.role === 'translate' ? 'Open Translator' : 'Open Builder', editUrl, true));
+      if (!exp.deletionPending && exp.role !== 'translate') {
+        actions.appendChild(actionLink('Responses', '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
+        if (exp.shareEnabled && exp.shareToken) {
+          menuItems.push({ label: 'Open test link', icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
         }
-
-        var dupBtn = document.createElement('button');
-        dupBtn.type = 'button';
-        dupBtn.className = 'el-btn el-btn-sm';
-        dupBtn.textContent = 'Duplicate';
-        dupBtn.addEventListener('click', async function () {
+        menuItems.push({ label: 'Duplicate', icon: 'copy', onClick: async function () {
           try {
             await api('/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/duplicate', { method: 'POST', body: '{}' });
-            showToast('Expedition duplicated.');
+            toast('Expedition duplicated.', 'success');
             loadList();
-          } catch (err) {
-            showToast(err.message);
-          }
-        });
-        actions.appendChild(dupBtn);
+          } catch (err) { if (err.code !== 'auth/session-changed') toast(err.message, 'error'); }
+        } });
       }
-
-      if (exp.role === 'owner') {
-        var delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'el-btn el-btn-danger el-btn-sm';
-        delBtn.textContent = 'Delete';
-        delBtn.addEventListener('click', function () {
-          pendingDeleteExp = exp;
-          document.getElementById('el-delete-dialog-msg').textContent = 'Delete "' + exp.title + '"? This removes the expedition and deactivates its public share link.';
-          deleteDialog.showModal();
-        });
-        actions.appendChild(delBtn);
+      if (exp.role !== 'translate') {
+        if (exp.role === 'owner') {
+          menuItems.push({ label: 'Delete', icon: 'trash', danger: true, onClick: function () {
+            pendingDeleteExp = exp;
+            document.getElementById('el-delete-dialog-msg').textContent = exp.title;
+            document.getElementById('el-delete-error').hidden = true;
+            deleteDialog.showModal();
+            document.getElementById('el-delete-cancel').focus();
+          } });
+        }
+        var menu = Icons.createDropdown({ ariaLabel: 'More actions', leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
+        actions.appendChild(menu.el);
       }
-
-      card.appendChild(actions);
+      card.append(detail, actions);
       grid.appendChild(card);
     });
   }
 
   async function loadList() {
+    var request = ++listRequest;
+    retry.hidden = true;
     try {
       var data = await api('/api/elearning/expeditions');
+      if (request !== listRequest) return;
       renderExpeditions(data.expeditions || []);
     } catch (err) {
+      if (request !== listRequest || err.code === 'auth/session-changed') return;
+      retry.hidden = false;
       statusEl.textContent = err.message;
     }
   }
 
   document.getElementById('el-new-expedition-btn').addEventListener('click', function () {
+    document.getElementById('el-create-error').hidden = true;
     createDialog.showModal();
   });
   document.getElementById('el-create-cancel').addEventListener('click', function () {
@@ -175,69 +148,43 @@
     document.getElementById('el-delete-confirm').addEventListener('click', async function () {
       if (!pendingDeleteExp) return;
       var target = pendingDeleteExp;
-      pendingDeleteExp = null;
+      var confirm = document.getElementById('el-delete-confirm');
+      confirm.disabled = true;
       try {
         await api('/api/elearning/expeditions/' + encodeURIComponent(target.id), { method: 'DELETE' });
         if (Icons) Icons.closeDialogAnimated(deleteDialog);
         else deleteDialog.close();
-        showToast('Expedition deleted.');
+        toast('Expedition deleted.', 'success');
         loadList();
       } catch (err) {
-        showToast(err.message);
-      }
+        if (pendingDeleteExp === target) dialogError('delete', err);
+      } finally { confirm.disabled = false; }
     });
     deleteDialog.addEventListener('close', function () { deleteDialog.returnValue = ''; });
   }
   if (Icons) Icons.wireAnimatedDialogs();
 
-  var selectedNewLang = 'nl';
-  var selectedNewTemplate = 'blank';
-  var NEW_LANG_ITEMS = [
-    { value: 'nl', label: 'Nederlands (NL)' },
-    { value: 'en', label: 'English (EN)' },
-    { value: 'de', label: 'Deutsch (DE)' },
-  ];
-  var NEW_TPL_ITEMS = [
-    { value: 'blank', label: 'Blank Expedition (1 empty station)' },
-    { value: 'bps-skeleton', label: 'Biopsychosocial 3-Station Skeleton' },
-    { value: 'showcase', label: 'Interactive Block Showcase (demo)' },
-  ];
-  if (Icons) {
-    var langDD = Icons.createDropdown({
-      className: 'is-full',
-      triggerClass: 'el-dd-trigger is-full',
-      ariaLabel: 'Primary Authoring Language',
-      items: NEW_LANG_ITEMS,
-      value: selectedNewLang,
-      onChange: function (v) { selectedNewLang = v; langDD.setItems(NEW_LANG_ITEMS, v); },
-    });
-    var langHost = document.getElementById('el-new-lang-host');
-    if (langHost) langHost.appendChild(langDD.el);
-
-    var tplDD = Icons.createDropdown({
-      className: 'is-full',
-      triggerClass: 'el-dd-trigger is-full',
-      ariaLabel: 'Starting Structure',
-      items: NEW_TPL_ITEMS,
-      value: selectedNewTemplate,
-      onChange: function (v) { selectedNewTemplate = v; tplDD.setItems(NEW_TPL_ITEMS, v); },
-    });
-    var tplHost = document.getElementById('el-new-template-host');
-    if (tplHost) tplHost.appendChild(tplDD.el);
+  function dialogError(name, err) {
+    if (err.code === 'auth/session-changed') return;
+    var error = document.getElementById('el-' + name + '-error');
+    error.textContent = err.message;
+    error.hidden = false;
   }
 
   document.getElementById('el-create-confirm').addEventListener('click', async function () {
     var title = document.getElementById('el-new-title').value.trim() || 'xPEDitie Pijn — Pilot v1';
-    var lang = selectedNewLang || 'nl';
-    var preset = selectedNewTemplate || 'blank';
+    var lang = document.getElementById('el-new-lang').value;
+    var preset = document.getElementById('el-new-template').value;
+    var confirm = document.getElementById('el-create-confirm');
+    confirm.disabled = true;
     var payload = Model.createExpeditionPreset(preset, title, lang);
     try {
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(payload) });
       createDialog.close();
       window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
     } catch (err) {
-      showToast(err.message);
-    }
+      dialogError('create', err);
+    } finally { confirm.disabled = false; }
   });
 
   var importInput = document.getElementById('el-import-json-input');
@@ -245,14 +192,16 @@
   importInput.addEventListener('change', async function () {
     var file = importInput.files && importInput.files[0];
     if (!file) return;
+    var session = client.captureSession();
     try {
       var text = await file.text();
+      session.assertCurrent();
       var parsed = JSON.parse(text);
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(parsed) });
-      showToast('Imported expedition!');
+      toast('Imported expedition!', 'success');
       window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
     } catch (err) {
-      showToast('Could not import JSON: ' + err.message);
+      if (err.code !== 'auth/session-changed') toast('Could not import JSON: ' + err.message, 'error');
     } finally {
       importInput.value = '';
     }
@@ -260,16 +209,22 @@
 
   Model.enableDialogLightDismissFallback();
 
-  if (window.firebase && firebase.auth) {
-    firebase.auth().onAuthStateChanged(function (user) {
-      if (user) {
-        loadList();
-      } else {
-        statusEl.textContent = 'Sign in to Lecture Processor to create and manage xPEDitie Pijn expeditions.';
-        grid.textContent = '';
-      }
-    });
-  } else {
-    loadList();
+  retry.addEventListener('click', loadList);
+
+  function accountChanged(user) {
+    ++listRequest;
+    pendingDeleteExp = null;
+    if (deleteDialog.open) deleteDialog.close();
+    if (createDialog.open) createDialog.close();
+    grid.replaceChildren();
+    document.getElementById('el-delete-dialog-msg').textContent = '';
+    document.getElementById('el-new-title').value = document.getElementById('el-new-title').defaultValue;
+    actionsEl.hidden = !user;
+    signIn.hidden = !!user;
+    retry.hidden = true;
+    statusEl.textContent = user ? 'Loading your expeditions…' : 'Sign in to view your expeditions.';
+    if (user) loadList();
   }
+  if (auth) auth.onAuthStateChanged(accountChanged);
+  else accountChanged(null);
 })();

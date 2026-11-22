@@ -2,64 +2,62 @@
   'use strict';
 
   var Model = window.XpedElearningModel;
-  var Icons = window.XpedElearningIcons;
   var expeditionId = document.body.dataset.expeditionId || '';
-  var selectedCohort = '';
-  var selectedLang = '';
   var kpisEl = document.getElementById('el-resp-kpis');
   var funnelEl = document.getElementById('el-resp-funnel');
   var blocksEl = document.getElementById('el-resp-blocks');
   var feedbackEl = document.getElementById('el-resp-feedback');
 
-  var LANG_FILTER_ITEMS = [
-    { value: '', label: 'All languages' },
-    { value: 'nl', label: 'Nederlands (NL)', shortLabel: 'NL' },
-    { value: 'en', label: 'English (EN)', shortLabel: 'EN' },
-    { value: 'de', label: 'Deutsch (DE)', shortLabel: 'DE' },
-  ];
-  var cohortDD = Icons.createDropdown({
-    ariaLabel: 'Filter by cohort',
-    items: [{ value: '', label: 'All cohorts' }],
-    value: '',
-    onChange: function (v) { selectedCohort = v; loadResponses(); },
-  });
-  var langDD = Icons.createDropdown({
-    leadingIcon: 'globe',
-    ariaLabel: 'Filter by language',
-    items: LANG_FILTER_ITEMS,
-    value: '',
-    onChange: function (v) { selectedLang = v; langDD.setItems(LANG_FILTER_ITEMS, v); loadResponses(); },
-  });
-  var cohortHost = document.getElementById('el-resp-cohort-host');
-  var langHost = document.getElementById('el-resp-lang-host');
-  if (cohortHost) cohortHost.appendChild(cohortDD.el);
-  if (langHost) langHost.appendChild(langDD.el);
+  var cohortSelect = document.getElementById('el-resp-cohort');
+  var langSelect = document.getElementById('el-resp-lang');
+  var status = document.getElementById('el-resp-status');
+  var report = document.getElementById('el-response-report');
+  var actions = document.getElementById('el-response-actions');
+  var label = document.getElementById('el-resp-expedition');
+  var retry = document.getElementById('el-resp-retry');
+  var requestId = 0;
+  var auth;
+  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  var client = window.LectureProcessorAuth.createAuthClient(auth);
+  cohortSelect.addEventListener('change', loadResponses);
+  langSelect.addEventListener('change', loadResponses);
+  retry.addEventListener('click', loadResponses);
 
-  async function authHeaders() {
-    var headers = {};
-    if (window.firebase && firebase.auth && firebase.auth().currentUser) {
-      headers.Authorization = 'Bearer ' + (await firebase.auth().currentUser.getIdToken());
-    }
-    return headers;
+  function responseBar(percent, correct) {
+    var bar = document.createElement('progress');
+    bar.className = 'el-response-bar' + (correct ? ' is-correct' : '');
+    bar.max = 100;
+    bar.value = percent;
+    bar.setAttribute('aria-hidden', 'true');
+    return bar;
   }
 
   async function loadResponses() {
+    var sequence = ++requestId;
+    retry.hidden = true;
+    status.textContent = 'Loading responses…';
+    report.hidden = true;
     try {
-      var qs = [];
-      if (selectedCohort) qs.push('cohort=' + encodeURIComponent(selectedCohort));
-      if (selectedLang) qs.push('language=' + encodeURIComponent(selectedLang));
-      var url = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses' + (qs.length ? ('?' + qs.join('&')) : '');
-      var resp = await fetch(url, { headers: await authHeaders() });
-      var data = await resp.json().catch(function () { return {}; });
+      var qs = new URLSearchParams();
+      var cohort = cohortSelect.value;
+      if (cohort) qs.set('cohort', cohort);
+      if (langSelect.value) qs.set('language', langSelect.value);
+      var base = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses';
+      var resp = await client.authFetch(base + (qs.size ? '?' + qs : ''));
+      var data = await resp.json();
+      if (sequence !== requestId) return;
       if (!resp.ok) throw new Error(data.error || 'Could not load responses.');
-
-      document.getElementById('el-resp-title').textContent = (data.expedition.title || 'Expedition') + ' — Responses';
-
-      var cohortItems = [{ value: '', label: 'All cohorts' }].concat(
-        (data.cohorts || []).map(function (c) { return { value: c, label: c }; })
-      );
-      cohortDD.setItems(cohortItems, selectedCohort);
-
+      var courseLang = data.expedition.defaultLanguage || 'nl';
+      var reportLang = langSelect.value || document.documentElement.lang || courseLang;
+      label.textContent = data.expedition.title || '';
+      cohortSelect.replaceChildren(new Option('All cohorts', ''));
+      (data.cohorts || []).forEach(function (name) { cohortSelect.add(new Option(name, name)); });
+      if (cohort && !Array.from(cohortSelect.options).some(function (o) { return o.value === cohort; })) {
+        cohortSelect.add(new Option(cohort, cohort));
+      }
+      cohortSelect.value = cohort;
+      status.textContent = '';
+      report.hidden = false;
       // KPIs
       var s = data.summary || {};
       kpisEl.textContent = '';
@@ -88,15 +86,9 @@
         var div = document.createElement('div');
         div.className = 'xped-bar-row';
         var lbl = document.createElement('span');
-        lbl.textContent = Model.getLocalized(row.moduleTitle, 'nl', 'nl') + ' · ' + Model.getLocalized(row.stepTitle, 'nl', 'nl') + ' — ' + row.reached + ' (' + pct + '%)';
-        var track = document.createElement('div');
-        track.className = 'xped-bar-track';
-        var fill = document.createElement('div');
-        fill.className = 'xped-bar-fill';
-        fill.style.width = pct + '%';
-        track.appendChild(fill);
-        div.appendChild(lbl);
-        div.appendChild(track);
+        lbl.setAttribute('translate', 'no');
+        lbl.textContent = Model.getLocalized(row.moduleTitle, reportLang, courseLang) + ' · ' + Model.getLocalized(row.stepTitle, reportLang, courseLang) + ' — ' + row.reached + ' (' + pct + '%)';
+        div.append(lbl, responseBar(pct));
         funnelEl.appendChild(div);
       });
 
@@ -111,7 +103,8 @@
             var card = document.createElement('article');
             card.className = 'el-exp-card';
             var h = document.createElement('h2');
-            h.textContent = Model.getLocalized(blk.data.question || blk.data.statement || blk.data.prompt || blk.data.title, 'nl', 'nl') || blk.type;
+            h.setAttribute('translate', 'no');
+            h.textContent = Model.getLocalized(blk.data.question || blk.data.statement || blk.data.prompt || blk.data.title, reportLang, courseLang) || blk.type;
             card.appendChild(h);
             var sub = document.createElement('p');
             sub.className = 'el-exp-meta';
@@ -148,11 +141,12 @@
                 row.className = 'xped-bar-row';
                 var opt = (blk.data.options || []).find(function (o) { return o.id === k; });
                 var isRight = (blk.type === 'myth_fact' && k === (blk.data.correctAnswer || 'myth')) || !!(opt && opt.isCorrect);
-                var name = opt ? Model.getLocalized(opt.label, 'nl', 'nl') : (k === 'myth' ? 'Fabel' : (k === 'fact' ? 'Feit' : k));
+                var name = opt ? Model.getLocalized(opt.label, reportLang, courseLang) : (k === 'myth' || k === 'fact' ? Model.ui(reportLang, k) : k);
                 var head = document.createElement('div');
                 head.className = 'el-resp-bar-head';
                 var nSp = document.createElement('span');
                 nSp.className = 'el-resp-bar-name';
+                nSp.setAttribute('translate', 'no');
                 nSp.textContent = name;
                 if (isRight && window.XpedElearningIcons) {
                   var chkIco = window.XpedElearningIcons.icon('check', 14);
@@ -163,14 +157,7 @@
                 pSp.textContent = cnt + ' (' + pct + '%)';
                 head.appendChild(nSp);
                 head.appendChild(pSp);
-                var track = document.createElement('div');
-                track.className = 'xped-bar-track';
-                var fill = document.createElement('div');
-                fill.className = 'xped-bar-fill el-resp-bar-fill' + (isRight ? ' is-correct' : '');
-                fill.style.width = pct + '%';
-                track.appendChild(fill);
-                row.appendChild(head);
-                row.appendChild(track);
+                row.append(head, responseBar(pct, isRight));
                 card.appendChild(row);
               });
             }
@@ -180,6 +167,7 @@
               agg.words.slice(0, 15).forEach(function (w) {
                 var ch = document.createElement('span');
                 ch.className = 'xped-word-chip';
+                ch.setAttribute('translate', 'no');
                 ch.textContent = w.word + ' (' + w.count + ')';
                 tags.appendChild(ch);
               });
@@ -189,6 +177,7 @@
               agg.samples.slice(0, 8).forEach(function (txt) {
                 var q = document.createElement('blockquote');
                 q.className = 'el-translate-source';
+                q.setAttribute('translate', 'no');
                 q.textContent = txt;
                 card.appendChild(q);
               });
@@ -210,8 +199,10 @@
           c.className = 'el-resp-comment-card';
           var m = document.createElement('div');
           m.className = 'el-resp-comment-meta';
+          m.setAttribute('translate', 'no');
           m.textContent = (item.moduleTitle || 'Station') + ' · ' + (item.stepTitle || 'Step') + ' (' + (item.cohort || 'review') + ' · ' + String(item.language || 'nl').toUpperCase() + ')';
           var bodyP = document.createElement('div');
+          bodyP.setAttribute('translate', 'no');
           bodyP.textContent = item.comment;
           c.appendChild(m);
           c.appendChild(bodyP);
@@ -235,28 +226,36 @@
         });
       }
     } catch (err) {
-      kpisEl.textContent = err.message;
+      if (sequence !== requestId || err.code === 'auth/session-changed') return;
+      report.hidden = true;
+      status.textContent = err.message;
+      retry.hidden = false;
     }
   }
 
   document.getElementById('el-resp-export-csv').addEventListener('click', async function () {
-    var resp = await fetch('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses/export.csv', {
-      headers: await authHeaders(),
-    });
-    if (!resp.ok) return;
-    var blob = await resp.blob();
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'xped-responses-' + expeditionId + '.csv';
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    try {
+      var resp = await client.authFetch('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses/export.csv');
+      if (!resp.ok) throw new Error('Could not export responses.');
+      await window.LectureProcessorDownload.downloadResponseBlob(resp, 'xped-responses-' + expeditionId + '.csv');
+    } catch (err) {
+      if (err.code !== 'auth/session-changed') window.LectureProcessorUx.toast(err.message, { type: 'error' });
+    }
   });
 
-  if (window.firebase && firebase.auth) {
-    firebase.auth().onAuthStateChanged(function (user) {
-      if (user) loadResponses();
-    });
-  } else {
-    loadResponses();
+  function accountChanged(user) {
+    ++requestId;
+    report.hidden = true;
+    actions.hidden = !user;
+    retry.hidden = true;
+    document.getElementById('el-signin').hidden = !!user;
+    label.textContent = '';
+    [kpisEl, funnelEl, blocksEl, feedbackEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
+    cohortSelect.replaceChildren(new Option('All cohorts', ''));
+    langSelect.value = '';
+    if (user) loadResponses();
+    else status.textContent = 'Sign in to view responses.';
   }
+  if (auth) auth.onAuthStateChanged(accountChanged);
+  else accountChanged(null);
 })();

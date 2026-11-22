@@ -26,7 +26,7 @@ class MemoryStore:
     def delete(self, path):
         self.data.pop(path, None)
 
-    def list(self, collection, field=None, value=None, operator='==', limit=200):
+    def list(self, collection, field=None, value=None, operator='==', limit=200, fields=None):
         prefix = collection + '/'
         rows = [
             dict(deepcopy(v), _id=k[len(prefix):])
@@ -400,3 +400,296 @@ def test_v3_step_comments_glossary_reveal_and_review_status(setup):
     assert 'onload' not in sanitized.lower()
     assert 'onclick' not in sanitized.lower()
     assert '<circle' in sanitized
+
+
+def test_public_media_and_results_only_use_visible_course_content(setup, monkeypatch):
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    public = '/api/elearning/public/' + course['share']['token']
+    saved = db.get('elearning_expeditions/' + eid)
+    saved['startPage']['heroMedia'] = {'kind': 'asset', 'assetId': 'visible_media'}
+    saved['modules'][1]['steps'][0]['blocks'] = [
+        {'id': 'blk_hidden', 'type': 'image', 'data': {'media': {'kind': 'asset', 'assetId': 'draft_media'}},
+         'settings': {'showPeerResults': True}},
+    ]
+    db.put('elearning_expeditions/' + eid, saved)
+    for aid in ('visible_media', 'draft_media'):
+        db.put('elearning_assets/' + aid, {'id': aid, 'expedition_id': eid, 'path': aid,
+                                          'size': 3, 'content_type': 'image/webp'})
+    monkeypatch.setattr(service.book_storage, 'request', lambda *_args, **_kwargs: b'img')
+    assert client.get(public + '/assets/visible_media').status_code == 200
+    assert client.get(public + '/assets/draft_media').status_code == 404
+    assert client.get(public + '/aggregates/blk_hidden').status_code == 403
+
+
+def test_collection_settings_and_session_progress_are_respected(setup):
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    url = '/api/elearning/public/' + course['share']['token'] + '/responses'
+    client.post(f'/api/elearning/expeditions/{eid}/sharing', headers=auth_headers(), json={
+        'action': 'update_public', 'collectPilotFeedback': False, 'allowStepComments': False})
+    for completed in (True, False):
+        result = client.post(url, json={'sessionId': 'learner_session', 'answers': {'blk_mf': 'myth', 'draft_answer': 'A'},
+                                        'visitedStepIds': ['stp_1', 'stp_h'], 'completed': completed,
+                                        'stepComments': [{'stepId': 'stp_1', 'comment': 'Comment'}],
+                                        'pilotFeedback': {'clarity': 5}})
+        assert result.status_code == 200
+    record = db.get('elearning_responses/' + eid + '__learner_session')
+    assert record['completed']
+    assert record['answers'] == {'blk_mf': 'myth'}
+    assert record['visitedStepIds'] == ['stp_1']
+    assert record['stepComments'] == [] and record['pilotFeedback'] is None
+
+
+def test_delete_retries_storage_cleanup_without_losing_accounting(setup, monkeypatch):
+    import io
+
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    url = '/api/elearning/expeditions/' + eid
+    stored = {}
+
+    def storage_request(method, path, data=None, content_type=None):
+        if method == 'POST':
+            stored[path] = data
+        if method == 'DELETE':
+            raise service.BookError('Temporary storage interruption', 503)
+
+    monkeypatch.setattr(service.book_storage, 'configured', lambda: True)
+    monkeypatch.setattr(service.book_storage, 'request', storage_request)
+    audio = b'OggS' + bytes(80)
+    media = client.post(url + '/assets', headers=auth_headers(),
+                        data={'file': (io.BytesIO(audio), 'lesson.ogg', 'audio/ogg')})
+    assert media.status_code == 201
+    assert db.get('book_usage/storage')['bytes'] == len(audio)
+    assert client.delete(url, headers=auth_headers()).status_code == 503
+    assert stored and db.get('book_usage/storage')['bytes'] == len(audio)
+    assert client.get('/api/elearning/public/' + course['share']['token']).status_code in (404, 410)
+    monkeypatch.setattr(service.book_storage, 'request', lambda method, path: stored.pop(path, None))
+    assert client.delete(url, headers=auth_headers()).status_code == 200
+    assert not stored and db.get('book_usage/storage')['bytes'] == 0
+    assert not any(key.startswith('elearning_') for key in db.data)
+
+
+def test_account_portability_and_cleanup_preserve_collaborators_courses(setup, monkeypatch, runtime):
+    from lecture_processor.services import elearning_account_service as accounts
+
+    client, db = setup
+    monkeypatch.setattr(accounts, 'ElearningStore', lambda _: db)
+    own = _create_sample(client)
+    owned_id = own['id']
+    foreign = client.post('/api/elearning/expeditions', json={'title': 'Separate course'},
+                          headers=auth_headers('partner')).json['expedition']
+    fid = foreign['id']
+    for eid, member, owner in ((owned_id, 'partner', 'owner'), (fid, 'owner', 'partner')):
+        url = f'/api/elearning/expeditions/{eid}/sharing'
+        client.post(url, json={'action': 'add_member', 'email': member + '@example.com', 'role': 'edit'},
+                    headers=auth_headers(owner))
+    client.post(f'/api/elearning/expeditions/{owned_id}/sharing', headers=auth_headers(),
+                json={'action': 'create_grant', 'targetLanguage': 'de'})
+    client.post('/api/elearning/public/' + own['share']['token'] + '/responses',
+                json={'sessionId': 'learner_001', 'answers': {'blk_mf': 'fact'}})
+    db.put('elearning_assets/shared_asset', {'id': 'shared_asset', 'expedition_id': fid, 'uploaded_by': 'owner'})
+    exported, = accounts.collect(runtime, 'owner')
+    assert exported['id'] == owned_id and exported['responses'][0]['answers'] == {'blk_mf': 'fact'}
+    assert 'token' not in exported['share'] and 'lease' not in exported
+    assert accounts.delete_owned(runtime, 'owner', 'owner@example.com') == 1
+    assert accounts.delete_owned(runtime, 'owner', 'owner@example.com') == 0
+    assert db.get('elearning_assets/shared_asset') == {'id': 'shared_asset', 'expedition_id': fid}
+    assert not db.list('elearning_responses') and not db.list('elearning_grants') and not db.list('elearning_grant_tokens')
+    assert len(db.list('elearning_share_index')) == 1 and db.get('elearning_expeditions/' + fid)['members'] == {}
+    assert client.get('/api/elearning/expeditions/' + fid, headers=auth_headers('partner')).status_code == 200
+
+
+@pytest.mark.parametrize('path', [
+    '/physio/elearning', '/physio/elearning/example/edit', '/physio/elearning/example/responses',
+    '/elearning/translate/example', '/elearning/p/example',
+])
+def test_all_learning_html_routes_render_with_route_scoped_headers(client, path):
+    response = client.get(path)
+    assert response.status_code == 200
+    assert response.mimetype == 'text/html'
+    assert response.headers['Cache-Control'] == 'private, no-store'
+    csp = response.headers['Content-Security-Policy']
+    assert 'https://www.youtube-nocookie.com' in csp
+    assert 'https://player.vimeo.com' in csp
+
+
+def test_spreadsheet_downloads_protect_authored_and_learner_text(setup):
+    import csv
+    import io
+
+    client, _ = setup
+    own = _create_sample(client)
+    eid = own['id']
+    url = '/api/elearning/expeditions/' + eid
+    client.post(url + '/translations', headers=auth_headers(),
+                json={'targetLanguage': 'de', 'textUpdates': {'startPage.title': '+ Eingang'}})
+    translated = client.get(url + '/translations/export.csv?target=de', headers=auth_headers())
+    rows = list(csv.DictReader(io.StringIO(translated.data.decode('utf-8-sig'))))
+    assert next(r for r in rows if r['field_key'] == 'startPage.title')['target_de'] == "'+ Eingang"
+    client.post('/api/elearning/public/' + own['share']['token'] + '/responses', json={
+        'sessionId': 'learner_003', 'pilotFeedback': {'comment': '+ Helder'}})
+    responses = client.get(url + '/responses/export.csv', headers=auth_headers())
+    row, = csv.DictReader(io.StringIO(responses.data.decode('utf-8-sig')))
+    assert row['pilot_comment'] == "'+ Helder"
+
+
+def test_copy_owns_its_media_after_original_is_removed(setup, monkeypatch):
+    import io
+
+    client, db = setup
+    source = _create_sample(client)
+    eid = source['id']
+    url = '/api/elearning/expeditions/' + eid
+    stored = {}
+
+    def storage_request(method, path, data=None, **kwargs):
+        if method == 'POST':
+            stored[path] = data
+        if method == 'GET':
+            return stored[path]
+        if method == 'DELETE':
+            stored.pop(path, None)
+
+    monkeypatch.setattr(service.book_storage, 'request', storage_request)
+    monkeypatch.setattr(service.book_storage, 'configured', lambda: True)
+    audio = b'OggS' + bytes(80)
+    media = client.post(url + '/assets', headers=auth_headers(),
+                        data={'file': (io.BytesIO(audio), 'lesson.ogg', 'audio/ogg')}).json['asset']
+    current = db.get('elearning_expeditions/' + eid)
+    current['modules'][0]['steps'][0]['blocks'].append({
+        'id': 'audio_step', 'type': 'audio', 'data': {'media': {'kind': 'asset', 'assetId': media['id']}}})
+    db.put('elearning_expeditions/' + eid, current)
+    response = client.post(url + '/duplicate', headers=auth_headers(), json={})
+    assert response.status_code == 201
+    copy = response.json['expedition']
+    copied_asset = copy['modules'][0]['steps'][0]['blocks'][-1]['data']['media']['assetId']
+    assert copied_asset != media['id']
+    assert client.delete(url, headers=auth_headers()).status_code == 200
+    copied_url = '/api/elearning/expeditions/' + copy['id'] + '/assets/' + copied_asset
+    assert client.get(copied_url, headers=auth_headers()).data == audio
+    assert db.get('book_usage/storage')['bytes'] == len(audio)
+
+
+def test_document_limit_fails_with_actionable_status_before_storage():
+    from lecture_processor.repositories.elearning_repo import document_fields
+
+    assert document_fields({'text': 'A study prompt', 'answers': [['one']]}) == {
+        'text': 'A study prompt', 'answers': [{'_el_list': ['one']}]}
+    with pytest.raises(model.ElearningError) as exc:
+        document_fields({'text': 'ü' * 600_000})
+    assert exc.value.status == 413
+
+
+def test_large_pilot_totals_csv_and_repeated_peer_reads(setup, monkeypatch):
+    import csv
+    import io
+
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    peer_url = '/api/elearning/public/' + course['share']['token'] + '/aggregates/blk_mf'
+    list_responses = db.list
+    queries = []
+
+    def counted(collection, *args, **kwargs):
+        if collection == 'elearning_responses':
+            queries.append(collection)
+        return list_responses(collection, *args, **kwargs)
+    monkeypatch.setattr(db, 'list', counted)
+    for i in range(501):
+        db.put(f'elearning_responses/{eid}_{i}', {'expedition_id': eid, 'session_id': f'session_{i}',
+                                                  'answers': {'blk_mf': 'myth'}, 'completed': True})
+    for _ in range(2):
+        assert client.get(peer_url).json['aggregate']['counts'] == {'myth': 501}
+    assert len(queries) == 1
+    owner_url = '/api/elearning/expeditions/' + eid + '/responses'
+    assert client.get(owner_url, headers=auth_headers()).json['summary']['totalSessions'] == 501
+    output = client.get(owner_url + '/export.csv', headers=auth_headers()).data.decode('utf-8-sig')
+    assert len(list(csv.DictReader(io.StringIO(output)))) == 501
+
+
+def test_sharing_changes_preserve_a_collaborators_interleaved_save(setup, monkeypatch):
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    atomic = db.atomic
+    path = 'elearning_expeditions/' + eid
+
+    def after_collaborator_save(operation):
+        latest = db.get(path)
+        latest.update(title='Saved by co-author', revision=latest['revision'] + 1)
+        db.put(path, latest)
+        return atomic(operation)
+
+    monkeypatch.setattr(db, 'atomic', after_collaborator_save)
+    response = client.post('/api/elearning/expeditions/' + eid + '/sharing', headers=auth_headers(), json={
+        'action': 'update_public', 'rotateToken': True, 'collectPilotFeedback': False})
+    assert response.status_code == 200
+    assert db.get(path)['title'] == 'Saved by co-author'
+    assert db.get(path)['revision'] == 2
+    assert db.get('elearning_share_index/' + course['share']['token']) is None
+    assert db.get('elearning_share_index/' + response.json['share']['token'])['expedition_id'] == eid
+
+
+def test_budget_refusal_leaves_media_and_project_unchanged(setup, monkeypatch):
+    import io
+
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    requested = []
+    monkeypatch.setattr(service.book_storage, 'configured', lambda: True)
+    monkeypatch.setattr(service.book_storage, 'request', lambda *args, **kwargs: requested.append(args))
+    db.put('book_usage/storage', {'bytes': service.book_storage.GLOBAL_BYTES})
+    response = client.post('/api/elearning/expeditions/' + eid + '/assets', headers=auth_headers(),
+                           data={'file': (io.BytesIO(b'OggS' + bytes(25)), 'example.ogg', 'audio/ogg')})
+    assert response.status_code == 413
+    assert requested == [] and db.list('elearning_assets') == []
+    assert db.get('book_usage/storage')['bytes'] == service.book_storage.GLOBAL_BYTES
+
+
+def test_custom_visual_publishes_finished_art_without_the_drafting_brief(setup):
+    client, db = setup
+    course = _create_sample(client)
+    eid = course['id']
+    root = 'elearning_expeditions/' + eid
+    draft = db.get(root)
+    blocks = draft['modules'][0]['steps'][0]['blocks']
+    for preset in ('breathing-circle', 'placeholder'):
+        blocks.append({'id': preset, 'type': 'custom_visual', 'settings': {},
+                       'data': {'preset': preset, 'agentBrief': 'internal notes', 'slotId': 'internal slot'}})
+    db.put(root, draft)
+    published = client.get('/api/elearning/public/' + course['share']['token']).json['expedition']
+    by_id = {b['id']: b for b in published['modules'][0]['steps'][0]['blocks']}
+    assert by_id['breathing-circle']['data'] == {'preset': 'breathing-circle'}
+    assert 'placeholder' not in by_id
+    assert db.get(root)['modules'][0]['steps'][0]['blocks'][-1]['data']['agentBrief'] == 'internal notes'
+
+
+def test_learning_telemetry_keeps_tokens_and_learner_text_private():
+    import json
+    from lecture_processor.calendar_observability import redact_calendar_url, scrub_calendar_event
+
+    path = '/api/elearning/public/synthetic-link/responses'
+    event = {'request': {'url': path, 'data': {'answers': {'reflection': 'synthetic-answer'}},
+                         'headers': {'X-Elearning-Access': 'synthetic-access'}},
+             'exception': {'vars': {'learner': 'synthetic-name'}},
+             'breadcrumbs': [{'url': '/elearning/translate/synthetic-grant'},
+                             {'url': '/elearning/p/synthetic-link'}]}
+    assert redact_calendar_url(path) == '/api/elearning/public/[redacted]/responses'
+    assert 'synthetic-' not in json.dumps(scrub_calendar_event(event))
+    assert event['request']['data']['answers']['reflection'] == 'synthetic-answer'
+
+
+def test_learner_response_size_errors_describe_the_learning_request(setup):
+    client, _ = setup
+    course = _create_sample(client)
+    url = '/api/elearning/public/' + course['share']['token'] + '/responses'
+    result = client.post(url, json={'sessionId': 'learner_001', 'answers': {'reflection': 'a' * (512 * 1024)}})
+    assert result.status_code == 413
+    assert result.json['error'] == 'This learning response is too large to save.'
