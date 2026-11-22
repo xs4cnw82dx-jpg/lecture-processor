@@ -263,11 +263,7 @@ def test_admitted_worker_owns_session_routes_parts_and_records_result_model(monk
         key = {'slides_extraction': 'slide_extraction', 'notes_merge': 'merge'}.get(call['stage'], call['stage'])
         usage = harness.job['token_usage_by_stage'][key]
         assert (usage['input_tokens'], usage['output_tokens'], usage['total_tokens']) == (7, 5, 19)
-        # The public audio helper deliberately returns only legacy numeric usage;
-        # audio is Gemini-locked and the caller retains its configured audio model.
-        expected_model = harness.runtime.MODEL_AUDIO if call['stage'] == 'audio_transcription' else (
-            'gemini-selected-' + call['stage'].replace('_', '-'))
-        assert usage['model'] == expected_model
+        assert usage['model'] == 'gemini-selected-' + call['stage'].replace('_', '-')
     if mode == 'voice-note':
         assert len(generated) == 1 and harness.job['study_pack_title'] == 'Synthetic title'
         assert harness.job['voice_note_tags'] == ['science']
@@ -308,8 +304,24 @@ def test_timestamp_fallback_reuses_prepared_audio_and_owner_session(monkeypatch,
     uploads = [call for call in session.calls if call['phase'] == 'upload' and call['part'] is audio]
     assert len(uploads) == 1 and uploads[0]['stage'] == 'audio_transcription_timestamped'
     assert all(value is session for _name, value in harness.borrowed)
-    usage = harness.job['token_usage_by_stage']['audio_transcription']
-    assert (usage['input_tokens'], usage['output_tokens'], usage['total_tokens']) == (14, 10, 38)
+    entries = harness.job['token_usage_by_stage']
+    for key, model in [('audio_transcription', 'gemini-selected-audio-transcription-timestamped'),
+                       ('audio_transcription_fallback', 'gemini-selected-audio-transcription')]:
+        usage = entries[key]
+        assert usage['model'] == model
+        assert (usage['input_tokens'], usage['output_tokens'], usage['total_tokens']) == (7, 5, 19)
+    assert harness.job['token_total'] == 19 * len(calls)
+
+
+def test_failed_fallback_retains_reported_usage_for_the_invalid_timestamp_response(monkeypatch, tmp_path):
+    harness = PipelineStages(monkeypatch, tmp_path, 'lecture-notes', timestamped=True,
+                             failure=('generate', 'audio_transcription_fallback'))
+    harness.run()
+    assert harness.job['status'] == 'error'
+    usage = harness.job['token_usage_by_stage']
+    assert usage['audio_transcription']['model'] == 'gemini-selected-audio-transcription-timestamped'
+    assert 'audio_transcription_fallback' not in usage
+    assert harness.job['token_total'] == 38  # One slides response plus the timestamp response.
 
 
 @pytest.mark.parametrize('mode,phase,operation,failed_stage', [

@@ -1630,36 +1630,48 @@ def _audio_generation_mode(audio_file, provider_session):
     return is_neutral
 
 
-def _generate_audio_text(audio_file, audio_mime_type, prompt, *, provider_session, stage, operation_name, retry_tracker):
-    """Return (text, three-count usage) through the caller's session or the native handle."""
+def _generate_audio_text(audio_file, audio_mime_type, prompt, *, provider_session, stage, operation_name,
+                         retry_tracker, on_usage=None):
+    """Report each response before parsing it or attempting a timestamp fallback."""
     if provider_session is not None:
-        result = provider_session.generate(
+        response = provider_session.generate(
             stage, [audio_file, TextPart(prompt)], max_output_tokens=65536,
             retry_tracker=retry_tracker, operation_name=operation_name,
         )
-        usage = {'input_tokens': result.usage.input_tokens, 'output_tokens': result.usage.output_tokens,
-                 'total_tokens': result.usage.total_tokens}
-        return (getattr(result, 'text', '') or ''), usage
-    response = generate_with_policy(MODEL_AUDIO, [types.Content(role='user', parts=[types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type), types.Part.from_text(text=prompt)])], retry_tracker=retry_tracker, operation_name=operation_name)
-    # Usage is read before the text, as before, so a paid call is always counted.
-    usage = extract_token_usage(response)
+        model = response.model
+        usage = {'input_tokens': response.usage.input_tokens, 'output_tokens': response.usage.output_tokens,
+                 'total_tokens': response.usage.total_tokens}
+    else:
+        model = MODEL_AUDIO
+        response = generate_with_policy(
+            model, [types.Content(role='user', parts=[
+                types.Part.from_uri(file_uri=audio_file.uri, mime_type=audio_mime_type),
+                types.Part.from_text(text=prompt),
+            ])], retry_tracker=retry_tracker, operation_name=operation_name,
+        )
+        usage = extract_token_usage(response)
+    if on_usage is not None:
+        # Keep the original stage key for the primary response. A fallback has its own cost.
+        usage_stage = 'audio_transcription' if operation_name == 'audio_transcription_timestamped' else operation_name
+        on_usage(usage_stage, usage, model=model)
     return (getattr(response, 'text', '') or ''), usage
 
 
 def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False,
-                           *, provider_session=None, stage='audio_transcription'):
+                           *, provider_session=None, stage='audio_transcription', on_usage=None):
     _audio_generation_mode(audio_file, provider_session)
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
     text, usage = _generate_audio_text(audio_file, audio_mime_type, prompt, provider_session=provider_session,
-                                       stage=stage, operation_name='audio_transcription', retry_tracker=retry_tracker)
+                                       stage=stage, operation_name='audio_transcription', retry_tracker=retry_tracker,
+                                       on_usage=on_usage)
     transcript = text.strip()
     if include_usage:
         return (transcript, usage)
     return transcript
 
 def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False,
-                                     *, provider_session=None):
+                                     *, provider_session=None, on_usage=None):
     # Validate before the fallback path, so a mismatch is never retried as plain text.
     _audio_generation_mode(audio_file, provider_session)
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
@@ -1669,7 +1681,7 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
         text, usage = _generate_audio_text(
             audio_file, audio_mime_type, prompt, provider_session=provider_session,
             stage='audio_transcription_timestamped', operation_name='audio_transcription_timestamped',
-            retry_tracker=retry_tracker,
+            retry_tracker=retry_tracker, on_usage=on_usage,
         )
         parsed = extract_json_payload(text)
         if not isinstance(parsed, dict):
@@ -1703,7 +1715,8 @@ def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_languag
         # The fallback reuses the same prepared audio resource and session.
         fallback_text, fallback_usage = _generate_audio_text(
             audio_file, audio_mime_type, fallback_prompt, provider_session=provider_session,
-            stage='audio_transcription', operation_name='audio_transcription_fallback', retry_tracker=retry_tracker,
+            stage='audio_transcription', operation_name='audio_transcription_fallback',
+            retry_tracker=retry_tracker, on_usage=on_usage,
         )
         combined_usage = {key: usage.get(key, 0) + fallback_usage.get(key, 0)
                           for key in ('input_tokens', 'output_tokens', 'total_tokens')}
