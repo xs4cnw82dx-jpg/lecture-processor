@@ -44,5 +44,3 @@ def test_local_workspace_has_no_remote_frontend_dependencies():
     assert "https://" not in html
     assert "http://" not in html
     assert "/static/js/physio-local.js" in html
-
-

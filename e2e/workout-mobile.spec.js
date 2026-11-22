@@ -266,6 +266,7 @@ test('finishing a workout offline queues it and does not bring the workout back'
       createAuthClient: () => ({
         authFetch: async (url, options = {}) => {
           window.__workoutRequests.push(`${options.method || 'GET'} ${url}`);
+          if (sessionStorage.getItem('workout-e2e-network-down')) throw new TypeError('Failed to fetch');
           if (url === '/api/admin/workout/bootstrap') return jsonResponse(bootstrapPayload);
           return jsonResponse({ ok: true, session: bootstrapPayload.active_session });
         },
@@ -279,6 +280,10 @@ test('finishing a workout offline queues it and does not bring the workout back'
   await expect(page.locator('#workout-loading')).toBeHidden();
   await page.locator('#workout-resume-card').click();
   await expect(page.locator('#workout-logger')).toBeVisible();
+  // Editing a set saves a local draft of the workout, which finishing must clear.
+  await page.locator('[data-set-field="reps"][data-set-index="0"]').fill('12');
+  await page.locator('[data-set-field="reps"][data-set-index="0"]').blur();
+  await expect.poll(() => page.evaluate(() => window.__workoutRequests.some((entry) => entry.startsWith('PATCH')))).toBe(true);
   await page.locator('#workout-finish-btn').click();
   await expect(page.locator('#workout-confirm-finish')).toBeVisible();
   await page.evaluate(() => {
@@ -290,6 +295,24 @@ test('finishing a workout offline queues it and does not bring the workout back'
   await expect(page.getByText('Workout finished offline and queued for sync.')).toBeVisible();
   await expect(page.locator('#workout-resume-card')).toBeHidden();
   const requests = await page.evaluate(() => window.__workoutRequests);
-  expect(requests.filter((entry) => entry.includes('/finish') || entry.startsWith('PATCH'))).toEqual([]);
+  expect(requests.filter((entry) => entry.includes('/finish'))).toEqual([]);
+
+  // Opening the app again without a connection uses the saved copy: the workout must stay finished.
+  await page.evaluate(() => sessionStorage.setItem('workout-e2e-network-down', '1'));
+  await page.reload();
+  await expect(page.locator('#workout-loading')).toBeHidden();
+  await expect(page.locator('#workout-offline-banner')).toBeVisible();
+  await expect(page.locator('#workout-logger')).toBeHidden();
+  await expect(page.locator('#workout-resume-card')).toBeHidden();
+  const queued = await page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.open('lecture-processor-workout-workout-e2e-admin');
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const read = request.result.transaction('mutations', 'readonly').objectStore('mutations').getAll();
+      read.onsuccess = () => { request.result.close(); resolve(read.result.map((item) => `${item.method} ${item.url}`)); };
+      read.onerror = () => reject(read.error);
+    };
+  }));
+  expect(queued).toEqual(['POST /api/admin/workout/sessions/session-offline/finish']);
   expect(browserErrors).toEqual([]);
 });

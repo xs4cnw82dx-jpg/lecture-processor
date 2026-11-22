@@ -505,4 +505,5 @@ test('offline, the last saved plan stays readable and changes are paused', async
   await expect(page.locator('#study-plan-offline')).toBeVisible();
   await expect(page.locator('#study-plan-workspace')).toBeVisible();
   await expect(page.locator('#next-session-content')).toContainText('Question pack 1');
+  await expect(page.locator('#new-study-goal-btn')).toBeDisabled();
 });

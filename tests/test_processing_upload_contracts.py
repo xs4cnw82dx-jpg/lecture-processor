@@ -7,5 +7,3 @@ def test_main_processing_audio_ui_accepts_webm_uploads():
 
     assert re.search(r'id="audio-input"[^>]*accept="[^"]*\.webm', index_template)
     assert "WEBM" in index_template
-
-

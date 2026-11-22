@@ -143,7 +143,6 @@ test('loading Study uploads no progress and one answer uploads only that pack', 
   await expect(page.locator('#pack-list .pack-list-item')).toHaveCount(2);
   // Progress uploads are debounced; run well past the debounce before checking none was sent.
   await page.clock.runFor(5000);
-  await page.waitForLoadState('networkidle');
   expect(progressUploads).toEqual([]);
 
   await page.locator('#pack-list .pack-list-item', { hasText: 'Pack a' }).click();

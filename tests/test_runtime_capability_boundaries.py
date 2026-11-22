@@ -21,5 +21,3 @@ def test_services_use_explicit_repository_capability():
         if any(attribute in text for attribute in DIRECT_REPOSITORY_ATTRIBUTES):
             offenders.append(path.name)
     assert offenders == []
-
-

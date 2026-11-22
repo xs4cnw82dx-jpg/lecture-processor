@@ -577,4 +577,6 @@ test('lecture uploads accept WEBM audio and the slide file types browsers report
   await page.locator('#pdf-input').setInputFiles({ name: 'notes.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('docx') });
   await expect(page.getByText('Please select a valid PDF or PPTX file')).toBeVisible();
   await expect(page.locator('#pdf-name')).toHaveText('unknown-type.pptx');
+  await page.locator('#pdf-input').setInputFiles({ name: 'renamed-image.pdf', mimeType: 'image/png', buffer: Buffer.from('png') });
+  await expect(page.locator('#pdf-name')).toHaveText('unknown-type.pptx');
 });

@@ -17,5 +17,3 @@ def test_workout_template_keeps_accessibility_and_pwa_controls_visible_to_code()
     assert 'id="workout-update-btn"' in template
     assert 'id="workout-manage-shares"' in template
     assert "changes will sync automatically" not in template
-
-
