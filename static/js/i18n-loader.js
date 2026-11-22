@@ -7,11 +7,24 @@
   var urls = String((script && script.getAttribute('data-i18n-catalogs')) || '').split(' ').filter(Boolean);
   window.LectureI18nCatalogUrls = urls;
   // Pages authored in Dutch always need them: their English view is translated back.
-  var needed = Boolean(script && script.getAttribute('data-i18n-always'));
+  var preload = { dutchSource: Boolean(script && script.getAttribute('data-i18n-always')), complete: false };
+  window.LectureI18nPreload = preload;
+  var needed = preload.dutchSource;
   try {
     needed = needed || JSON.parse(window.localStorage.getItem('lp-preferences') || '{}').language === 'nl';
   } catch (_error) { /* Storage can be unavailable in private windows; keep the page default. */ }
   if (needed) {
-    urls.forEach(function (src) { document.write('<script src="' + src + '" defer><\/script>'); });
+    var loaded = 0;
+    function recordLoad(event) {
+      if (event.target.tagName === 'SCRIPT' && event.target.hasAttribute('data-i18n-file')) {
+        loaded += 1;
+        preload.complete = loaded === urls.length;
+      }
+    }
+    document.addEventListener('load', recordLoad, true);
+    document.addEventListener('DOMContentLoaded', function () {
+      document.removeEventListener('load', recordLoad, true);
+    }, { once: true });
+    urls.forEach(function (src) { document.write('<script src="' + src + '" data-i18n-file defer><\/script>'); });
   }
 })();

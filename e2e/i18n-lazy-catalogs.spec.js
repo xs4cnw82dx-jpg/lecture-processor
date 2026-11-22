@@ -58,3 +58,56 @@ test('pages authored in Dutch still load the catalogs for their English view', a
   await expect(page.getByText('Help getting started', { exact: true })).toBeVisible();
   expect(seen).toEqual(['catalog', 'supplement', 'dynamic', 'dynamic-learning', 'dynamic-tools']);
 });
+
+test('a later English preference wins while the first Dutch switch is downloading', async ({ page }) => {
+  let releaseCatalog;
+  const delayed = new Promise(resolve => { releaseCatalog = resolve; });
+  await page.route('**/i18n-catalog.js*', async route => { await delayed; await route.continue(); });
+  await page.goto('/');
+  await page.evaluate(() => {
+    window.languageEvents = [];
+    window.addEventListener('lp:language-changed', event => window.languageEvents.push(event.detail.language));
+  });
+  const pending = page.waitForRequest('**/i18n-catalog.js*');
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('lp:preferences-changed', { detail: { language: 'nl' } })));
+  await pending;
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('lp:preferences-changed', { detail: { language: 'en' } })));
+  await page.evaluate(() => {
+    window.catalogFinished = new Promise(resolve => {
+      document.addEventListener('load', event => {
+        if (event.target.src?.includes('/i18n-dynamic-tools.js')) requestAnimationFrame(resolve);
+      }, true);
+    });
+  });
+  releaseCatalog();
+  await page.evaluate(() => window.catalogFinished);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('h1')).toContainText('Less');
+  expect(await page.evaluate(() => window.languageEvents)).not.toContain('nl');
+});
+
+test('a failed supplemental catalog can be retried after the base file loads', async ({ page }) => {
+  const seen = catalogRequests(page);
+  await page.route('**/i18n-supplement.js*', route => route.abort('failed'), { times: 1 });
+  await page.goto('/');
+  const failed = page.waitForEvent('requestfailed', request => request.url().includes('/i18n-supplement.js'));
+  await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
+  await failed;
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
+  await expect(page.locator('h1')).toContainText('Minder');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
+  expect(seen.filter(name => name === 'supplement')).toHaveLength(2);
+  expect(await page.evaluate(() => window.LectureI18n.t('Could not save your settings. Please try again.')))
+    .toBe('Je instellingen konden niet worden opgeslagen. Probeer het opnieuw.');
+});
+
+test('a saved Dutch preference recovers a missing catalog during page startup', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('lp-preferences', JSON.stringify({ language: 'nl' })));
+  const seen = catalogRequests(page);
+  await page.route('**/i18n-supplement.js*', route => route.abort('failed'), { times: 1 });
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => window.LectureI18n.t('Operations overview'))).toBe('Operationeel overzicht');
+  await expect(page.locator('h1')).toContainText('Minder');
+  expect(seen.filter(name => name === 'supplement')).toHaveLength(2);
+});
