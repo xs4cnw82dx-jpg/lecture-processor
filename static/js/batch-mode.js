@@ -1024,6 +1024,7 @@
     var removeBtn = rowNode.querySelector('[data-remove-file="' + fieldName + '"]');
     var downloadBtn = rowNode.querySelector('[data-download-file="' + fieldName + '"]');
     if (!zone || !input) return;
+    if (window.LectureProcessorUx && typeof window.LectureProcessorUx.manageUploadZone === 'function') window.LectureProcessorUx.manageUploadZone(zone);
 
     var applyDroppedFiles = function (files) {
       if (!files || !files.length) return;
@@ -1838,7 +1839,8 @@
       outputLanguageButton.addEventListener('keydown', function (event) {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           event.preventDefault();
-          setOutputLanguageMenuVisible(true, event.key === 'ArrowDown' ? 'first' : 'last');
+          // Like the other output-language pickers: Down opens on the selected language, Up on the last.
+          setOutputLanguageMenuVisible(true, event.key === 'ArrowDown' ? 'active' : 'last');
         } else if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           var isVisible = outputLanguageMenu.classList.contains('visible');

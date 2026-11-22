@@ -387,6 +387,10 @@ const outputLanguageCustom = document.getElementById('output-language-custom');
 
 const pdfZone = document.getElementById('pdf-zone');
 const audioZone = document.getElementById('audio-zone');
+if (typeof uxUtils.manageUploadZone === 'function') {
+    uxUtils.manageUploadZone(pdfZone);
+    uxUtils.manageUploadZone(audioZone);
+}
 const pdfZoneTitle = document.getElementById('pdf-zone-title');
 const pdfZoneBadge = document.getElementById('pdf-zone-badge');
 const pdfZoneHelper = document.getElementById('pdf-zone-helper');
