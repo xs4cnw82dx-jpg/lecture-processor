@@ -92,3 +92,37 @@ test('the shared toast keeps errors readable, pauses on hover and replaces older
   await page.clock.runFor(2500);
   expect((await state()).visible).toBe(false);
 });
+
+test('a shell error stays visible while hovered and dismisses after the pointer leaves', async ({ page }) => {
+  await installAccountFixture(page);
+  await page.goto('/dashboard');
+  await page.clock.install();
+  await page.evaluate(() => window.LectureProcessorShell.showToast('Could not save your changes.', 'error'));
+  const toast = page.locator('#shell-toast');
+  await page.clock.runFor(300);
+  const box = await toast.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.clock.runFor(8000);
+  await expect(toast).toHaveClass(/visible/);
+  await page.mouse.move(0, 0);
+  await page.clock.runFor(6000);
+  await expect(toast).not.toHaveClass(/visible/);
+});
+
+test('a replacement toast keeps the full reading time after the pointer leaves', async ({ page }) => {
+  await installAccountFixture(page);
+  await page.goto('/dashboard');
+  await page.clock.install();
+  await page.evaluate(() => window.LectureProcessorUx.toast('First message'));
+  const toast = page.locator('.app-toast');
+  await toast.hover();
+  await page.evaluate(() => window.LectureProcessorUx.toast('Replacement message', { type: 'error' }));
+  await page.clock.runFor(10000);
+  await expect(toast).toHaveClass(/visible/);
+  await expect(toast).toHaveText('Replacement message');
+  await page.mouse.move(0, 0);
+  await page.clock.runFor(5000);
+  await expect(toast).toHaveClass(/visible/);
+  await page.clock.runFor(1001);
+  await expect(toast).not.toHaveClass(/visible/);
+});

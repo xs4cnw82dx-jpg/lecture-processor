@@ -1552,7 +1552,7 @@ adminMenuButtons.forEach((button, index) => {
 });
 
 document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
+    if (event.defaultPrevented || event.key !== 'Escape') return;
     const open = adminMenuButtons.find((button) => button.getAttribute('aria-expanded') === 'true');
     if (open) { closeAdminMenus(); open.focus(); return; }
     if (adminNav && adminNav.classList.contains('is-open')) { setAdminNavOpen(false); adminNavToggle.focus(); }

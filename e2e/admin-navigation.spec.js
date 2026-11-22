@@ -158,3 +158,20 @@ test('stale audio clean-up asks first and announces its result', async ({ page }
   expect(state.requests).toContain('/api/admin/maintenance/study-audio/cleanup-stale');
   await expect(button).toBeEnabled();
 });
+
+test('Escape in a phone submenu returns to its trigger before closing navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openAdmin(page);
+  const toggle = page.locator('#admin-nav-toggle');
+  const activity = page.locator('[data-admin-menu="activity"]');
+  await toggle.click();
+  await activity.press('ArrowDown');
+  await expect(page.locator('#admin-menu-activity a').first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(activity).toHaveAttribute('aria-expanded', 'false');
+  await expect(activity).toBeFocused();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toggle).toBeFocused();
+});

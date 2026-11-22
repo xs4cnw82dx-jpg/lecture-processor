@@ -1138,6 +1138,12 @@
   function defaultToastHide(element) { element.classList.remove('visible'); }
   function scheduleToastHide(element, delay) {
     if (element._uxToastTimer) global.clearTimeout(element._uxToastTimer);
+    element._uxToastPaused = element.matches(':hover, :focus-within');
+    if (element._uxToastPaused) {
+      element._uxToastTimer = null;
+      element._uxToastRemaining = delay;
+      return;
+    }
     element._uxToastHideAt = Date.now() + delay;
     element._uxToastTimer = global.setTimeout(function () {
       element._uxToastTimer = null;
@@ -1147,6 +1153,7 @@
   function bindToastPause(element) {
     if (element._uxToastPauseBound) return;
     element._uxToastPauseBound = true;
+    element.setAttribute('data-ux-toast', '');
     function pause() {
       if (!element._uxToastTimer) return;
       element._uxToastRemaining = Math.max(0, element._uxToastHideAt - Date.now());
@@ -1155,8 +1162,7 @@
       element._uxToastPaused = true;
     }
     function resume() {
-      if (!element._uxToastPaused || element.matches(':hover') || element.contains(document.activeElement)) return;
-      element._uxToastPaused = false;
+      if (!element._uxToastPaused || element.matches(':hover, :focus-within')) return;
       scheduleToastHide(element, Math.max(element._uxToastRemaining || 0, 1500));
     }
     element.addEventListener('mouseenter', pause);
@@ -1180,7 +1186,6 @@
     (typeof opts.show === 'function' ? opts.show : defaultToastShow)(element, type);
     var duration = Number(opts.duration) > 0 ? Number(opts.duration) : TOAST_DEFAULT_MS;
     if (isError) duration = Math.max(duration, TOAST_ERROR_MIN_MS);
-    element._uxToastPaused = false;
     bindToastPause(element);
     scheduleToastHide(element, duration);
     return element;
