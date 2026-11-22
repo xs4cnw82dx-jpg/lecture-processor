@@ -3,6 +3,7 @@
 ## Development and product
 
 - [Local setup and tests](../README.md)
+- [Environment variables and defaults](ENVIRONMENT.md)
 - [AI provider configuration](AI_PROVIDER_CONFIGURATION.md) and [prompt updates](PROMPT_UPDATE_WORKFLOW.md)
 - [Background job lifecycle](BACKGROUND_JOB_LIFECYCLE.md)
 - [Study Plan operations](STUDY_PLAN_V2.md) and [calendar setup](google-calendar-setup.md)
