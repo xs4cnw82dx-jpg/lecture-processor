@@ -297,9 +297,14 @@ let sessionAlgo = ['new', 'new', 'familiar', 'retry', 'remaster'], sessionAlgoPr
 let sessionLessons = { flashcards: true, test: true, write: false, match: false, notes: false };
 
 /* ── Card mastery + spaced repetition (localStorage) ── */
-const SR_MIN_INTERVAL_DAYS = 1;
-const SR_MAX_INTERVAL_DAYS = 120;
-const REVIEW_ACTIONS = ['retry', 'hard', 'good', 'easy'];
+// The review rules and exam date parsing live in study-progress-utils.js. If that
+// file failed to load, nothing is saved and the user is asked to reload.
+function progressRulesLoaded() { return typeof progressUtils.applyReviewToEntry === 'function'; }
+function progressRulesReady() {
+  if (progressRulesLoaded()) return true;
+  showToast('Part of Study did not load, so progress and exam dates cannot be saved. Reload the page to try again.', 'error');
+  return false;
+}
 function getBrowserTimezone() {
   var tz = 'UTC';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { }
@@ -315,38 +320,16 @@ function normalizeTimezoneName(value) {
     return '';
   }
 }
-function formatDisplayDate(isoDate) {
-  var value = String(isoDate || '').trim();
-  var match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return '';
-  return match[3] + '-' + match[2] + '-' + match[1];
-}
+function formatDisplayDate(isoDate) { return progressRulesLoaded() ? progressUtils.formatDisplayDate(isoDate) : ''; }
 function parseDateInput(value) {
-  var raw = String(value || '').trim();
-  if (!raw) return '';
-  var match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (match) {
-    var date1 = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
-    if (date1.getFullYear() !== parseInt(match[1], 10) || (date1.getMonth() + 1) !== parseInt(match[2], 10) || date1.getDate() !== parseInt(match[3], 10)) {
-      return null;
-    }
-    return raw;
-  }
-  match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-  if (match) {
-    var day = parseInt(match[1], 10);
-    var month = parseInt(match[2], 10);
-    var year = parseInt(match[3], 10);
-    var date2 = new Date(year, month - 1, day);
-    if (date2.getFullYear() !== year || (date2.getMonth() + 1) !== month || date2.getDate() !== day) {
-      return null;
-    }
-    return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
-  }
-  return null;
+  if (!String(value || '').trim()) return '';
+  return progressRulesLoaded() ? progressUtils.parseDateInput(value) : null;
 }
 function setFolderExamDateValue(rawValue) {
   if (!folderExamDateInput) return;
+  // Without the date rules, keep the stored value as typed text: the save guard then
+  // refuses to save, instead of saving the folder with its exam date cleared.
+  if (!progressRulesLoaded()) { folderExamDateInput.value = String(rawValue || ''); return; }
   var normalized = parseDateInput(rawValue);
   var isoDate = normalized === null ? '' : normalized;
   if (folderExamDatePicker && typeof folderExamDatePicker.setDate === 'function') {
@@ -828,46 +811,16 @@ function queueProgressSync(currentPackOnly, options) {
     flushProgressSync(false);
   }, 700);
 }
-function clampIntervalDays(value) {
-  var parsed = Math.round(parseFloat(value) || 0);
-  if (parsed < SR_MIN_INTERVAL_DAYS) { return SR_MIN_INTERVAL_DAYS; }
-  if (parsed > SR_MAX_INTERVAL_DAYS) { return SR_MAX_INTERVAL_DAYS; }
-  return parsed;
-}
+// These two also run while rendering, so they must not throw when the rules are missing.
 function normalizeReviewAction(action) {
-  var value = String(action || '').toLowerCase();
-  return REVIEW_ACTIONS.indexOf(value) >= 0 ? value : 'good';
+  return typeof progressUtils.normalizeReviewAction === 'function' ? progressUtils.normalizeReviewAction(action) : '';
 }
 function mapLegacyDifficultyToAction(difficulty) {
-  var value = String(difficulty || '').toLowerCase();
-  if (value === 'easy') return 'easy';
-  if (value === 'hard') return 'hard';
-  return 'good';
-}
-function createEmptyCardStateEntry() {
-  return {
-    seen: 0,
-    correct: 0,
-    wrong: 0,
-    level: 'new',
-    interval_days: 0,
-    max_interval_days: 0,
-    next_review_date: '',
-    difficulty: 'medium',
-    last_review_date: '',
-    last_action: '',
-    flip_count: 0,
-    write_count: 0,
-    device_counters: {},
-    updated_at: 0
-  };
+  return typeof progressUtils.mapLegacyDifficultyToAction === 'function' ? progressUtils.mapLegacyDifficultyToAction(difficulty) : 'good';
 }
 function ensureCardStateEntry(state, cardId) {
-  if (!state || !cardId) return createEmptyCardStateEntry();
-  state[cardId] = Object.assign(createEmptyCardStateEntry(), state[cardId] || {});
-  if (!state[cardId].max_interval_days) {
-    state[cardId].max_interval_days = Math.max(0, parseInt(state[cardId].interval_days, 10) || 0);
-  }
+  if (!state || !cardId) return progressUtils.createEmptyCardStateEntry();
+  state[cardId] = progressUtils.normalizeCardStateEntry(state[cardId]);
   return state[cardId];
 }
 function deriveCardLevelForEntry(entry) {
@@ -895,45 +848,12 @@ function getCardStatusInfo(entry) {
   }
   return { key: hasCardInteraction(entry) ? 'familiar' : 'new', label: hasCardInteraction(entry) ? 'Familiar' : 'New' };
 }
-function getNextIntervalDaysForReviewAction(currentDays, action) {
-  var current = Math.max(0, parseInt(currentDays, 10) || 0);
-  var normalized = normalizeReviewAction(action);
-  if (normalized === 'retry') {
-    return SR_MIN_INTERVAL_DAYS;
-  }
-  if (normalized === 'hard') {
-    if (current <= 0) return 1;
-    return clampIntervalDays(Math.max(current + 1, current * 1.25));
-  }
-  if (normalized === 'easy') {
-    if (current <= 0) return 4;
-    return clampIntervalDays(Math.max(current + 3, current * 2.4));
-  }
-  if (current <= 0) return 2;
-  return clampIntervalDays(Math.max(current + 2, current * 1.8));
-}
 function ensureStudyActivityRecorded() {
-  var today = todayLocalDateString();
-  var yesterday = addDaysToLocalDate(today, -1);
-  var data = loadStreakData();
-  if (data.last_study_date !== today) {
-    if (data.last_study_date === yesterday) { data.current_streak = Math.max(1, (data.current_streak || 0) + 1); }
-    else { data.current_streak = 1; }
-    data.last_study_date = today;
-  }
-  if (data.daily_progress_date !== today) {
-    data.daily_progress_date = today;
-    data.daily_progress_count = 0;
-  }
-  return data;
+  return progressUtils.recordStudyDay(loadStreakData(), todayLocalDateString());
 }
 function recordStudyActivity() {
   var data = ensureStudyActivityRecorded();
-  if (progressUtils && typeof progressUtils.incrementDailyProgressForDevice === 'function') {
-    data = progressUtils.incrementDailyProgressForDevice(data, data.daily_progress_date, progressSyncDeviceId);
-  } else {
-    data.daily_progress_count = Math.max(0, parseInt(data.daily_progress_count, 10) || 0) + 1;
-  }
+  data = progressUtils.incrementDailyProgressForDevice(data, data.daily_progress_date, progressSyncDeviceId);
   saveStreakData(data);
   updateDailyGoalDisplays();
   return data;
@@ -1020,33 +940,15 @@ function recordPlannerOutcome(cardId, correct) {
   queuePlannerActivitySync();
 }
 function applyReviewAction(cardId, action, acknowledged) {
-  if (!cardId) return;
+  if (!cardId || !progressRulesReady()) return;
   if (plannedSessionController && !acknowledged) { plannedSessionController.record(cardId, normalizeReviewAction(action)); return; }
   var state = loadCardState();
-  var entry = ensureCardStateEntry(state, cardId);
   var reviewAction = normalizeReviewAction(action);
-  var reviewCounters = { seen: 1 };
-  reviewCounters[reviewAction === 'retry' ? 'wrong' : 'correct'] = 1;
-  if (progressUtils && typeof progressUtils.incrementCardDeviceCounters === 'function') {
-    entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, reviewCounters);
-  } else {
-    entry.seen = (entry.seen || 0) + 1;
-    if (reviewAction === 'retry') entry.wrong = (entry.wrong || 0) + 1;
-    else entry.correct = (entry.correct || 0) + 1;
-  }
-  entry.interval_days = getNextIntervalDaysForReviewAction(entry.interval_days, reviewAction);
-  entry.max_interval_days = Math.max(entry.max_interval_days || 0, entry.interval_days || 0);
-  entry.last_review_date = todayLocalDateString();
-  entry.next_review_date = reviewAction === 'retry'
-    ? entry.last_review_date
-    : addDaysToLocalDate(entry.last_review_date, Math.max(0, parseInt(entry.interval_days, 10) || 0));
-  if (reviewAction === 'hard') entry.difficulty = 'hard';
-  else if (reviewAction === 'easy') entry.difficulty = 'easy';
-  else entry.difficulty = 'medium';
-  entry.last_action = reviewAction;
-  entry.level = deriveCardLevelForEntry(entry);
-  entry.updated_at = Date.now();
-  state[cardId] = entry;
+  state[cardId] = progressUtils.applyReviewToEntry(state[cardId], reviewAction, {
+    today: todayLocalDateString(),
+    deviceId: progressSyncDeviceId,
+    deriveLevel: deriveCardLevelForEntry,
+  });
   saveCardState(state);
   recordStudyActivity();
   recordPlannerOutcome(cardId, reviewAction !== 'retry');
@@ -1056,14 +958,10 @@ function applyReviewAction(cardId, action, acknowledged) {
   updateLearnCardStatus();
 }
 function recordCardExposure(cardId) {
-  if (!cardId) return;
+  if (!cardId || !progressRulesReady()) return;
   var state = loadCardState();
   var entry = ensureCardStateEntry(state, cardId);
-  if (progressUtils && typeof progressUtils.incrementCardDeviceCounters === 'function') {
-    entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, { flip_count: 1 });
-  } else {
-    entry.flip_count = (entry.flip_count || 0) + 1;
-  }
+  entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, { flip_count: 1 });
   entry.level = deriveCardLevelForEntry(entry);
   entry.updated_at = Date.now();
   state[cardId] = entry;
@@ -1073,14 +971,10 @@ function recordCardExposure(cardId) {
   updateLearnCardStatus();
 }
 function recordWriteAttempt(cardId) {
-  if (!cardId) return;
+  if (!cardId || !progressRulesReady()) return;
   var state = loadCardState();
   var entry = ensureCardStateEntry(state, cardId);
-  if (progressUtils && typeof progressUtils.incrementCardDeviceCounters === 'function') {
-    entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, { write_count: 1 });
-  } else {
-    entry.write_count = (entry.write_count || 0) + 1;
-  }
+  entry = progressUtils.incrementCardDeviceCounters(entry, progressSyncDeviceId, { write_count: 1 });
   entry.level = deriveCardLevelForEntry(entry);
   entry.updated_at = Date.now();
   state[cardId] = entry;
@@ -5887,6 +5781,7 @@ function closeFolderModal() {
   setFolderExamDateValue('');
 }
 function saveFolderFromModal() {
+  if (folderExamDateInput.value.trim() && !progressRulesReady()) return;
   var normalizedExamDate = parseDateInput(folderExamDateInput.value);
   if (normalizedExamDate === null) {
     showToast('Use a valid date: dd-mm-yyyy or yyyy-mm-dd.', 'error');

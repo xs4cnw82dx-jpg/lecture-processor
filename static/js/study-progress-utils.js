@@ -720,6 +720,151 @@
     };
   }
 
+  /* ── Card review rules (spaced repetition) ── */
+  var SR_MIN_INTERVAL_DAYS = 1;
+  var SR_MAX_INTERVAL_DAYS = 120;
+  var REVIEW_ACTIONS = ['retry', 'hard', 'good', 'easy'];
+
+  function clampIntervalDays(value) {
+    var parsed = Math.round(parseFloat(value) || 0);
+    if (parsed < SR_MIN_INTERVAL_DAYS) return SR_MIN_INTERVAL_DAYS;
+    if (parsed > SR_MAX_INTERVAL_DAYS) return SR_MAX_INTERVAL_DAYS;
+    return parsed;
+  }
+
+  // Unknown actions count as 'good'.
+  function normalizeReviewAction(action) {
+    var value = String(action || '').toLowerCase();
+    return REVIEW_ACTIONS.indexOf(value) >= 0 ? value : 'good';
+  }
+
+  function mapLegacyDifficultyToAction(difficulty) {
+    var value = String(difficulty || '').toLowerCase();
+    if (value === 'easy') return 'easy';
+    if (value === 'hard') return 'hard';
+    return 'good';
+  }
+
+  function createEmptyCardStateEntry() {
+    return {
+      seen: 0,
+      correct: 0,
+      wrong: 0,
+      level: 'new',
+      interval_days: 0,
+      max_interval_days: 0,
+      next_review_date: '',
+      difficulty: 'medium',
+      last_review_date: '',
+      last_action: '',
+      flip_count: 0,
+      write_count: 0,
+      device_counters: {},
+      updated_at: 0,
+    };
+  }
+
+  // Fills in missing fields of a stored entry. Entries saved before
+  // max_interval_days existed take it from their current interval.
+  function normalizeCardStateEntry(entry) {
+    var normalized = Object.assign(createEmptyCardStateEntry(), entry || {});
+    if (!normalized.max_interval_days) {
+      normalized.max_interval_days = Math.max(0, parseInt(normalized.interval_days, 10) || 0);
+    }
+    return normalized;
+  }
+
+  function nextReviewIntervalDays(currentDays, action) {
+    var current = Math.max(0, parseInt(currentDays, 10) || 0);
+    var normalized = normalizeReviewAction(action);
+    if (normalized === 'retry') return SR_MIN_INTERVAL_DAYS;
+    if (normalized === 'hard') {
+      if (current <= 0) return 1;
+      return clampIntervalDays(Math.max(current + 1, current * 1.25));
+    }
+    if (normalized === 'easy') {
+      if (current <= 0) return 4;
+      return clampIntervalDays(Math.max(current + 3, current * 2.4));
+    }
+    if (current <= 0) return 2;
+    return clampIntervalDays(Math.max(current + 2, current * 1.8));
+  }
+
+  // Returns the entry after one review. options: today (YYYY-MM-DD), deviceId,
+  // now (ms timestamp) and deriveLevel(entry) for the card level.
+  function applyReviewToEntry(entry, action, options) {
+    var settings = options && typeof options === 'object' ? options : {};
+    var reviewAction = normalizeReviewAction(action);
+    var counters = { seen: 1 };
+    counters[reviewAction === 'retry' ? 'wrong' : 'correct'] = 1;
+    var updated = incrementCardDeviceCounters(normalizeCardStateEntry(entry), settings.deviceId, counters);
+    updated.interval_days = nextReviewIntervalDays(updated.interval_days, reviewAction);
+    updated.max_interval_days = Math.max(updated.max_interval_days || 0, updated.interval_days || 0);
+    updated.last_review_date = String(settings.today || localDateString());
+    updated.next_review_date = reviewAction === 'retry'
+      ? updated.last_review_date
+      : (addDaysToLocalDate(updated.last_review_date, Math.max(0, parseInt(updated.interval_days, 10) || 0)) || updated.last_review_date);
+    if (reviewAction === 'hard') updated.difficulty = 'hard';
+    else if (reviewAction === 'easy') updated.difficulty = 'easy';
+    else updated.difficulty = 'medium';
+    updated.last_action = reviewAction;
+    if (typeof settings.deriveLevel === 'function') updated.level = settings.deriveLevel(updated);
+    updated.updated_at = Number.isFinite(settings.now) ? settings.now : Date.now();
+    return updated;
+  }
+
+  // Moves the streak on to today. A day missed resets it to 1; a new day
+  // resets the daily count. Returns a new object.
+  function recordStudyDay(streak, today) {
+    var data = Object.assign({}, streak || {});
+    var safeToday = String(today || localDateString());
+    var yesterday = addDaysToLocalDate(safeToday, -1);
+    if (data.last_study_date !== safeToday) {
+      data.current_streak = data.last_study_date === yesterday
+        ? Math.max(1, (data.current_streak || 0) + 1)
+        : 1;
+      data.last_study_date = safeToday;
+    }
+    if (data.daily_progress_date !== safeToday) {
+      data.daily_progress_date = safeToday;
+      data.daily_progress_count = 0;
+    }
+    return data;
+  }
+
+  /* ── Exam date input ── */
+  function isRealCalendarDate(year, month, day) {
+    var date = new Date(year, month - 1, day);
+    return date.getFullYear() === year && (date.getMonth() + 1) === month && date.getDate() === day;
+  }
+
+  // Accepts YYYY-MM-DD or DD-MM-YYYY. Returns YYYY-MM-DD, '' for empty
+  // input, or null for anything else (including dates that do not exist).
+  function parseDateInput(value) {
+    var raw = String(value || '').trim();
+    if (!raw) return '';
+    var match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      return isRealCalendarDate(parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)) ? raw : null;
+    }
+    match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (match) {
+      var day = parseInt(match[1], 10);
+      var month = parseInt(match[2], 10);
+      var year = parseInt(match[3], 10);
+      if (!isRealCalendarDate(year, month, day)) return null;
+      return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    }
+    return null;
+  }
+
+  // YYYY-MM-DD → DD-MM-YYYY; '' for anything else.
+  function formatDisplayDate(isoDate) {
+    var match = String(isoDate || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return '';
+    return match[3] + '-' + match[2] + '-' + match[1];
+  }
+
   var exported = {
     DEFAULT_DAILY_GOAL: DEFAULT_DAILY_GOAL,
     MIN_DAILY_GOAL: MIN_DAILY_GOAL,
@@ -759,6 +904,19 @@
     mergeStreakData: mergeStreakData,
     broadcastProgressEvent: broadcastProgressEvent,
     subscribeProgressEvent: subscribeProgressEvent,
+    SR_MIN_INTERVAL_DAYS: SR_MIN_INTERVAL_DAYS,
+    SR_MAX_INTERVAL_DAYS: SR_MAX_INTERVAL_DAYS,
+    REVIEW_ACTIONS: REVIEW_ACTIONS.slice(),
+    clampIntervalDays: clampIntervalDays,
+    normalizeReviewAction: normalizeReviewAction,
+    mapLegacyDifficultyToAction: mapLegacyDifficultyToAction,
+    createEmptyCardStateEntry: createEmptyCardStateEntry,
+    normalizeCardStateEntry: normalizeCardStateEntry,
+    nextReviewIntervalDays: nextReviewIntervalDays,
+    applyReviewToEntry: applyReviewToEntry,
+    recordStudyDay: recordStudyDay,
+    parseDateInput: parseDateInput,
+    formatDisplayDate: formatDisplayDate,
   };
 
   if (typeof module !== 'undefined' && module.exports) {
