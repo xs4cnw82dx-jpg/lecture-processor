@@ -44,6 +44,23 @@ async function failedProfile(page) {
   await expect(page.locator('#submit-batch-btn')).toBeDisabled();
 }
 
+// Startup reads the profile once, or twice when the page's own credit check
+// starts after the shell's first read has already failed. Let those reads
+// finish, check they stay within that bound, then count only later reads.
+function expectStartupReads(setup) {
+  const reads = setup.state.reads;
+  expect(reads.length).toBeGreaterThanOrEqual(1);
+  expect(reads.length).toBeLessThanOrEqual(2);
+  expect(reads.every(uid => uid === 'a')).toBe(true);
+  return reads.length;
+}
+
+async function settledReadCount(page, setup) {
+  await page.waitForLoadState('networkidle');
+  await failedProfile(page);
+  return expectStartupReads(setup);
+}
+
 async function events(page, type = 'focus', count = 1) {
   await page.evaluate(({ type, count }) => {
     for (let index = 0; index < count; index += 1) window.dispatchEvent(new Event(type));
@@ -54,7 +71,7 @@ for (const type of ['focus', 'online']) {
   test(`${type} recovers a failed credit profile and preserves selected inputs`, async ({ page }) => {
     const setup = await fixture(page);
     await page.goto('/batch_mode_interview_transcription');
-    await failedProfile(page);
+    const startupReads = await settledReadCount(page, setup);
     const row = page.locator('.batch-row').first();
     await row.locator('[data-field="audio"]').setInputFiles({ name: 'keep.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3 synthetic') });
     await row.locator('[data-interview-feature-chip="summary"]').click();
@@ -64,7 +81,7 @@ for (const type of ['focus', 'online']) {
     await expect(page.locator('#submit-batch-btn')).toBeEnabled();
     await expect(row.locator('[data-interview-extra-note]')).toHaveText('Selected extras: 1 credit.');
     expect(await row.locator('[data-field="audio"]').evaluate(input => input.files[0].name)).toBe('keep.mp3');
-    expect(setup.state.reads).toEqual(['a', 'a']);
+    expect(setup.state.reads.slice(startupReads)).toEqual(['a']);
     expect(setup.browserErrors).toEqual([]);
   });
 }
@@ -72,21 +89,21 @@ for (const type of ['focus', 'online']) {
 test('repeated focus and online events allow only one retry during a persistent failure', async ({ page }) => {
   const setup = await fixture(page);
   await page.goto('/batch_mode_interview_transcription');
-  await failedProfile(page);
+  const startupReads = await settledReadCount(page, setup);
   await events(page, 'focus', 10);
-  await expect.poll(() => setup.state.reads.length).toBe(2);
+  await expect.poll(() => setup.state.reads.length).toBe(startupReads + 1);
   await failedProfile(page);
   await events(page, 'online', 10);
   await events(page, 'focus', 10);
   await page.waitForTimeout(250);
-  expect(setup.state.reads).toEqual(['a', 'a']);
+  expect(setup.state.reads.slice(startupReads)).toEqual(['a']);
   await expect(page.locator('#submit-batch-btn')).toBeDisabled();
 });
 
 test('a verified recovery rearms one retry for a later outage', async ({ page }) => {
   const setup = await fixture(page);
   await page.goto('/batch_mode_interview_transcription');
-  await failedProfile(page);
+  const startupReads = await settledReadCount(page, setup);
   setup.state.fail = false;
   await events(page);
   await expect(page.locator('#shell-credits-total')).toHaveText('100 credits');
@@ -96,28 +113,28 @@ test('a verified recovery rearms one retry for a later outage', async ({ page })
   setup.state.fail = false;
   await events(page, 'online');
   await expect.poll(() => page.evaluate(() => window.LectureProcessorShell.getCreditState().status)).toBe('ready');
-  expect(setup.state.reads).toEqual(['a', 'a', 'a', 'a']);
+  expect(setup.state.reads.slice(startupReads)).toEqual(['a', 'a', 'a']);
 });
 
 test('offline focus preserves the retry for the browser online event', async ({ page, context }) => {
   const setup = await fixture(page);
   await page.goto('/batch_mode_interview_transcription');
-  await failedProfile(page);
+  const startupReads = await settledReadCount(page, setup);
   await context.setOffline(true);
   await events(page, 'focus', 5);
   await page.waitForTimeout(250);
-  expect(setup.state.reads).toEqual(['a']);
+  expect(setup.state.reads.slice(startupReads)).toEqual([]);
   setup.state.fail = false;
   await context.setOffline(false);
   await expect(page.locator('#shell-credits-total')).toHaveText('100 credits');
-  expect(setup.state.reads).toEqual(['a', 'a']);
+  expect(setup.state.reads.slice(startupReads)).toEqual(['a']);
 });
 
 test('automatic recovery and ordinary consumers coalesce while the profile is held', async ({ page }) => {
   const setup = await fixture(page);
   const held = deferred();
   await page.goto('/batch_mode_interview_transcription');
-  await failedProfile(page);
+  const startupReads = await settledReadCount(page, setup);
   setup.state.fail = false;
   // This later route holds only the recovery call and then uses the fixture's
   // actual profile response, preserving the normal shared provider behavior.
@@ -131,7 +148,7 @@ test('automatic recovery and ordinary consumers coalesce while the profile is he
     held.resolve();
     await page.evaluate(() => window.recoveryConsumers);
     await expect(page.locator('#shell-credits-total')).toHaveText('100 credits');
-    expect(setup.state.reads).toEqual(['a', 'a']);
+    expect(setup.state.reads.slice(startupReads)).toEqual(['a']);
   } finally { held.resolve(); }
 });
 
@@ -165,17 +182,22 @@ test('an old account recovery response cannot replace the new account balance', 
 test('a new account has its own bounded recovery allowance', async ({ page }) => {
   const setup = await fixture(page);
   await page.goto('/batch_mode_interview_transcription');
-  await failedProfile(page);
+  const startupReads = await settledReadCount(page, setup);
   await events(page);
-  await expect.poll(() => setup.state.reads.length).toBe(2);
+  await expect.poll(() => setup.state.reads.length).toBe(startupReads + 1);
   await failedProfile(page);
   await page.evaluate(() => window.testAccount.switchTo('b'));
-  await expect.poll(() => setup.state.reads.length).toBe(3);
+  await expect.poll(() => setup.state.reads.includes('b')).toBe(true);
   await failedProfile(page);
+  const switchReads = setup.state.reads.length;
   setup.state.fail = false;
   await events(page, 'online');
   await expect(page.locator('#shell-credits-total')).toHaveText('27 credits');
-  expect(setup.state.reads).toEqual(['a', 'a', 'b', 'b']);
+  expect(setup.state.reads.slice(startupReads, startupReads + 1)).toEqual(['a']);
+  const readsOnSwitch = setup.state.reads.slice(startupReads + 1, switchReads);
+  expect(readsOnSwitch.length).toBeLessThanOrEqual(2);
+  expect(readsOnSwitch.every(uid => uid === 'b')).toBe(true);
+  expect(setup.state.reads.slice(switchReads)).toEqual(['b']);
 });
 
 test('a recovered balance without a known price does not enable paid submission', async ({ page }) => {
@@ -194,6 +216,8 @@ test('healthy and signed-out states do not fetch on focus or online', async ({ p
   const setup = await fixture(page, { fail: false });
   await page.goto('/batch_mode_interview_transcription');
   await expect(page.locator('#shell-credits-total')).toHaveText('100 credits');
+  await page.waitForLoadState('networkidle');
+  const startupReads = expectStartupReads(setup);
   await events(page, 'focus', 5);
   await events(page, 'online', 5);
   await page.evaluate(() => window.testAccount.switchTo(null));
@@ -201,7 +225,7 @@ test('healthy and signed-out states do not fetch on focus or online', async ({ p
   await events(page, 'focus', 5);
   await events(page, 'online', 5);
   await page.waitForTimeout(250);
-  expect(setup.state.reads).toEqual(['a']);
+  expect(setup.state.reads.slice(startupReads)).toEqual([]);
 });
 
 for (const language of ['en', 'nl']) {
