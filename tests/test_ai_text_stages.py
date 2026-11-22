@@ -1,11 +1,11 @@
 """Text generation prompts, stage routing, usage, and session ownership."""
-from copy import deepcopy
 import logging
 import socket
+from copy import deepcopy
 from types import SimpleNamespace
 
-from google.genai import types
 import pytest
+from google.genai import types
 
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.ai.providers import factory
@@ -13,9 +13,7 @@ from lecture_processor.domains.ai.providers.contracts import GenerationResult, T
 from lecture_processor.domains.ai.providers.fake import FakeGeminiClient, FakeProviderError
 from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
 from lecture_processor.services import interview_coding_service as service
-from tests.test_interview_coding_background import coding, start  # noqa: F401
-from tests.test_study_tools_regeneration import regeneration  # noqa: F401
-
+from tests.support.interview_coding_background import start
 
 OPEN_SESSION = factory.open_provider_session
 MODEL = 'gemini-synthetic-configured-study'

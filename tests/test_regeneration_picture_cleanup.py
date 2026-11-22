@@ -11,8 +11,11 @@ from lecture_processor.domains.study.content_revision import fingerprint
 from lecture_processor.repositories import books_repo
 from lecture_processor.services import study_picture_service as pictures
 from tests.credit_test_support import Reference
-from tests.test_pack_background_concurrency import (
-    background as background, canonical_job, pack, run_regeneration, seed_regeneration,
+from tests.support.pack_background_concurrency import (
+    canonical_job,
+    pack,
+    run_regeneration,
+    seed_regeneration,
     writes_generated_pack,
 )
 

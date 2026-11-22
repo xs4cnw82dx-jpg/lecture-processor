@@ -87,10 +87,10 @@ Important files:
 - Optional E2E workflow: `.github/workflows/e2e-playwright.yml`
 - Smoke script: `scripts/smoke_test.py`
 - Stripe go-live verification script: `scripts/stripe_go_live_check.py`
-- Guardrail tests: `tests/test_launch_guardrails.py`
+- Guardrail tests: `tests/launch/`
 - Launch checklist: `docs/LAUNCH_READINESS.md`
 - Stripe switch checklist: `docs/STRIPE_GO_LIVE_CHECKLIST.md`
-- Final prelaunch notes: `docs/FINAL_PRELAUNCH_PASS.md`
+- Final prelaunch notes: `docs/archive/FINAL_PRELAUNCH_PASS.md`
 - Rollback process: `docs/ROLLBACK_RUNBOOK.md`
 - Legal pages:
   - `templates/privacy.html`
@@ -197,7 +197,7 @@ If assistant asks owner to run any Python command, always include venv activatio
 When an AI agent resumes this project, it should do this in order:
 
 1. Read these files first:
-   - `docs/AI_LAUNCH_HANDOFF.md` (this file)
+   - `docs/archive/AI_LAUNCH_HANDOFF.md` (this file)
    - `docs/LAUNCH_READINESS.md`
    - `docs/DATA_RETENTION_BACKUP_POLICY.md`
    - `docs/ROLLBACK_RUNBOOK.md`
@@ -262,7 +262,7 @@ Only announce publicly when all are true:
 ```bash
 cd /Users/jaccovandermeulen/Desktop/lecture-processor
 source .venv/bin/activate
-python -m pytest -q tests/test_launch_guardrails.py
+python scripts/run_pytest_isolated.py -q tests/launch/
 ./scripts/run_smoke.sh
 ```
 
@@ -330,4 +330,4 @@ git push origin vX.Y.Z
 
 Use this exact sentence in future chats:
 
-> Read `docs/AI_LAUNCH_HANDOFF.md` first, then continue helping me from current state with explicit step-by-step instructions only.
+> Read `docs/archive/AI_LAUNCH_HANDOFF.md` first, then continue helping me from current state with explicit step-by-step instructions only.

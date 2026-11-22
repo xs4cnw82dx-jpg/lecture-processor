@@ -1,16 +1,14 @@
 """Download compatibility responses and bounded artifact cleanup work."""
 
-from copy import deepcopy
 import os
-from types import SimpleNamespace
 import uuid
+from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
 from lecture_processor.domains.rate_limit import limiter
 from lecture_processor.services import tools_download_service
-from tests.test_background_lecture_download import downloads as downloads
-
 
 _REAL_RATE_LIMIT_CHECK = limiter.check_rate_limit
 

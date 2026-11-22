@@ -1,14 +1,16 @@
 """Planned answers, SRS and run receipts commit or fail as one operation."""
 from copy import deepcopy
 from types import SimpleNamespace
+
 import pytest
 
-from lecture_processor.services import planned_review_service as reviews, study_run_service as runs
 from lecture_processor.domains.study import progress
 from lecture_processor.repositories import planner_repo, study_repo
-from tests.test_study_progress_rollup import Database
-from tests.test_study_runs import create_session, start
-from tests.test_study_plan_api import study_plan_runtime, _headers  # noqa: F401
+from lecture_processor.services import planned_review_service as reviews
+from lecture_processor.services import study_run_service as runs
+from tests.support.study_plan_api import _headers
+from tests.support.study_progress_rollup import Database
+from tests.support.study_runs import create_session, start
 
 
 def test_checkpoint_lost_response_replay_keeps_one_review(client, study_plan_runtime):

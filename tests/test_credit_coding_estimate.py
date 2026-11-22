@@ -27,7 +27,7 @@ def test_owned_coding_estimate_names_its_units_and_actual_charge(monkeypatch, en
     before = deepcopy(store.documents)
     app = Flask(__name__)
     @app.get('/coding/estimate')
-    def estimate():
+    def coding_estimate():
         return service.get_coding_state(runtime, request, 'pack-one')
     response = app.test_client().get('/coding/estimate')
     assert response.status_code == 200

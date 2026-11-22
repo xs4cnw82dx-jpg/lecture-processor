@@ -1,15 +1,15 @@
 """Regression cases for Book Studio recovery, sharing and concurrent operations."""
-from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
 import io
 import json
 import threading
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 
 import pytest
 
 from lecture_processor.domains.books import model
-from tests.test_book_cloud_sync import cloud_setup, create, headers, lease, pages, upload, version
+from tests.support.book_cloud_sync import create, headers, lease, pages, upload, version
 
 
 def content(token, logical, revision=1, **extra):

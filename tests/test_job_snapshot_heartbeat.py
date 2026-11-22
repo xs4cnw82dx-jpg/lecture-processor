@@ -4,8 +4,7 @@ import pytest
 
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.runtime_jobs import store
-from tests.test_processing_credit_admission import PRIMARY, runtime_fixture
-from tests.test_runtime_job_retention import retention_state as retention_state
+from tests.support.processing_credit_admission import PRIMARY, runtime_fixture
 
 
 @pytest.mark.parametrize('status', ['processing', 'complete', 'error'])

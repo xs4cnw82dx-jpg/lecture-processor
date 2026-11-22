@@ -69,6 +69,6 @@ Logs record declined status/endpoint, aggregate database operations, export fail
 
 Backend tests cover private access, membership, guest revocation, independent comments, concurrent lease acquisition, tab scope, expiry, takeover, stale writes, image validation/budgets, changed pages, named versions, account cleanup, nested-array persistence and Word/PDF imposition. Client tests cover geometry, imposition, linked spreads, text wrapping, safe backup decoding and prompt composition. Browser acceptance tests exercise the actual template, local persistence, keyboard focus, page recovery, multiple drops, file picker, invalid files, backups, all export combinations, responsive layout, reduced motion and pen input.
 
-The release QA record is in `BOOK_STUDIO_QA.md`; do not treat an unrecorded platform or journey as verified.
+The release QA record is in [Book Studio release QA](archive/BOOK_STUDIO_QA.md); do not treat an unrecorded platform or journey as verified.
 
 Font sources and applicable license/provenance files are bundled under `static/fonts/books`. `fflate` is bundled by the normal asset build; its MIT license is in `static/licenses/fflate-LICENSE.txt`.

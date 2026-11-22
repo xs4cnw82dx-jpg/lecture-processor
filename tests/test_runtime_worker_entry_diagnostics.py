@@ -1,12 +1,12 @@
 """Worker-entry diagnostics keep durable admission and Future semantics intact."""
 
-from copy import deepcopy
 import logging
+from copy import deepcopy
 
 import pytest
 
 from lecture_processor.domains.runtime_jobs import execution
-from tests.test_g1a_runtime_recovery import Dispatcher, admit, make_runtime
+from tests.support.g1a_runtime_recovery import Dispatcher, admit, make_runtime
 
 
 @pytest.mark.parametrize('scheme', [1, 2], ids=['legacy', 'unified'])

@@ -1,51 +1,20 @@
 """Behavioral coverage for private books, editing leases and print output."""
 import base64
-from copy import deepcopy
 import io
-import threading
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 
 import pytest
-from PIL import Image
 from lxml import etree
+from PIL import Image
 from pypdf import PdfReader
 
 from lecture_processor.domains.books import model
 from lecture_processor.domains.books.export import generate
-from lecture_processor.services import book_service as service, book_storage
-
-
-class Store:
-    def __init__(self):
-        self.data = {}
-        self.lock = threading.RLock()
-
-    def get(self, path):
-        return deepcopy(self.data.get(path))
-
-    cached = get
-
-    def put(self, path, value):
-        self.data[path] = deepcopy(value)
-
-    def delete(self, path):
-        self.data.pop(path, None)
-
-    def list(self, path, field=None, value=None, operator='==', limit=200):
-        rows = [deepcopy(v) for k, v in self.data.items() if k.startswith(path + '/') and '/' not in k[len(path) + 1:]]
-        if field:
-            rows = [r for r in rows if (value in r.get(field, []) if operator == 'array_contains' else r.get(field, 0) > value if operator == '>' else r.get(field) == value)]
-        return rows[:limit]
-
-    def atomic(self, operation):
-        with self.lock:
-            before = deepcopy(self.data)
-            try:
-                return operation(self)
-            except Exception:
-                self.data = before
-                raise
+from lecture_processor.services import book_service as service
+from lecture_processor.services import book_storage
+from tests.support.books import Store, headers, pages
 
 
 @pytest.fixture
@@ -55,14 +24,6 @@ def setup(client, monkeypatch, runtime):
     monkeypatch.setattr(service.lifecycle, 'ensure_account_allows_writes', lambda *a, **kw: (True, ''))
     monkeypatch.setattr(runtime.core, 'verify_firebase_token', lambda req: {'uid': req.headers['Authorization'], 'email': req.headers['Authorization'] + '@example.com', 'email_verified': True}, raising=False)
     return client, db
-
-
-def headers(user='owner', session='tab-one', **extra):
-    return {'Authorization': user, 'X-Book-Session': session, **extra}
-
-
-def pages(n=4):
-    return [model.page({'id': 'p' + str(i), 'role': 'front' if i == 0 else 'back' if i == n - 1 else 'page', 'items': []}) for i in range(n)]
 
 
 def create(client):
@@ -293,7 +254,7 @@ def test_linked_illustrations_cannot_be_separated():
 
 
 def test_firestore_nested_array_round_trip():
-    from lecture_processor.repositories.books_repo import encode, decode
+    from lecture_processor.repositories.books_repo import decode, encode
     original = {'items': [{'points': [[1, 2, .5], [2, 3, 1]], 'cells': [['a', 'b'], ['c', 'd']]}]}
     encoded = encode(original)
     def validate(value):
@@ -307,8 +268,9 @@ def test_firestore_nested_array_round_trip():
 
 
 def test_account_deletion_removes_owned_assets_shares_and_membership_only(monkeypatch):
-    from lecture_processor.services import book_account_service as account
     from types import SimpleNamespace
+
+    from lecture_processor.services import book_account_service as account
     db = Store()
     monkeypatch.setattr(account, 'BookStore', lambda _: db)
     monkeypatch.setattr(book_storage, 'request', lambda *args: b'')

@@ -1,15 +1,15 @@
 """Google onboarding security, restart-safe synchronization, and calendar correctness."""
-from datetime import date, timedelta
-from urllib.parse import parse_qs, urlsplit
 import json
 import time
+from datetime import date
+from urllib.parse import parse_qs, urlsplit
 
-from cryptography.fernet import Fernet
 import pytest
+from cryptography.fernet import Fernet
 
-from tests.test_study_plan_api import study_plan_runtime, _headers
 from lecture_processor.services import calendar_sync_service as sync
 from tests.runtime_test_support import get_test_core
+from tests.support.study_plan_api import _headers
 
 core = get_test_core()
 

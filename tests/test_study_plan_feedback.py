@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 import pytest
 from google.api_core.exceptions import DeadlineExceeded, FailedPrecondition
 
-from tests.test_study_plan_daily import apply, preview, october_clock  # noqa: F401
-from tests.test_study_plan_api import core, study_plan_runtime, _headers  # noqa: F401
+from tests.runtime_test_support import get_test_core
+from tests.support.study_plan_api import _headers
+from tests.support.study_plan_daily import apply, preview
+
+core = get_test_core()
 
 
 def test_missing_index_is_actionable_and_same_preview_can_retry(client, study_plan_runtime, october_clock, monkeypatch):

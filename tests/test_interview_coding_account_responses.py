@@ -5,7 +5,6 @@ from copy import deepcopy
 import pytest
 
 from lecture_processor.services import interview_coding_service as service
-from tests.test_interview_coding_background import coding as coding
 
 
 def _call_after_target_changes(coding, monkeypatch, entrypoint, change):

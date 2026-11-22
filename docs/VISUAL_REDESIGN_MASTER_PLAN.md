@@ -14,7 +14,7 @@ One important detail: **Batch Status already has an uncommitted redesign locally
 
 **1. Shared design language — the foundation for every page**
 
-The reference is [Study Plan’s styling](/Users/jaccovandermeulen/Desktop/lecture-processor/static/css/study-plan.css). Currently, [shared UI](/Users/jaccovandermeulen/Desktop/lecture-processor/static/css/shared-ui.css) and [the app shell](/Users/jaccovandermeulen/Desktop/lecture-processor/static/css/app-shell.css) define competing palettes and surfaces.
+The reference is [Study Plan’s styling](../static/css/study-plan.css). Currently, [shared UI](../static/css/shared-ui.css) and [the app shell](../static/css/app-shell.css) define competing palettes and surfaces.
 
 - Establish one blue primary/selection color, navy text, blue-gray secondary text, cool pale background, and consistent semantic success/warning/error colors.
 - Adopt Study Plan’s rounded controls, softly edged white surfaces, restrained shadows, and clear selected states.

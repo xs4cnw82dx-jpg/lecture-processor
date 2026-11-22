@@ -100,4 +100,4 @@ python scripts/stripe_go_live_check.py \
   --bearer-token "$FIREBASE_TEST_BEARER"
 ```
 
-4. Follow [ROLLBACK_RUNBOOK.md](/Users/jaccovandermeulen/Desktop/lecture-processor/docs/ROLLBACK_RUNBOOK.md) if broader incident symptoms appear.
+4. Follow [ROLLBACK_RUNBOOK.md](ROLLBACK_RUNBOOK.md) if broader incident symptoms appear.

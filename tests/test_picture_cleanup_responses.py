@@ -1,11 +1,11 @@
 """Truthful picture cleanup responses with synthetic private storage."""
 
-from copy import deepcopy
 import io
+from copy import deepcopy
 from types import SimpleNamespace
 
-from PIL import Image
 import pytest
+from PIL import Image
 
 from lecture_processor.domains.books.model import BookError
 from lecture_processor.domains.study.content_revision import fingerprint
@@ -13,9 +13,7 @@ from lecture_processor.services import account_data_service as accounts
 from lecture_processor.services import study_library_service as library
 from lecture_processor.services import study_picture_service as pictures
 from tests.credit_test_support import make_credit_runtime
-from tests.test_study_picture_retention import retention as retention
-from tests.test_study_picture_retention import response_status, update_cards
-from tests.test_study_pictures import setup as setup
+from tests.support.study_picture_retention import response_status, update_cards
 
 
 def _payload(result):

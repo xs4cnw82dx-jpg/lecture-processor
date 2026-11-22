@@ -42,6 +42,21 @@ jobs:
         run: |
           python scripts/run_pytest_isolated.py -q
 
+  coverage:
+    name: Python coverage report
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14.3"
+      - name: Install coverage dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt -c requirements.constraints.txt
+      - name: Write isolated Python coverage to the job summary
+        run: python scripts/run_pytest_isolated.py -q --cov=lecture_processor --cov-report="markdown:$GITHUB_STEP_SUMMARY"
+
   frontend-checks:
     name: Frontend Checks
     runs-on: ubuntu-latest
