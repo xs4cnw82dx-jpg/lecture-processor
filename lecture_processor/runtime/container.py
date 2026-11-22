@@ -121,6 +121,11 @@ def build_runtime(app, settings: AppSettings) -> AppRuntime:
     return runtime
 
 
+def resolve_runtime(runtime=None):
+    """Use the caller's runtime, or resolve the active Flask app's runtime."""
+    return get_runtime() if runtime is None else runtime
+
+
 def get_runtime(app_obj=None) -> AppRuntime:
     if app_obj is None:
         app_obj = current_app

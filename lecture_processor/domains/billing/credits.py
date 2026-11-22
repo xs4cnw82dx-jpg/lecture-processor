@@ -1,7 +1,7 @@
 import hashlib
 
 from lecture_processor.domains.billing import policy
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 CREDIT_CATEGORIES = ('lecture', 'slides', 'interview')
 
@@ -22,12 +22,6 @@ CREDIT_FIELD_CATEGORY = {
     for category, credit_fields in CATEGORY_CREDIT_FIELDS.items()
     for credit_field in credit_fields
 }
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def normalize_email(email):

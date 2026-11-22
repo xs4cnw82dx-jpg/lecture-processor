@@ -6,7 +6,7 @@ from flask import g
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.ai.providers.routing import Diagnostic, RoutingSnapshot
 from lecture_processor.domains.ai.providers.usage import combine_cost_sources, finite_cost_usd
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.runtime import environment as runtime_environment
 
 _ADMIN_HIDDEN_JOB_EMAILS = {'user@gmail.com', 'batch@example.com'}
@@ -18,12 +18,6 @@ _ADMIN_HIDDEN_BATCH_TITLES = {
     'batch disabled',
 }
 ADMIN_FALLBACK_MAX_DOCS_DEFAULT = 5000
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def _normalize_text(value):

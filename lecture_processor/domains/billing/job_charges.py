@@ -3,11 +3,7 @@
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits, ledger, policy
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
-from lecture_processor.runtime.container import get_runtime
-
-
-def _runtime(runtime):
-    return runtime if runtime is not None else get_runtime()
+from lecture_processor.runtime.container import resolve_runtime as _runtime
 
 
 def receipt_fields(receipt):

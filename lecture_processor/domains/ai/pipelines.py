@@ -11,13 +11,7 @@ from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import content_revision, regeneration_publication
 from lecture_processor.domains.study import progress as study_progress
-from lecture_processor.runtime.container import get_runtime
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
 def _save_study_pack(job_id, job_data, runtime=None):

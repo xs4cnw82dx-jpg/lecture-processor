@@ -9,7 +9,9 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from lecture_processor.calendar_observability import install_calendar_log_filters, scrub_calendar_event
-from lecture_processor.runtime.environment import get_gemini_http_timeout_ms
+from lecture_processor.runtime.environment import (
+    env_truthy, get_gemini_http_timeout_ms, is_forced_fake_provider, is_truthy, sample_rate_env as safe_float_env,
+)
 
 
 warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL 1\\.1\\.1\\+.*')
@@ -21,16 +23,6 @@ def load_local_environment(*, environ=None) -> None:
         return
     if not source.get('RENDER'):
         load_dotenv()
-
-
-def is_forced_fake_provider(*, environ=None) -> bool:
-    source = os.environ if environ is None else environ
-    forced = str(source.get('LP_FORCE_FAKE_PROVIDER', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
-    if forced and (str(source.get('APP_ENV', '')).strip().lower() != 'test'
-                   or str(source.get('SENTRY_ENVIRONMENT', '')).strip().lower() not in {'', 'test'}
-                   or any(source.get(name) for name in ('RENDER', 'RENDER_SERVICE_ID', 'RENDER_DEPLOY_ID'))):
-        raise RuntimeError('Fake providers require an isolated test environment.')
-    return forced
 
 
 def initialize_ai_client(*, genai_module, logger, environ=None):
@@ -116,21 +108,6 @@ def configure_stripe(stripe_module, secret_key: str):
     return stripe_module.api_key
 
 
-def safe_float_env(name: str, default: float = 0.0, *, environ=None) -> float:
-    source = os.environ if environ is None else environ
-    raw = str(source.get(name, default)).strip()
-    try:
-        value = float(raw)
-    except Exception:
-        return float(default)
-    return min(max(value, 0.0), 1.0)
-
-
-def env_truthy(name: str, default: str = '0', *, environ=None) -> bool:
-    source = os.environ if environ is None else environ
-    return str(source.get(name, default) or default).strip().lower() in {'1', 'true', 'yes', 'on'}
-
-
 def should_init_backend_sentry(
     *,
     backend_dsn: str,
@@ -146,7 +123,7 @@ def should_init_backend_sentry(
         return False
     if capture_local:
         return True
-    if str(source.get('TESTING', source.get('FLASK_TESTING', '0'))).strip().lower() in {'1', 'true', 'yes', 'on'}:
+    if is_truthy(source.get('TESTING', source.get('FLASK_TESTING', '0'))):
         return False
     if source.get('PYTEST_CURRENT_TEST'):
         return False

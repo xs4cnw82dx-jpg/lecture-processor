@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 import os
 
 from flask import Blueprint, abort, redirect, render_template, request, send_from_directory, url_for
@@ -306,69 +307,23 @@ def tools_page():
     )
 
 
-@pages_bp.route('/lecture-notes')
-def lecture_notes_page():
-    return _render_processing_page('lecture-notes')
+for path, endpoint, mode in (
+    ('/lecture-notes', 'lecture_notes_page', 'lecture-notes'),
+    ('/slides-extraction', 'slides_extraction_page', 'slides-only'),
+    ('/interview-transcription', 'interview_transcription_page', 'interview'),
+):
+    pages_bp.add_url_rule(path, endpoint, partial(_render_processing_page, mode))
 
 
-@pages_bp.route('/slides-extraction')
-def slides_extraction_page():
-    return _render_processing_page('slides-only')
-
-
-@pages_bp.route('/interview-transcription')
-def interview_transcription_page():
-    return _render_processing_page('interview')
-
-
-@pages_bp.route('/batch_mode')
-def batch_mode_page():
-    return _render_batch_page('lecture-notes')
-
-
-@pages_bp.route('/batch_mode_interview_transcription')
-def batch_mode_interview_page():
-    return _render_batch_page('interview')
-
-
-@pages_bp.route('/batch_mode_slides_extraction')
-def batch_mode_slides_page():
-    return _render_batch_page('slides-only')
-
-
-@pages_bp.route('/batch_mode_audio_transcription')
-def batch_mode_audio_transcription_page():
-    return _render_batch_page('audio-transcription')
-
-
-@pages_bp.route('/batch_mode_text_combine')
-def batch_mode_text_combine_page():
-    return _render_batch_page('text-combine')
-
-
-@pages_bp.route('/instant_batch_mode')
-def instant_batch_mode_page():
-    return _render_batch_page('lecture-notes', instant_mode=True)
-
-
-@pages_bp.route('/instant_batch_mode_interview_transcription')
-def instant_batch_mode_interview_page():
-    return _render_batch_page('interview', instant_mode=True)
-
-
-@pages_bp.route('/instant_batch_mode_slides_extraction')
-def instant_batch_mode_slides_page():
-    return _render_batch_page('slides-only', instant_mode=True)
-
-
-@pages_bp.route('/instant_batch_mode_audio_transcription')
-def instant_batch_mode_audio_transcription_page():
-    return _render_batch_page('audio-transcription', instant_mode=True)
-
-
-@pages_bp.route('/instant_batch_mode_text_combine')
-def instant_batch_mode_text_combine_page():
-    return _render_batch_page('text-combine', instant_mode=True)
+for path, endpoint, mode in (
+    ('/batch_mode', 'batch_mode_page', 'lecture-notes'),
+    ('/batch_mode_interview_transcription', 'batch_mode_interview_page', 'interview'),
+    ('/batch_mode_slides_extraction', 'batch_mode_slides_page', 'slides-only'),
+    ('/batch_mode_audio_transcription', 'batch_mode_audio_transcription_page', 'audio-transcription'),
+    ('/batch_mode_text_combine', 'batch_mode_text_combine_page', 'text-combine'),
+):
+    pages_bp.add_url_rule(path, endpoint, partial(_render_batch_page, mode))
+    pages_bp.add_url_rule('/instant_' + path[1:], 'instant_' + endpoint, partial(_render_batch_page, mode, instant_mode=True))
 
 
 @pages_bp.route('/batch_status/<batch_id>')
@@ -397,43 +352,24 @@ def batch_dashboard_page():
     return redirect('/batch_status', code=302)
 
 
-@pages_bp.route('/document-reader')
-def document_reader_page():
+def _render_reader_page(source, title, subtitle):
     runtime = get_runtime()
     return render_template(
         'reader.html',
-        reader_title='Document Reader',
-        reader_subtitle='Extract notes and answers from documents with optional question prompts.',
-        reader_source='document',
+        reader_title=title,
+        reader_subtitle=subtitle,
+        reader_source=source,
         reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
-        **_shell_context(runtime=runtime, page_key='document-reader', show_credits_pill=True),
+        **_shell_context(runtime=runtime, page_key=f'{source}-reader', show_credits_pill=True),
     )
 
 
-@pages_bp.route('/image-reader')
-def image_reader_page():
-    runtime = get_runtime()
-    return render_template(
-        'reader.html',
-        reader_title='Image Reader',
-        reader_subtitle='Extract text and structured notes from up to five images per run.',
-        reader_source='image',
-        reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
-        **_shell_context(runtime=runtime, page_key='image-reader', show_credits_pill=True),
-    )
-
-
-@pages_bp.route('/url-reader')
-def url_reader_page():
-    runtime = get_runtime()
-    return render_template(
-        'reader.html',
-        reader_title='URL Reader',
-        reader_subtitle='Analyze public webpage content with a focused question prompt.',
-        reader_source='url',
-        reader_js_asset=runtime.resolve_js_asset('js/reader.js'),
-        **_shell_context(runtime=runtime, page_key='url-reader', show_credits_pill=True),
-    )
+for source, title, subtitle in (
+    ('document', 'Document Reader', 'Extract notes and answers from documents with optional question prompts.'),
+    ('image', 'Image Reader', 'Extract text and structured notes from up to five images per run.'),
+    ('url', 'URL Reader', 'Analyze public webpage content with a focused question prompt.'),
+):
+    pages_bp.add_url_rule(f'/{source}-reader', f'{source}_reader_page', partial(_render_reader_page, source, title, subtitle))
 
 
 @pages_bp.route('/lecture-downloader')
@@ -577,34 +513,15 @@ def study_pack_builder_page():
     )
 
 
-@pages_bp.route('/physio')
-def physio_page():
-    return _render_physio_launcher()
-
-
-@pages_bp.route('/physio/soap')
-def physio_soap_page():
-    return _render_physio_launcher()
-
-
-@pages_bp.route('/physio/rps')
-def physio_rps_page():
-    return _render_physio_launcher()
-
-
-@pages_bp.route('/physio/reasoning')
-def physio_reasoning_page():
-    return _render_physio_launcher()
-
-
-@pages_bp.route('/physio/knowledge')
-def physio_knowledge_page():
-    return _render_physio_launcher()
-
-
-@pages_bp.route('/physio/cases')
-def physio_cases_page():
-    return _render_physio_launcher()
+for path, endpoint in (
+    ('/physio', 'physio_page'),
+    ('/physio/soap', 'physio_soap_page'),
+    ('/physio/rps', 'physio_rps_page'),
+    ('/physio/reasoning', 'physio_reasoning_page'),
+    ('/physio/knowledge', 'physio_knowledge_page'),
+    ('/physio/cases', 'physio_cases_page'),
+):
+    pages_bp.add_url_rule(path, endpoint, _render_physio_launcher)
 
 
 @pages_bp.route('/shared/<share_token>')

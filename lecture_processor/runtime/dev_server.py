@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 
-
-_TRUTHY_VALUES = {'1', 'true', 'yes', 'on'}
+from lecture_processor.runtime.environment import env_truthy
 
 
 def should_enable_debug(env: Mapping[str, str] | None = None) -> bool:
-    source = env if env is not None else os.environ
-    raw = source.get('FLASK_DEBUG')
-    if raw is None:
-        return False
-    return str(raw).strip().lower() in _TRUTHY_VALUES
+    return env_truthy('FLASK_DEBUG', environ=env)

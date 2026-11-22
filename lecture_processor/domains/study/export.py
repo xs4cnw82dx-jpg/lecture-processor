@@ -8,7 +8,7 @@ from docx import Document
 from docx.shared import Pt
 
 from lecture_processor.domains.shared import sanitize_csv_row
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 REPORTLAB_AVAILABLE = True
 
@@ -79,12 +79,6 @@ class _AnnotatedHtmlTreeParser(HTMLParser):
     def handle_data(self, data):
         if data:
             self.stack[-1].children.append(str(data))
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def markdown_to_docx(markdown_text, title='Document', runtime=None):

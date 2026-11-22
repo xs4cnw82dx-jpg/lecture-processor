@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from lecture_processor.domains.runtime_jobs.schema import TERMINAL_RUNTIME_JOB_STATUSES, has_pending_credit_refund
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
 # Match the ZIP lifetime in account_data_service without importing a service
@@ -11,12 +11,6 @@ ACCOUNT_EXPORT_JOB_TTL_SECONDS = 60 * 60
 
 class RuntimeJobPersistenceError(RuntimeError):
     """A required durable runtime-job write did not acknowledge completion."""
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def _runtime_job_storage_enabled(runtime=None):

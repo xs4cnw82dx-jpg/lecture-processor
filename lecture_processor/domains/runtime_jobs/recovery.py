@@ -1,4 +1,4 @@
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import execution
@@ -6,12 +6,6 @@ from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import audio as study_audio
 
 ACTIVE_RUNTIME_JOB_STATUSES = {'queued', 'starting', 'processing'}
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def _runtime_job_recovery_stale_seconds(runtime=None):

@@ -4,13 +4,7 @@ import re
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai.providers import factory
 from lecture_processor.domains.ai.providers.contracts import TextPart
-from lecture_processor.runtime.container import get_runtime
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
 def resolve_auto_amount(kind, source_text, runtime=None):

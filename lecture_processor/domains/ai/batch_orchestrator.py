@@ -22,7 +22,7 @@ from lecture_processor.domains.notifications import send_batch_completion_email
 from lecture_processor.domains.rate_limit import quotas as rate_limit_quotas
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.upload import media_admission
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
 TERMINAL_BATCH_STATES = {
@@ -84,12 +84,6 @@ _DROP_PERSISTED_VALUE = object()
 BATCH_AUDIO_FETCH_TARGET_FIELD = 'audio_fetch_target_encrypted'
 _BATCH_ACTIVITY_LOCK = threading.Condition()
 _BATCH_ACTIVITY = {}
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 class _BatchStopped(Exception):
@@ -2348,6 +2342,382 @@ def run_startup_batch_recovery_once(runtime=None):
     recover_stale_batches(runtime=resolved_runtime)
 
 
+def _upload_batch_files(batch_id, batch, rows, settled_conversion_rows, runtime):
+    for row in rows:
+        _require_active_batch(batch_id, runtime=runtime)
+        _heartbeat_batch(batch_id, runtime=runtime)
+        row.setdefault('status', 'processing')
+        row.setdefault('started_at', batch.get('created_at', runtime.time.time()))
+        row.setdefault('token_usage_by_stage', {})
+        row.setdefault('token_input_total', 0)
+        row.setdefault('token_output_total', 0)
+        row.setdefault('token_total', 0)
+        row.setdefault('row_job_id', str(runtime.uuid.uuid4()))
+        row.setdefault('current_stage', 'file_upload')
+        row.setdefault('last_stage_update_at', runtime.time.time())
+        row['status'] = 'processing'
+        row['current_stage'] = 'file_upload'
+        row['last_stage_update_at'] = runtime.time.time()
+        _upsert_row(
+            batch_id,
+            row.get('row_id', ''),
+            {
+                'status': row['status'],
+                'current_stage': row['current_stage'],
+                'last_stage_update_at': row['last_stage_update_at'],
+                'updated_at': runtime.time.time(),
+            },
+            runtime=runtime,
+            merge=True,
+        )
+        try:
+            _upload_row_files(row, runtime=runtime)
+        except _BatchSlideConversionError as error:
+            _require_active_batch(batch_id, runtime=runtime)
+            row.update(status='error', error=str(error), failed_stage='slide_conversion',
+                       current_stage='slide_conversion', last_stage_update_at=runtime.time.time())
+            _release_row_audio_quota(row, 0, runtime=runtime)
+            _refund_failed_row(batch, row, runtime=runtime)
+            _finalize_row_job_log(batch, row, runtime=runtime, require_active=True)
+            _require_active_batch(batch_id, runtime=runtime)
+            _drop_persisted_audio_fetch_target(row)
+            _upsert_row(batch_id, row.get('row_id', ''), row, runtime=runtime, merge=False)
+            settled_conversion_rows.add(row.get('row_id', ''))
+            runtime.cleanup_files(_row_local_paths(row), row.get('_gemini_files', []) or [])
+            continue
+        _require_active_batch(batch_id, runtime=runtime)
+        _heartbeat_batch(batch_id, runtime=runtime)
+        row['last_stage_update_at'] = runtime.time.time()
+        _upsert_row(
+            batch_id,
+            row.get('row_id', ''),
+            {
+                'status': row.get('status', 'processing'),
+                'audio_storage_key': row.get('audio_storage_key', ''),
+                'current_stage': row.get('current_stage', 'file_upload'),
+                'last_stage_update_at': row.get('last_stage_update_at', 0),
+                'updated_at': runtime.time.time(),
+            },
+            runtime=runtime,
+            merge=True,
+        )
+
+
+def _batch_file_prompt(uri, mime_type, prompt):
+    parts = [{'file_data': {'file_uri': uri, 'mime_type': mime_type}}, {'text': prompt}]
+    return {'contents': [{'role': 'user', 'parts': parts}]}
+
+
+def _batch_text_prompt(prompt):
+    return {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]}
+
+
+def _extract_batch_slides(batch_id, rows, runtime):
+    def _slide_builder(row):
+        if row.get('status') == 'error' or not row.get('slides_file_uri'):
+            return None
+        return _batch_file_prompt(row.get('slides_file_uri', ''), 'application/pdf', runtime.PROMPT_SLIDE_EXTRACTION)
+
+    def _slide_handler(row, response):
+        row['slide_text'] = _response_text(response, runtime=runtime)
+
+    _run_stage_with_builder(batch_id, rows, 'slide_extraction', _slide_builder, _slide_handler, runtime=runtime)
+
+
+def _transcribe_batch_lecture_audio(batch_id, rows, runtime):
+    def _audio_builder(row):
+        if row.get('status') == 'error' or not row.get('audio_file_uri'):
+            return None
+        output_language = str(row.get('output_language', 'English') or 'English')
+        if runtime.FEATURE_AUDIO_SECTION_SYNC:
+            prompt = runtime.PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
+        else:
+            prompt = runtime.PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
+        return _batch_file_prompt(row.get('audio_file_uri', ''), row.get('audio_mime_type', 'audio/mpeg'), prompt)
+
+    def _audio_handler(row, response):
+        raw_text = _response_text(response, runtime=runtime)
+        if runtime.FEATURE_AUDIO_SECTION_SYNC:
+            parsed = runtime.extract_json_payload(raw_text)
+            if isinstance(parsed, dict):
+                segments = parsed.get('transcript_segments', [])
+                transcript = str(parsed.get('full_transcript', '') or '').strip()
+                clean_segments = []
+                if isinstance(segments, list):
+                    for segment in segments:
+                        if not isinstance(segment, dict):
+                            continue
+                        text = str(segment.get('text', '') or '').strip()
+                        if not text:
+                            continue
+                        try:
+                            start_ms = int(segment.get('start_ms', 0) or 0)
+                            end_ms = int(segment.get('end_ms', start_ms) or start_ms)
+                        except Exception:
+                            continue
+                        clean_segments.append(
+                            {
+                                'start_ms': max(0, start_ms),
+                                'end_ms': max(start_ms, end_ms),
+                                'text': text,
+                            }
+                        )
+                if not transcript:
+                    transcript = '\n'.join(seg['text'] for seg in clean_segments).strip()
+                row['transcript'] = transcript
+                row['transcript_segments'] = clean_segments
+                return
+        row['transcript'] = raw_text
+        row['transcript_segments'] = []
+
+    _run_stage_with_builder(batch_id, rows, 'audio_transcription', _audio_builder, _audio_handler, runtime=runtime)
+
+
+def _merge_batch_notes(batch_id, rows, runtime):
+    def _merge_builder(row):
+        if row.get('status') == 'error':
+            return None
+        if not row.get('slide_text') or not row.get('transcript'):
+            row['status'] = 'error'
+            row['failed_stage'] = 'notes_merge'
+            row['error'] = 'Missing slide extraction or transcript output.'
+            return None
+        return _batch_text_prompt(_merge_prompt_for_row(row, runtime))
+
+    def _merge_handler(row, response):
+        merged = _response_text(response, runtime=runtime)
+        row['merged_notes'] = merged
+        row['result'] = merged
+        row['notes_audio_map'] = (
+            study_audio.parse_audio_markers_from_notes(merged, runtime=runtime)
+            if runtime.FEATURE_AUDIO_SECTION_SYNC
+            else []
+        )
+
+    _run_stage_with_builder(batch_id, rows, 'notes_merge', _merge_builder, _merge_handler, runtime=runtime)
+
+
+def _generate_batch_study_materials(batch_id, rows, runtime, *, source_field):
+    def requested_amounts(row, source_text):
+        flashcard_amount, question_amount = study_generation.resolve_study_amounts(
+            row.get('flashcard_selection', '20'),
+            row.get('question_selection', '10'),
+            source_text,
+            runtime=runtime,
+        )
+        study_features = str(row.get('study_features', 'none') or 'none')
+        if study_features == 'flashcards':
+            question_amount = 0
+        elif study_features == 'test':
+            flashcard_amount = 0
+        return flashcard_amount, question_amount
+
+    def _study_builder(row):
+        if row.get('status') == 'error':
+            return None
+        study_features = str(row.get('study_features', 'none') or 'none')
+        if study_features == 'none':
+            return None
+        source_text = str(row.get(source_field, '') or '')
+        if source_field == 'merged_notes' and not source_text.strip():
+            row['status'] = 'error'
+            row['failed_stage'] = 'study_materials_generation'
+            row['error'] = 'Missing merged notes for study generation.'
+            return None
+        flashcard_amount, question_amount = requested_amounts(row, source_text)
+        prompt = runtime.PROMPT_STUDY_TEMPLATE.format(
+            flashcard_amount=flashcard_amount,
+            question_amount=question_amount,
+            output_language=row.get('output_language', 'English'),
+            source_text=source_text[:120000],
+        )
+        return _batch_text_prompt(prompt)
+
+    def _study_handler(row, response):
+        parsed = study_generation.extract_json_payload(_response_text(response, runtime=runtime), runtime=runtime)
+        source_text = str(row.get(source_field, '') or '')
+        flashcard_amount, question_amount = requested_amounts(row, source_text)
+        if not isinstance(parsed, dict):
+            row['flashcards'] = []
+            row['test_questions'] = []
+            row['study_generation_error'] = 'Study materials JSON parsing failed.'
+            return
+        row['flashcards'] = study_generation.sanitize_flashcards(
+            parsed.get('flashcards', []),
+            flashcard_amount,
+            runtime=runtime,
+        )
+        row['test_questions'] = study_generation.sanitize_questions(
+            parsed.get('test_questions', []),
+            question_amount,
+            runtime=runtime,
+        )
+        row['study_generation_error'] = None
+
+    _run_stage_with_builder(batch_id, rows, 'study_materials_generation', _study_builder, _study_handler, runtime=runtime)
+
+
+def _combine_batch_text(batch_id, rows, runtime):
+    def _text_combine_builder(row):
+        if row.get('status') == 'error':
+            return None
+        if not str(row.get('slide_text', '') or '').strip() and not str(row.get('transcript', '') or '').strip():
+            row['status'] = 'error'
+            row['failed_stage'] = 'notes_merge'
+            row['error'] = 'Missing slide text or transcript input.'
+            return None
+        return _batch_text_prompt(_text_combine_prompt_for_row(row, runtime))
+
+    def _text_combine_handler(row, response):
+        merged = _response_text(response, runtime=runtime)
+        row['merged_notes'] = merged
+        row['result'] = merged
+        row['notes_audio_map'] = []
+
+    _run_stage_with_builder(
+        batch_id,
+        rows,
+        'notes_merge',
+        _text_combine_builder,
+        _text_combine_handler,
+        runtime=runtime,
+    )
+
+
+def _transcribe_batch_audio(batch_id, rows, runtime):
+    def _audio_transcription_builder(row):
+        if row.get('status') == 'error' or not row.get('audio_file_uri'):
+            return None
+        prompt = runtime.PROMPT_AUDIO_TRANSCRIPTION.format(
+            output_language=row.get('output_language', 'English'),
+        )
+        return _batch_file_prompt(row.get('audio_file_uri', ''), row.get('audio_mime_type', 'audio/mpeg'), prompt)
+
+    def _audio_transcription_handler(row, response):
+        transcript = _response_text(response, runtime=runtime)
+        row['transcript'] = transcript
+        row['transcript_segments'] = []
+        row['result'] = transcript
+
+    _run_stage_with_builder(
+        batch_id,
+        rows,
+        'audio_transcription',
+        _audio_transcription_builder,
+        _audio_transcription_handler,
+        runtime=runtime,
+    )
+
+
+def _transcribe_batch_interviews(batch_id, rows, runtime):
+    def _interview_builder(row):
+        if row.get('status') == 'error' or not row.get('audio_file_uri'):
+            return None
+        interview_prompt = runtime.PROMPT_INTERVIEW_TRANSCRIPTION.format(
+            output_language=row.get('output_language', 'English'),
+        )
+        return _batch_file_prompt(row.get('audio_file_uri', ''), row.get('audio_mime_type', 'audio/mpeg'), interview_prompt)
+
+    def _interview_handler(row, response):
+        transcript = _response_text(response, runtime=runtime)
+        row['transcript'] = transcript
+        row['result'] = transcript
+
+    _run_stage_with_builder(batch_id, rows, 'interview_transcription', _interview_builder, _interview_handler, runtime=runtime)
+
+
+def _generate_batch_interview_extras(batch_id, rows, runtime):
+    def _summary_builder(row):
+        if row.get('status') == 'error':
+            return None
+        selected = row.get('interview_features', []) or []
+        if 'summary' not in selected:
+            return None
+        prompt = runtime.PROMPT_INTERVIEW_SUMMARY.format(
+            transcript=str(row.get('transcript', '') or '')[:120000],
+            output_language=row.get('output_language', 'English'),
+        )
+        return _batch_text_prompt(prompt)
+
+    def _summary_handler(row, response):
+        row['interview_summary'] = _response_text(response, runtime=runtime)
+
+    _run_stage_with_builder(batch_id, rows, 'interview_summary_generation', _summary_builder, _summary_handler, runtime=runtime)
+
+    def _sections_builder(row):
+        if row.get('status') == 'error':
+            return None
+        selected = row.get('interview_features', []) or []
+        if 'sections' not in selected:
+            return None
+        prompt = runtime.PROMPT_INTERVIEW_SECTIONED.format(
+            transcript=str(row.get('transcript', '') or '')[:120000],
+            output_language=row.get('output_language', 'English'),
+        )
+        return _batch_text_prompt(prompt)
+
+    def _sections_handler(row, response):
+        row['interview_sections'] = _response_text(response, runtime=runtime)
+
+    _run_stage_with_builder(batch_id, rows, 'interview_sections_generation', _sections_builder, _sections_handler, runtime=runtime)
+
+    for row in rows:
+        if row.get('status') == 'error':
+            continue
+        summary = str(row.get('interview_summary', '') or '').strip()
+        sections = str(row.get('interview_sections', '') or '').strip()
+        if summary and sections:
+            row['interview_combined'] = f'# Interview Summary\n\n{summary}\n\n# Structured Interview Transcript\n\n{sections}'
+            row['result'] = row['interview_combined']
+        elif summary:
+            row['result'] = summary
+        elif sections:
+            row['result'] = sections
+
+
+def _settle_batch_rows(batch_id, batch, rows, settled_conversion_rows, runtime):
+    for row in rows:
+        _require_active_batch(batch_id, runtime=runtime)
+        if row.get('row_id', '') in settled_conversion_rows:
+            continue
+        if row.get('status') == 'error':
+            _refund_failed_row(batch, row, runtime=runtime)
+        _finalize_row_job_log(batch, row, runtime=runtime, require_active=True)
+        _require_active_batch(batch_id, runtime=runtime)
+        _drop_persisted_audio_fetch_target(row)
+        _upsert_row(
+            batch_id,
+            row.get('row_id', ''),
+            {
+                **row,
+                'updated_at': runtime.time.time(),
+            },
+            runtime=runtime,
+            merge=False,
+        )
+
+
+def _run_batch_mode_stages(batch_id, rows, mode, runtime):
+    if mode in {'lecture-notes', 'slides-only'}:
+        _extract_batch_slides(batch_id, rows, runtime)
+    if mode == 'lecture-notes':
+        _transcribe_batch_lecture_audio(batch_id, rows, runtime)
+        _merge_batch_notes(batch_id, rows, runtime)
+        _generate_batch_study_materials(batch_id, rows, runtime, source_field='merged_notes')
+    elif mode == 'slides-only':
+        for row in rows:
+            if row.get('status') != 'error':
+                row['result'] = str(row.get('slide_text', '') or '')
+        _generate_batch_study_materials(batch_id, rows, runtime, source_field='slide_text')
+    elif mode == 'text-combine':
+        _combine_batch_text(batch_id, rows, runtime)
+    elif mode == 'audio-transcription':
+        _transcribe_batch_audio(batch_id, rows, runtime)
+    elif mode == 'interview':
+        _transcribe_batch_interviews(batch_id, rows, runtime)
+        _generate_batch_interview_extras(batch_id, rows, runtime)
+
+
 @_protect_batch_worker
 def process_batch_job(batch_id, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
@@ -2394,491 +2764,9 @@ def process_batch_job(batch_id, runtime=None):
     stage_error = ''
     settled_conversion_rows = set()
     try:
-        for row in rows:
-            _require_active_batch(batch_id, runtime=resolved_runtime)
-            _heartbeat_batch(batch_id, runtime=resolved_runtime)
-            row.setdefault('status', 'processing')
-            row.setdefault('started_at', batch.get('created_at', resolved_runtime.time.time()))
-            row.setdefault('token_usage_by_stage', {})
-            row.setdefault('token_input_total', 0)
-            row.setdefault('token_output_total', 0)
-            row.setdefault('token_total', 0)
-            row.setdefault('row_job_id', str(resolved_runtime.uuid.uuid4()))
-            row.setdefault('current_stage', 'file_upload')
-            row.setdefault('last_stage_update_at', resolved_runtime.time.time())
-            row['status'] = 'processing'
-            row['current_stage'] = 'file_upload'
-            row['last_stage_update_at'] = resolved_runtime.time.time()
-            _upsert_row(
-                batch_id,
-                row.get('row_id', ''),
-                {
-                    'status': row['status'],
-                    'current_stage': row['current_stage'],
-                    'last_stage_update_at': row['last_stage_update_at'],
-                    'updated_at': resolved_runtime.time.time(),
-                },
-                runtime=resolved_runtime,
-                merge=True,
-            )
-            try:
-                _upload_row_files(row, runtime=resolved_runtime)
-            except _BatchSlideConversionError as error:
-                _require_active_batch(batch_id, runtime=resolved_runtime)
-                row.update(status='error', error=str(error), failed_stage='slide_conversion',
-                           current_stage='slide_conversion', last_stage_update_at=resolved_runtime.time.time())
-                _release_row_audio_quota(row, 0, runtime=resolved_runtime)
-                _refund_failed_row(batch, row, runtime=resolved_runtime)
-                _finalize_row_job_log(batch, row, runtime=resolved_runtime, require_active=True)
-                _require_active_batch(batch_id, runtime=resolved_runtime)
-                _drop_persisted_audio_fetch_target(row)
-                _upsert_row(batch_id, row.get('row_id', ''), row, runtime=resolved_runtime, merge=False)
-                settled_conversion_rows.add(row.get('row_id', ''))
-                resolved_runtime.cleanup_files(_row_local_paths(row), row.get('_gemini_files', []) or [])
-                continue
-            _require_active_batch(batch_id, runtime=resolved_runtime)
-            _heartbeat_batch(batch_id, runtime=resolved_runtime)
-            row['last_stage_update_at'] = resolved_runtime.time.time()
-            _upsert_row(
-                batch_id,
-                row.get('row_id', ''),
-                {
-                    'status': row.get('status', 'processing'),
-                    'audio_storage_key': row.get('audio_storage_key', ''),
-                    'current_stage': row.get('current_stage', 'file_upload'),
-                    'last_stage_update_at': row.get('last_stage_update_at', 0),
-                    'updated_at': resolved_runtime.time.time(),
-                },
-                runtime=resolved_runtime,
-                merge=True,
-            )
-
-        mode = str(batch.get('mode', '') or '')
-        if mode in {'lecture-notes', 'slides-only'}:
-            def _slide_builder(row):
-                if row.get('status') == 'error' or not row.get('slides_file_uri'):
-                    return None
-                return {
-                    'contents': [
-                        {
-                            'role': 'user',
-                            'parts': [
-                                {
-                                    'file_data': {
-                                        'file_uri': row.get('slides_file_uri', ''),
-                                        'mime_type': 'application/pdf',
-                                    }
-                                },
-                                {'text': resolved_runtime.PROMPT_SLIDE_EXTRACTION},
-                            ],
-                        }
-                    ]
-                }
-
-            def _slide_handler(row, response):
-                row['slide_text'] = _response_text(response, runtime=resolved_runtime)
-
-            _run_stage_with_builder(batch_id, rows, 'slide_extraction', _slide_builder, _slide_handler, runtime=resolved_runtime)
-
-        if mode == 'lecture-notes':
-            def _audio_builder(row):
-                if row.get('status') == 'error' or not row.get('audio_file_uri'):
-                    return None
-                output_language = str(row.get('output_language', 'English') or 'English')
-                if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC:
-                    prompt = resolved_runtime.PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
-                else:
-                    prompt = resolved_runtime.PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-                return {
-                    'contents': [
-                        {
-                            'role': 'user',
-                            'parts': [
-                                {
-                                    'file_data': {
-                                        'file_uri': row.get('audio_file_uri', ''),
-                                        'mime_type': row.get('audio_mime_type', 'audio/mpeg'),
-                                    }
-                                },
-                                {'text': prompt},
-                            ],
-                        }
-                    ]
-                }
-
-            def _audio_handler(row, response):
-                raw_text = _response_text(response, runtime=resolved_runtime)
-                if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC:
-                    parsed = resolved_runtime.extract_json_payload(raw_text)
-                    if isinstance(parsed, dict):
-                        segments = parsed.get('transcript_segments', [])
-                        transcript = str(parsed.get('full_transcript', '') or '').strip()
-                        clean_segments = []
-                        if isinstance(segments, list):
-                            for segment in segments:
-                                if not isinstance(segment, dict):
-                                    continue
-                                text = str(segment.get('text', '') or '').strip()
-                                if not text:
-                                    continue
-                                try:
-                                    start_ms = int(segment.get('start_ms', 0) or 0)
-                                    end_ms = int(segment.get('end_ms', start_ms) or start_ms)
-                                except Exception:
-                                    continue
-                                clean_segments.append(
-                                    {
-                                        'start_ms': max(0, start_ms),
-                                        'end_ms': max(start_ms, end_ms),
-                                        'text': text,
-                                    }
-                                )
-                        if not transcript:
-                            transcript = '\n'.join(seg['text'] for seg in clean_segments).strip()
-                        row['transcript'] = transcript
-                        row['transcript_segments'] = clean_segments
-                        return
-                row['transcript'] = raw_text
-                row['transcript_segments'] = []
-
-            _run_stage_with_builder(batch_id, rows, 'audio_transcription', _audio_builder, _audio_handler, runtime=resolved_runtime)
-
-            def _merge_builder(row):
-                if row.get('status') == 'error':
-                    return None
-                if not row.get('slide_text') or not row.get('transcript'):
-                    row['status'] = 'error'
-                    row['failed_stage'] = 'notes_merge'
-                    row['error'] = 'Missing slide extraction or transcript output.'
-                    return None
-                return {
-                    'contents': [
-                        {
-                            'role': 'user',
-                            'parts': [
-                                {'text': _merge_prompt_for_row(row, resolved_runtime)},
-                            ],
-                        }
-                    ]
-                }
-
-            def _merge_handler(row, response):
-                merged = _response_text(response, runtime=resolved_runtime)
-                row['merged_notes'] = merged
-                row['result'] = merged
-                row['notes_audio_map'] = (
-                    study_audio.parse_audio_markers_from_notes(merged, runtime=resolved_runtime)
-                    if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC
-                    else []
-                )
-
-            _run_stage_with_builder(batch_id, rows, 'notes_merge', _merge_builder, _merge_handler, runtime=resolved_runtime)
-
-            def _study_builder(row):
-                if row.get('status') == 'error':
-                    return None
-                study_features = str(row.get('study_features', 'none') or 'none')
-                if study_features == 'none':
-                    return None
-                source_text = str(row.get('merged_notes', '') or '')
-                if not source_text.strip():
-                    row['status'] = 'error'
-                    row['failed_stage'] = 'study_materials_generation'
-                    row['error'] = 'Missing merged notes for study generation.'
-                    return None
-                flashcard_amount, question_amount = study_generation.resolve_study_amounts(
-                    row.get('flashcard_selection', '20'),
-                    row.get('question_selection', '10'),
-                    source_text,
-                    runtime=resolved_runtime,
-                )
-                if study_features == 'flashcards':
-                    question_amount = 0
-                elif study_features == 'test':
-                    flashcard_amount = 0
-                prompt = resolved_runtime.PROMPT_STUDY_TEMPLATE.format(
-                    flashcard_amount=flashcard_amount,
-                    question_amount=question_amount,
-                    output_language=row.get('output_language', 'English'),
-                    source_text=source_text[:120000],
-                )
-                return {
-                    'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]
-                }
-
-            def _study_handler(row, response):
-                parsed = study_generation.extract_json_payload(_response_text(response, runtime=resolved_runtime), runtime=resolved_runtime)
-                source_text = str(row.get('merged_notes', '') or '')
-                flashcard_amount, question_amount = study_generation.resolve_study_amounts(
-                    row.get('flashcard_selection', '20'),
-                    row.get('question_selection', '10'),
-                    source_text,
-                    runtime=resolved_runtime,
-                )
-                study_features = str(row.get('study_features', 'none') or 'none')
-                if study_features == 'flashcards':
-                    question_amount = 0
-                elif study_features == 'test':
-                    flashcard_amount = 0
-                if not isinstance(parsed, dict):
-                    row['flashcards'] = []
-                    row['test_questions'] = []
-                    row['study_generation_error'] = 'Study materials JSON parsing failed.'
-                    return
-                row['flashcards'] = study_generation.sanitize_flashcards(
-                    parsed.get('flashcards', []),
-                    flashcard_amount,
-                    runtime=resolved_runtime,
-                )
-                row['test_questions'] = study_generation.sanitize_questions(
-                    parsed.get('test_questions', []),
-                    question_amount,
-                    runtime=resolved_runtime,
-                )
-                row['study_generation_error'] = None
-
-            _run_stage_with_builder(batch_id, rows, 'study_materials_generation', _study_builder, _study_handler, runtime=resolved_runtime)
-
-        if mode == 'text-combine':
-            def _text_combine_builder(row):
-                if row.get('status') == 'error':
-                    return None
-                if not str(row.get('slide_text', '') or '').strip() and not str(row.get('transcript', '') or '').strip():
-                    row['status'] = 'error'
-                    row['failed_stage'] = 'notes_merge'
-                    row['error'] = 'Missing slide text or transcript input.'
-                    return None
-                return {
-                    'contents': [
-                        {
-                            'role': 'user',
-                            'parts': [
-                                {'text': _text_combine_prompt_for_row(row, resolved_runtime)},
-                            ],
-                        }
-                    ]
-                }
-
-            def _text_combine_handler(row, response):
-                merged = _response_text(response, runtime=resolved_runtime)
-                row['merged_notes'] = merged
-                row['result'] = merged
-                row['notes_audio_map'] = []
-
-            _run_stage_with_builder(
-                batch_id,
-                rows,
-                'notes_merge',
-                _text_combine_builder,
-                _text_combine_handler,
-                runtime=resolved_runtime,
-            )
-
-        if mode == 'slides-only':
-            for row in rows:
-                if row.get('status') != 'error':
-                    row['result'] = str(row.get('slide_text', '') or '')
-            def _slides_study_builder(row):
-                if row.get('status') == 'error':
-                    return None
-                study_features = str(row.get('study_features', 'none') or 'none')
-                if study_features == 'none':
-                    return None
-                source_text = str(row.get('slide_text', '') or '')
-                flashcard_amount, question_amount = study_generation.resolve_study_amounts(
-                    row.get('flashcard_selection', '20'),
-                    row.get('question_selection', '10'),
-                    source_text,
-                    runtime=resolved_runtime,
-                )
-                if study_features == 'flashcards':
-                    question_amount = 0
-                elif study_features == 'test':
-                    flashcard_amount = 0
-                prompt = resolved_runtime.PROMPT_STUDY_TEMPLATE.format(
-                    flashcard_amount=flashcard_amount,
-                    question_amount=question_amount,
-                    output_language=row.get('output_language', 'English'),
-                    source_text=source_text[:120000],
-                )
-                return {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]}
-
-            def _slides_study_handler(row, response):
-                parsed = study_generation.extract_json_payload(_response_text(response, runtime=resolved_runtime), runtime=resolved_runtime)
-                source_text = str(row.get('slide_text', '') or '')
-                flashcard_amount, question_amount = study_generation.resolve_study_amounts(
-                    row.get('flashcard_selection', '20'),
-                    row.get('question_selection', '10'),
-                    source_text,
-                    runtime=resolved_runtime,
-                )
-                study_features = str(row.get('study_features', 'none') or 'none')
-                if study_features == 'flashcards':
-                    question_amount = 0
-                elif study_features == 'test':
-                    flashcard_amount = 0
-                if not isinstance(parsed, dict):
-                    row['flashcards'] = []
-                    row['test_questions'] = []
-                    row['study_generation_error'] = 'Study materials JSON parsing failed.'
-                    return
-                row['flashcards'] = study_generation.sanitize_flashcards(
-                    parsed.get('flashcards', []),
-                    flashcard_amount,
-                    runtime=resolved_runtime,
-                )
-                row['test_questions'] = study_generation.sanitize_questions(
-                    parsed.get('test_questions', []),
-                    question_amount,
-                    runtime=resolved_runtime,
-                )
-                row['study_generation_error'] = None
-
-            _run_stage_with_builder(
-                batch_id,
-                rows,
-                'study_materials_generation',
-                _slides_study_builder,
-                _slides_study_handler,
-                runtime=resolved_runtime,
-            )
-
-        if mode == 'audio-transcription':
-            def _audio_transcription_builder(row):
-                if row.get('status') == 'error' or not row.get('audio_file_uri'):
-                    return None
-                prompt = resolved_runtime.PROMPT_AUDIO_TRANSCRIPTION.format(
-                    output_language=row.get('output_language', 'English'),
-                )
-                return {
-                    'contents': [
-                        {
-                            'role': 'user',
-                            'parts': [
-                                {
-                                    'file_data': {
-                                        'file_uri': row.get('audio_file_uri', ''),
-                                        'mime_type': row.get('audio_mime_type', 'audio/mpeg'),
-                                    }
-                                },
-                                {'text': prompt},
-                            ],
-                        }
-                    ]
-                }
-
-            def _audio_transcription_handler(row, response):
-                transcript = _response_text(response, runtime=resolved_runtime)
-                row['transcript'] = transcript
-                row['transcript_segments'] = []
-                row['result'] = transcript
-
-            _run_stage_with_builder(
-                batch_id,
-                rows,
-                'audio_transcription',
-                _audio_transcription_builder,
-                _audio_transcription_handler,
-                runtime=resolved_runtime,
-            )
-
-        if mode == 'interview':
-            def _interview_builder(row):
-                if row.get('status') == 'error' or not row.get('audio_file_uri'):
-                    return None
-                interview_prompt = resolved_runtime.PROMPT_INTERVIEW_TRANSCRIPTION.format(
-                    output_language=row.get('output_language', 'English'),
-                )
-                return {
-                    'contents': [
-                        {
-                            'role': 'user',
-                            'parts': [
-                                {
-                                    'file_data': {
-                                        'file_uri': row.get('audio_file_uri', ''),
-                                        'mime_type': row.get('audio_mime_type', 'audio/mpeg'),
-                                    }
-                                },
-                                {'text': interview_prompt},
-                            ],
-                        }
-                    ]
-                }
-
-            def _interview_handler(row, response):
-                transcript = _response_text(response, runtime=resolved_runtime)
-                row['transcript'] = transcript
-                row['result'] = transcript
-
-            _run_stage_with_builder(batch_id, rows, 'interview_transcription', _interview_builder, _interview_handler, runtime=resolved_runtime)
-
-            def _summary_builder(row):
-                if row.get('status') == 'error':
-                    return None
-                selected = row.get('interview_features', []) or []
-                if 'summary' not in selected:
-                    return None
-                prompt = resolved_runtime.PROMPT_INTERVIEW_SUMMARY.format(
-                    transcript=str(row.get('transcript', '') or '')[:120000],
-                    output_language=row.get('output_language', 'English'),
-                )
-                return {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]}
-
-            def _summary_handler(row, response):
-                row['interview_summary'] = _response_text(response, runtime=resolved_runtime)
-
-            _run_stage_with_builder(batch_id, rows, 'interview_summary_generation', _summary_builder, _summary_handler, runtime=resolved_runtime)
-
-            def _sections_builder(row):
-                if row.get('status') == 'error':
-                    return None
-                selected = row.get('interview_features', []) or []
-                if 'sections' not in selected:
-                    return None
-                prompt = resolved_runtime.PROMPT_INTERVIEW_SECTIONED.format(
-                    transcript=str(row.get('transcript', '') or '')[:120000],
-                    output_language=row.get('output_language', 'English'),
-                )
-                return {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]}
-
-            def _sections_handler(row, response):
-                row['interview_sections'] = _response_text(response, runtime=resolved_runtime)
-
-            _run_stage_with_builder(batch_id, rows, 'interview_sections_generation', _sections_builder, _sections_handler, runtime=resolved_runtime)
-
-            for row in rows:
-                if row.get('status') == 'error':
-                    continue
-                summary = str(row.get('interview_summary', '') or '').strip()
-                sections = str(row.get('interview_sections', '') or '').strip()
-                if summary and sections:
-                    row['interview_combined'] = f'# Interview Summary\n\n{summary}\n\n# Structured Interview Transcript\n\n{sections}'
-                    row['result'] = row['interview_combined']
-                elif summary:
-                    row['result'] = summary
-                elif sections:
-                    row['result'] = sections
-
-        for row in rows:
-            _require_active_batch(batch_id, runtime=resolved_runtime)
-            if row.get('row_id', '') in settled_conversion_rows:
-                continue
-            if row.get('status') == 'error':
-                _refund_failed_row(batch, row, runtime=resolved_runtime)
-            _finalize_row_job_log(batch, row, runtime=resolved_runtime, require_active=True)
-            _require_active_batch(batch_id, runtime=resolved_runtime)
-            _drop_persisted_audio_fetch_target(row)
-            _upsert_row(
-                batch_id,
-                row.get('row_id', ''),
-                {
-                    **row,
-                    'updated_at': resolved_runtime.time.time(),
-                },
-                runtime=resolved_runtime,
-                merge=False,
-            )
+        _upload_batch_files(batch_id, batch, rows, settled_conversion_rows, resolved_runtime)
+        _run_batch_mode_stages(batch_id, rows, str(batch.get('mode', '') or ''), resolved_runtime)
+        _settle_batch_rows(batch_id, batch, rows, settled_conversion_rows, resolved_runtime)
     except _BatchStopped:
         pass
     except Exception as error:

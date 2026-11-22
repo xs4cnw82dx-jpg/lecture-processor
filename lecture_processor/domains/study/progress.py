@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timedelta, timezone
 
-from lecture_processor.runtime.container import get_runtime
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 try:
     from zoneinfo import ZoneInfo
@@ -13,12 +13,6 @@ CARD_COUNTER_FIELDS = ('seen', 'correct', 'wrong', 'flip_count', 'write_count')
 LEGACY_DEVICE_ID = 'legacy'
 MAX_PROGRESS_DEVICES = 32
 MAX_DAILY_PROGRESS_DATES = 90
-
-
-def _resolve_runtime(runtime=None):
-    if runtime is not None:
-        return runtime
-    return get_runtime()
 
 
 def _progress_date_re(runtime):
