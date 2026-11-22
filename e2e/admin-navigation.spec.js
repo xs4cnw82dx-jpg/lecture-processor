@@ -126,3 +126,35 @@ for (const theme of ['light', 'dark']) {
     });
   }
 }
+
+test('empty admin tables explain themselves to screen readers', async ({ page }) => {
+  await openAdmin(page, { hash: '#batches' });
+  const empty = page.locator('#admin-batch-jobs-body .admin-table-empty-state');
+  await expect(empty).toContainText('No batch jobs match these filters');
+  await expect(empty).toHaveAttribute('role', 'status');
+  for (const view of ['activity/jobs', 'users/credits']) {
+    await page.goto('/admin#' + view);
+    const state = page.locator('[data-admin-view="' + view + '"] .admin-table-empty-state').first();
+    await expect(state).toHaveText(/^No /);
+    await expect(state).toHaveAttribute('role', 'status');
+  }
+});
+
+test('stale audio clean-up asks first and announces its result', async ({ page }) => {
+  const state = await openAdmin(page, { hash: '#system/health' });
+  const button = page.locator('#admin-clean-stale-audio-btn');
+  await button.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Clean stale audio flags?');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(button).toBeEnabled();
+  expect(state.requests).not.toContain('/api/admin/maintenance/study-audio/cleanup-stale');
+  await button.click();
+  await page.getByRole('dialog').getByRole('button', { name: /Clean|Confirm|Continue/ }).click();
+  const status = page.locator('#admin-clean-stale-audio-status');
+  await expect(status).toHaveAttribute('role', 'status');
+  await expect(status).toHaveText('0 checked, 0 cleaned, 0 stale found.');
+  expect(state.requests).toContain('/api/admin/maintenance/study-audio/cleanup-stale');
+  await expect(button).toBeEnabled();
+});

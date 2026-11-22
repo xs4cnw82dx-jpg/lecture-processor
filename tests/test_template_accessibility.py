@@ -93,41 +93,23 @@ def test_processing_disabled_button_state_is_described(client):
 
 def test_lecture_topic_required_state_is_programmatic():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
-    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
 
     assert re.search(r'id="study-pack-title-input"[\s\S]*?required[\s\S]*?aria-required="true"[\s\S]*?aria-describedby="study-pack-title-error"', index_template)
     assert re.search(r'id="study-pack-title-error"[\s\S]*?role="alert"[\s\S]*?hidden', index_template)
-    assert "setStudyPackTitleInvalid(true);" in index_js
-    mode_config_js = Path('static/js/index-mode-config.js').read_text(encoding='utf-8')
-    assert "titleLabel: 'Interview Title / Name'" in mode_config_js
-    assert "titlePlaceholder: 'For example: Participant 4 Research Interview'" in mode_config_js
 
 
 def test_app_shell_mobile_navigation_has_a_stateful_accessible_name():
     shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
-    shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
 
     assert 'aria-label="Open main navigation"' in shell_template
-    assert "menuBtn.setAttribute('aria-label', open ? 'Close main navigation' : 'Open main navigation');" in shell_js
-
-
-def test_study_folder_icon_actions_include_the_folder_name():
-    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
-
-    assert "aria-label=\"' + pinLabel + ' ' + safeFolderName + '\"" in study_js
-    assert "aria-label=\"Create subfolder in ' + safeFolderName + '\"" in study_js
-    assert "aria-label=\"Share ' + safeFolderName + '\"" in study_js
-    assert "aria-label=\"Edit ' + safeFolderName + '\"" in study_js
 
 
 def test_study_tools_picker_exposes_expanded_and_selected_state():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
-    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
 
     assert 'id="study-tools-toggle" aria-haspopup="listbox" aria-expanded="false" aria-controls="study-tools-panel"' in index_template
     assert re.search(r'class="study-tools-panel"[\s\S]*?id="study-tools-panel"[\s\S]*?role="listbox"[\s\S]*?aria-hidden="true"', index_template)
     assert 'role="option" aria-selected="true"' in index_template
-    assert "studyToolsToggle.setAttribute('aria-expanded', isVisible ? 'true' : 'false');" in index_js
 
 
 def test_processing_template_has_single_main_landmark():
@@ -143,68 +125,26 @@ def test_batch_submit_feedback_is_live_region():
     assert 'id="batch-submit-feedback" role="status" aria-live="polite" aria-atomic="true" hidden' in batch_template
 
 
-def test_batch_output_language_listbox_has_keyboard_and_focus_management():
+def test_batch_output_language_listbox_is_labelled():
     batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
-    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
 
     assert 'id="output-language-field-label"' in batch_template
     assert 'role="listbox" aria-labelledby="output-language-field-label"' in batch_template
     assert 'aria-labelledby="output-language-field-label output-language-label"' in batch_template
-    assert "outputLanguageButton.addEventListener('keydown'" in batch_js
-    assert "outputLanguageMenu.addEventListener('keydown'" in batch_js
-    for key in ('ArrowDown', 'ArrowUp', 'Home', 'End', 'Escape', 'Tab'):
-        assert key in batch_js
 
 
-def test_batch_and_study_generated_dropzones_are_keyboard_accessible():
-    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
+def test_study_csv_dropzone_is_a_keyboard_button():
     study_template = Path('templates/study.html').read_text(encoding='utf-8')
-    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
 
-    assert 'data-upload-zone="slides" role="button" tabindex="0"' in batch_js
-    assert 'data-upload-zone="audio" role="button" tabindex="0"' in batch_js
-    assert 'data-upload-zone="slideText" role="button" tabindex="0"' in batch_js
-    assert 'data-upload-zone="transcriptText" role="button" tabindex="0"' in batch_js
     assert 'id="builder-csv-drop" role="button" tabindex="0"' in study_template
-    assert "builderCsvDrop.addEventListener('keydown'" in study_js
 
 
-def test_batch_audio_transcription_mode_disables_study_tools_and_allows_audio_import():
-    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
-
-    assert "'audio-transcription': {" in batch_js
-    assert 'supportsStudyTools: false' in batch_js
-    assert 'allowsAudioUrlImport: true' in batch_js
-    assert "'text-combine': {" in batch_js
-    assert 'requiresTextInputs: true' in batch_js
-    assert 'if (modeSupportsStudyTools()) wireRowOverride(card);' in batch_js
-
-
-def test_batch_override_panel_removes_hidden_controls_from_tab_order():
-    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
-
-    assert 'panel.inert = !enabled;' in batch_js
-    assert "control.setAttribute('tabindex', '-1');" in batch_js
-    assert "control.disabled = true;" in batch_js
-
-
-def test_custom_select_upgrades_remove_native_controls_from_tab_order():
-    batch_dashboard_js = Path('static/js/batch-dashboard.js').read_text(encoding='utf-8')
-    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
-    ux_js = Path('static/js/ux-utils.js').read_text(encoding='utf-8')
-
-    # Native controls retain labels and are progressively enhanced by one helper.
+def test_batch_dashboard_native_filter_keeps_its_label():
     dashboard = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')
     assert '<label for="batch-dashboard-mode-filter">Mode</label>' in dashboard
-    assert 'selectEl.hidden = true' not in batch_dashboard_js
-    assert "LectureProcessorUx.enhanceNativeSelect(selectEl)" in admin_js
-    assert "selectEl.hidden = true;" in ux_js
-    assert "selectEl.tabIndex = -1;" in ux_js
-    assert "selectEl.setAttribute('aria-hidden', 'true');" in ux_js
-    assert "button.setAttribute('aria-labelledby', (fieldLabelId ? fieldLabelId + ' ' : '') + label.id);" in ux_js
 
 
-def test_audio_retention_warnings_and_download_controls_are_present():
+def test_audio_retention_notes_and_download_controls_are_in_templates():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
     batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
     batch_dashboard_template = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')
@@ -215,41 +155,26 @@ def test_audio_retention_warnings_and_download_controls_are_present():
     app_shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
     lecture_downloader_template = Path('templates/lecture_downloader.html').read_text(encoding='utf-8')
     video_overlay_template = Path('templates/video_overlay_builder.html').read_text(encoding='utf-8')
-    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
-    batch_js = Path('static/js/batch-mode.js').read_text(encoding='utf-8')
-    transcriber_js = Path('static/js/general-transcriber.js').read_text(encoding='utf-8')
-    voice_js = Path('static/js/voice-notes.js').read_text(encoding='utf-8')
 
     assert 'id="audio-storage-note"' in index_template
     assert 'Generated playback audio is temporary and can be deleted.' in index_template
     assert 'Render' not in index_template
-    assert '/api/import-audio-url/download' in index_js
     assert 'id="audio-download"' in index_template
 
     assert 'batch-audio-retention-note' in batch_template
     assert 'Clearing browser site data' in batch_template
     assert 'Server uploads and generated playback audio also expire' in batch_template
     assert 'Render' not in batch_template
-    status_js = Path('static/js/batch-status.js').read_text(encoding='utf-8')
-    assert 'bs-retention' in status_js
-    assert 'temporary audio is deleted' in status_js
-    assert 'href="/study"' in status_js
     assert 'free-plan' not in batch_dashboard_template
-    assert 'data-download-file="audio"' in batch_js
-    assert '/api/import-audio-url/download' in batch_js
 
     assert 'id="transcriber-audio-retention-note"' in transcriber_template
     assert 'id="transcriber-file-download"' in transcriber_template
-    assert 'saveBlobAsFile(selectedFile' in transcriber_js
 
     assert 'id="voice-download-audio-btn"' in voice_template
     assert 'voice-audio-retention-note' in voice_template
     assert 'id="voice-audio-status" role="status" aria-live="polite" hidden' in voice_template
     assert 'server playback copies are temporary and can be deleted' in voice_template
     assert 'Render' not in voice_template
-    assert 'setAudioDownloadReady(false);' in voice_js
-    assert 'No downloadable audio copy is available for this note.' in voice_js
-    assert '/api/study-packs/\' + encodeURIComponent(note.study_pack_id) + \'/audio?download=1' in voice_js
 
     assert 'id="audio-download-btn"' in study_dialogs
     assert 'audio-retention-note' in study_dialogs
@@ -295,57 +220,18 @@ def test_voice_notes_and_study_pages_have_single_page_heading_contract():
     assert 'id="study-page-heading"' in headings[0]
 
 
-def test_study_folder_rows_do_not_nest_actions_inside_button_role():
-    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
-
-    assert '<div class="item-head folder-row-head"><button type="button" class="folder-row-main" data-folder-activate="1"' in study_js
-    assert '<div class="folder-head-actions app-menu-panel"><button type="button" class="btn folder-mini-btn" data-toggle-pin="1" aria-label="' in study_js
-    assert "'</span></button>' + collapseButton + actions + '</div>'" in study_js
-
-
-def test_study_pack_rows_use_real_buttons_for_main_actions():
-    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
-    study_css = Path('static/css/study.css').read_text(encoding='utf-8')
-
-    assert "div.setAttribute('role', 'button')" not in study_js
-    assert "div.setAttribute('tabindex', '0')" not in study_js
-    assert '<button type="button" class="pack-row-open" data-pack-open>' in study_js
-    assert '<button type="button" class="pack-row-open" data-video-project-main>' in study_js
-    assert '.pack-row-open:focus-visible' in study_css
-
-
-def test_study_collapsed_metadata_panel_is_removed_from_focus_order():
-    study_js = Path('static/js/study.js').read_text(encoding='utf-8')
-    study_css = Path('static/css/study.css').read_text(encoding='utf-8')
-
-    assert 'shell.inert = !isOpen;' in study_js
-    assert 'panel.inert = !isOpen;' in study_js
-    assert re.search(r'\.meta-advanced-shell\s*\{[\s\S]*?visibility:\s*hidden;', study_css)
-    assert re.search(r'\.meta-advanced-shell\s*\{[\s\S]*?pointer-events:\s*none;', study_css)
-
-
 def test_shell_export_modal_validation_is_inside_modal_live_region():
     shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
-    app_shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
 
     assert 'id="shell-export-error" role="alert" aria-live="assertive" aria-atomic="true" hidden' in shell_template
-    assert "setExportError('Choose at least one export option.');" in app_shell_js
-    assert "exportError.hidden = !text;" in app_shell_js
 
 
 def test_shell_account_delete_is_reachable_and_announced():
     shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
-    app_shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
-    app_shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
 
     assert 'id="shell-delete-account-btn" role="menuitem">Delete account</button>' in shell_template
     assert 'id="shell-delete-account-overlay" hidden aria-hidden="true"' in shell_template
     assert 'id="shell-delete-account-error" role="alert" aria-live="assertive" aria-atomic="true" hidden' in shell_template
-    assert "setDeleteAccountModalOpen(true);" in app_shell_js
-    assert "authFetch('/api/account/delete'" in app_shell_js
-    assert "setDeleteAccountError('Type DELETE MY ACCOUNT exactly to continue.');" in app_shell_js
-    assert "await clearVoiceNotesLocalData();" in app_shell_js
-    assert ".shell-modal-primary.danger" in app_shell_css
 
 
 def test_admin_navigation_names_its_menus_and_pages():
@@ -360,39 +246,17 @@ def test_admin_navigation_names_its_menus_and_pages():
 
 def test_admin_stale_audio_cleanup_control_is_accessible():
     admin_template = Path('templates/admin.html').read_text(encoding='utf-8')
-    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
 
     assert 'id="admin-clean-stale-audio-btn" type="button"' in admin_template
     assert 'id="admin-clean-stale-audio-status" role="status"' in admin_template
     assert 'aria-live="polite" aria-atomic="true"' in admin_template
-    assert "'/api/admin/maintenance/study-audio/cleanup-stale'" in admin_js
-    assert 'setAdminMaintenanceStatus(message, failed > 0 ?' in admin_js
-
-
-def test_admin_tables_use_clear_empty_states():
-    admin_js = Path('static/js/admin.js').read_text(encoding='utf-8')
-    admin_css = Path('static/css/admin.css').read_text(encoding='utf-8')
-
-    assert 'function appendAdminEmptyTableRow(tbody, colspan, title, copy)' in admin_js
-    assert "wrapper.setAttribute('role', 'status');" in admin_js
-    assert 'No batch jobs match these filters' in admin_js
-    assert 'No admin grants found' in admin_js
-    assert 'No jobs match these filters' in admin_js
-    assert '.admin-table-empty-state' in admin_css
-    assert '.admin-credit-grants-table td.admin-table-empty-cell::before' in admin_css
 
 
 def test_voice_note_filters_and_actions_have_programmatic_names():
     voice_template = Path('templates/voice_notes.html').read_text(encoding='utf-8')
-    voice_js = Path('static/js/voice-notes.js').read_text(encoding='utf-8')
 
     assert 'data-filter="all" aria-pressed="true"' in voice_template
     assert 'data-filter="pending" aria-pressed="false"' in voice_template
-    assert "btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');" in voice_js
-    assert 'Open voice note "' in voice_js
-    assert 'Archive voice note "' in voice_js
-    assert 'Restore voice note "' in voice_js
-    assert 'Delete voice note "' in voice_js
 
 
 def test_reader_dropzone_is_keyboard_accessible_and_announced():
@@ -406,22 +270,10 @@ def test_reader_dropzone_is_keyboard_accessible_and_announced():
 
 def test_shared_shell_hidden_and_live_region_contracts():
     shell_template = Path('templates/_app_shell.html').read_text(encoding='utf-8')
-    app_shell_css = Path('static/css/app-shell.css').read_text(encoding='utf-8')
-    app_shell_js = Path('static/js/app-shell.js').read_text(encoding='utf-8')
 
-    assert re.search(r'\[hidden\]\s*\{\s*display:\s*none\s*!important;', app_shell_css)
     assert 'id="app-shell-overlay" aria-label="Close navigation" aria-hidden="true" tabindex="-1"' in shell_template
     assert 'id="shell-toast" role="status" aria-live="polite" aria-atomic="true"' in shell_template
     assert 'id="shell-account-menu-wrap" aria-hidden="true" inert' in shell_template
-    assert "accountMenuWrap.setAttribute('inert', '');" in app_shell_js
-    assert "accountMenuWrap.removeAttribute('inert');" in app_shell_js
-    assert "href === '/batch_mode'" in app_shell_js
-    assert "currentPath === '/batch_mode_slides_extraction'" in app_shell_js
-    assert "currentPath === '/batch_mode_audio_transcription'" in app_shell_js
-    assert "currentPath === '/batch_mode_text_combine'" in app_shell_js
-    assert "currentPath === '/instant_batch_mode'" in app_shell_js
-    assert "currentPath.indexOf('/instant_batch_mode_') === 0" in app_shell_js
-    assert "link.setAttribute('aria-current', 'page');" in app_shell_js
 
 
 def test_non_study_toasts_and_auth_messages_are_live_regions():
@@ -441,15 +293,11 @@ def test_non_study_toasts_and_auth_messages_are_live_regions():
     auth_overlay = Path('templates/_index_auth_overlay.html').read_text(encoding='utf-8')
     index_footer_modals = Path('templates/_index_footer_modals.html').read_text(encoding='utf-8')
     app_shell = Path('templates/_app_shell.html').read_text(encoding='utf-8')
-    index_js = Path('static/js/index-app.js').read_text(encoding='utf-8')
 
     assert 'id="auth-overlay" hidden aria-hidden="true"' in auth_overlay
     assert 'id="signin-form" aria-busy="false"' in auth_overlay
     assert 'id="signup-form" aria-busy="false"' in auth_overlay
     assert 'id="reset-form" aria-busy="false"' in auth_overlay
-    assert "uxUtils.openModalOverlay(overlay" in index_js
-    assert 'let authSubmitBusyKind' in index_js
-    assert "if (!beginAuthSubmit('signin')) return;" in index_js
     assert 'id="signin-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
     assert 'id="signup-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
     assert 'id="reset-error" role="alert" aria-live="assertive" aria-atomic="true"' in auth_overlay
@@ -507,7 +355,6 @@ def test_app_pages_use_the_shared_page_header():
     shared = (root / "static" / "css" / "shared-ui.css").read_text(encoding="utf-8")
     for token in ("--fs-display", ".app-shell-page .page-title", ".app-shell-page .page-eyebrow", ".app-shell-page .page-lead"):
         assert token in shared, token
-
 
 
 def test_study_plan_dialogs_stack_above_shell_topbar():

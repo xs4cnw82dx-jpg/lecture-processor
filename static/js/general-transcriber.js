@@ -23,6 +23,7 @@
 
   var fileInput = document.getElementById('transcriber-file-input');
   var dropzone = document.getElementById('transcriber-dropzone');
+  if (window.LectureProcessorUx && typeof window.LectureProcessorUx.manageUploadZone === 'function') window.LectureProcessorUx.manageUploadZone(dropzone);
   var fileInfo = document.getElementById('transcriber-file-info');
   var fileNameEl = document.getElementById('transcriber-file-name');
   var fileSizeEl = document.getElementById('transcriber-file-size');

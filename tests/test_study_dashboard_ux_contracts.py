@@ -100,7 +100,6 @@ def test_batch_downloads_use_authenticated_fetch_instead_of_new_tabs():
         assert template.index('batch_status_js_asset') < template.index(entry)
 
 
-
 def test_study_supports_voice_notes_folder_deep_link():
     voice_template = _read('templates/voice_notes.html')
 
@@ -116,5 +115,3 @@ def test_study_audio_playback_uses_short_lived_stream_url():
     assert 'id="audio-download-btn"' in dialog_template
     assert 'id="audio-retention-note"' in dialog_template
     assert 'share-audio-note' in dialog_template
-
-

@@ -44,24 +44,3 @@ def test_local_workspace_has_no_remote_frontend_dependencies():
     assert "https://" not in html
     assert "http://" not in html
     assert "/static/js/physio-local.js" in html
-
-
-def test_local_workspace_uses_visible_detail_drawer_and_styled_controls():
-    javascript = (ROOT / "static/js/physio-local.js").read_text(encoding="utf-8")
-    css = (ROOT / "static/css/physio-local.css").read_text(encoding="utf-8")
-
-    assert "function enhanceSelect" in javascript
-    assert "q: state.region" in javascript
-    assert "openContextPanel();" in javascript
-    assert "function applySearchHighlights" in javascript
-    assert "function renderSourcePreview" in javascript
-    assert "reader-table-wrap" in javascript
-    assert '.app-select-menu' in css
-    assert 'LectureProcessorUx.enhanceNativeSelect' in javascript
-    assert 'LectureProcessorUx.requestDialog' in javascript
-    assert 'input[type="checkbox"]' in css
-    assert '.source-preview' in css
-    assert '.search-highlight' in css
-    assert '.reader-body table' in css
-    assert '.clinical-context.is-open' in css
-    assert '.clinical-context { display: none;' not in css

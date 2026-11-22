@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { installAccountFixture } = require('./helpers/batch-fixture');
 const { expectProductControls } = require('./helpers/control-audit');
+const { accessibilityProblems } = require('./helpers/a11y-audit');
 
 test.use({ serviceWorkers: 'block' });
 const evidenceDir = process.env.CREATION_EVIDENCE_DIR || 'test-results/redesign-creation';
@@ -276,4 +277,20 @@ test('reduced motion and half-size viewport keep auth and source controls reacha
   await page.screenshot({ path: `${evidenceDir}/auth-reduced-motion-compact.png`, animations: 'disabled' });
   await page.keyboard.press('Escape');
   await expect(page.locator('#auth-overlay')).toBeHidden();
+});
+
+test('the general transcriber lets people save the original recording', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/general-transcriber');
+  await page.locator('#transcriber-file-input').setInputFiles({ name: 'original-interview.m4a', mimeType: 'audio/mp4', buffer: Buffer.from('synthetic audio') });
+  await expect(page.locator('#transcriber-file-name')).toHaveText('original-interview.m4a');
+  await expect(page.locator('#transcriber-dropzone')).toHaveAttribute('role', 'group');
+  expect(await accessibilityProblems(page)).toEqual([]);
+  const download = page.waitForEvent('download');
+  await page.locator('#transcriber-file-download').click();
+  expect((await download).suggestedFilename()).toBe('original-interview.m4a');
+  await page.locator('#transcriber-file-remove').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#transcriber-dropzone')).toHaveAttribute('role', 'button');
+  await expect(page.locator('#transcriber-dropzone')).toBeFocused();
 });

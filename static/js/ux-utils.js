@@ -1317,8 +1317,49 @@
     return date.toLocaleTimeString(locale, intlOptions);
   }
 
+  // An upload zone is a keyboard button that opens the file picker while it is
+  // empty. Once it holds a file it shows that file's own buttons (download,
+  // remove), so it becomes a named group instead: a button must not contain
+  // other buttons. Clicking the zone still opens the picker with a mouse.
+  // When the zone's own remove button clears the file, focus returns to the
+  // zone so keyboard users are not dropped at the top of the page; files
+  // cleared by code elsewhere leave focus alone.
+  function manageUploadZone(zone) {
+    if (!zone || zone.__lpUploadZoneManaged) return;
+    zone.__lpUploadZoneManaged = true;
+    var hadFile = null;
+    var innerButtonUsedAt = 0;
+    zone.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('button') : null;
+      if (button && button !== zone && zone.contains(button)) innerButtonUsedAt = Date.now();
+    }, true);
+    function sync() {
+      var hasFile = zone.classList.contains('has-file');
+      if (hasFile === hadFile) return;
+      var focusWasInside = zone.contains(document.activeElement);
+      var focusWasLost = !document.activeElement || document.activeElement === document.body;
+      if (hasFile) {
+        zone.setAttribute('role', 'group');
+        // -1 keeps focus on the zone after a keyboard user picks a file,
+        // while taking it out of the Tab order.
+        zone.setAttribute('tabindex', '-1');
+      } else {
+        zone.setAttribute('role', 'button');
+        zone.setAttribute('tabindex', '0');
+        var removedHere = focusWasInside || (focusWasLost && Date.now() - innerButtonUsedAt < 1000);
+        if (hadFile && removedHere) zone.focus();
+      }
+      hadFile = hasFile;
+    }
+    sync();
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(sync).observe(zone, { attributes: true, attributeFilter: ['class'] });
+    }
+  }
+
   global.LectureProcessorUx = {
     toast: toast,
+    manageUploadZone: manageUploadZone,
     prefersReducedMotion: prefersReducedMotion,
     setHidden: setHidden,
     setBodyScrollLocked: setBodyScrollLocked,

@@ -16,5 +16,3 @@ def test_processing_pages_use_local_marked_parser():
         template = template_path.read_text(encoding='utf-8')
         assert "marked@17.0.4/lib/marked.umd.js" not in template
         assert "filename='js/marked-lite.js'" in template
-
-

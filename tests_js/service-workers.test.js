@@ -88,3 +88,40 @@ test('workout worker deletes only its own older caches and falls back to precach
   const cached = await worker.fetchUrl('/static/css/workout.css?v=unknown');
   assert.match(await cached.text(), /^precached \/static\/css\/workout\.css/);
 });
+
+function shellResponse({ ok = true, redirected = false, path = '/admin/workout', type = 'text/html; charset=utf-8', body = 'workout shell' } = {}) {
+  return { ok, redirected, url: ORIGIN + path, headers: new Headers({ 'Content-Type': type }), body,
+    clone() { return shellResponse({ ok, redirected, path, type, body }); }, text: async () => body };
+}
+
+test('workout worker caches only a successful, same-origin workout page as its offline shell', async () => {
+  const cases = [
+    { name: 'signed-in page', response: shellResponse(), cached: true },
+    { name: 'redirected response', response: shellResponse({ redirected: true }), cached: false },
+    { name: 'server error', response: shellResponse({ ok: false }), cached: false },
+    { name: 'other page', response: shellResponse({ path: '/dashboard' }), cached: false },
+    { name: 'not HTML', response: shellResponse({ type: 'application/json' }), cached: false },
+  ];
+  for (const { name, response, cached } of cases) {
+    const calls = [];
+    const worker = loadWorker('static/workout-service-worker.js', { network: async (request, options) => { calls.push({ request, options }); return response; } });
+    await worker.run('message', { data: { type: 'CACHE_WORKOUT_SHELL' } });
+    assert.equal(JSON.stringify(calls.map(call => [call.request, call.options])), JSON.stringify([['/admin/workout', { cache: 'no-store', credentials: 'same-origin' }]]), name);
+    const stored = [...worker.stores.values()].some(store => store.has(ORIGIN + '/admin/workout'));
+    assert.equal(stored, cached, name);
+  }
+});
+
+test('workout worker opens the cached shell offline and the offline page when none is cached', async () => {
+  let network = async () => shellResponse({ body: 'fresh shell' });
+  const worker = loadWorker('static/workout-service-worker.js', { network: (...args) => network(...args) });
+  const navigate = path => worker.run('fetch', { request: { method: 'GET', url: ORIGIN + path, mode: 'navigate' } });
+  await worker.run('install', {});
+  assert.equal(await (await navigate('/admin/workout')).text(), 'fresh shell');
+  network = offline;
+  assert.equal(await (await navigate('/admin/workout')).text(), 'fresh shell');
+  const empty = loadWorker('static/workout-service-worker.js', { network: offline });
+  await empty.run('install', {});
+  const fallback = await empty.run('fetch', { request: { method: 'GET', url: ORIGIN + '/admin/workout', mode: 'navigate' } });
+  assert.match(await fallback.text(), /^precached \/static\/workout-offline\.html/);
+});
