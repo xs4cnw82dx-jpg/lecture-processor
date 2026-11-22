@@ -1,23 +1,29 @@
 """Editor revision responses, commit retries and authority fences with synthetic data."""
 
+import logging
 from copy import deepcopy
 from datetime import datetime, timezone
 from functools import wraps
-import logging
 from types import SimpleNamespace
 
-from google.cloud import firestore
 import pytest
+from google.cloud import firestore
 
 from lecture_processor.domains.study.audio import (
-    audio_storage_key_has_file, ensure_pack_audio_storage_key, get_audio_storage_key_from_pack,
+    audio_storage_key_has_file,
+    ensure_pack_audio_storage_key,
+    get_audio_storage_key_from_pack,
 )
 from lecture_processor.services import study_library_service as library
 from lecture_processor.services.study_run_service import fingerprint
-from tests.test_pack_content_revision_concurrency import (
-    add_picture, editor as editor, pack, patch, read_draft, replace, response,
+from tests.support.pack_content_revision_concurrency import (
+    add_picture,
+    pack,
+    patch,
+    read_draft,
+    replace,
+    response,
 )
-
 
 CONFLICT = 'This study pack changed elsewhere. Reload it before saving your changes.'
 TOKENLESS = 'Study pack content replacement received without base_content_revision'

@@ -5,11 +5,9 @@ import zipfile
 
 import pytest
 
-from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.account import lifecycle as account_lifecycle
-from lecture_processor.domains.ai import batch_orchestrator
-from lecture_processor.domains.ai import instant_batch_orchestrator
-from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.domains.ai import batch_orchestrator, instant_batch_orchestrator
+from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
@@ -18,8 +16,9 @@ from lecture_processor.domains.study import export as study_export
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.runtime.job_dispatcher import JobQueueFullError
 from lecture_processor.services import upload_batch_service
-from tests.runtime_test_support import get_test_core
 from tests.credit_test_support import make_credit_runtime
+from tests.runtime_test_support import get_test_core
+from tests.support.batch_mode import _patch_batch_auth
 
 core = get_test_core()
 
@@ -72,11 +71,6 @@ class _SimpleDocx:
 class _FakeProviderFile:
     def __init__(self, label='provider-file'):
         self.label = label
-
-
-def _patch_batch_auth(monkeypatch):
-    monkeypatch.setattr(core, 'verify_firebase_token', lambda _request: {'uid': 'u-batch', 'email': 'batch@example.com'})
-    monkeypatch.setattr(auth_policy, 'is_email_allowed', lambda _email, runtime=None: True)
 
 
 def _clear_batch_memory():

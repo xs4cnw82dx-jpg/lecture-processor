@@ -1,17 +1,16 @@
 """Batch lifecycle regressions with synthetic providers and the real credit ledger."""
 
-from copy import deepcopy
 import os
-from pathlib import Path
 import threading
+from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from lecture_processor.domains.ai import batch_orchestrator as batch
 from lecture_processor.domains.rate_limit import quotas
-from tests.test_batch_slide_conversion import slides as slides
-from tests.test_batch_worker_heartbeat import BatchHarness
+from tests.support.batch_worker_heartbeat import BatchHarness
 
 
 def _use_credit_scheme(slides, scheme, *, exempt=False):

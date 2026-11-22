@@ -1,16 +1,16 @@
-from copy import deepcopy
-from datetime import datetime, timezone
 import io
 import os
-from pathlib import Path
 import zipfile
+from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
 from lecture_processor.domains.runtime_jobs import store
 from lecture_processor.runtime import core
 from lecture_processor.services import account_data_service
-from tests.test_runtime_job_retention import bind_cleanup, retention_state as retention_state
+from tests.support.runtime_job_retention import bind_cleanup
 
 
 @pytest.fixture

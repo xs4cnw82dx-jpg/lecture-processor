@@ -1,7 +1,7 @@
 """An unpaid job must have a durable admission before work is queued."""
 
-from types import SimpleNamespace
 from threading import Event
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,8 +9,6 @@ from lecture_processor.domains.runtime_jobs import execution, store
 from lecture_processor.runtime.job_dispatcher import BoundedJobDispatcher
 from lecture_processor.services import account_data_service, media_admission, upload_quota_service
 from tests.credit_test_support import make_credit_runtime
-from tests.test_background_lecture_download import downloads as downloads
-from tests.test_runtime_job_retention import retention_state as retention_state
 
 
 @pytest.fixture

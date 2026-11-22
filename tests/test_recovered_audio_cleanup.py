@@ -6,8 +6,8 @@ import pytest
 
 from lecture_processor.domains.runtime_jobs import recovery
 from lecture_processor.services import upload_runtime_service
-from tests.test_failed_job_audio_cleanup import MemoryDatabase
-from tests.test_runtime_job_recovery import add_job, recovery_state as recovery_state
+from tests.support.failed_job_audio_cleanup import MemoryDatabase
+from tests.support.runtime_job_recovery import add_job
 
 
 @pytest.fixture

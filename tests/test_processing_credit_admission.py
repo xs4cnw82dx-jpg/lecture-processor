@@ -1,43 +1,19 @@
 from copy import deepcopy
-from threading import RLock
 from types import SimpleNamespace
 
 import pytest
 
-from tests.credit_test_support import make_credit_runtime
+from lecture_processor.domains.ai import batch_orchestrator, pipelines
 from lecture_processor.domains.billing import job_charges, ledger, receipts
 from lecture_processor.domains.runtime_jobs import recovery
-from lecture_processor.domains.runtime_jobs.schema import PERSISTED_RUNTIME_JOB_FIELDS
-from lecture_processor.repositories import batch_repo, runtime_jobs_repo
-from lecture_processor.services import job_state_service
-from lecture_processor.services import upload_runtime_service
-from lecture_processor.services import tools_transcription_service
-from lecture_processor.services import tools_extraction_service
-from lecture_processor.services import upload_batch_support
-from lecture_processor.domains.ai import batch_orchestrator
-from lecture_processor.domains.ai import pipelines
-
-
-def runtime_fixture(*, enabled=True, user=None):
-    runtime, store = make_credit_runtime(
-        users={'owner': user or {'uid': 'owner', 'credits_version': 2, 'credits': 100, 'total_processed': 0}},
-        unified_enabled=enabled,
-    )
-    runtime.runtime_jobs_repo = runtime_jobs_repo
-    runtime.batch_repo = batch_repo
-    runtime.RUNTIME_JOBS_COLLECTION = 'runtime_jobs'
-    runtime.RUNTIME_JOB_PERSISTED_FIELDS = PERSISTED_RUNTIME_JOB_FIELDS
-    runtime.job_state_service = job_state_service
-    runtime.jobs = {}
-    runtime.JOBS_LOCK = RLock()
-    runtime.RUNTIME_JOB_RECOVERY_ENABLED = True
-    runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT = 200
-    runtime.os = SimpleNamespace(getenv=lambda *_: '', getpid=lambda: 7)
-    runtime.save_job_log = lambda *_, **__: None
-    return runtime, store
-
-
-PRIMARY = {'primary': {'action': 'lecture_notes', 'units': 1}}
+from lecture_processor.repositories import runtime_jobs_repo
+from lecture_processor.services import (
+    tools_extraction_service,
+    tools_transcription_service,
+    upload_batch_support,
+    upload_runtime_service,
+)
+from tests.support.processing_credit_admission import PRIMARY, runtime_fixture, stage_batch
 
 
 def test_runtime_debit_is_durable_before_full_job_initialization_and_recoverable_with_flag_off():
@@ -111,17 +87,6 @@ def test_initialization_and_legacy_receipt_helpers_cannot_overwrite_committed_co
     copy = receipts.get_billing_receipt_snapshot(job, runtime=runtime)
     copy['components']['primary']['unit_cost'] = 999
     assert job['billing_receipt']['components']['primary']['unit_cost'] == 8
-
-
-def stage_batch(runtime, batch_id, rows):
-    runtime.batch_repo.batch_job_doc_ref(runtime.db, batch_id).set({
-        'uid': 'owner', 'status': 'preparing', 'credit_admission_state': 'pending',
-        'admitted_rows': 0, 'total_rows': rows, 'credits_charged': 0,
-    })
-    for index in range(rows):
-        runtime.batch_repo.batch_row_doc_ref(runtime.db, batch_id, str(index)).set({
-            'uid': 'owner', 'row_id': str(index), 'batch_id': batch_id, 'status': 'queued',
-        })
 
 
 def test_large_batch_admission_keeps_transactions_bounded_and_exact_half_price():

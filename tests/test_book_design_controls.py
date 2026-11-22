@@ -1,9 +1,9 @@
 """Bounded line geometry and page furniture survive saving and print exports."""
 import base64
-from copy import deepcopy
 import io
 import json
 import zipfile
+from copy import deepcopy
 
 import pytest
 from lxml import etree
@@ -13,7 +13,7 @@ from pypdf import PdfReader
 from lecture_processor.domains.books import model
 from lecture_processor.domains.books.export import generate, native_eligible
 from lecture_processor.services import book_service as service
-from tests.test_books import Store, headers, pages
+from tests.support.books import Store, headers, pages
 
 
 @pytest.fixture

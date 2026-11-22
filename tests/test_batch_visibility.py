@@ -4,9 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.account import lifecycle
-from tests.test_batch_mode import core, _patch_batch_auth
+from lecture_processor.domains.ai import batch_orchestrator
+from tests.runtime_test_support import get_test_core
+from tests.support.batch_mode import _patch_batch_auth
+
+core = get_test_core()
 
 
 @pytest.fixture

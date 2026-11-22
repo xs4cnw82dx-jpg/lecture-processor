@@ -2,9 +2,7 @@
 
 import pytest
 
-from tests.test_unified_processing_routes import (
-    HEADERS, UID, post_action, post_batch, processing as processing,
-)
+from tests.support.unified_processing_routes import HEADERS, UID, post_action, post_batch
 
 
 @pytest.fixture

@@ -1,13 +1,13 @@
-from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from threading import Event
 
 import pytest
 
-from tests.test_processing_credit_admission import runtime_fixture, stage_batch
 from lecture_processor.domains.ai import batch_orchestrator as batch
 from lecture_processor.domains.ai import instant_batch_orchestrator as instant
 from lecture_processor.domains.billing import job_charges
+from tests.support.processing_credit_admission import runtime_fixture, stage_batch
 
 
 def charged_row(monkeypatch, *, extras=False, overnight=False):

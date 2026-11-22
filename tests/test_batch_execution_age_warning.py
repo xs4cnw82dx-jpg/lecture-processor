@@ -1,15 +1,14 @@
 """Execution-age diagnostics observe real workers without changing their outcomes."""
 
-from contextlib import contextmanager
-from copy import deepcopy
 import logging
 import threading
+from contextlib import contextmanager
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
 
 from lecture_processor.domains.ai import batch_orchestrator as batch
-from tests.test_batch_slide_conversion import slides  # noqa: F401
 
 
 class _Clock:

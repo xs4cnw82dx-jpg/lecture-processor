@@ -87,7 +87,7 @@ This checklist tracks launch-critical items and current status with evidence.
 ## 4) Automated Verification
 
 - [x] Launch guardrail test suite added
-  - File: `tests/test_launch_guardrails.py`
+  - File: `tests/launch/`
   - Covers:
     - Email allow/block logic.
     - 429 + Retry-After behavior for upload/checkout/analytics.
@@ -96,7 +96,7 @@ This checklist tracks launch-critical items and current status with evidence.
 
 - [x] Test run (latest)
   - Command:
-    - `.venv/bin/python -m pytest -q tests/test_launch_guardrails.py tests/test_api_contracts.py`
+    - `.venv/bin/python scripts/run_pytest_isolated.py -q tests/launch/ tests/test_api_contracts.py`
   - Result:
     - `47 passed`
 

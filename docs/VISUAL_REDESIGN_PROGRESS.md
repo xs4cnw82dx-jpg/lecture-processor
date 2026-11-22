@@ -2,7 +2,7 @@
 
 Read `VISUAL_REDESIGN_MASTER_PLAN.md` and this file after compaction and before every phase. Full implementation is authorized; the user expects genuinely polished, attractive layouts and flows, not superficial recoloring. Follow the full PR → checks → merge → local sync → deployment verification workflow.
 
-**Latest delivery:** [PR #185](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/185) was merged as bee9b699, local main synced, and Render exact commit/assets and the required Firestore index verified. **Active follow-up:** read `STUDY_FLOW_POLISH_PLAN.md` for the 4 October screenshot feedback. The sections below are a chronological work log; later checkpoints supersede earlier in-progress notes.
+**Latest delivery:** [PR #185](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/185) was merged as bee9b699, local main synced, and Render exact commit/assets and the required Firestore index verified. **Active follow-up:** read [STUDY_FLOW_POLISH_PLAN](archive/STUDY_FLOW_POLISH_PLAN.md) for the 4 October screenshot feedback. The sections below are a chronological work log; later checkpoints supersede earlier in-progress notes.
 
 ## Current baseline
 
@@ -125,11 +125,11 @@ The corrected Builder check passed eight consecutive runs with retries disabled;
 
 ### Product feedback C — Library, due review and direct learning entry (4 October)
 
-Implemented tangible folder rows/pin icons, functional animated child collapse, quiet Saved, plain card numbering, actionable Dashboard due-card disclosure and due-only study queues, direct free/planned mode picker, supported tracked mode filtering with preserved resume/checkpoints, and rounded tinted Dashboard rows. See `PRODUCT_FEEDBACK_LEARNING.md` for scope, semantics and QA. Verified 36 targeted backend/route/accessibility checks, 24 Dashboard/Study UX contracts, 10 session utility tests, a 17-test browser regression run plus six focused feedback tests and a local unsynced-progress regression. Desktop/mobile evidence inspected in `/tmp/product-feedback-learning-evidence`. No real user data changes; sources frozen for parent integration.
+Implemented tangible folder rows/pin icons, functional animated child collapse, quiet Saved, plain card numbering, actionable Dashboard due-card disclosure and due-only study queues, direct free/planned mode picker, supported tracked mode filtering with preserved resume/checkpoints, and rounded tinted Dashboard rows. See [PRODUCT_FEEDBACK_LEARNING](archive/PRODUCT_FEEDBACK_LEARNING.md) for scope, semantics and QA. Verified 36 targeted backend/route/accessibility checks, 24 Dashboard/Study UX contracts, 10 session utility tests, a 17-test browser regression run plus six focused feedback tests and a local unsynced-progress regression. Desktop/mobile evidence inspected in `/tmp/product-feedback-learning-evidence`. No real user data changes; sources frozen for parent integration.
 
 ## Product feedback follow-up — release candidate, 4 October
 
-Read `PRODUCT_FEEDBACK_REPAIR_PLAN.md` and the three `PRODUCT_FEEDBACK_*` owner reports. Screenshot corrections and functional planner/learning/batch repairs are implemented. Final local verification: 986 backend, 193 client and 218 distinct browser scenarios passed across integrated and scoped runs; generated assets and lint/hygiene checks passed. Required production planner index is prepared and dry-run verified. PR/merge/index deployment/Render verification remain. Deferred half-credit customer pricing remains explicitly pending the user’s exact-half versus odd-count rounding choice; current UI claims remain accurate.
+Read [PRODUCT_FEEDBACK_REPAIR_PLAN](archive/PRODUCT_FEEDBACK_REPAIR_PLAN.md) and the three `PRODUCT_FEEDBACK_*` owner reports. Screenshot corrections and functional planner/learning/batch repairs are implemented. Final local verification: 986 backend, 193 client and 218 distinct browser scenarios passed across integrated and scoped runs; generated assets and lint/hygiene checks passed. Required production planner index is prepared and dry-run verified. PR/merge/index deployment/Render verification remain. Deferred half-credit customer pricing remains explicitly pending the user’s exact-half versus odd-count rounding choice; current UI claims remain accurate.
 
 
 ## Study flow polish — integration, 4 October
@@ -149,7 +149,7 @@ Gemini sources complete with 201 isolated backend checks; see GEMINI_AUDIO_MIGRA
 
 ### Implementation and integration checkpoint
 
-All scopes are implemented and frozen. See `ACCOUNT_SETTINGS_VERIFICATION.md`, `ACCOUNT_PREFERENCES_TRANSLATION.md`, `PREFERENCES_DARK_MODE.md`, and `GEMINI_AUDIO_MIGRATION.md`. Parent inspected desktop/mobile Settings in both themes and Dutch, plus representative translated creation, Dashboard, Planner and tools pages. The custom selector, animated toggle, admin-only sidebar entry and content-preserving language changes are covered by executable browser checks.
+All scopes are implemented and frozen. See [ACCOUNT_SETTINGS_VERIFICATION](archive/ACCOUNT_SETTINGS_VERIFICATION.md), [ACCOUNT_PREFERENCES_TRANSLATION](archive/ACCOUNT_PREFERENCES_TRANSLATION.md), [PREFERENCES_DARK_MODE](archive/PREFERENCES_DARK_MODE.md), and [GEMINI_AUDIO_MIGRATION](archive/GEMINI_AUDIO_MIGRATION.md). Parent inspected desktop/mobile Settings in both themes and Dutch, plus representative translated creation, Dashboard, Planner and tools pages. The custom selector, animated toggle, admin-only sidebar entry and content-preserving language changes are covered by executable browser checks.
 
 Full isolated backend: **1,029 passed**; client suite: **207 passed**. Seven real planner/study API lifecycle checks and one retained legacy planner check passed. JavaScript/Python lint, generated assets, repository hygiene, tracked-secret and whitespace checks passed. First broad browser pass exposed old test assumptions about model prices, Dutch-only Physio and GET preferences. Those fixtures were corrected with their behavior assertions preserved; all affected scoped checks pass. Final frozen-source full browser rerun is in progress. No user data or external AI services used for QA.
 

@@ -1,6 +1,9 @@
 """Cross-mode invariants: selecting another viewer must not erase earned work."""
-from tests.test_study_runs import create_session, checkpoint
-from tests.test_study_plan_api import core, study_plan_runtime, _headers  # noqa: F401
+from tests.runtime_test_support import get_test_core
+from tests.support.study_plan_api import _headers
+from tests.support.study_runs import checkpoint, create_session
+
+core = get_test_core()
 
 
 def choose(client, mode, **options):

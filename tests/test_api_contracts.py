@@ -6,8 +6,6 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from flask import request
-
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.admin import metrics as admin_metrics

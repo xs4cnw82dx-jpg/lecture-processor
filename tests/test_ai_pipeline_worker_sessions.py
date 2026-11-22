@@ -1,19 +1,24 @@
 """Regular processing workers own one provider session and route each step to its stage."""
-from copy import deepcopy
 import json
-from pathlib import Path
 import socket
+from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from lecture_processor.domains.ai import pipelines, study_generation
 from lecture_processor.domains.ai.providers import factory
-from lecture_processor.domains.ai.providers.contracts import AudioPart, GenerationResult, PdfPart, TextPart, Usage
+from lecture_processor.domains.ai.providers.contracts import (
+    AudioPart,
+    GenerationResult,
+    PdfPart,
+    TextPart,
+    Usage,
+)
 from lecture_processor.domains.billing import receipts
 from lecture_processor.runtime import core
-from tests.test_failed_job_audio_cleanup import AudioPipeline
-
+from tests.support.failed_job_audio_cleanup import AudioPipeline
 
 MODES = ('lecture-notes', 'slides-only', 'interview', 'voice-note')
 DIRECT_STAGES = {

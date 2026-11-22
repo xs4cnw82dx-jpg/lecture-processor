@@ -1,7 +1,7 @@
 """Explicit provider file phases with synthetic clients and local files only."""
 
-from pathlib import Path
 import socket
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,8 +11,7 @@ from lecture_processor.domains.ai.providers.contracts import AudioPart, ImagePar
 from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.ai.providers.gemini import GeminiProvider
 from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
-from tests.test_ai_provider_contract import Harness, MODEL, local_parts, serialized_contents
-
+from tests.support.ai_provider_contract import MODEL, Harness, local_parts, serialized_contents
 
 STAGE = 'slides_extraction'
 UPLOAD = 'existing_slide_upload'

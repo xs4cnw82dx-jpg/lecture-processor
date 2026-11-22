@@ -4,13 +4,11 @@ from datetime import datetime, timezone
 import pytest
 
 from lecture_processor.domains.planner import study_plan
-from tests.test_study_plan_api import core, study_plan_runtime, _headers, _preview_body  # noqa: F401
+from tests.runtime_test_support import get_test_core
+from tests.support.study_plan_api import _headers, _preview_body
 
-
-def preferences(start='17:00', duration=45):
-    return {'timezone': 'Europe/Amsterdam', 'cadence': 'daily', 'daily_start': start,
-            'availability_preset': 'daily', 'default_session_minutes': duration,
-            'availability': [{'weekday': day, 'start': start, 'end': '20:00'} for day in range(7)]}
+core = get_test_core()
+from tests.support.study_plan_daily import apply, preferences, preview
 
 
 def generate(*, duration=45, start='17:00', occupied=None, cards=165):
@@ -74,28 +72,6 @@ def test_workload_spacing_uses_full_year_instead_of_first_200_slots():
     result = study_plan.generate_schedule(goal={'goal_id': 'goal_daily', 'exam_date': '2027-10-03'},
         pack_workloads=[{'pack_id': 'pack_daily', 'cards_remaining': 165}], preferences=pref, start_date='2026-10-03')
     assert result['sessions'][-1]['date'] == '2027-10-02'
-
-
-@pytest.fixture
-def october_clock(monkeypatch):
-    monkeypatch.setattr(core.time, 'time', lambda: datetime(2026, 10, 3, 10, tzinfo=timezone.utc).timestamp())
-    from lecture_processor.services import study_plan_service
-    today = study_plan_service._today_for_timezone
-    monkeypatch.setattr(study_plan_service, '_today_for_timezone',
-                        lambda zone, now=None: today(zone, now or datetime.fromtimestamp(core.time.time(), timezone.utc)))
-
-
-def preview(client, pack_id, **overrides):
-    body = _preview_body(pack_id, '2026-10-31')
-    body['preferences'] = preferences()
-    body.update(overrides)
-    response = client.post('/api/study-plan/preview', json=body, headers=_headers())
-    assert response.status_code == 200, response.get_json()
-    return response.get_json()['proposal']
-
-
-def apply(client, proposal, key='idempotency_daily'):
-    return client.post('/api/study-plan/apply', json={'proposal_id': proposal['proposal_id'], 'idempotency_key': key}, headers=_headers())
 
 
 def test_daily_preview_apply_reload_remove_and_undo(client, study_plan_runtime, october_clock):

@@ -23,6 +23,8 @@ test-results/
 # Python cache
 __pycache__/
 *.pyc
+.coverage
+.coverage.*
 
 # Mac files
 .DS_Store
