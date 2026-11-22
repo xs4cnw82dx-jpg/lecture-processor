@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  {% include '_preferences_head.html' %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <title>Pilot responses · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+</head>
+<body class="el-library-body" data-expedition-id="{{ expedition_id }}">
+  {% set shell_title = 'Responses & Pilot Analytics' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
+      <a href="/physio/elearning/{{ expedition_id }}/edit" class="el-back-link">← Back to Builder</a>
+      <header class="el-dash-header">
+        <div>
+          <h1 id="el-resp-title" class="page-title">Pilot responses</h1>
+          <p class="page-lead" id="el-resp-expedition" translate="no"></p>
+        </div>
+        <div class="el-dash-actions" id="el-response-actions" hidden>
+          <select data-app-select id="el-resp-cohort" aria-label="Filter by cohort">
+            <option value="">All cohorts</option>
+          </select>
+          <select data-app-select id="el-resp-lang" aria-label="Filter by language">
+            <option value="">All languages</option>
+            <option value="nl">Nederlands (NL)</option>
+            <option value="en">English (EN)</option>
+            <option value="de">Deutsch (DE)</option>
+          </select>
+          <button type="button" class="btn primary" id="el-resp-export-csv">Export CSV</button>
+        </div>
+      </header>
+
+      <div id="el-resp-status" role="status">Loading responses…</div>
+      <button class="btn small" id="el-resp-retry" type="button" hidden>Try again</button>
+      <a class="btn" id="el-signin" href="/lecture-notes?auth=signin" data-sign-in-return hidden>Sign in</a>
+      <div id="el-response-report" hidden>
+      <section class="el-kpi-grid" id="el-resp-kpis"></section>
+      <section class="el-exp-card" id="el-resp-funnel-card">
+        <h2>Step Completion Funnel</h2>
+        <div id="el-resp-funnel"></div>
+      </section>
+      <section class="el-dash-grid" id="el-resp-blocks"></section>
+      <section class="el-exp-card" id="el-resp-comments-card" hidden>
+        <h2>Slide-by-Slide Reviewer Comments</h2>
+        <div id="el-resp-comments"></div>
+      </section>
+      <section class="el-exp-card" id="el-resp-feedback-card">
+        <h2>Pilot Usability Feedback</h2>
+        <div id="el-resp-feedback"></div>
+      </section>
+      </div>
+    </main>
+    {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_responses_js) }}"></script>
+</body>
+</html>

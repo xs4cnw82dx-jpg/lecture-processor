@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  {% include '_preferences_head.html' %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <title>xPEDitie Pijn Studio · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+</head>
+<body class="el-library-body">
+  {% set shell_title = 'xPEDitie Pijn Studio' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
+      <header class="el-library-header">
+        <div class="el-library-cover">
+          <div>
+          <h1 class="page-title">Expeditions</h1>
+          <p class="page-lead">Build, translate and share your pain education modules.</p>
+          </div>
+          <img src="{{ url_for('static', filename='images/xped/xped-jan.png') }}" width="175" height="112" alt="">
+        </div>
+        <div class="el-dash-actions" id="el-author-actions" hidden>
+          <button type="button" class="btn" id="el-import-json-btn">Import JSON</button>
+          <input type="file" id="el-import-json-input" accept="application/json" hidden>
+          <button type="button" class="btn primary" id="el-new-expedition-btn">New expedition</button>
+        </div>
+      </header>
+
+      <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">Loading your expeditions…</div>
+      <a class="btn" id="el-signin" href="/lecture-notes?auth=signin" data-sign-in-return hidden>Sign in</a>
+      <button type="button" class="btn small" id="el-retry" hidden>Try again</button>
+      <section class="el-exp-list" id="el-dash-grid" aria-label="Expeditions"></section>
+    </main>
+    {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <dialog class="el-dialog" id="el-create-dialog" closedby="any" aria-labelledby="el-create-dialog-title">
+    <div class="el-dialog-header">
+      <h2 id="el-create-dialog-title">Create New Expedition</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="el-field">
+        <label for="el-new-title">Expedition Title</label>
+        <input type="text" id="el-new-title" value="xPEDitie Pijn — Pilot v1" maxlength="200" autofocus>
+      </div>
+      <div class="el-field">
+        <label for="el-new-lang">Primary Authoring Language</label>
+        <select data-app-select id="el-new-lang">
+          <option value="nl">Nederlands (NL)</option>
+          <option value="en">English (EN)</option>
+          <option value="de">Deutsch (DE)</option>
+        </select>
+      </div>
+      <div class="el-field">
+        <label for="el-new-template">Starting Structure</label>
+        <select data-app-select id="el-new-template">
+          <option value="blank">Blank expedition</option>
+          <option value="bps-skeleton">Three-station outline</option>
+          <option value="showcase">Interactive example</option>
+        </select>
+      </div>
+      <div class="el-dash-actions">
+        <p class="field-error" id="el-create-error" role="alert" hidden></p>
+        <button type="button" class="btn" id="el-create-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="el-create-confirm">Create &amp; Open Builder</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog" id="el-delete-dialog" closedby="any" aria-labelledby="el-delete-dialog-title">
+    <div class="el-dialog-header">
+      <h2 id="el-delete-dialog-title">Delete Expedition?</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <p id="el-delete-dialog-msg" translate="no"></p>
+      <p>This removes the expedition and deactivates its public share link.</p>
+      <div class="el-dash-actions">
+        <p class="field-error" id="el-delete-error" role="alert" hidden></p>
+        <button type="button" class="btn" id="el-delete-cancel">Cancel</button>
+        <button type="button" class="btn danger" id="el-delete-confirm">Delete</button>
+      </div>
+    </div>
+  </dialog>
+
+
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
+</body>
+</html>

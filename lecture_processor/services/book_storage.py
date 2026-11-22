@@ -22,7 +22,7 @@ def configured():
     return bool(os.getenv('BOOK_STORAGE_URL') and os.getenv('BOOK_STORAGE_KEY'))
 
 
-def request(method, path, data=None, content_type='application/octet-stream'):
+def request(method, path, data=None, content_type='application/octet-stream', *, max_response_bytes=None):
     if not configured():
         raise BookError('Image cloud saving is not available yet. Your image stays safely in this browser.', 503)
     base = os.environ['BOOK_STORAGE_URL'].rstrip('/')
@@ -38,7 +38,7 @@ def request(method, path, data=None, content_type='application/octet-stream'):
     })
     try:
         with urllib.request.urlopen(req, timeout=30) as response:
-            return response.read(MAX_BYTES + 1)
+            return response.read((MAX_BYTES if max_response_bytes is None else max_response_bytes) + 1)
     except urllib.error.HTTPError as error:
         if method == 'DELETE' and error.code == 404:
             return b''

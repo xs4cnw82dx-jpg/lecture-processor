@@ -160,3 +160,9 @@ Independent review also fixed stale-account preference writes/admin-session resp
 Final frozen-source production-asset browser suite: **266 passed**, no failures or retries. Eight environment-specific cases were skipped in that run and passed separately (**7 real API + 1 legacy**), for **274 distinct browser scenarios**. Backend **1,029** and client **207** pass; final lint/build/hygiene/security checks pass. Representative Settings captures are committed under `docs/redesign-evidence/settings-*.png`. All requested implementation and local verification are complete. Next: PR, protected-branch checks/merge, safe main sync, and exact deployed commit/assets verification.
 
 PR [#188](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/188) is open and attached. GitHub backend/frontend/smoke checks passed. Functions audit discovered newly published GHSA-jqcg-44mw-7w3h in the existing transitive proxy-addr dependency; the lockfile is patched from 2.0.7 to 2.0.8 with no application-code or direct-dependency changes. Fresh install, Functions module load and production audit pass (zero vulnerabilities). Required checks are rerunning on the patched release candidate before protected merge and Render verification.
+
+## xPEDitie Pijn Studio and learner player — 22 November
+
+The expedition library and response report use the app’s shared theme, page headings, buttons and form controls. The course keeps its own reading preferences. The editor gives the slide canvas priority, with separate outline and inspector views on phones. The learner opening pairs a compact illustration with a start action and the station list.
+
+The isolated preview was inspected at 1440px and 375px across the library, authoring canvas, translation workspace, learner journey and report. Checks included the dark app theme, German large-text and high-contrast reading, keyboard navigation, account switching and failed saves. Production verification is pending.

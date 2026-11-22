@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  {% include '_preferences_head.html' %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>xPEDitie Pijn Studio · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+</head>
+<body
+  class="el-studio-body"
+  data-expedition-id="{{ expedition_id }}"
+  data-grant-token="{{ grant_token }}"
+  data-initial-mode="{{ initial_mode }}"
+>
+  <header class="el-topbar">
+    <div class="el-topbar-left">
+      <a href="/physio/elearning" class="el-icon-btn" id="el-back-link" aria-label="Back to Expeditions" title="Back to Expeditions"></a>
+      <div class="el-title-wrap">
+        <input type="text" class="el-title-input" id="el-exp-title" aria-label="Expedition title" maxlength="200">
+        <span class="el-save-chip" id="el-save-state" role="status" aria-live="polite">Loading…</span>
+      </div>
+    </div>
+
+    <div class="el-topbar-center">
+      <div class="el-mode-tabs" role="tablist" aria-label="Workspace mode">
+        <button type="button" role="tab" class="el-mode-tab is-active" data-mode="edit" aria-selected="true">Create</button>
+        <button type="button" role="tab" class="el-mode-tab" data-mode="translate" aria-selected="false">Translate</button>
+        <button type="button" role="tab" class="el-mode-tab" data-mode="preview" aria-selected="false">Preview</button>
+      </div>
+    </div>
+
+    <div class="el-topbar-right">
+      <button type="button" class="el-icon-btn el-utilities-toggle" id="el-utilities-toggle" aria-label="Editor tools" aria-controls="el-editor-utilities" aria-expanded="false"></button>
+      <div id="el-editor-utilities" class="el-utilities">
+        <div id="el-edit-lang-host"></div>
+      <div class="el-topbar-sep" aria-hidden="true"></div>
+      <button type="button" class="el-icon-btn" id="el-undo-btn" aria-label="Undo" title="Undo" disabled></button>
+      <button type="button" class="el-icon-btn" id="el-redo-btn" aria-label="Redo" title="Redo" disabled></button>
+      <div id="el-more-menu-host"></div>
+      </div>
+      <button type="button" class="el-btn el-btn-primary" id="el-share-btn">Share</button>
+    </div>
+  </header>
+
+  <div id="el-lease-banner" class="el-translate-welcome" hidden>
+    <div>
+      <strong id="el-lease-message">Another collaborator is currently editing.</strong>
+    </div>
+    <button type="button" class="el-btn el-btn-sun el-btn-sm" id="el-takeover-btn">Take Over Editing</button>
+  </div>
+
+  <!-- Mode 1: Full-Viewport 3-Zone Mentimeter-Style Builder -->
+  <main class="el-workspace" id="el-mode-edit" tabindex="-1" data-pane="canvas">
+    <div class="el-pane-nav" role="group" aria-label="Workspace">
+      <button type="button" class="el-pane-btn" data-pane="outline" aria-controls="el-outline" aria-pressed="false">Outline</button>
+      <button type="button" class="el-pane-btn" data-pane="canvas" aria-controls="el-stage" aria-pressed="true">Canvas</button>
+      <button type="button" class="el-pane-btn" data-pane="inspector" aria-controls="el-inspector" aria-pressed="false">Inspector</button>
+    </div>
+    <aside class="el-outline-rail" id="el-outline" aria-label="Expedition outline">
+      <div class="el-rail-head"><span>Expedition</span></div>
+      <button type="button" class="el-outline-item is-active" id="el-nav-start-page">
+        <span id="el-nav-start-icon"></span>
+        <span class="el-outline-item-text">Start Page</span>
+      </button>
+
+      <div class="el-rail-head">
+        <span>Stations</span>
+        <button type="button" class="el-btn el-btn-sm" id="el-add-module-btn">Add station</button>
+      </div>
+      <div id="el-outline-modules"></div>
+    </aside>
+
+    <section class="el-stage" id="el-stage" aria-label="Live canvas">
+      <div class="el-stage-bar">
+        <span class="el-stage-crumb" id="el-canvas-crumb">Start Page</span>
+        <div class="el-vp-switch" role="group" aria-label="Canvas width">
+          <button type="button" class="el-vp-btn is-active" id="el-vp-desktop" aria-pressed="true">Desktop</button>
+          <button type="button" class="el-vp-btn" id="el-vp-mobile" aria-pressed="false">Mobile</button>
+        </div>
+      </div>
+
+      <div class="el-canvas-frame xped-surface-scope" id="el-canvas-frame" data-xped-theme="xped-warm-sand">
+        <div id="el-canvas-card" data-i18n-ignore></div>
+      </div>
+
+      <div class="el-stage-footer" id="el-stage-footer" hidden>
+        <div class="el-readability-wrap">
+          <div class="el-readability-bar" id="el-readability-bar"></div>
+          <div class="el-b1-coach-panel" id="el-b1-coach-panel" hidden></div>
+        </div>
+        <details class="el-notes-drawer" id="el-notes-drawer">
+          <summary><span id="el-notes-icon"></span><span>Thesis &amp; Partner Notes (hidden from learners)</span></summary>
+          <div class="el-notes-drawer-body">
+            <textarea id="el-author-notes" class="xped-textarea" rows="3" placeholder="Leave notes for your thesis partner or German editor…"></textarea>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <aside class="el-inspector" id="el-inspector" aria-label="Inspector">
+      <div class="el-insp-tabs" role="tablist">
+        <button type="button" role="tab" class="el-insp-tab is-active" data-insp="block" aria-selected="true">Settings</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="step" aria-selected="false">Station</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="theme" aria-selected="false">Design</button>
+      </div>
+      <div id="el-inspector-body"></div>
+    </aside>
+  </main>
+
+  <!-- Mode 2: Split-Screen Translation Studio (For German Editor & NL/EN) -->
+  <section class="el-translate-shell" id="el-mode-translate" hidden>
+    <div class="el-translate-welcome" id="el-tr-welcome">
+      <div>
+        <h1>Translation Studio</h1>
+        <p>Edit translations directly below — module structure stays safely locked and changes save automatically.</p>
+      </div>
+      <span class="el-status-inline is-live" role="status" id="el-tr-autosave">Saved</span>
+    </div>
+
+    <div class="el-translate-toolbar">
+      <div class="el-btn-row">
+        <div id="el-tr-source-host"></div>
+        <span class="el-tr-arrow-host" id="el-tr-arrow-host" aria-hidden="true"></span>
+        <div id="el-tr-target-host"></div>
+        <span class="el-status-inline is-live" id="el-tr-progress">0 / 0 translated</span>
+      </div>
+      <div class="el-btn-row el-tr-actions">
+        <div id="el-tr-filter-host"></div>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-next-missing">Next missing</button>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-toggle-preview" aria-pressed="true">Live Preview</button>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-export-csv">Export CSV</button>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-import-csv-btn">Import CSV</button>
+        <input type="file" id="el-tr-import-csv-input" accept=".csv,text/csv" hidden>
+        <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-tr-save-btn">Save Now</button>
+      </div>
+    </div>
+
+    <details class="el-tr-glossary" id="el-tr-glossary">
+      <summary><span>Pain-Education Glossary</span><span class="xped-caption" id="el-tr-glossary-summary">Shared key terms</span></summary>
+      <div class="el-tr-glossary-body" id="el-tr-glossary-body"></div>
+    </details>
+
+    <div class="el-translate-split" id="el-translate-split">
+      <div>
+        <div id="el-translate-rows"></div>
+        <div id="el-tr-media-section"></div>
+      </div>
+      <aside class="el-tr-preview-pane" id="el-tr-preview-pane" aria-label="Live translated slide preview">
+        <div class="el-tr-preview-label">
+          <span>Live Slide Preview</span>
+          <span id="el-tr-preview-lang-tag">DE</span>
+        </div>
+        <div class="xped-surface-scope" id="el-tr-preview-stage" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Mode 3: Full Interactive Learner Preview -->
+  <section class="el-stage" id="el-mode-preview" hidden>
+    <div class="el-stage-bar">
+      <div class="el-btn-row el-preview-controls">
+        <h2>Interactive Preview</h2>
+        <div id="el-preview-lang-host"></div>
+        <div class="el-vp-switch" role="group" aria-label="Preview width">
+          <button type="button" class="el-vp-btn is-active" id="el-pv-desktop" aria-pressed="true">Desktop</button>
+          <button type="button" class="el-vp-btn" id="el-pv-mobile" aria-pressed="false">Mobile</button>
+        </div>
+      </div>
+      <button type="button" class="el-btn el-btn-sm" id="el-preview-reset">Reset preview</button>
+    </div>
+    <div class="el-canvas-frame xped-surface-scope" id="el-preview-container" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+  </section>
+
+  <!-- Categorized + Add Block Dialog with Search -->
+  <dialog class="el-dialog" id="el-block-picker-dialog" closedby="any" aria-labelledby="el-picker-title">
+    <div class="el-dialog-header">
+      <h2 id="el-picker-title">Add a Block</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="el-picker-search-wrap">
+        <input type="search" id="el-picker-search" class="xped-input" placeholder="Search blocks (e.g. YouTube, Myth, Scale, Image)…" aria-label="Search blocks">
+      </div>
+      <div id="el-picker-body"></div>
+    </div>
+  </dialog>
+
+  <!-- Add Module Recipe Dialog -->
+  <dialog class="el-dialog" id="el-module-recipe-dialog" closedby="any" aria-labelledby="el-recipe-title">
+    <div class="el-dialog-header">
+      <h2 id="el-recipe-title">Add Station</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="el-picker-grid el-recipe-grid">
+        <button type="button" class="el-picker-card" data-recipe="blank" data-recipe-icon="plus">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>Blank Station</strong>
+            <span>One clean empty step to design from scratch.</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="myth-buster" data-recipe-icon="xCircle">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>Myth-Buster Station</strong>
+            <span>Myth vs. Fact + progressive takeaway reveal + reflection.</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="video-reflection" data-recipe-icon="video">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>Video &amp; Reflection</strong>
+            <span>Short YouTube/Vimeo explainer + key takeaway + reflection.</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="ask-teach-reflect" data-recipe-icon="spark">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>Ask → Teach → Reflect</strong>
+            <span>Three ready slots: Myth/Fact, Video &amp; Callout, Reflection.</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="pain-science" data-recipe-icon="compass">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>Pain Science Explorer</strong>
+            <span>Biopsychosocial Triad, Slider, and Scientific Sources.</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="action-balance" data-recipe-icon="scale">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>Balance &amp; Action Plan</strong>
+            <span>Draagkracht/Draaglast Balance Scale + Personal Mini-Plan.</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Share, QR Code & Collaborator / German Translator Dialog -->
+  <dialog class="el-dialog" id="el-share-dialog" closedby="any" aria-labelledby="el-share-title">
+    <div class="el-dialog-header">
+      <h2 id="el-share-title">Share, Test Links &amp; Team Access</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="el-insp-section-title">1. Public Learner &amp; Tester Link (No Login)</div>
+      <div class="el-share-box">
+        <div>
+          <label class="el-field-check">
+            <input type="checkbox" id="el-share-enabled">
+            <span>Public test link is active</span>
+          </label>
+          <div class="el-field">
+            <label for="el-share-cohort">Optional Test Cohort Tag</label>
+            <input type="text" id="el-share-cohort" placeholder="pilot-1" maxlength="48">
+          </div>
+          <div class="el-field">
+            <label for="el-share-url">Shareable URL</label>
+            <input type="text" id="el-share-url" readonly>
+          </div>
+          <div class="el-btn-row">
+            <span class="el-copy-wrap">
+              <button type="button" class="el-btn el-btn-primary el-btn-sm el-copy-btn" command="--copy" commandfor="el-share-url" aria-label="Copy shareable learner link">Copy Link</button>
+              <span class="el-copy-tip" role="status"></span>
+            </span>
+            <a href="#" target="_blank" rel="noopener" class="el-btn el-btn-sm" id="el-share-open-link">Open Link</a>
+            <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">Reset Link</button>
+          </div>
+        </div>
+        <div class="el-qr-box">
+          <div id="el-share-qr"></div>
+          <button type="button" class="el-btn el-btn-sm" id="el-share-qr-download">Download QR</button>
+        </div>
+      </div>
+
+      <label class="el-field-check">
+        <input type="checkbox" id="el-share-peer-results">
+        <span>Show anonymized peer results on polls &amp; sliders</span>
+      </label>
+      <label class="el-field-check">
+        <input type="checkbox" id="el-share-pilot-feedback">
+        <span>Include short Pilot Usability Feedback card at the end</span>
+      </label>
+      <label class="el-field-check">
+        <input type="checkbox" id="el-share-step-comments">
+        <span>Enable Physio / PhD reviewer comments on each step</span>
+      </label>
+
+      <div class="el-insp-section-title">2. Co-Editors (Thesis Partner) &amp; Translators</div>
+      <div class="el-share-inline-row">
+        <input type="email" aria-label="Collaborator email" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
+        <div id="el-member-role-host"></div>
+        <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-add-member-btn">Add</button>
+      </div>
+      <div id="el-members-list"></div>
+
+      <div class="el-insp-section-title">3. Direct Translator Link (No Account Needed)</div>
+      <div class="el-share-inline-row">
+        <input type="text" aria-label="Translator link label" id="el-grant-label" class="xped-input" placeholder="German Editor (DE)">
+        <div id="el-grant-lang-host"></div>
+        <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">Create Link</button>
+      </div>
+      <div id="el-grants-list"></div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog" id="el-unused-media" aria-labelledby="el-unused-title">
+    <div class="el-dialog-header">
+      <h2 id="el-unused-title">Free unused media</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <p class="xped-caption" id="el-unused-help">These files are unused in the saved expedition. Removing a file also clears undo steps that depend on it.</p>
+      <div id="el-unused-files" class="el-unused-files" aria-describedby="el-unused-help"></div>
+      <p id="el-unused-status" class="xped-caption" role="status"></p>
+      <div class="el-btn-row">
+        <button type="button" class="el-btn" id="el-unused-cancel" autofocus>Cancel</button>
+        <button type="button" class="el-btn el-btn-danger" id="el-unused-remove" disabled>Remove selected files</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="el-toast" id="el-toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename='js/vendor/qrcode-generator-2.0.4/qrcode.min.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_qr_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_route_map_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_blocks_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_builder_js) }}"></script>
+</body>
+</html>

@@ -80,6 +80,7 @@ def deletion_runtime(monkeypatch):
     monkeypatch.setattr(account_data_service.access_service, 'require_recent_allowed_user',
                         lambda *_args, **_kwargs: ({'uid': 'owner', 'email': 'owner@example.test'}, None, None))
     monkeypatch.setattr(account_data_service.rate_limiter, 'check_rate_limit', lambda **_kwargs: (True, 0))
+    monkeypatch.setattr('lecture_processor.services.elearning_account_service.delete_owned', lambda *_args: 0)
     monkeypatch.setattr('lecture_processor.services.book_account_service.delete_owned', lambda *_args: 0)
     monkeypatch.setattr('lecture_processor.services.study_picture_service.delete_owned', lambda *_args: 0)
     monkeypatch.setattr('lecture_processor.services.calendar_sync_service.delete_account_connection', lambda *_args: None)

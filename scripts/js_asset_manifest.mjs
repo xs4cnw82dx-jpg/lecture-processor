@@ -20,6 +20,15 @@ export const minifiedTargets = [
   { entry: 'static/js/workout-utils.js', out: 'static/js/workout-utils.min.js' },
   { entry: 'static/js/workout.js', out: 'static/js/workout.min.js' },
   { entry: 'static/js/workout-share.js', out: 'static/js/workout-share.min.js' },
+  { entry: 'static/js/elearning-model.js', out: 'static/js/elearning-model.min.js' },
+  { entry: 'static/js/elearning-icons.js', out: 'static/js/elearning-icons.min.js' },
+  { entry: 'static/js/elearning-qr.js', out: 'static/js/elearning-qr.min.js' },
+  { entry: 'static/js/elearning-route-map.js', out: 'static/js/elearning-route-map.min.js' },
+  { entry: 'static/js/elearning-blocks.js', out: 'static/js/elearning-blocks.min.js' },
+  { entry: 'static/js/elearning-dashboard.js', out: 'static/js/elearning-dashboard.min.js' },
+  { entry: 'static/js/elearning-builder.js', out: 'static/js/elearning-builder.min.js' },
+  { entry: 'static/js/elearning-player.js', out: 'static/js/elearning-player.min.js' },
+  { entry: 'static/js/elearning-responses.js', out: 'static/js/elearning-responses.min.js' },
 ];
 
 export const intentionallyUnminifiedScripts = [
@@ -37,6 +46,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/book-zip.min.js',
   'static/js/vendor/dompurify-3.3.2/purify.min.js',
   'static/js/vendor/flatpickr-4.6.13/flatpickr.min.js',
+  'static/js/vendor/qrcode-generator-2.0.4/qrcode.min.js',
   'static/js/vendor/papaparse-5.5.3/papaparse.min.js',
   'static/js/book-model.js',
   'static/js/book-path-editor.js',

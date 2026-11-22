@@ -9,7 +9,9 @@ def canonical_host(monkeypatch, core):
 
 
 @pytest.mark.parametrize('method', ['GET', 'HEAD'])
-@pytest.mark.parametrize('path', ['/', '/study?pack_id=pack%2Fone&tab=notes', '/buy_credits?payment=success', '/study?value=why?'])
+@pytest.mark.parametrize('path', ['/', '/study?pack_id=pack%2Fone&tab=notes', '/buy_credits?payment=success', '/study?value=why?',
+                                  '/physio/elearning', '/elearning/p/example-token?lang=de',
+                                  '/elearning/translate/example-grant'])
 def test_render_page_redirects_to_configured_origin(client, canonical_host, method, path):
     response = client.open(path, method=method, base_url='https://preview.onrender.com')
 
@@ -28,6 +30,7 @@ def test_other_hosts_are_not_redirected(client, canonical_host, host):
 
 @pytest.mark.parametrize('method,path,status', [
     ('GET', '/healthz', 200),
+    ('GET', '/api/elearning/expeditions', 401),
     ('HEAD', '/healthz', 200),
     ('GET', '/api/runtime-jobs/active', 401),
     ('OPTIONS', '/api/runtime-jobs/active', 200),
