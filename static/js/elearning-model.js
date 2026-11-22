@@ -689,7 +689,7 @@
   function createExpeditionPreset(presetKey, title, defaultLang) {
     var lang = defaultLang || 'nl';
     var base = {
-      title: title || 'xPEDitie Pijn — Pilot v1',
+      title: title || 'Untitled Expedition',
       defaultLanguage: lang,
       enabledLanguages: ['nl', 'en', 'de'],
       theme: { preset: 'xped-warm-sand', showRouteMap: true },

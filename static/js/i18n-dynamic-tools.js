@@ -9,6 +9,7 @@
   "Even laden…": "Even laden…",
   "Voortgang": "Voortgang",
   "Build, translate and share your pain education modules.": "Maak, vertaal en deel je modules over pijneducatie.",
+  "e.g. Understanding pain": "Bijv. Pijn begrijpen",
   "New expedition": "Nieuwe expeditie",
   "Blank expedition": "Lege expeditie",
   "Three-station outline": "Opzet met drie stations",

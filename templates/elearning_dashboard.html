@@ -44,10 +44,10 @@
       <h2 id="el-create-dialog-title">Create New Expedition</h2>
       <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
     </div>
-    <div class="el-dialog-body">
+    <form id="el-create-form" class="el-dialog-body">
       <div class="el-field">
         <label for="el-new-title">Expedition Title</label>
-        <input type="text" id="el-new-title" value="xPEDitie Pijn — Pilot v1" maxlength="200" autofocus>
+        <input type="text" id="el-new-title" placeholder="e.g. Understanding pain" maxlength="200" required autofocus>
       </div>
       <div class="el-field">
         <label for="el-new-lang">Primary Authoring Language</label>
@@ -68,9 +68,9 @@
       <div class="el-dash-actions">
         <p class="field-error" id="el-create-error" role="alert" hidden></p>
         <button type="button" class="btn" id="el-create-cancel">Cancel</button>
-        <button type="button" class="btn primary" id="el-create-confirm">Create &amp; Open Builder</button>
+        <button type="submit" class="btn primary" id="el-create-confirm">Create &amp; Open Builder</button>
       </div>
-    </div>
+    </form>
   </dialog>
 
   <dialog class="el-dialog" id="el-delete-dialog" closedby="any" aria-labelledby="el-delete-dialog-title">

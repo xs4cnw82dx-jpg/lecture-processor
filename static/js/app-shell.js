@@ -44,7 +44,9 @@
       key: key,
       node: group,
       trigger: trigger,
-      panelWrap: panelWrap
+      panelWrap: panelWrap,
+      manualOpen: null,
+      hasActiveChild: false
     };
   }).filter(function (group) { return !!group.key; });
   var exportOverlay = document.getElementById('shell-export-overlay');
@@ -109,6 +111,7 @@
 
   function isActiveNavPath(href, currentPath) {
     if (href === currentPath) return true;
+    if (href === '/physio' && shell && shell.dataset.pageKey === 'physio-local') return true;
     if (href === '/physio/elearning' && currentPath.indexOf('/physio/elearning/') === 0) return true;
     if (href === '/plan' && currentPath === '/stats') return true;
     if (href === '/batch_status' && currentPath.indexOf('/batch_status/') === 0) return true;
@@ -427,20 +430,15 @@
     return 'shell_group_open:' + safeKey;
   }
 
-  function findShellGroup(groupKey) {
-    var safeKey = String(groupKey || '').trim();
-    for (var index = 0; index < shellGroups.length; index += 1) {
-      if (shellGroups[index].key === safeKey) return shellGroups[index];
+  function syncShellGroup(group) {
+    if (!group.trigger) return;
+    var open = group.manualOpen;
+    if (open === null) {
+      open = group.hasActiveChild || readCacheString(groupCacheKey(group.key), '') === '1';
     }
-    return null;
-  }
-
-  function setShellGroupOpen(groupKey, open) {
-    var group = findShellGroup(groupKey);
-    if (!group || !group.node || !group.trigger) return;
     group.node.classList.toggle('is-open', !!open);
     group.trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
-    group.trigger.classList.toggle('active', !!open);
+    group.trigger.classList.toggle('active', group.hasActiveChild || open);
     if (group.panelWrap) {
       group.panelWrap.setAttribute('aria-hidden', open ? 'false' : 'true');
       if (open) {
@@ -451,25 +449,8 @@
     }
   }
 
-  function hydrateShellGroupState(groupKey, hasActiveChild) {
-    var stored = readCacheString(groupCacheKey(groupKey), '');
-    if (stored === '1') {
-      setShellGroupOpen(groupKey, true);
-      return;
-    }
-    if (stored === '0') {
-      setShellGroupOpen(groupKey, false);
-      return;
-    }
-    setShellGroupOpen(groupKey, !!hasActiveChild);
-  }
-
   function setPhysioGroupVisible(visible) {
-    if (!physioGroup) return;
-    physioGroup.hidden = !visible;
-    if (!visible) {
-      setShellGroupOpen('physio', false);
-    }
+    if (physioGroup) physioGroup.hidden = !visible;
   }
 
   function setAuthView(view) {
@@ -587,13 +568,8 @@
     });
 
     shellGroups.forEach(function (group) {
-      hydrateShellGroupState(group.key, !!activeByGroup[group.key]);
-      if (group.trigger) {
-        group.trigger.classList.toggle(
-          'active',
-          !!activeByGroup[group.key] || !!(group.node && group.node.classList.contains('is-open'))
-        );
-      }
+      group.hasActiveChild = !!activeByGroup[group.key];
+      syncShellGroup(group);
     });
   }
 
@@ -1287,10 +1263,9 @@
   shellGroups.forEach(function (group) {
     if (!group.trigger) return;
     group.trigger.addEventListener('click', function () {
-      var next = !(group.node && group.node.classList.contains('is-open'));
-      setShellGroupOpen(group.key, next);
-      writeCacheString(groupCacheKey(group.key), next ? '1' : '0');
-      group.trigger.classList.toggle('active', next);
+      group.manualOpen = !group.node.classList.contains('is-open');
+      writeCacheString(groupCacheKey(group.key), group.manualOpen ? '1' : '0');
+      syncShellGroup(group);
     });
   });
 
