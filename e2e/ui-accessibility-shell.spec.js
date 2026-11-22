@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { accessibilityProblems, reachableControlsInside } = require('./helpers/a11y-audit');
 
 async function isolate(page, { signedIn = true, packs = 24 } = {}) {
   await page.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
@@ -156,4 +157,85 @@ test('Books keeps shelf scrolling and editor viewport after adding its landmark'
   expect(box.y + box.height).toBeLessThanOrEqual(901);
   expect(await page.locator('body').evaluate(node => node.scrollWidth)).toBeLessThanOrEqual(1280);
   await page.screenshot({ path: testInfo.outputPath('books-workspace.png'), fullPage: true });
+});
+
+const auditedRoutes = ['/dashboard', '/study', '/plan', '/settings', '/lecture-notes', '/tools', '/voice-notes',
+  '/batch_mode', '/batch_mode_audio_transcription', '/batch_mode_text_combine', '/batch_status', '/buy_credits', '/admin', '/books'];
+for (const path of auditedRoutes) {
+  for (const width of [1280, 390]) {
+    test(`reachable controls are named, not nested, and not hidden from assistive technology: ${path} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await isolate(page);
+      await page.goto(path);
+      await page.waitForLoadState('networkidle');
+      expect(await accessibilityProblems(page)).toEqual([]);
+    });
+  }
+}
+
+test('the mobile menu button says whether it opens or closes navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await isolate(page);
+  await page.goto('/dashboard');
+  const menu = page.locator('#app-shell-menu-btn');
+  await expect(menu).toHaveAccessibleName('Open main navigation');
+  await menu.click();
+  await expect(menu).toHaveAttribute('aria-label', 'Close main navigation');
+  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveAccessibleName('Open main navigation');
+});
+
+test('the closed account menu cannot be reached by keyboard and the open one can', async ({ page }) => {
+  await isolate(page);
+  await page.goto('/dashboard');
+  await expect(page.locator('#shell-account-btn')).toBeVisible();
+  expect(await reachableControlsInside(page, '#shell-account-menu-wrap')).toEqual([]);
+  await page.locator('#shell-account-btn').click();
+  await expect(page.locator('#shell-account-btn')).toHaveAttribute('aria-expanded', 'true');
+  expect((await reachableControlsInside(page, '#shell-account-menu-wrap')).length).toBeGreaterThan(0);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => reachableControlsInside(page, '#shell-account-menu-wrap')).toEqual([]);
+});
+
+for (const path of ['/batch_mode_slides_extraction', '/batch_mode_audio_transcription', '/batch_mode_text_combine', '/instant_batch_mode']) {
+  test(`Batch is marked as the current page in navigation on ${path}`, async ({ page }) => {
+    await isolate(page);
+    await page.goto(path);
+    await expect(page.locator('#app-shell-sidebar a[href="/batch_mode"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('#app-shell-sidebar a[aria-current="page"]')).toHaveCount(1);
+  });
+}
+
+test('export explains an empty selection inside the dialog and sends nothing', async ({ page }) => {
+  await isolate(page);
+  const exports = [];
+  page.on('request', request => { if (request.url().includes('/api/account/export')) exports.push(request.url()); });
+  await page.goto('/dashboard');
+  await page.locator('#shell-account-btn').click();
+  await page.locator('#shell-export-data-btn').click();
+  await expect(page.locator('#shell-export-overlay')).toBeVisible();
+  for (const box of await page.locator('#shell-export-grid input[type="checkbox"]').all()) await box.uncheck({ force: true });
+  await page.locator('#shell-export-confirm').click();
+  const error = page.locator('#shell-export-error');
+  await expect(error).toBeVisible();
+  await expect(error).toHaveText('Choose at least one export option.');
+  expect(await error.evaluate(node => !!node.closest('#shell-export-overlay'))).toBe(true);
+  expect(exports).toEqual([]);
+});
+
+test('account deletion requires the exact confirmation text and announces the problem', async ({ page }) => {
+  await isolate(page);
+  const deletes = [];
+  page.on('request', request => { if (request.url().includes('/api/account/delete')) deletes.push(request.method()); });
+  await page.goto('/dashboard');
+  await page.locator('#shell-account-btn').click();
+  await page.locator('#shell-delete-account-btn').click();
+  await expect(page.locator('#shell-delete-account-overlay')).toBeVisible();
+  await page.locator('#shell-delete-account-text').fill('DELETE ACCOUNT');
+  await page.locator('#shell-delete-account-email').fill('shell@example.test');
+  await page.locator('#shell-delete-account-confirm').click();
+  await expect(page.locator('#shell-delete-account-error')).toHaveText('Type DELETE MY ACCOUNT exactly to continue.');
+  expect(deletes).toEqual([]);
+  await expect(page.locator('#shell-delete-account-overlay')).toBeVisible();
 });

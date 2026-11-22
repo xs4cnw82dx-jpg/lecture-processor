@@ -5,6 +5,7 @@ const path = require('node:path');
 test.use({ serviceWorkers: 'block' });
 
 const { installAccountFixture } = require('./helpers/batch-fixture');
+const { accessibilityProblems } = require('./helpers/a11y-audit');
 
 async function installVoiceFixture(page) {
   const fixture = await installAccountFixture(page);
@@ -317,4 +318,29 @@ test('failed remote deletion keeps the saved note and audio intact', async ({ pa
   expect(saved.notes).toHaveLength(1);
   expect(saved.audio).toHaveLength(1);
   expect(fixture.browserErrors).toEqual([]);
+});
+
+test('voice note views, filters and note actions tell assistive technology what they do', async ({ page }) => {
+  await installVoiceFixture(page);
+  await page.goto('/voice-notes');
+  await seedVoiceNote(page, true);
+  await page.locator('[data-voice-view="library"]').click();
+  await expect(page.locator('[data-voice-view="library"]')).toHaveAttribute('aria-pressed', 'true');
+  for (const other of await page.locator('[data-voice-view]:not([data-voice-view="library"])').all()) {
+    await expect(other).toHaveAttribute('aria-pressed', 'false');
+  }
+  const filters = page.locator('[data-filter]:visible');
+  expect(await filters.count()).toBeGreaterThan(1);
+  const second = filters.nth(1);
+  await second.click();
+  await expect(second).toHaveAttribute('aria-pressed', 'true');
+  await expect(filters.first()).toHaveAttribute('aria-pressed', 'false');
+  await filters.first().click();
+  await expect(filters.first()).toHaveAttribute('aria-pressed', 'true');
+  const item = page.locator('[data-note-open]').first();
+  await expect(item).toHaveAccessibleName('Open voice note "Important seeded note"');
+  await page.locator('.voice-note-item .voice-note-actions > summary').first().click();
+  await expect(page.locator('[data-note-archive]').first()).toHaveAccessibleName('Archive voice note "Important seeded note"');
+  await expect(page.locator('[data-note-delete]').first()).toHaveAccessibleName('Delete voice note "Important seeded note"');
+  expect(await accessibilityProblems(page)).toEqual([]);
 });
