@@ -294,3 +294,22 @@ test('the general transcriber lets people save the original recording', async ({
   await expect(page.locator('#transcriber-dropzone')).toHaveAttribute('role', 'button');
   await expect(page.locator('#transcriber-dropzone')).toBeFocused();
 });
+
+for (const [language, message] of [
+  ['en', 'Error: Verify your email address before continuing.'],
+  ['nl', 'Fout: bevestig je e-mailadres voordat je verdergaat.'],
+]) {
+  test('status polling explains email verification in ' + language, async ({ page }) => {
+    await fixture(page);
+    await page.route('**/api/user-preferences', route => route.fulfill({ json: { preferences: { interface_language: language } } }));
+    await page.route('**/upload', route => route.fulfill({ json: { job_id: 'email-check' } }));
+    await page.route('**/status/email-check', route => route.fulfill({ status: 403, json: {
+      error_code: 'email_not_verified', message: 'Please verify your email address before continuing.',
+    } }));
+    await page.goto('/slides-extraction');
+    await page.locator('#study-pack-title-input').fill('Verification check');
+    await page.locator('#pdf-input').setInputFiles({ name: 'example.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fixture') });
+    await page.locator('#process-button').click();
+    await expect(page.locator('#status-text')).toHaveText(message);
+  });
+}

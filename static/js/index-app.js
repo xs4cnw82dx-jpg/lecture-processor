@@ -3510,8 +3510,12 @@ async function pollStatus() {
             return;
         }
         if (r.status === 403) {
+            const reason = await r.json().catch(() => null);
+            if (!isCurrentPoll()) return;
             resetProcessingSession({ keepProgressVisible: true });
-            showError('You do not have access to this job.');
+            showError(reason && reason.error_code === 'email_not_verified'
+                ? 'Verify your email address before continuing.'
+                : 'You do not have access to this job.');
             return;
         }
         const d = await r.json();

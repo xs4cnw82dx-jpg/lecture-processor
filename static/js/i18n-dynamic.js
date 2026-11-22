@@ -261,6 +261,7 @@
   "Lecture download": "College downloaden",
   "Tools transcriber": "Algemene transcriptie",
   "Email verification": "E-mailverificatie",
+  "Error: Verify your email address before continuing.": "Fout: bevestig je e-mailadres voordat je verdergaat.",
   "Batch jobs refreshed.": "Batchtaken vernieuwd.",
   "User loaded. Changes here are recorded as €0 admin grants.": "Gebruiker geladen. Wijzigingen worden hier geregistreerd als beheerderstoekenningen van € 0.",
   "Recent credit grants and unlimited-access changes will appear here.": "Recente credittoekenningen en wijzigingen in onbeperkte toegang verschijnen hier.",
