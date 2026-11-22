@@ -545,3 +545,31 @@ test(`lifecycle flush shares and releases the keepalive budget for a ${backSize}
   }
 });
 }
+
+test('a signed-out visitor sees the sign-in gate even when the auth state is known before study.js arrives', async ({ page }) => {
+  const browserErrors = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  await page.addInitScript(() => {
+    const auth = {
+      currentUser: null,
+      setPersistence: () => Promise.resolve(),
+      authStateReady: () => Promise.resolve(),
+      onAuthStateChanged(callback) { queueMicrotask(() => callback(null)); return () => {}; },
+    };
+    const authFactory = () => auth;
+    authFactory.Auth = { Persistence: { LOCAL: 'local' } };
+    window.firebase = { app: () => ({}), initializeApp: () => ({}), auth: authFactory };
+  });
+  await page.route('https://www.gstatic.com/firebasejs/**', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
+  // Hold study.js back so the earlier scripts settle the signed-out state first. Study's
+  // auth callback then runs as soon as study.js finishes, before any later script.
+  await page.route(/\/static\/js\/study(\.min)?\.js(\?.*)?$/, async (route) => {
+    const response = await route.fetch();
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await route.fulfill({ response });
+  });
+  await page.goto('/study');
+  await expect(page.locator('#study-auth-gate')).toBeVisible();
+  await expect(page.locator('#study-library-shell')).toBeHidden();
+  expect(browserErrors).toEqual([]);
+});
