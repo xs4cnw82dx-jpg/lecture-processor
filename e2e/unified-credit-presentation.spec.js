@@ -112,6 +112,28 @@ test('a held checkout cannot navigate the next signed-in account', async ({ page
   expect(setup.browserErrors).toEqual([]);
 });
 
+test('a previous account cooldown cannot unlock a pending checkout', async ({ page }) => {
+  await page.clock.install();
+  const { state } = await buyFixture(page, { holdCheckout: true });
+  await page.goto('/buy_credits');
+  const button = page.locator('[data-bundle-id="credits_40"]');
+  await button.click();
+  await expect.poll(() => state.checkouts.length).toBe(1);
+  await state.heldCheckout.fulfill({ status: 429, json: { retry_after_seconds: 30 } });
+  await expect(page.locator('#buy-credits-toast')).toContainText('30');
+  await page.evaluate(() => window.testAccount.switchTo('b'));
+  await expect(button).toBeEnabled();
+  await page.evaluate(() => window.testAccount.switchTo('a'));
+  await expect(button).toBeDisabled();
+  await page.evaluate(() => window.testAccount.switchTo('b'));
+  await button.click();
+  await expect.poll(() => state.checkouts.length).toBe(2);
+  await page.clock.fastForward(31000);
+  await expect(button).toBeDisabled();
+  await state.heldCheckout.fulfill({ json: { checkout_url: '/synthetic-checkout' } });
+  await expect(page).toHaveURL(/\/synthetic-checkout$/);
+});
+
 test('a legacy public config cannot downgrade a stored version-two account balance', async ({ page }) => {
   await buyFixture(page, { config: { bundles: {} } });
   await page.goto('/buy_credits');

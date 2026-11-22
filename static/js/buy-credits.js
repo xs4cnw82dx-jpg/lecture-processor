@@ -132,7 +132,7 @@
     var signedIn = !!getCurrentUser();
     if (authPanel) authPanel.hidden = signedIn || !authStateResolved;
     if (signInLink) signInLink.href = getSignInHref();
-    setBundleButtons(false);
+    setBundleButtons(checkoutBusy);
   }
 
   async function authFetch(path, options) {
@@ -178,6 +178,7 @@
   // The server rate-limits checkout. Keep the buy buttons disabled for the wait it
   // asks for (Retry-After header or retry_after_seconds), then allow a retry.
   var checkoutCooldownTimer = null;
+  var checkoutCooldownUntil = new Map();
   function retryAfterSeconds(response, payload) {
     var fromBody = Number(payload && payload.retry_after_seconds);
     if (Number.isFinite(fromBody) && fromBody > 0) return Math.ceil(fromBody);
@@ -188,14 +189,28 @@
   function startCheckoutCooldown(seconds) {
     var wait = Math.max(1, Math.ceil(Number(seconds) || 0));
     showToast(t('Checkout is limited for a moment. Try again in {seconds} seconds.', { seconds: wait }), 'error');
-    if (checkoutCooldownTimer) window.clearTimeout(checkoutCooldownTimer);
-    checkoutBusy = true;
-    setBundleButtons(true);
+    checkoutCooldownUntil.set(accountUid, Date.now() + wait * 1000);
+    restoreAccountCooldown();
+  }
+
+  function restoreAccountCooldown() {
+    window.clearTimeout(checkoutCooldownTimer);
+    checkoutCooldownTimer = null;
+    var uid = accountUid;
+    var now = Date.now();
+    checkoutCooldownUntil.forEach(function (end, account) {
+      if (end <= now) checkoutCooldownUntil.delete(account);
+    });
+    checkoutBusy = checkoutCooldownUntil.has(uid);
+    setBundleButtons(checkoutBusy);
+    if (!checkoutBusy) return;
     checkoutCooldownTimer = window.setTimeout(function () {
+      if (uid !== accountUid) return;
+      checkoutCooldownUntil.delete(uid);
       checkoutCooldownTimer = null;
       checkoutBusy = false;
       setBundleButtons(false);
-    }, wait * 1000);
+    }, checkoutCooldownUntil.get(uid) - now);
   }
 
   async function purchaseBundle(bundleId) {
@@ -484,7 +499,7 @@
       if (nextUid !== accountUid) {
         accountRevision += 1;
         accountUid = nextUid;
-        checkoutBusy = false;
+        restoreAccountCooldown();
         if (toast) toast.classList.remove('visible');
         if (paymentPanel) paymentPanel.hidden = true;
         if (paymentNeedsConfirmation) paymentResultChecked = false;
