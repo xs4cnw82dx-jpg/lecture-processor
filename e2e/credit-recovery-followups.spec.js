@@ -44,12 +44,21 @@ async function failedProfile(page) {
   await expect(page.locator('#submit-batch-btn')).toBeDisabled();
 }
 
-// Startup may read the profile once or twice before it settles on the failure.
-// Let those reads finish, then count only the reads that follow.
+// Startup reads the profile once, or twice when the page's own credit check
+// starts after the shell's first read has already failed. Let those reads
+// finish, check they stay within that bound, then count only later reads.
+function expectStartupReads(setup) {
+  const reads = setup.state.reads;
+  expect(reads.length).toBeGreaterThanOrEqual(1);
+  expect(reads.length).toBeLessThanOrEqual(2);
+  expect(reads.every(uid => uid === 'a')).toBe(true);
+  return reads.length;
+}
+
 async function settledReadCount(page, setup) {
   await page.waitForLoadState('networkidle');
   await failedProfile(page);
-  return setup.state.reads.length;
+  return expectStartupReads(setup);
 }
 
 async function events(page, type = 'focus', count = 1) {
@@ -179,12 +188,15 @@ test('a new account has its own bounded recovery allowance', async ({ page }) =>
   await failedProfile(page);
   await page.evaluate(() => window.testAccount.switchTo('b'));
   await expect.poll(() => setup.state.reads.includes('b')).toBe(true);
-  const switchReads = await settledReadCount(page, setup);
+  await failedProfile(page);
+  const switchReads = setup.state.reads.length;
   setup.state.fail = false;
   await events(page, 'online');
   await expect(page.locator('#shell-credits-total')).toHaveText('27 credits');
   expect(setup.state.reads.slice(startupReads, startupReads + 1)).toEqual(['a']);
-  expect(setup.state.reads.slice(startupReads + 1, switchReads).every(uid => uid === 'b')).toBe(true);
+  const readsOnSwitch = setup.state.reads.slice(startupReads + 1, switchReads);
+  expect(readsOnSwitch.length).toBeLessThanOrEqual(2);
+  expect(readsOnSwitch.every(uid => uid === 'b')).toBe(true);
   expect(setup.state.reads.slice(switchReads)).toEqual(['b']);
 });
 
@@ -205,8 +217,7 @@ test('healthy and signed-out states do not fetch on focus or online', async ({ p
   await page.goto('/batch_mode_interview_transcription');
   await expect(page.locator('#shell-credits-total')).toHaveText('100 credits');
   await page.waitForLoadState('networkidle');
-  const startupReads = setup.state.reads.length;
-  expect(startupReads).toBeGreaterThan(0);
+  const startupReads = expectStartupReads(setup);
   await events(page, 'focus', 5);
   await events(page, 'online', 5);
   await page.evaluate(() => window.testAccount.switchTo(null));
