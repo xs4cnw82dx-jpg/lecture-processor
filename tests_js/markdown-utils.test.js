@@ -27,6 +27,10 @@ test('markdown uses DOMPurify with the allowed tags when it is available', () =>
   assert.equal(html, '<p>clean</p>');
   assert.equal(calls.length, 1);
   assert.ok(Array.isArray(calls[0].ALLOWED_TAGS) && calls[0].ALLOWED_TAGS.length > 0);
+  for (const tag of ['script', 'img', 'style', 'iframe']) {
+    assert.ok(!calls[0].ALLOWED_TAGS.includes(tag), tag);
+  }
+  assert.ok(!(calls[0].ALLOWED_ATTR || []).some(attribute => /^on/i.test(attribute)));
 });
 
 test('without a markdown parser the source is escaped with line breaks', () => {

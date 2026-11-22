@@ -148,7 +148,8 @@ test('signed-in user creates a useful plan from many unfiled question-only packs
   await page.locator('#wizard-next-btn').click();
   const preview = (await previewRequest).postDataJSON();
   expect(preview.goal.pack_ids).toContain('pack_question_1');
-  expect(typeof preview.goal.notes_minutes_by_pack).toBe('object');
+  expect(preview.goal.notes_minutes_by_pack).toEqual(expect.any(Object));
+  expect(Array.isArray(preview.goal.notes_minutes_by_pack)).toBe(false);
 
   await expect(page.locator('#wizard-preview-sessions')).toContainText('Question pack 1');
   await expect(page.locator('#wizard-capacity-warning')).toContainText('stays within your availability');
