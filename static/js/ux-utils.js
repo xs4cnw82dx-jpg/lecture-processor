@@ -1317,8 +1317,40 @@
     return date.toLocaleTimeString(locale, intlOptions);
   }
 
+  // An upload zone is a keyboard button that opens the file picker while it is
+  // empty. Once it holds a file it shows that file's own buttons (download,
+  // remove), so it becomes a named group instead: a button must not contain
+  // other buttons. Clicking the zone still opens the picker with a mouse.
+  // When the file is removed, focus returns to the zone so keyboard users
+  // are not dropped at the top of the page.
+  function manageUploadZone(zone) {
+    if (!zone || zone.__lpUploadZoneManaged) return;
+    zone.__lpUploadZoneManaged = true;
+    var hadFile = null;
+    function sync() {
+      var hasFile = zone.classList.contains('has-file');
+      if (hasFile === hadFile) return;
+      var focusWasInside = zone.contains(document.activeElement);
+      var focusWasLost = !document.activeElement || document.activeElement === document.body;
+      if (hasFile) {
+        zone.setAttribute('role', 'group');
+        zone.removeAttribute('tabindex');
+      } else {
+        zone.setAttribute('role', 'button');
+        zone.setAttribute('tabindex', '0');
+        if (hadFile && (focusWasInside || focusWasLost)) zone.focus();
+      }
+      hadFile = hasFile;
+    }
+    sync();
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(sync).observe(zone, { attributes: true, attributeFilter: ['class'] });
+    }
+  }
+
   global.LectureProcessorUx = {
     toast: toast,
+    manageUploadZone: manageUploadZone,
     prefersReducedMotion: prefersReducedMotion,
     setHidden: setHidden,
     setBodyScrollLocked: setBodyScrollLocked,

@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { installAccountFixture } = require('./helpers/batch-fixture');
-const { reachableControlsInside } = require('./helpers/a11y-audit');
+const { accessibilityProblems, reachableControlsInside } = require('./helpers/a11y-audit');
 
 test.use({ serviceWorkers: 'block' });
 
@@ -645,6 +645,7 @@ test('the batch output language list works with the keyboard', async ({ page }) 
   await expect(page.locator('#output-language')).toHaveValue('dutch');
   await page.keyboard.press('ArrowDown');
   await expect(button).toHaveAttribute('aria-expanded', 'true');
+  await expect(menu.locator('[data-value="dutch"]')).toBeFocused();
   await page.keyboard.press('End');
   await expect(menu.locator('.app-select-item[data-value]').last()).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -712,4 +713,40 @@ test('a chosen recording can be downloaded again from the lecture page and a bat
   const rowDownload = page.waitForEvent('download');
   await row.locator('[data-download-file="audio"]').click();
   expect((await rowDownload).suggestedFilename()).toBe('row-recording.mp3');
+});
+
+test('upload areas with a chosen file hold their file buttons without nesting them in a button', async ({ page }) => {
+  await install(page, { balance: 8 });
+  await page.goto('/lecture-notes');
+  const zone = page.locator('#audio-zone');
+  await expect(zone).toHaveAttribute('role', 'button');
+  await page.locator('#audio-input').setInputFiles({ name: 'keep.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3 synthetic') });
+  await page.locator('#pdf-input').setInputFiles({ name: 'slides.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic') });
+  await expect(zone).toHaveAttribute('role', 'group');
+  await expect(zone).not.toHaveAttribute('tabindex');
+  await expect(zone).toHaveAccessibleName(/Lecture Recording/);
+  expect(await accessibilityProblems(page)).toEqual([]);
+  await page.locator('#audio-remove').focus();
+  await page.keyboard.press('Enter');
+  await expect(zone).toHaveAttribute('role', 'button');
+  await expect(zone).toBeFocused();
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Enter');
+  await chooser;
+
+  await page.goto('/batch_mode');
+  const row = page.locator('.batch-row').first();
+  for (const field of ['slides', 'audio']) {
+    const input = row.locator('input[data-field="' + field + '"]');
+    await input.setInputFiles(field === 'slides'
+      ? { name: 'row.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic') }
+      : { name: 'row.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3 synthetic') });
+    await expect(row.locator('[data-upload-zone="' + field + '"]')).toHaveAttribute('role', 'group');
+  }
+  expect(await accessibilityProblems(page)).toEqual([]);
+  const rowZone = row.locator('[data-upload-zone="audio"]');
+  await row.locator('[data-remove-file="audio"]').focus();
+  await page.keyboard.press('Enter');
+  await expect(rowZone).toHaveAttribute('role', 'button');
+  await expect(rowZone).toBeFocused();
 });
