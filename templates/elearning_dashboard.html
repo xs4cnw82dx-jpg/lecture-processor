@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <meta charset="UTF-8">
+  {% include '_preferences_head.html' %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>xPEDitie Pijn Studio · Lecture Processor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+</head>
+<body>
+  {% set shell_title = 'xPEDitie Pijn Studio' %}
+  {% include '_app_shell.html' %}
+    <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
+      <header class="el-dash-header">
+        <div>
+          <span class="xped-eyebrow">XPEDITIE PIJN · E-LEARNING STUDIO</span>
+          <h1>Pain Education Expeditions</h1>
+          <p>Design modular, interactive pain-education journeys, co-edit with your thesis partner, manage NL/EN/DE translations, and share zero-login test links.</p>
+        </div>
+        <div class="el-dash-actions">
+          <button type="button" class="el-btn" id="el-import-json-btn">Import JSON</button>
+          <input type="file" id="el-import-json-input" accept="application/json" hidden>
+          <button type="button" class="el-btn el-btn-primary" id="el-new-expedition-btn">+ New Expedition</button>
+        </div>
+      </header>
+
+      <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">Loading your expeditions…</div>
+      <section class="el-dash-grid" id="el-dash-grid" aria-label="Expeditions"></section>
+    </main>
+    {% include '_shell_footer.html' %}
+  </div>
+  </div>
+
+  <dialog class="el-dialog" id="el-create-dialog" closedby="any" aria-labelledby="el-create-dialog-title">
+    <div class="el-dialog-header">
+      <h2 id="el-create-dialog-title">Create New Expedition</h2>
+      <form method="dialog"><button type="submit" class="el-btn el-btn-sm" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="el-field">
+        <label for="el-new-title">Expedition Title</label>
+        <input type="text" id="el-new-title" value="xPEDitie Pijn — Pilot v1" maxlength="200" autofocus>
+      </div>
+      <div class="el-field">
+        <label>Primary Authoring Language</label>
+        <div id="el-new-lang-host"></div>
+      </div>
+      <div class="el-field">
+        <label>Starting Structure</label>
+        <div id="el-new-template-host"></div>
+      </div>
+      <div class="el-dash-actions">
+        <button type="button" class="el-btn" id="el-create-cancel">Cancel</button>
+        <button type="button" class="el-btn el-btn-primary" id="el-create-confirm">Create &amp; Open Builder</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog" id="el-delete-dialog" closedby="any" aria-labelledby="el-delete-dialog-title">
+    <div class="el-dialog-header">
+      <h2 id="el-delete-dialog-title">Delete Expedition?</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <p id="el-delete-dialog-msg">This removes the expedition and deactivates its public share link.</p>
+      <div class="el-dash-actions">
+        <button type="button" class="el-btn" id="el-delete-cancel">Cancel</button>
+        <button type="button" class="el-btn el-btn-danger" id="el-delete-confirm">Delete</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="el-toast" id="el-toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
+</body>
+</html>

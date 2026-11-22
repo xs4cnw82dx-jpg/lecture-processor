@@ -17,7 +17,7 @@ def _sentry_connect_source(sentry_frontend_dsn: str = '') -> str:
     return f'{scheme}://{hostname}'
 
 
-def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str = ''):
+def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str = '', extra_frame_sources=None):
     script_sources = [
         "'self'",
         'https://www.gstatic.com',
@@ -27,14 +27,19 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str
     safe_nonce = str(script_nonce or '').strip()
     if safe_nonce:
         script_sources.insert(1, f"'nonce-{safe_nonce}'")
+    frame_sources = [
+        'https://lecture-processor-cdff6.firebaseapp.com',
+        'https://accounts.google.com',
+    ]
+    for src in (extra_frame_sources or ()):
+        safe_src = str(src or '').strip()
+        if safe_src:
+            frame_sources.append(safe_src)
     sources = {
         'default-src': ["'self'"],
         'base-uri': ["'self'"],
         'frame-ancestors': ["'none'"],
-        'frame-src': [
-            'https://lecture-processor-cdff6.firebaseapp.com',
-            'https://accounts.google.com',
-        ],
+        'frame-src': frame_sources,
         'form-action': ["'self'"],
         'script-src': script_sources,
         'style-src': [
@@ -72,11 +77,12 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str
     return sources
 
 
-def build_content_security_policy(*, sentry_frontend_dsn: str = '', script_nonce: str = ''):
+def build_content_security_policy(*, sentry_frontend_dsn: str = '', script_nonce: str = '', extra_frame_sources=None):
     parts = []
     for directive, values in _security_policy_sources(
         sentry_frontend_dsn=sentry_frontend_dsn,
         script_nonce=script_nonce,
+        extra_frame_sources=extra_frame_sources,
     ).items():
         unique_values = []
         for value in values:
