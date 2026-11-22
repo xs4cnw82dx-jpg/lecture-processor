@@ -100,6 +100,10 @@ test('editor tabs move with the arrow keys and editor fields are labelled', asyn
   const withQuestion = pack('t', { test_questions: [{ question: 'Which nerve?', options: ['Femoral', 'Sciatic', 'Tibial', 'Ulnar'], answer: 'Femoral', explanation: '' }], test_questions_count: 1 });
   await installLibrary(page, { packs: [withQuestion] });
   await page.goto('/study?pack_id=t');
+  // Wait until the pack has opened, so its render cannot reset the tabs after the key press.
+  await expect(page.locator('#pack-title')).toHaveValue('Pack t');
+  await expect(page.locator('#editor-tab-notes')).toHaveAttribute('aria-selected', 'true');
+  await page.waitForLoadState('networkidle');
   await page.locator('#editor-tab-notes').focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('#editor-tab-flashcards')).toHaveAttribute('aria-selected', 'true');
