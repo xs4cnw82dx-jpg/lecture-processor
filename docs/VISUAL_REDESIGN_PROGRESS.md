@@ -161,6 +161,10 @@ Final frozen-source production-asset browser suite: **266 passed**, no failures 
 
 PR [#188](https://github.com/xs4cnw82dx-jpg/lecture-processor/pull/188) is open and attached. GitHub backend/frontend/smoke checks passed. Functions audit discovered newly published GHSA-jqcg-44mw-7w3h in the existing transitive proxy-addr dependency; the lockfile is patched from 2.0.7 to 2.0.8 with no application-code or direct-dependency changes. Fresh install, Functions module load and production audit pass (zero vulnerabilities). Required checks are rerunning on the patched release candidate before protected merge and Render verification.
 
+## Admin navigation and notification timing — 22 November
+
+In the phone Admin menu, Escape returns focus to the current group. A second Escape closes navigation. Visible notifications pause under the pointer, including when a new notification replaces the current one. The isolated preview covered the open and dismissed submenu and the shell error notification at 375px and 1280px in both themes. All three interaction regressions passed. Production verification is pending.
+
 ## xPEDitie Pijn Studio and learner player — 22 November
 
 The expedition library and response report use the app’s shared theme, page headings, buttons and form controls. The course keeps its own reading preferences. The editor gives the slide canvas priority, with separate outline and inspector views on phones. The learner opening pairs a compact illustration with a start action and the station list.
