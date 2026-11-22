@@ -720,10 +720,13 @@ test('upload areas with a chosen file hold their file buttons without nesting th
   await page.goto('/lecture-notes');
   const zone = page.locator('#audio-zone');
   await expect(zone).toHaveAttribute('role', 'button');
+  // A keyboard user picks the file from the focused zone; focus must stay there.
+  await zone.focus();
   await page.locator('#audio-input').setInputFiles({ name: 'keep.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3 synthetic') });
-  await page.locator('#pdf-input').setInputFiles({ name: 'slides.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic') });
   await expect(zone).toHaveAttribute('role', 'group');
-  await expect(zone).not.toHaveAttribute('tabindex');
+  await expect(zone).toBeFocused();
+  await expect(zone).toHaveAttribute('tabindex', '-1');
+  await page.locator('#pdf-input').setInputFiles({ name: 'slides.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic') });
   await expect(zone).toHaveAccessibleName(/Lecture Recording/);
   expect(await accessibilityProblems(page)).toEqual([]);
   await page.locator('#audio-remove').focus();
@@ -733,6 +736,12 @@ test('upload areas with a chosen file hold their file buttons without nesting th
   const chooser = page.waitForEvent('filechooser');
   await page.keyboard.press('Enter');
   await chooser;
+  // Clearing a file from code while focus is elsewhere leaves focus alone.
+  await page.locator('#pdf-input').setInputFiles({ name: 'slides.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7 synthetic') });
+  await page.locator('#study-pack-title-input').focus();
+  await page.evaluate(() => document.getElementById('pdf-zone').classList.remove('has-file'));
+  await expect(page.locator('#pdf-zone')).toHaveAttribute('role', 'button');
+  await expect(page.locator('#study-pack-title-input')).toBeFocused();
 
   await page.goto('/batch_mode');
   const row = page.locator('.batch-row').first();
