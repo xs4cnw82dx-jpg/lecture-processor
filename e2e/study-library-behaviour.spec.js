@@ -181,3 +181,18 @@ test('importing several CSV files creates one saved pack per file and detects pr
   expect(createdPacks[1].test_questions[0]).toMatchObject({ question: 'Which nerve flexes the hip?', options: ['Femoral', 'Sciatic', 'Tibial', 'Ulnar'] });
   await expect(page.locator('#pack-list .pack-list-item')).toHaveCount(3);
 });
+
+test('a voice note is not handed to Study Plan', async ({ page }) => {
+  await installLibrary(page, { packs: [pack('a'), pack('v', { mode: 'voice-note', title: 'Recorded reminder' })] });
+  let planOpened = false;
+  await page.route('**/plan?*', route => { planOpened = true; return route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Plan</title>' }); });
+  await page.goto('/study?pack_id=v');
+  await expect(page.locator('#pack-title')).toHaveValue('Recorded reminder');
+  const addButton = page.locator('#add-pack-to-plan-btn');
+  await expect(addButton).toBeHidden();
+  // The handler itself also refuses voice notes, in case the button is ever shown.
+  await addButton.evaluate(button => button.click());
+  await expect(page.getByText('Voice notes are kept outside Study Plan', { exact: false })).toBeVisible();
+  expect(planOpened).toBe(false);
+  await expect(page).toHaveURL(/\/study\?/);
+});

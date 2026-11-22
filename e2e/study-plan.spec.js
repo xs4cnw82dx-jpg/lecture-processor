@@ -494,3 +494,15 @@ test('searchable planner pack menu preserves text keys and Enter selects without
   await expect(page.locator('#session-editor-pack')).toHaveValue('pack_question_18');
   await expect(page.locator('#session-editor-overlay')).toBeVisible();
 });
+
+test('offline, the last saved plan stays readable and changes are paused', async ({ page }) => {
+  await installSignedInPlanner(page);
+  await page.goto('/plan');
+  await expect(page.locator('#next-session-content')).toContainText('Question pack 1');
+  await page.addInitScript(() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }));
+  await page.route('**/api/study-plan?*', route => route.abort('internetdisconnected'));
+  await page.reload();
+  await expect(page.locator('#study-plan-offline')).toBeVisible();
+  await expect(page.locator('#study-plan-workspace')).toBeVisible();
+  await expect(page.locator('#next-session-content')).toContainText('Question pack 1');
+});

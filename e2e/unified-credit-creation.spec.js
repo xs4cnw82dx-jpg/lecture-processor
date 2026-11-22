@@ -555,3 +555,26 @@ test('a late upload rejection cannot replace another account interface', async (
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await expect(page.locator('#status-text')).toHaveText(prior);
 });
+
+test('lecture uploads accept WEBM audio and the slide file types browsers report', async ({ page }) => {
+  await install(page, { balance: 8 });
+  await page.goto('/lecture-notes');
+  await page.locator('#study-pack-title-input').fill('Synthetic lecture');
+  await page.locator('#audio-input').setInputFiles({ name: 'recording.webm', mimeType: 'audio/webm', buffer: Buffer.from('webm synthetic') });
+  await expect(page.locator('#audio-name')).toHaveText('recording.webm');
+  const slides = [
+    ['slides.pdf', 'application/pdf'],
+    ['scanned.pdf', 'application/x-pdf'],
+    ['deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+    ['legacy-type.pptx', 'application/vnd.ms-powerpoint'],
+    ['unknown-type.pptx', 'application/octet-stream'],
+  ];
+  for (const [name, mimeType] of slides) {
+    await page.locator('#pdf-input').setInputFiles({ name, mimeType, buffer: Buffer.from('%PDF-1.7 synthetic') });
+    await expect(page.locator('#pdf-name')).toHaveText(name);
+  }
+  await expect(page.locator('#process-button')).toBeEnabled();
+  await page.locator('#pdf-input').setInputFiles({ name: 'notes.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from('docx') });
+  await expect(page.getByText('Please select a valid PDF or PPTX file')).toBeVisible();
+  await expect(page.locator('#pdf-name')).toHaveText('unknown-type.pptx');
+});
