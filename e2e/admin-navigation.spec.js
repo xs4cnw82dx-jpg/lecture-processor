@@ -147,6 +147,8 @@ test('stale audio clean-up asks first and announces its result', async ({ page }
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('Clean stale audio flags?');
   await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(button).toBeEnabled();
   expect(state.requests).not.toContain('/api/admin/maintenance/study-audio/cleanup-stale');
   await button.click();
   await page.getByRole('dialog').getByRole('button', { name: /Clean|Confirm|Continue/ }).click();

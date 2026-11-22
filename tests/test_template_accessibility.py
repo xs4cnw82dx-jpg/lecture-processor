@@ -125,7 +125,7 @@ def test_batch_submit_feedback_is_live_region():
     assert 'id="batch-submit-feedback" role="status" aria-live="polite" aria-atomic="true" hidden' in batch_template
 
 
-def test_batch_output_language_listbox_has_keyboard_and_focus_management():
+def test_batch_output_language_listbox_is_labelled():
     batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
 
     assert 'id="output-language-field-label"' in batch_template
@@ -133,20 +133,18 @@ def test_batch_output_language_listbox_has_keyboard_and_focus_management():
     assert 'aria-labelledby="output-language-field-label output-language-label"' in batch_template
 
 
-def test_batch_and_study_generated_dropzones_are_keyboard_accessible():
+def test_study_csv_dropzone_is_a_keyboard_button():
     study_template = Path('templates/study.html').read_text(encoding='utf-8')
 
     assert 'id="builder-csv-drop" role="button" tabindex="0"' in study_template
 
 
-def test_custom_select_upgrades_remove_native_controls_from_tab_order():
-
-    # Native controls retain labels and are progressively enhanced by one helper.
+def test_batch_dashboard_native_filter_keeps_its_label():
     dashboard = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')
     assert '<label for="batch-dashboard-mode-filter">Mode</label>' in dashboard
 
 
-def test_audio_retention_warnings_and_download_controls_are_present():
+def test_audio_retention_notes_and_download_controls_are_in_templates():
     index_template = Path('templates/index.html').read_text(encoding='utf-8')
     batch_template = Path('templates/batch_mode.html').read_text(encoding='utf-8')
     batch_dashboard_template = Path('templates/batch_dashboard.html').read_text(encoding='utf-8')

@@ -5,8 +5,24 @@
 async function accessibilityProblems(page) {
   return page.evaluate(() => {
     const focusable = 'a[href],button,input:not([type="hidden"]),select,textarea,summary,[tabindex],[contenteditable="true"]';
-    const interactive = 'a[href],button,select,textarea,summary,[role="button"],[role="link"],[role="checkbox"],[role="tab"],[role="menuitem"],[role="option"],[role="switch"],[role="radio"]';
-    const text = node => (node ? node.textContent.replace(/\s+/g, ' ').trim() : '');
+    const interactive = 'a[href],button,select,textarea,summary,[tabindex]:not([tabindex^="-"]),'
+      + ['button', 'link', 'checkbox', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'switch', 'radio',
+        'treeitem', 'gridcell', 'combobox', 'slider', 'spinbutton'].map(role => '[role="' + role + '"]').join(',');
+    // Text a screen reader would read: skips aria-hidden, hidden and undisplayed parts.
+    const text = node => {
+      if (!node) return '';
+      const parts = [];
+      const walk = current => {
+        if (current.nodeType === Node.TEXT_NODE) { parts.push(current.textContent); return; }
+        if (current.nodeType !== Node.ELEMENT_NODE) return;
+        if (current.getAttribute('aria-hidden') === 'true' || current.hidden || getComputedStyle(current).display === 'none') return;
+        if (current !== node && current.getAttribute('aria-label')) { parts.push(current.getAttribute('aria-label')); return; }
+        if (current.tagName === 'IMG') { parts.push(current.getAttribute('alt') || ''); return; }
+        current.childNodes.forEach(walk);
+      };
+      walk(node);
+      return parts.join(' ').replace(/\s+/g, ' ').trim();
+    };
     const describe = node => {
       const name = node.id ? '#' + node.id : node.className && typeof node.className === 'string' ? '.' + node.className.trim().split(/\s+/)[0] : '';
       return node.tagName.toLowerCase() + name;
@@ -24,8 +40,6 @@ async function accessibilityProblems(page) {
       if (node.tagName !== 'INPUT' && node.tagName !== 'SELECT' && node.tagName !== 'TEXTAREA') {
         const content = text(node);
         if (content) return content;
-        const image = node.querySelector('img[alt]:not([alt=""]), svg[aria-label], [role="img"][aria-label]');
-        if (image) return image.getAttribute('alt') || image.getAttribute('aria-label');
       }
       return (node.getAttribute('title') || node.getAttribute('placeholder') || '').trim();
     };
@@ -35,7 +49,7 @@ async function accessibilityProblems(page) {
     };
     const problems = [];
     for (const node of document.querySelectorAll(focusable)) {
-      if (node.disabled || node.tabIndex < 0 || node.closest('[inert]') || !rendered(node)) continue;
+      if (node.matches(':disabled') || node.tabIndex < 0 || node.closest('[inert]') || !rendered(node)) continue;
       if (node.closest('[aria-hidden="true"]')) problems.push('reachable inside aria-hidden content: ' + describe(node));
       if (!accessibleName(node)) problems.push('reachable control without a name: ' + describe(node));
       const outer = node.parentElement && node.parentElement.closest(interactive);
@@ -55,7 +69,7 @@ async function reachableControlsInside(page, selector) {
     return Array.from(document.querySelectorAll(selector)).flatMap(container => Array.from(container.querySelectorAll(focusable)))
       .filter(node => {
         const style = getComputedStyle(node), box = node.getBoundingClientRect();
-        return !node.disabled && node.tabIndex >= 0 && !node.closest('[inert]')
+        return !node.matches(':disabled') && node.tabIndex >= 0 && !node.closest('[inert]')
           && style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0;
       })
       .map(node => node.tagName.toLowerCase() + (node.id ? '#' + node.id : ''));

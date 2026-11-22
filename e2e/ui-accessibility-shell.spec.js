@@ -198,7 +198,7 @@ test('the closed account menu cannot be reached by keyboard and the open one can
   await expect.poll(() => reachableControlsInside(page, '#shell-account-menu-wrap')).toEqual([]);
 });
 
-for (const path of ['/batch_mode_slides_extraction', '/batch_mode_audio_transcription', '/batch_mode_text_combine', '/instant_batch_mode']) {
+for (const path of ['/batch_mode_slides_extraction', '/batch_mode_audio_transcription', '/batch_mode_text_combine', '/instant_batch_mode', '/instant_batch_mode_slides_extraction']) {
   test(`Batch is marked as the current page in navigation on ${path}`, async ({ page }) => {
     await isolate(page);
     await page.goto(path);

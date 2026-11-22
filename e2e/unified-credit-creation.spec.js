@@ -603,10 +603,12 @@ for (const mode of batchModeRows) {
     for (const zone of zones) {
       await expect(zone).toHaveAttribute('role', 'button');
       expect(await zone.getAttribute('aria-label')).toMatch(/^Upload /);
-      await zone.focus();
-      const chooser = page.waitForEvent('filechooser');
-      await page.keyboard.press('Enter');
-      await chooser;
+      await expect(async () => {
+        await zone.focus();
+        const chooser = page.waitForEvent('filechooser', { timeout: 3000 });
+        await page.keyboard.press('Enter');
+        await (await chooser).setFiles([]);
+      }).toPass({ timeout: 15000 });
     }
   });
 }
@@ -616,6 +618,8 @@ test('the batch study tools override is only reachable by keyboard while it is s
   await page.goto('/batch_mode');
   const row = page.locator('.batch-row').first();
   const toggle = row.locator('input[data-field="override-enabled"]');
+  await expect(toggle).toHaveCount(1);
+  await expect(row.locator('[data-override-panel] button, [data-override-panel] input').first()).toBeAttached();
   expect(await reachableControlsInside(page, '.batch-row:first-of-type [data-override-panel]')).toEqual([]);
   await toggle.check({ force: true });
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -640,11 +644,24 @@ test('the batch output language list works with the keyboard', async ({ page }) 
   await expect(button).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#output-language')).toHaveValue('dutch');
   await page.keyboard.press('ArrowDown');
-  await expect(menu.locator('[data-value="english"]')).toBeFocused();
+  await expect(button).toHaveAttribute('aria-expanded', 'true');
   await page.keyboard.press('End');
+  await expect(menu.locator('.app-select-item[data-value]').last()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(menu.locator('.app-select-item[data-value]').first()).toBeFocused();
+  await page.keyboard.press('ArrowUp');
   await expect(menu.locator('.app-select-item[data-value]').last()).toBeFocused();
   await page.keyboard.press('Home');
   await expect(menu.locator('[data-value="english"]')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('ArrowUp');
+  await expect(menu.locator('.app-select-item[data-value]').last()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
+  await expect(menu.locator('.app-select-item[data-value]:focus')).toHaveCount(0);
+  await button.focus();
   await page.keyboard.press('Escape');
   await expect(button).toBeFocused();
   await expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -679,4 +696,20 @@ test('lecture study tools and the required title expose their state to assistive
   await expect(title).toHaveAttribute('aria-invalid', 'false');
   await expect(error).toBeHidden();
   await expect(page.locator('#process-button')).toBeEnabled();
+});
+
+test('a chosen recording can be downloaded again from the lecture page and a batch row', async ({ page }) => {
+  await install(page, { balance: 8 });
+  await page.goto('/lecture-notes');
+  await page.locator('#audio-input').setInputFiles({ name: 'keep-this.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3 synthetic') });
+  const lectureDownload = page.waitForEvent('download');
+  await page.locator('#audio-download').click();
+  expect((await lectureDownload).suggestedFilename()).toBe('keep-this.mp3');
+
+  await page.goto('/batch_mode');
+  const row = page.locator('.batch-row').first();
+  await row.locator('input[data-field="audio"]').setInputFiles({ name: 'row-recording.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('ID3 synthetic') });
+  const rowDownload = page.waitForEvent('download');
+  await row.locator('[data-download-file="audio"]').click();
+  expect((await rowDownload).suggestedFilename()).toBe('row-recording.mp3');
 });

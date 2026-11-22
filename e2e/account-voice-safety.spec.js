@@ -344,3 +344,31 @@ test('voice note views, filters and note actions tell assistive technology what 
   await expect(page.locator('[data-note-delete]').first()).toHaveAccessibleName('Delete voice note "Important seeded note"');
   expect(await accessibilityProblems(page)).toEqual([]);
 });
+
+test('a saved recording can be downloaded, and a note without audio says so', async ({ page }) => {
+  await installVoiceFixture(page);
+  await page.goto('/voice-notes');
+  await seedVoiceNote(page, true);
+  const button = page.locator('#voice-download-audio-btn');
+  await expect(button).toBeEnabled();
+  const download = page.waitForEvent('download');
+  await button.click();
+  expect(await (await download).createReadStream().then((stream) => new Promise((resolve) => {
+    const chunks = []; stream.on('data', (chunk) => chunks.push(chunk)); stream.on('end', () => resolve(Buffer.concat(chunks).toString()));
+  }))).toBe('saved audio');
+
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve) => { const request = indexedDB.open('lecture-processor-voice-notes', 2); request.onsuccess = () => resolve(request.result); });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('audio', 'readwrite');
+      tx.objectStore('audio').delete('local-seeded');
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  await page.locator('[data-voice-view="library"]').click();
+  await page.getByText('Important seeded note', { exact: true }).click();
+  await expect(button).toBeDisabled();
+  await expect(page.getByText('No downloadable audio copy is available for this note.')).toBeVisible();
+});
