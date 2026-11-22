@@ -9,4 +9,8 @@ extend-exclude = [
 [lint]
 # Start with correctness-only rules. These catch syntax errors, undefined names,
 # invalid control flow, and other defects without creating formatting churn.
-select = ["E9", "F63", "F7", "F811", "F82"]
+select = ["E9", "F63", "F7", "F811", "F82", "BLE001", "S110"]
+
+[lint.per-file-ignores]
+# Opt in the billing domain and its HTTP adapter to exception handling checks.
+"!lecture_processor/{domains/billing/**,services/payments_api_service.py}" = ["BLE001", "S110"]

@@ -56,6 +56,25 @@ def test_lost_admission_ack_uses_committed_receipt_without_a_second_debit():
     assert len(store.docs('credit_charges')) == 1
 
 
+def test_failed_read_after_lost_ack_keeps_its_cause_and_cannot_debit_again():
+    runtime, store = runtime_fixture()
+
+    def lose_ack(_operations):
+        store.after_commit = None
+        store.fail_reads.add(('runtime_jobs', 'job'))
+        raise RuntimeError('Synthetic lost acknowledgement')
+
+    store.after_commit = lose_ack
+    with pytest.raises(ledger.LedgerUnavailable) as failure:
+        job_charges.admit_runtime_job('owner', 'job', 'lecture-notes', PRIMARY, runtime=runtime)
+    assert str(failure.value.__cause__) == 'Synthetic read failure'
+    store.fail_reads.clear()
+    receipt = job_charges.admit_runtime_job('owner', 'job', 'lecture-notes', PRIMARY, runtime=runtime)
+    assert receipt['charged_credits'] == 8
+    assert store.docs('users')['owner']['credits'] == 92
+    assert len(store.docs('credit_charges')) == 1
+
+
 @pytest.mark.parametrize('enabled,version,expected_scheme,expected_cost', [
     (False, 1, 1, 1), (True, 1, 2, 8), (False, 2, 2, 8),
 ])

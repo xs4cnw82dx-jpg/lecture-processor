@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+from lecture_processor.domains.shared.parsing import int_or_default
 from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
@@ -11,10 +12,7 @@ def normalize_credit_ledger(credit_map, runtime=None):
         key = str(credit_type or '').strip()
         if not key:
             continue
-        try:
-            amount = int(raw_amount)
-        except Exception:
-            continue
+        amount = int_or_default(raw_amount, 0)
         if amount > 0:
             normalized[key] = amount
     return normalized
@@ -57,10 +55,7 @@ def ensure_job_billing_receipt(job_data, charged_map=None, runtime=None):
 def add_job_credit_refund(job_data, credit_type, amount=1, runtime=None):
     if not credit_type:
         return
-    try:
-        amount_int = int(amount)
-    except Exception:
-        return
+    amount_int = int_or_default(amount, 0)
     if amount_int <= 0:
         return
     resolved_runtime = _resolve_runtime(runtime)
@@ -76,11 +71,8 @@ def job_has_refunds(job_data, runtime=None):
     if isinstance(job_data, dict) and bool(job_data.get('credit_refunded', False)):
         return True
     if isinstance(job_data, dict) and job_data.get('credit_scheme') == 2:
-        try:
-            if int(job_data.get('refunded_credits', 0) or 0) > 0:
-                return True
-        except (TypeError, ValueError, OverflowError):
-            pass
+        if int_or_default(job_data.get('refunded_credits'), 0) > 0:
+            return True
     snapshot = get_billing_receipt_snapshot(job_data if isinstance(job_data, dict) else {}, runtime=runtime)
     return any(int(amount or 0) > 0 for amount in snapshot.get('refunded', {}).values())
 

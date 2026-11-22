@@ -1,6 +1,8 @@
 import hashlib
 
 from lecture_processor.domains.billing import policy
+from lecture_processor.domains.billing.storage import STORAGE_ERRORS
+from lecture_processor.domains.shared.parsing import int_or_default
 from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 CREDIT_CATEGORIES = ('lecture', 'slides', 'interview')
@@ -81,10 +83,7 @@ def category_credit_total(user_data, category):
 
 
 def has_category_credit(user_data, category, amount=1, decoded_token=None, runtime=None):
-    try:
-        needed = max(0, int(amount or 0))
-    except Exception:
-        needed = 1
+    needed = max(0, int_or_default(amount or 0, 1))
     if needed <= 0:
         return True
     if is_unlimited_for_category(user_data, category, decoded_token=decoded_token, runtime=runtime):
@@ -280,10 +279,7 @@ def _apply_idempotent_refund(
     if db is None or not hasattr(db, 'transaction'):
         resolved_runtime.logger.error('Cannot apply idempotent credit refund without a Firestore transaction.')
         return False
-    try:
-        target_amount = max(0, int(target_amount or 0))
-    except Exception:
-        return False
+    target_amount = max(0, int_or_default(target_amount, 0))
     if not uid or not credit_type or target_amount <= 0 or not idempotency_key:
         return False
 
@@ -328,7 +324,7 @@ def _apply_idempotent_refund(
 
     try:
         return bool(_refund(db.transaction()))
-    except Exception:
+    except STORAGE_ERRORS:
         resolved_runtime.logger.error(
             "Failed idempotent refund for user %s and credit '%s'",
             uid,
@@ -340,6 +336,9 @@ def _apply_idempotent_refund(
 
 def _refund_legacy_without_journal(uid, credit_type, amount, *, adjust_total_processed, runtime):
     """Retain old-unit compatibility without racing a concurrent conversion."""
+    if runtime.db is None or not hasattr(runtime.db, 'transaction'):
+        runtime.logger.error('Cannot refund legacy credits without a Firestore transaction.')
+        return False
     try:
         user_ref = runtime.users_repo.doc_ref(runtime.db, uid)
 
@@ -361,7 +360,7 @@ def _refund_legacy_without_journal(uid, credit_type, amount, *, adjust_total_pro
             return True
 
         return bool(refund(runtime.db.transaction()))
-    except Exception:
+    except STORAGE_ERRORS:
         runtime.logger.error('Could not apply legacy credit refund.', exc_info=True)
         return False
 

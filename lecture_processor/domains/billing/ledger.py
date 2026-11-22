@@ -4,16 +4,16 @@ The read/prepare/apply split lets admissions write their job and its debit in
 one Firestore transaction, after every caller-owned read has completed.
 """
 
+import hashlib
+import json
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-import hashlib
-import json
 
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.billing import credits, policy
+from lecture_processor.domains.billing.storage import STORAGE_ERRORS
 from lecture_processor.runtime.container import resolve_runtime
-
 
 CHARGES_COLLECTION = 'credit_charges'
 REFUNDS_COLLECTION = 'credit_refunds'
@@ -129,7 +129,7 @@ def read_charge_context(transaction, uid, ref, *, runtime=None):
         journal = _snapshot_data(journal_ref.get(transaction=transaction))
     except (LedgerUnavailable, lifecycle.AccountUnavailableError):
         raise
-    except Exception as error:
+    except STORAGE_ERRORS as error:
         raise LedgerUnavailable('Credit records could not be read.') from error
     scheme = 2 if policy.uses_unified_credits(user, runtime) else 1
     return ChargeContext(uid, ref, scheme, user, user_ref, journal, journal_ref, runtime)
@@ -496,6 +496,6 @@ def refund_legacy_credits(uid, credit_type, target_units, ref, *, charged_units,
         return bool(refund(runtime.db.transaction()))
     except (LedgerConflict, LedgerUnavailable, lifecycle.AccountUnavailableError):
         raise
-    except Exception:
+    except STORAGE_ERRORS:
         runtime.logger.error('Could not commit a legacy credit refund.', exc_info=True)
         return False
