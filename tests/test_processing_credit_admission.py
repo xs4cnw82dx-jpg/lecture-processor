@@ -124,6 +124,26 @@ def test_large_batch_admission_keeps_transactions_bounded_and_exact_half_price()
     assert parent['status'] == 'queued' and parent['admitted_rows'] == 499
 
 
+def test_lost_batch_ack_without_a_durable_receipt_reports_unavailable():
+    runtime, store = runtime_fixture()
+    stage_batch(runtime, 'batch', 1)
+    row = runtime.batch_repo.batch_row_doc_ref(runtime.db, 'batch', '0')
+
+    def lose_ack_without_receipt(_operations):
+        store.after_commit = None
+        saved = row.get().to_dict()
+        saved.pop('billing_receipt')
+        row.set(saved)
+        raise RuntimeError('Synthetic acknowledgement loss')
+
+    store.after_commit = lose_ack_without_receipt
+    with pytest.raises(ledger.LedgerUnavailable, match='Could not reserve credits for this batch row'):
+        job_charges.admit_batch_row('owner', 'batch', '0', 'lecture-notes', PRIMARY, overnight=True, runtime=runtime)
+    assert row.get().to_dict()['credit_admission_state'] == 'admitted'
+    assert store.docs('users')['owner']['credits'] == 96
+    assert len(store.docs('credit_charges')) == 1
+
+
 def test_replayed_batch_row_admission_never_increments_the_parent_twice():
     runtime, store = runtime_fixture()
     stage_batch(runtime, 'batch', 1)
