@@ -239,6 +239,7 @@ def _render_study_page(*, entry_mode: str = '', page_key: str = 'study', shell_t
         study_api_js_asset=runtime.resolve_js_asset('js/study-api-utils.js'),
         study_js_asset=runtime.resolve_js_asset('js/study.js'),
         study_highlights_js_asset=runtime.resolve_js_asset('js/study-highlights.js'),
+        study_builder_js_asset=runtime.resolve_js_asset('js/study-builder.js'),
         **_shell_context(runtime=runtime, page_key=page_key),
     )
 
