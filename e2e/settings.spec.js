@@ -284,3 +284,87 @@ test('settings repeat the account actions and run the same shell flows', async (
   await account.getByRole('button', { name: 'Delete account', exact: true }).click();
   await expect(page.locator('#shell-delete-account-overlay')).toBeVisible();
 });
+
+for (const width of [1280, 375]) {
+  test('account dialogs return keyboard focus to the launching control at ' + width + 'px', async ({ page }) => {
+    await fixture(page);
+    await page.setViewportSize({ width, height: 812 });
+    for (const path of ['/settings', '/dashboard']) {
+      await page.goto(path);
+      const accountMenu = page.locator('#shell-account-btn');
+      for (const dialog of [
+        { action: 'Export data', first: '#shell-export-confirm', cancel: '#shell-export-cancel' },
+        { action: 'Delete account', first: '#shell-delete-account-text', cancel: '#shell-delete-account-cancel' },
+      ]) {
+        const fromSettings = path === '/settings';
+        const opener = fromSettings
+          ? page.locator('#settings-account').getByRole('button', { name: dialog.action, exact: true })
+          : page.getByRole('menuitem', { name: dialog.action, exact: true });
+        for (const dismissal of ['Escape', 'Cancel']) {
+          if (!fromSettings) await accountMenu.press('ArrowDown');
+          await opener.press('Enter');
+          await expect(page.locator(dialog.first)).toBeFocused();
+          if (dismissal === 'Escape') await page.keyboard.press('Escape');
+          else await page.locator(dialog.cancel).press('Enter');
+          await expect(fromSettings ? opener : accountMenu).toBeFocused();
+          await expect(accountMenu).toHaveAttribute('aria-expanded', 'false');
+        }
+      }
+    }
+  });
+}
+
+test('finishing a Settings export returns focus to Export data', async ({ page }) => {
+  await fixture(page);
+  await page.route('**/api/account/export-bundle', route => route.fulfill({
+    contentType: 'application/zip', body: Buffer.from('synthetic export'),
+  }));
+  await page.goto('/settings');
+  const opener = page.locator('#settings-account').getByRole('button', { name: 'Export data' });
+  await opener.press('Enter');
+  const confirm = page.locator('#shell-export-confirm');
+  await expect(confirm).toBeFocused();
+  const download = page.waitForEvent('download');
+  await confirm.press('Enter');
+  await download;
+  await expect(opener).toBeFocused();
+});
+
+test('a completed export leaves a subsequently opened account dialog in place', async ({ page }) => {
+  await fixture(page);
+  let finishExport;
+  const started = new Promise(resolve => {
+    page.route('**/api/account/export-bundle', async route => {
+      resolve();
+      await new Promise(finish => { finishExport = finish; });
+      await route.fulfill({ contentType: 'application/zip', body: Buffer.from('synthetic export') });
+    });
+  });
+  await page.goto('/settings');
+  await page.locator('#settings-account').getByRole('button', { name: 'Export data' }).press('Enter');
+  await page.locator('#shell-export-confirm').click();
+  await started;
+  await page.keyboard.press('Escape');
+  await page.locator('#shell-account-btn').click();
+  await page.getByRole('menuitem', { name: 'Export data' }).click();
+  const close = page.locator('#shell-export-close');
+  await close.focus();
+  const download = page.waitForEvent('download');
+  finishExport();
+  await download;
+  await expect(page.locator('#shell-export-confirm')).toBeEnabled();
+  await expect(close).toBeFocused();
+  await expect(page.locator('#shell-export-overlay')).toBeVisible();
+});
+
+test('dismissing a dialog after an account switch does not refocus the previous account action', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/settings');
+  const opener = page.locator('#settings-account').getByRole('button', { name: 'Delete account' });
+  await opener.press('Enter');
+  await expect(page.locator('#shell-delete-account-text')).toBeFocused();
+  await page.evaluate(() => window.testAccount.switchTo('b'));
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#shell-delete-account-overlay')).toBeHidden();
+  await expect(opener).not.toBeFocused();
+});

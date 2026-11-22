@@ -81,6 +81,7 @@
     'study_due_today'
   ];
 
+  var accountDialogSources = new Map();
   var currentUserIsAdmin = false;
   var authRevision = 0;
   var profileRequestRevision = 0;
@@ -993,34 +994,39 @@
     setCreditsVisible(false);
   }
 
-  function setExportModalOpen(open) {
-    if (!exportOverlay) return;
-    if (open) {
-      setExportError('');
-      setAccountMenuOpen(false);
-      if (typeof uxUtils.openModalOverlay === 'function') {
-        uxUtils.openModalOverlay(exportOverlay, {
-          scopeRoot: shell,
-          initialFocus: exportConfirmBtn,
-          onRequestClose: function () {
-            setExportModalOpen(false);
-          }
-        });
-      } else {
-        exportOverlay.hidden = false;
-        exportOverlay.setAttribute('aria-hidden', 'false');
-        if (exportConfirmBtn) exportConfirmBtn.focus();
-      }
-      return;
-    }
-    if (typeof uxUtils.closeModalOverlay === 'function') {
-      uxUtils.closeModalOverlay(exportOverlay, {
-        returnFocus: exportDataBtn
+  function openAccountDialog(overlay, opener, initialFocus) {
+    if (!overlay || accountDialogSources.has(overlay)) return;
+    accountDialogSources.set(overlay, { opener: opener, user: auth.currentUser, revision: authRevision, path: window.location.pathname });
+    setAccountMenuOpen(false);
+    if (typeof uxUtils.openModalOverlay === 'function') {
+      uxUtils.openModalOverlay(overlay, {
+        scopeRoot: shell,
+        initialFocus: initialFocus,
+        onRequestClose: function () { closeAccountDialog(overlay); }
       });
     } else {
-      exportOverlay.hidden = true;
-      exportOverlay.setAttribute('aria-hidden', 'true');
-      if (exportDataBtn) exportDataBtn.focus();
+      overlay.hidden = false;
+      overlay.setAttribute('aria-hidden', 'false');
+      if (initialFocus) initialFocus.focus();
+    }
+  }
+
+  function closeAccountDialog(overlay, restoreFocus) {
+    var source = accountDialogSources.get(overlay);
+    if (!source) return;
+    accountDialogSources.delete(overlay);
+    var focusInDialog = overlay.contains(document.activeElement) || document.activeElement === document.body;
+    if (typeof uxUtils.closeModalOverlay === 'function') {
+      uxUtils.closeModalOverlay(overlay, { restoreFocus: false });
+    } else {
+      overlay.hidden = true;
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+    if (overlay === deleteAccountOverlay) setDeleteAccountError('');
+    if (restoreFocus !== false && focusInDialog && source.user === auth.currentUser
+        && source.revision === authRevision && source.path === window.location.pathname
+        && source.opener && source.opener.isConnected && !source.opener.closest('[hidden], [inert]')) {
+      source.opener.focus();
     }
   }
 
@@ -1031,43 +1037,16 @@
     deleteAccountError.hidden = !text;
   }
 
-  function setDeleteAccountModalOpen(open) {
-    if (!deleteAccountOverlay) return;
-    if (open) {
-      var expectedEmail = String((auth.currentUser && auth.currentUser.email) || '').trim();
-      if (deleteAccountTextInput) deleteAccountTextInput.value = '';
-      if (deleteAccountEmailInput) deleteAccountEmailInput.value = expectedEmail;
-      setDeleteAccountError('');
-      if (deleteAccountConfirmBtn) {
-        deleteAccountConfirmBtn.disabled = false;
-        deleteAccountConfirmBtn.textContent = 'Delete permanently';
-      }
-      setAccountMenuOpen(false);
-      if (typeof uxUtils.openModalOverlay === 'function') {
-        uxUtils.openModalOverlay(deleteAccountOverlay, {
-          scopeRoot: shell,
-          initialFocus: deleteAccountTextInput || deleteAccountConfirmBtn,
-          onRequestClose: function () {
-            setDeleteAccountModalOpen(false);
-          }
-        });
-      } else {
-        deleteAccountOverlay.hidden = false;
-        deleteAccountOverlay.setAttribute('aria-hidden', 'false');
-        if (deleteAccountTextInput) deleteAccountTextInput.focus();
-      }
-      return;
-    }
-    if (typeof uxUtils.closeModalOverlay === 'function') {
-      uxUtils.closeModalOverlay(deleteAccountOverlay, {
-        returnFocus: deleteAccountBtn
-      });
-    } else {
-      deleteAccountOverlay.hidden = true;
-      deleteAccountOverlay.setAttribute('aria-hidden', 'true');
-      if (deleteAccountBtn) deleteAccountBtn.focus();
-    }
+  function openDeleteAccountDialog(opener) {
+    var expectedEmail = String((auth.currentUser && auth.currentUser.email) || '').trim();
+    if (deleteAccountTextInput) deleteAccountTextInput.value = '';
+    if (deleteAccountEmailInput) deleteAccountEmailInput.value = expectedEmail;
     setDeleteAccountError('');
+    if (deleteAccountConfirmBtn) {
+      deleteAccountConfirmBtn.disabled = false;
+      deleteAccountConfirmBtn.textContent = 'Delete permanently';
+    }
+    openAccountDialog(deleteAccountOverlay, opener, deleteAccountTextInput || deleteAccountConfirmBtn);
   }
 
   function readExportSelection() {
@@ -1136,6 +1115,7 @@
       showToast('Please sign in to export your data.', 'error');
       return;
     }
+    var dialogSource = accountDialogSources.get(exportOverlay);
     var include = readExportSelection();
     if (!hasAnySelection(include)) {
       setExportError('Choose at least one export option.');
@@ -1165,7 +1145,7 @@
         var fallbackName = getDispositionFilename(fallbackResponse.headers.get('Content-Disposition'), 'lecture-processor-account-export.json');
         triggerBlobDownload(fallbackBlob, fallbackName);
         showToast('Legacy JSON export downloaded.');
-        setExportModalOpen(false);
+        if (accountDialogSources.get(exportOverlay) === dialogSource) closeAccountDialog(exportOverlay);
         return;
       }
 
@@ -1185,7 +1165,7 @@
       var filename = getDispositionFilename(response.headers.get('Content-Disposition'), 'lecture-processor-export.zip');
       triggerBlobDownload(blob, filename);
       showToast('Export ZIP download started.');
-      setExportModalOpen(false);
+      if (accountDialogSources.get(exportOverlay) === dialogSource) closeAccountDialog(exportOverlay);
     } catch (error) {
       showToast((error && error.message) || 'Could not export data right now.', 'error');
     } finally {
@@ -1232,7 +1212,7 @@
       if (!response.ok) throw new Error(payload.error || 'Could not delete account data.');
 
       var deletedUser = auth.currentUser;
-      setDeleteAccountModalOpen(false);
+      closeAccountDialog(deleteAccountOverlay, false);
       showToast('Account deleted. Signing out...', 'success');
       try {
         await fetch('/api/session/logout', { method: 'POST', credentials: 'include' });
@@ -1402,47 +1382,25 @@
     });
   }
 
-  if (exportDataBtn) {
-    exportDataBtn.addEventListener('click', function () {
-      if (!auth.currentUser) {
-        setAccountMenuOpen(false);
-        showToast('Please sign in to export your data.', 'error');
-        return;
-      }
-      setExportModalOpen(true);
-    });
-  }
-
-  if (deleteAccountBtn) {
-    deleteAccountBtn.addEventListener('click', function () {
-      if (!auth.currentUser) {
-        setAccountMenuOpen(false);
-        showToast('Please sign in to delete your account.', 'error');
-        return;
-      }
-      setDeleteAccountModalOpen(true);
-    });
-  }
-
   if (deleteAccountConfirmBtn) {
     deleteAccountConfirmBtn.addEventListener('click', runAccountDeletion);
   }
 
   if (deleteAccountCloseBtn) {
     deleteAccountCloseBtn.addEventListener('click', function () {
-      setDeleteAccountModalOpen(false);
+      closeAccountDialog(deleteAccountOverlay);
     });
   }
 
   if (deleteAccountCancelBtn) {
     deleteAccountCancelBtn.addEventListener('click', function () {
-      setDeleteAccountModalOpen(false);
+      closeAccountDialog(deleteAccountOverlay);
     });
   }
 
   if (deleteAccountOverlay) {
     deleteAccountOverlay.addEventListener('click', function (event) {
-      if (event.target === deleteAccountOverlay && !deleteAccountInFlight) setDeleteAccountModalOpen(false);
+      if (event.target === deleteAccountOverlay && !deleteAccountInFlight) closeAccountDialog(deleteAccountOverlay);
     });
   }
 
@@ -1458,19 +1416,19 @@
 
   if (exportCloseBtn) {
     exportCloseBtn.addEventListener('click', function () {
-      setExportModalOpen(false);
+      closeAccountDialog(exportOverlay);
     });
   }
 
   if (exportCancelBtn) {
     exportCancelBtn.addEventListener('click', function () {
-      setExportModalOpen(false);
+      closeAccountDialog(exportOverlay);
     });
   }
 
   if (exportOverlay) {
     exportOverlay.addEventListener('click', function (event) {
-      if (event.target === exportOverlay) setExportModalOpen(false);
+      if (event.target === exportOverlay) closeAccountDialog(exportOverlay);
     });
   }
 
@@ -1514,11 +1472,11 @@
     if (event.key === 'Escape') {
       if (exportOverlay && !exportOverlay.hidden) {
         event.preventDefault();
-        setExportModalOpen(false);
+        closeAccountDialog(exportOverlay);
       }
       if (deleteAccountOverlay && !deleteAccountOverlay.hidden && !deleteAccountInFlight) {
         event.preventDefault();
-        setDeleteAccountModalOpen(false);
+        closeAccountDialog(deleteAccountOverlay);
       }
       setAccountMenuOpen(false);
       if (creditsLink) creditsLink.classList.remove('is-open');
@@ -1545,10 +1503,27 @@
   // Settings repeats the account menu's actions; each button runs the same
   // shell action, so behaviour and confirmations stay in one place.
   document.addEventListener('click', function (event) {
-    var trigger = event.target && event.target.closest && event.target.closest('[data-shell-account-action]');
+    var trigger = event.target && event.target.closest && event.target.closest('[data-shell-account-action], #shell-export-data-btn, #shell-delete-account-btn');
     if (!trigger) return;
-    var action = document.getElementById(trigger.getAttribute('data-shell-account-action'));
-    if (action && !action.hidden) action.click();
+    var shortcut = trigger.getAttribute('data-shell-account-action');
+    var action = shortcut ? document.getElementById(shortcut) : trigger;
+    if (!action || action.hidden) return;
+    if (action === exportDataBtn || action === deleteAccountBtn) {
+      if (!auth.currentUser) {
+        setAccountMenuOpen(false);
+        showToast(action === exportDataBtn ? 'Please sign in to export your data.' : 'Please sign in to delete your account.', 'error');
+        return;
+      }
+      var opener = shortcut ? trigger : accountBtn;
+      if (action === exportDataBtn) {
+        setExportError('');
+        openAccountDialog(exportOverlay, opener, exportConfirmBtn);
+      } else {
+        openDeleteAccountDialog(opener);
+      }
+    } else if (shortcut) {
+      action.click();
+    }
   });
 
   setAuthState('pending');
