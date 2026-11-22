@@ -185,3 +185,138 @@ test('card merge uses updated_at to resolve same-day scheduling conflicts', () =
   assert.equal(merged.next_review_date, '2026-07-19');
   assert.equal(merged.updated_at, 200);
 });
+
+for (const [current, action, expected] of [
+  [0, 'retry', 1],
+  [30, 'retry', 1],
+  [0, 'hard', 1],
+  [4, 'hard', 5],
+  [20, 'hard', 25],
+  [0, 'good', 2],
+  [2, 'good', 4],
+  [10, 'good', 18],
+  [0, 'easy', 4],
+  [1, 'easy', 4],
+  [10, 'easy', 24],
+  [100, 'easy', 120],
+  [0, 'unknown', 2],
+  [3, 'GOOD', 5],
+]) {
+  test(`a ${action} review after ${current} days schedules the next one in ${expected}`, () => {
+    assert.equal(progressUtils.nextReviewIntervalDays(current, action), expected);
+  });
+}
+
+test('review actions are normalised, with unknown ones counting as good', () => {
+  assert.equal(progressUtils.normalizeReviewAction('Retry'), 'retry');
+  assert.equal(progressUtils.normalizeReviewAction('easy'), 'easy');
+  assert.equal(progressUtils.normalizeReviewAction(''), 'good');
+  assert.equal(progressUtils.normalizeReviewAction('skip'), 'good');
+  assert.equal(progressUtils.mapLegacyDifficultyToAction('HARD'), 'hard');
+  assert.equal(progressUtils.mapLegacyDifficultyToAction('easy'), 'easy');
+  assert.equal(progressUtils.mapLegacyDifficultyToAction('medium'), 'good');
+});
+
+test('stored card entries gain missing fields and a max interval', () => {
+  const entry = progressUtils.normalizeCardStateEntry({ seen: 3, interval_days: 9 });
+  assert.equal(entry.seen, 3);
+  assert.equal(entry.level, 'new');
+  assert.equal(entry.max_interval_days, 9);
+  assert.deepEqual(entry.device_counters, {});
+  assert.equal(progressUtils.normalizeCardStateEntry({ interval_days: 4, max_interval_days: 30 }).max_interval_days, 30);
+  assert.equal(progressUtils.normalizeCardStateEntry(null).max_interval_days, 0);
+  const first = progressUtils.createEmptyCardStateEntry();
+  first.device_counters.a = { seen: 1 };
+  assert.deepEqual(progressUtils.createEmptyCardStateEntry().device_counters, {});
+});
+
+test('a good review counts as correct and schedules the card ahead', () => {
+  const before = { seen: 1, correct: 1, interval_days: 2, difficulty: 'hard', device_counters: { phone: { seen: 1, correct: 1 } } };
+  const after = progressUtils.applyReviewToEntry(before, 'good', {
+    today: '2026-11-22',
+    deviceId: 'laptop',
+    now: 1234,
+    deriveLevel: (entry) => `level-${entry.interval_days}`,
+  });
+  assert.equal(after.seen, 2);
+  assert.equal(after.correct, 2);
+  assert.equal(after.wrong, 0);
+  assert.equal(after.device_counters.laptop.seen, 1);
+  assert.equal(after.device_counters.phone.seen, 1);
+  assert.equal(after.interval_days, 4);
+  assert.equal(after.max_interval_days, 4);
+  assert.equal(after.last_review_date, '2026-11-22');
+  assert.equal(after.next_review_date, '2026-11-26');
+  assert.equal(after.difficulty, 'medium');
+  assert.equal(after.last_action, 'good');
+  assert.equal(after.level, 'level-4');
+  assert.equal(after.updated_at, 1234);
+  assert.equal(before.seen, 1, 'the stored entry is not changed in place');
+});
+
+test('a retry counts as wrong, is due again today and keeps the longest interval', () => {
+  const after = progressUtils.applyReviewToEntry({ interval_days: 30, max_interval_days: 30 }, 'retry', {
+    today: '2026-11-22',
+    deviceId: 'laptop',
+  });
+  assert.equal(after.seen, 1);
+  assert.equal(after.wrong, 1);
+  assert.equal(after.correct, 0);
+  assert.equal(after.interval_days, 1);
+  assert.equal(after.max_interval_days, 30);
+  assert.equal(after.next_review_date, '2026-11-22');
+  assert.equal(after.last_action, 'retry');
+});
+
+test('hard and easy reviews set the card difficulty', () => {
+  const options = { today: '2026-12-30', deviceId: 'laptop' };
+  const hard = progressUtils.applyReviewToEntry({}, 'hard', options);
+  assert.equal(hard.difficulty, 'hard');
+  assert.equal(hard.next_review_date, '2026-12-31');
+  const easy = progressUtils.applyReviewToEntry({}, 'easy', options);
+  assert.equal(easy.difficulty, 'easy');
+  assert.equal(easy.next_review_date, '2027-01-03');
+});
+
+test('studying on consecutive days grows the streak and a missed day resets it', () => {
+  const yesterday = { last_study_date: '2026-11-21', current_streak: 4, daily_progress_date: '2026-11-21', daily_progress_count: 12 };
+  const today = progressUtils.recordStudyDay(yesterday, '2026-11-22');
+  assert.equal(today.current_streak, 5);
+  assert.equal(today.last_study_date, '2026-11-22');
+  assert.equal(today.daily_progress_date, '2026-11-22');
+  assert.equal(today.daily_progress_count, 0);
+  assert.equal(yesterday.current_streak, 4, 'the stored streak is not changed in place');
+
+  const sameDay = progressUtils.recordStudyDay({ ...today, daily_progress_count: 7 }, '2026-11-22');
+  assert.equal(sameDay.current_streak, 5);
+  assert.equal(sameDay.daily_progress_count, 7);
+
+  const missed = progressUtils.recordStudyDay({ last_study_date: '2026-11-19', current_streak: 9 }, '2026-11-22');
+  assert.equal(missed.current_streak, 1);
+  assert.equal(progressUtils.recordStudyDay({}, '2026-11-22').current_streak, 1);
+  assert.equal(progressUtils.recordStudyDay({ last_study_date: '2026-02-28', current_streak: 2 }, '2026-03-01').current_streak, 3);
+});
+
+for (const [input, expected] of [
+  ['', ''],
+  ['   ', ''],
+  ['2026-11-22', '2026-11-22'],
+  [' 22-11-2026 ', '2026-11-22'],
+  ['01-02-2027', '2027-02-01'],
+  ['29-02-2024', '2024-02-29'],
+  ['29-02-2026', null],
+  ['2026-02-30', null],
+  ['2026-13-01', null],
+  ['22/11/2026', null],
+  ['tomorrow', null],
+]) {
+  test(`exam date input ${JSON.stringify(input)} reads as ${JSON.stringify(expected)}`, () => {
+    assert.equal(progressUtils.parseDateInput(input), expected);
+  });
+}
+
+test('exam dates are shown day first', () => {
+  assert.equal(progressUtils.formatDisplayDate('2026-11-22'), '22-11-2026');
+  assert.equal(progressUtils.formatDisplayDate('22-11-2026'), '');
+  assert.equal(progressUtils.formatDisplayDate(null), '');
+});

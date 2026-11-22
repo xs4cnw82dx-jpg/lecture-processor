@@ -277,11 +277,9 @@ test('a pack load failure keeps the previous coherent editor available', async (
 });
 
 for (const progressTimezone of ['UTC', 'Pacific/Kiritimati']) {
-for (const blocked of [false, true]) {
-  test(`a card rating updates its review date and streak in ${progressTimezone} with progress utilities ${blocked ? 'unavailable' : 'available'}`, async ({ page }) => {
+  test(`a card rating updates its review date and streak in ${progressTimezone}`, async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-12-31T12:00:00Z'));
     const state = await installStudy(page, { progressTimezone });
-    if (blocked) await page.route('**/static/js/study-progress-utils.js*', route => route.abort());
     await page.addInitScript(previousDay => localStorage.setItem('study_streak_a', JSON.stringify({ last_study_date: previousDay, current_streak: 4 })), progressTimezone === 'UTC' ? '2026-12-30' : '2026-12-31');
     await openPack(page);
     await startFlashcards(page);
@@ -293,7 +291,61 @@ for (const blocked of [false, true]) {
   });
 }
 
-}
+test('when the progress script fails to load, rating a card asks for a reload and saves nothing', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-12-31T12:00:00Z'));
+  const state = await installStudy(page);
+  await page.route('**/static/js/study-progress-utils.js*', route => route.abort());
+  await page.addInitScript(() => localStorage.setItem('study_streak_a', JSON.stringify({ last_study_date: '2026-12-30', current_streak: 4 })));
+  await openPack(page);
+  await startFlashcards(page);
+  await page.locator('#learn-f-flip').click();
+  await page.locator('#toast').evaluate(toast => { toast.textContent = ''; });
+  await page.locator('[data-review-action="good"]').click();
+  await expect(page.locator('#toast')).toContainText('Reload the page to try again.');
+  const saved = await page.evaluate(() => ({
+    card: JSON.parse(localStorage.getItem('card_state_a_a') || '{}').fc_0 || null,
+    streak: JSON.parse(localStorage.getItem('study_streak_a') || '{}').current_streak,
+  }));
+  expect(saved).toEqual({ card: null, streak: 4 });
+  expect(state.browserErrors).toEqual([]);
+});
+
+test('when the progress script fails to load, a folder saves without an exam date but not with one', async ({ page }) => {
+  const state = await installStudy(page);
+  await page.route('**/static/js/study-progress-utils.js*', route => route.abort());
+  await openPack(page);
+  const folderSaves = () => state.requests.filter(entry => entry.path === '/api/study-folders' && entry.method === 'POST');
+  await page.locator('.library-folder-tools > summary').click();
+  await page.locator('#new-folder-btn').click();
+  await page.locator('#folder-name-input').fill('Exams');
+  await page.locator('#folder-exam-date-input').fill('22-11-2026');
+  await page.locator('#folder-modal-save').click();
+  await expect(page.locator('#toast')).toContainText('Reload the page to try again.');
+  expect(folderSaves()).toHaveLength(0);
+  await page.locator('#folder-exam-date-input').fill('');
+  await page.locator('#folder-modal-save').click();
+  await expect.poll(() => folderSaves().length).toBe(1);
+  expect(folderSaves()[0].payload).toMatchObject({ name: 'Exams', exam_date: '' });
+  expect(state.browserErrors).toEqual([]);
+});
+
+test('when the progress script fails to load, editing a folder keeps its exam date', async ({ page }) => {
+  const state = await installStudy(page, { route: async (route, _state, entry) => {
+    if (entry.path !== '/api/study-folders' || entry.method !== 'GET') return false;
+    await route.fulfill({ json: { folders: [{ folder_id: 'biology', name: 'Biology', exam_date: '2026-12-01' }] } });
+    return true;
+  } });
+  await page.route('**/static/js/study-progress-utils.js*', route => route.abort());
+  await openPack(page);
+  await page.locator('summary[aria-label="Folder actions for Biology"]').click();
+  await page.locator('details.folder-action-menu[open] [aria-label="Edit Biology"]').click();
+  await expect(page.locator('#folder-exam-date-input')).toHaveValue('2026-12-01');
+  await page.locator('#folder-name-input').fill('Biology II');
+  await page.locator('#folder-modal-save').click();
+  await expect(page.locator('#toast')).toContainText('Reload the page to try again.');
+  expect(state.requests.filter(entry => entry.path.startsWith('/api/study-folders') && entry.method !== 'GET')).toEqual([]);
+  expect(state.browserErrors).toEqual([]);
+});
 
 test('an existing coding draft explains how to request a replacement', async ({ page }) => {
   const state = await installStudy(page, { interview: true });
