@@ -1,5 +1,4 @@
 const { test, expect } = require("@playwright/test");
-const fs = require("node:fs");
 const M = require("../static/js/book-model.js");
 const Sync = require("../static/js/book-cloud-sync.js");
 
@@ -16,10 +15,6 @@ async function setupCloud(page, options = {}) {
       window.LectureProcessorBootstrap={getAuth:()=>auth};
       window.firebase={auth:{GoogleAuthProvider:class{}}};
     })();`,
-  }));
-  // Exercise authored source while other agents regenerate the production bundle separately.
-  await page.route(/\/static\/js\/book-studio(?:\.min)?\.js(?:\?.*)?$/, (route) => route.fulfill({
-    contentType: "text/javascript", body: fs.readFileSync("static/js/book-studio.js", "utf8"),
   }));
   await page.route("**/api/books**", async (route) => {
     const request = route.request(), url = new URL(request.url()), method = request.method();

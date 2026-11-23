@@ -1,7 +1,7 @@
 export const minifiedTargets = [
   { entry: 'static/js/batch-status.js', out: 'static/js/batch-status.min.js' },
   { entry: 'static/js/book-zip.js', out: 'static/js/book-zip.min.js', bundle: true, format: 'iife' },
-  { entry: 'static/js/book-studio.js', out: 'static/js/book-studio.min.js' },
+  { entry: 'static/js/book-studio.js', out: 'static/js/book-studio.min.js', bundle: true, format: 'esm' },
   { entry: 'static/js/dashboard.js', out: 'static/js/dashboard.min.js' },
   { entry: 'static/js/batch-dashboard.js', out: 'static/js/batch-dashboard.min.js' },
   { entry: 'static/js/batch-mode.js', out: 'static/js/batch-mode.min.js' },

@@ -61,6 +61,10 @@ export default [
     rules: { "no-restricted-syntax": "off" },
   },
   {
+    files: ["static/js/book-studio.js", "static/js/book-studio-*.js"],
+    languageOptions: { sourceType: "module" },
+  },
+  {
     files: ["scripts/**/*.mjs", "tests_js/**/*.js", "playwright.config.js"],
     languageOptions: {
       ecmaVersion: "latest",
