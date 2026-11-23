@@ -69,6 +69,7 @@
         </select>
       </div>
       <div class="el-template-preview" id="el-template-preview" aria-live="polite"></div>
+      <span class="sr-only" id="el-create-progress" role="status"></span>
       <div class="el-dash-actions">
         <p class="field-error" id="el-create-error" role="alert" hidden></p>
         <button type="button" class="btn" id="el-create-cancel">Cancel</button>
@@ -83,7 +84,7 @@
       <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
     </div>
     <div class="el-dialog-body">
-      <div id="el-import-summary" class="el-template-preview"></div>
+      <div id="el-import-summary" class="el-template-preview" aria-live="polite"></div>
       <div class="el-dash-actions">
         <p class="field-error" id="el-import-error" role="alert" hidden></p>
         <button type="button" class="btn" id="el-import-cancel">Cancel</button>

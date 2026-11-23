@@ -23,6 +23,40 @@
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   var client = window.LectureProcessorAuth.createAuthClient(auth);
   var listRequest = 0;
+  var importAttempt = 0;
+  var coverCache = new Map();
+  var coverObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      coverObserver.unobserve(entry.target);
+      loadCover(entry.target);
+    });
+  });
+
+  async function loadCover(thumb) {
+    var url = thumb.dataset.cover;
+    if (!coverCache.has(url)) {
+      var session = client.captureSession();
+      var pending = client.authFetch(url).then(async function (response) {
+        if (!response.ok) throw new Error('Cover unavailable');
+        var blob = await response.blob();
+        session.assertCurrent();
+        return URL.createObjectURL(blob);
+      });
+      coverCache.set(url, pending);
+    }
+    var cover = coverCache.get(url);
+    try {
+      var objectUrl = await cover;
+      if (!thumb.isConnected || coverCache.get(url) !== cover) return;
+      var image = new Image();
+      image.alt = '';
+      image.src = objectUrl;
+      thumb.replaceChildren(image);
+    } catch (_) {
+      if (coverCache.get(url) === cover) coverCache.delete(url);
+    }
+  }
 
   function toast(message, type) {
     window.LectureProcessorUx.toast(message, { type: type });
@@ -70,6 +104,7 @@
   function openCreateDialog() {
     document.getElementById('el-create-error').hidden = true;
     titleInput.value = '';
+    document.getElementById('el-create-progress').textContent = '';
     renderTemplatePreview();
     createDialog.showModal();
     titleInput.focus();
@@ -92,7 +127,8 @@
 
   function renderExpeditions(items) {
     var q = searchInput ? searchInput.value.trim().toLowerCase() : '';
-    if (searchInput) searchInput.hidden = !items.length;
+    if (searchInput) searchInput.hidden = items.length < 2 && !q;
+    coverObserver.disconnect();
     var visible = q
       ? items.filter(function (exp) { return String(exp.title || '').toLowerCase().indexOf(q) >= 0; })
       : items;
@@ -111,7 +147,6 @@
       var cta = document.createElement('button');
       cta.type = 'button';
       cta.className = 'btn primary';
-      cta.style.marginTop = '14px';
       cta.textContent = 'Create expedition';
       cta.addEventListener('click', openCreateDialog);
       body.append(h2, p, cta);
@@ -128,7 +163,6 @@
       var clr = document.createElement('button');
       clr.type = 'button';
       clr.className = 'btn small';
-      clr.style.marginTop = '10px';
       clr.textContent = 'Clear search';
       clr.addEventListener('click', function () {
         searchInput.value = '';
@@ -167,6 +201,10 @@
       } else if (Icons) {
         thumb.appendChild(Icons.icon('compass', 22));
       }
+      if (cm && cm.kind === 'asset' && cm.assetId && !exp.deletionPending) {
+        thumb.dataset.cover = '/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/assets/' + encodeURIComponent(cm.assetId);
+        coverObserver.observe(thumb);
+      }
       mainWrap.appendChild(thumb);
 
       var detail = document.createElement('div');
@@ -178,7 +216,6 @@
       if (!exp.deletionPending) title.href = editUrl;
       title.textContent = exp.title || 'Untitled Expedition';
       title.setAttribute('translate', 'no');
-      if (justDuplicatedId && exp.id === justDuplicatedId) focusDuplicateLink = title;
       h2.appendChild(title);
       var badge = document.createElement('span');
       badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
@@ -206,6 +243,8 @@
         var tNode = document.createElement('time');
         tNode.dateTime = new Date(exp.updatedAt * 1000).toISOString();
         tNode.title = rec.exact;
+        tNode.tabIndex = 0;
+        tNode.setAttribute('aria-label', rec.rel + ', ' + rec.exact);
         tNode.textContent = rec.rel;
         meta.appendChild(tNode);
       }
@@ -217,11 +256,25 @@
       var langs = exp.enabledLanguages || ['nl'];
       var covRow = document.createElement('div');
       covRow.className = 'el-lang-cov-row';
+      var coverageDetail = document.createElement('p');
+      coverageDetail.className = 'el-exp-meta el-coverage-detail';
+      coverageDetail.hidden = true;
+      coverageDetail.id = 'coverage-' + exp.id;
       langs.forEach(function (code) {
-        var pill = document.createElement('span');
         var stat = cov && cov[code];
+        var pill = document.createElement(stat && stat.total > 0 ? 'button' : 'span');
         if (stat && stat.total > 0 && Number.isFinite(Number(stat.translated))) {
           var pct = Math.round((Number(stat.translated) / Number(stat.total)) * 100);
+          pill.type = 'button';
+          pill.setAttribute('aria-controls', coverageDetail.id);
+          pill.setAttribute('aria-expanded', 'false');
+          pill.addEventListener('click', function () {
+            var open = pill.getAttribute('aria-expanded') !== 'true';
+            covRow.querySelectorAll('button').forEach(function (other) { other.setAttribute('aria-expanded', 'false'); });
+            pill.setAttribute('aria-expanded', String(open));
+            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + ' of ' + stat.total + ' fields translated' + (stat.needsReview ? ' · ' + stat.needsReview + ' need review' : '');
+            coverageDetail.hidden = !open;
+          });
           pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
           pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? ' · review' : '');
         } else {
@@ -230,13 +283,18 @@
         }
         covRow.appendChild(pill);
       });
-      detail.appendChild(covRow);
+      detail.append(covRow, coverageDetail);
       mainWrap.appendChild(detail);
 
       var actions = document.createElement('div');
       actions.className = 'el-exp-card-actions';
       var menuItems = [];
-      if (!exp.deletionPending) actions.appendChild(actionLink(exp.role === 'translate' ? 'Open Translator' : 'Open Builder', editUrl, true));
+      if (!exp.deletionPending) {
+        var isCopy = justDuplicatedId === exp.id;
+        var open = actionLink(isCopy ? 'Open copy' : exp.role === 'translate' ? 'Open Translator' : 'Open Builder', editUrl, true);
+        if (isCopy) focusDuplicateLink = open;
+        actions.appendChild(open);
+      }
       if (!exp.deletionPending && exp.role !== 'translate') {
         actions.appendChild(actionLink('Responses', '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
         if (exp.shareEnabled && exp.shareToken) {
@@ -253,6 +311,7 @@
       }
       if (exp.role !== 'translate') {
         if (exp.role === 'owner') {
+          if (menuItems.length) menuItems.push({ divider: true });
           menuItems.push({ label: 'Delete', icon: 'trash', danger: true, onClick: function () {
             pendingDeleteExp = exp;
             document.getElementById('el-delete-dialog-msg').textContent = exp.title;
@@ -261,7 +320,7 @@
             document.getElementById('el-delete-cancel').focus();
           } });
         }
-        var menu = Icons.createDropdown({ ariaLabel: 'More actions', leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
+        var menu = Icons.createDropdown({ ariaLabel: 'More actions for ' + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
         actions.appendChild(menu.el);
       }
       card.append(mainWrap, actions);
@@ -325,6 +384,21 @@
   }
   if (Icons) Icons.wireAnimatedDialogs();
 
+  function lockDialog(dialog, saving) {
+    dialog.setAttribute('closedby', saving ? 'none' : 'any');
+    dialog.querySelector('button[aria-label="Close"]').disabled = saving;
+    dialog.querySelector('[id$="-cancel"]').disabled = saving;
+    dialog.toggleAttribute('data-saving', saving);
+  }
+  [createDialog, importDialog].forEach(function (dialog) {
+    dialog.addEventListener('cancel', function (event) {
+      if (dialog.hasAttribute('data-saving')) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  });
+
   function dialogError(name, err) {
     if (err.code === 'auth/session-changed') return;
     var error = document.getElementById('el-' + name + '-error');
@@ -334,14 +408,17 @@
 
   document.getElementById('el-create-form').addEventListener('submit', async function (event) {
     event.preventDefault();
+    var confirm = document.getElementById('el-create-confirm');
+    if (confirm.disabled) return;
     titleInput.value = titleInput.value.trim();
     if (!titleInput.reportValidity()) return;
     var lang = document.getElementById('el-new-lang').value;
     var preset = document.getElementById('el-new-template').value;
-    var confirm = document.getElementById('el-create-confirm');
     var origText = confirm.textContent;
-    confirm.style.minWidth = confirm.offsetWidth + 'px';
+    var progress = document.getElementById('el-create-progress');
+    progress.textContent = 'Creating expedition…';
     confirm.disabled = true;
+    lockDialog(createDialog, true);
     confirm.textContent = 'Creating expedition…';
     var payload = Model.createExpeditionPreset(preset, titleInput.value, lang);
     try {
@@ -349,13 +426,15 @@
       createDialog.close();
       window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
     } catch (err) {
+      if (err.code === 'auth/session-changed') return;
+      lockDialog(createDialog, false);
       dialogError('create', err);
+      progress.textContent = '';
       confirm.textContent = origText;
       confirm.disabled = false;
     }
   });
 
-  // UX-006: JSON Import Preview Dialog before committing
   var importInput = document.getElementById('el-import-json-input');
   document.getElementById('el-import-json-btn').addEventListener('click', function () { importInput.click(); });
   if (importDialog) {
@@ -367,7 +446,9 @@
     document.getElementById('el-import-confirm').addEventListener('click', async function () {
       if (!pendingImportPayload) return;
       var btn = document.getElementById('el-import-confirm');
+      if (btn.disabled) return;
       btn.disabled = true;
+      lockDialog(importDialog, true);
       btn.textContent = 'Importing…';
       try {
         var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(pendingImportPayload) });
@@ -376,43 +457,55 @@
         toast('Imported expedition!', 'success');
         window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
       } catch (err) {
+        if (err.code === 'auth/session-changed') return;
+        lockDialog(importDialog, false);
         dialogError('import', err);
         btn.disabled = false;
         btn.textContent = 'Import & Open Builder';
       }
     });
-    importDialog.addEventListener('close', function () { importDialog.returnValue = ''; });
+    importDialog.addEventListener('close', function () {
+      ++importAttempt;
+      pendingImportPayload = null;
+      importDialog.returnValue = '';
+    });
   }
   importInput.addEventListener('change', async function () {
     var file = importInput.files && importInput.files[0];
     if (!file) return;
     var session = client.captureSession();
+    var attempt = ++importAttempt;
+    var summary = document.getElementById('el-import-summary');
+    var confirm = document.getElementById('el-import-confirm');
+    pendingImportPayload = null;
+    confirm.disabled = true;
+    confirm.textContent = 'Import & Open Builder';
+    summary.textContent = 'Checking expedition…';
+    document.getElementById('el-import-error').hidden = true;
+    importDialog.showModal();
     try {
-      var text = await file.text();
+      var parsed = JSON.parse(await file.text());
       session.assertCurrent();
-      var parsed = JSON.parse(text);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('JSON file must contain an expedition object.');
-      }
+      if (attempt !== importAttempt) return;
+      var checked = await api('/api/elearning/import-preview', { method: 'POST', body: JSON.stringify(parsed) });
+      session.assertCurrent();
+      if (attempt !== importAttempt) return;
       pendingImportPayload = parsed;
-      var mods = Array.isArray(parsed.modules) ? parsed.modules : [];
-      var stepsTotal = mods.reduce(function (acc, m) { return acc + (Array.isArray(m.steps) ? m.steps.length : 0); }, 0);
-      var langs = Array.isArray(parsed.enabledLanguages) ? parsed.enabledLanguages.map(function (l) { return String(l).toUpperCase(); }).join(', ') : 'NL';
-      var sumEl = document.getElementById('el-import-summary');
-      sumEl.textContent = '';
-      var tStrong = document.createElement('strong');
-      tStrong.textContent = (parsed.title || 'Untitled Expedition');
-      var mMeta = document.createElement('p');
-      mMeta.className = 'el-exp-meta';
-      mMeta.textContent = mods.length + ' station(s) · ' + stepsTotal + ' step(s) · Languages: ' + langs + ' · Imported as a private draft.';
-      sumEl.append(tStrong, mMeta);
-      document.getElementById('el-import-error').hidden = true;
-      var cBtn = document.getElementById('el-import-confirm');
-      cBtn.disabled = false;
-      cBtn.textContent = 'Import & Open Builder';
-      importDialog.showModal();
+      var title = document.createElement('strong');
+      title.textContent = checked.title;
+      title.setAttribute('translate', 'no');
+      var info = document.createElement('p');
+      info.className = 'el-exp-meta';
+      info.textContent = checked.stationCount + (checked.stationCount === 1 ? ' station' : ' stations') + ' · ' +
+        checked.stepCount + (checked.stepCount === 1 ? ' step' : ' steps') + ' · ' +
+        checked.enabledLanguages.join(', ').toUpperCase() + ' · Private draft';
+      summary.replaceChildren(title, info);
+      confirm.disabled = false;
     } catch (err) {
-      if (err.code !== 'auth/session-changed') toast('Could not read JSON: ' + err.message, 'error');
+      if (attempt === importAttempt && err.code !== 'auth/session-changed') {
+        summary.textContent = file.name;
+        dialogError('import', err instanceof SyntaxError ? new Error('This file is not valid JSON.') : err);
+      }
     } finally {
       importInput.value = '';
     }
@@ -424,6 +517,22 @@
 
   function accountChanged(user) {
     ++listRequest;
+    ++importAttempt;
+    pendingImportPayload = null;
+    lockDialog(createDialog, false);
+    lockDialog(importDialog, false);
+    if (importDialog.open) importDialog.close();
+    allExpeditions = [];
+    justDuplicatedId = '';
+    searchInput.value = '';
+    searchInput.hidden = true;
+    coverObserver.disconnect();
+    coverCache.forEach(function (pending) { pending.then(URL.revokeObjectURL).catch(function () {}); });
+    coverCache.clear();
+    document.getElementById('el-create-progress').textContent = '';
+    var createButton = document.getElementById('el-create-confirm');
+    createButton.disabled = false;
+    createButton.textContent = 'Create & Open Builder';
     pendingDeleteExp = null;
     if (deleteDialog.open) deleteDialog.close();
     if (createDialog.open) createDialog.close();

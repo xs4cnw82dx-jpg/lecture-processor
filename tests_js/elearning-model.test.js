@@ -141,3 +141,31 @@ test('UX review model helpers: presets, DOI links, readable labels, nested check
   assert.ok(check.optionalWords > 0);
   assert.equal(check.tips.some((t) => /B1/.test(t.text)), false);
 });
+
+test('legacy plans keep ambiguous learner wording and discard missing suggestion IDs', () => {
+  const choices = [
+    { id: 'easy', label: Model.loc('Wandelen', 'Walk slowly', 'Langsam gehen') },
+    { id: 'fast', label: Model.loc('Wandelen', 'Walk quickly', 'Schnell gehen') },
+  ];
+  assert.deepEqual(Model.normalizeMiniPlanAnswer(['Wandelen', 'Walk quickly', 'Wandelen'], choices, 'de', 'nl'), {
+    ids: ['fast'], custom: ['Wandelen'],
+  });
+  assert.deepEqual(Model.normalizeMiniPlanAnswer({ ids: ['gone', 'fast', 'fast'], custom: ['Stretch'] }, choices, 'de', 'nl'), {
+    ids: ['fast'], custom: ['Stretch'],
+  });
+});
+
+test('an editing takeover merges separate translation changes by stable ID and detects edits to deleted blocks', () => {
+  const before = { revision: 1, blocks: [{ id: 'a', title: { nl: 'Bron', de: 'Quelle' } }, { id: 'b' }] };
+  const ours = structuredClone(before);
+  ours.blocks[0].title.nl = 'Nieuwe bron';
+  const latest = structuredClone(before);
+  latest.revision = 2;
+  latest.blocks.reverse();
+  latest.blocks[1].title.de = 'Neue Quelle';
+  const result = Model.mergeCourseEdits(before, ours, latest);
+  assert.deepEqual(result.conflicts, []);
+  assert.deepEqual(result.expedition, { revision: 2, blocks: [{ id: 'b' }, { id: 'a', title: { nl: 'Nieuwe bron', de: 'Neue Quelle' } }] });
+  latest.blocks.pop();
+  assert.deepEqual(Model.mergeCourseEdits(before, ours, latest).conflicts, ['blocks.a']);
+});

@@ -493,6 +493,8 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
             'caption': normalize_localized(data.get('caption'), 600, default_lang),
             'sideHeading': normalize_localized(data.get('sideHeading'), 300, default_lang),
             'sideBody': normalize_localized(data.get('sideBody'), 3000, default_lang),
+            'sideTextBelow': bool(data.get('sideTextBelow', False)),
+            'crop': bool(data.get('crop', False)),
             'mediaOverrides': _normalize_media_overrides(data.get('mediaOverrides'), 'image'),
         }
     elif btype == 'audio':
@@ -801,7 +803,7 @@ def normalize_expedition_payload(raw: object) -> dict:
     title_raw = raw.get('title')
     if isinstance(title_raw, dict):
         title_loc = normalize_localized(title_raw, 200, default_lang)
-        plain_title = title_loc.get(default_lang) or title_loc.get('nl') or title_loc.get('en') or 'Untitled Expedition'
+        plain_title = title_loc.get(default_lang) or next((title_loc[lang] for lang in SUPPORTED_LANGUAGES if title_loc[lang]), 'Untitled Expedition')
     else:
         plain_title = safe_text(title_raw, 200).strip() or 'Untitled Expedition'
         title_loc = normalize_localized({default_lang: plain_title}, 200, default_lang)
@@ -982,7 +984,7 @@ def extract_translation_rows(expedition: dict, source_lang: str = 'nl', target_l
         nl_text = loc.get('nl', '')
         tgt_text = loc.get(tgt, '')
         needs_review = bool((loc.get('_review') or {}).get(tgt))
-        if not src_text.strip() and not tgt_text.strip() and not nl_text.strip() and not en_text.strip():
+        if not any(str(loc.get(lang) or '').strip() for lang in SUPPORTED_LANGUAGES):
             continue
         status = 'needs_review' if needs_review else ('translated' if tgt_text.strip() else 'untranslated')
         rows.append({

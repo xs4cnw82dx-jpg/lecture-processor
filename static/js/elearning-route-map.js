@@ -50,6 +50,7 @@
       kicker.className = 'xped-hero-kicker';
       var eySpan = document.createElement('span');
       eySpan.textContent = eyText;
+      if (options.onLocalizedField) options.onLocalizedField(eySpan, sp.eyebrow);
       makeEditable(eySpan, 'xPEDitie Pijn', editable, function (v) { onEditField('eyebrow', v); });
       kicker.appendChild(eySpan);
       col.appendChild(kicker);
@@ -58,6 +59,7 @@
     var h1 = document.createElement('h1');
     h1.className = 'xped-hero-title';
     h1.textContent = Model.getLocalized(sp.title, lang, defLang) || (editable ? '' : (exp.title || ''));
+    if (options.onLocalizedField) options.onLocalizedField(h1, sp.title);
     makeEditable(h1, 'Click to write your xPEDitie title…', editable, function (v) { onEditField('title', v); });
     col.appendChild(h1);
 
@@ -66,6 +68,7 @@
       var p = document.createElement('p');
       p.className = 'xped-hero-subtitle';
       p.textContent = subText;
+      if (options.onLocalizedField) options.onLocalizedField(p, sp.subtitle);
       makeEditable(p, 'Click to add a calm welcome introduction…', editable, function (v) { onEditField('subtitle', v); });
       col.appendChild(p);
     }
@@ -87,6 +90,7 @@
         var spn = document.createElement('span');
         spn.className = 'xped-hl-text';
         spn.textContent = txt;
+        if (options.onLocalizedField) options.onLocalizedField(spn, hl.text);
         makeEditable(spn, 'Highlight bullet…', editable, function (v) { onEditField('highlight:' + hl.id, v); });
         li.appendChild(spn);
         if (editable) {
@@ -138,6 +142,7 @@
     cta.type = 'button';
     cta.className = 'xped-btn xped-btn-sun';
     var ctaSpan = document.createElement('span');
+    if (options.onLocalizedField) options.onLocalizedField(ctaSpan, sp.ctaLabel);
     ctaSpan.textContent = hasProgress
       ? Model.ui(lang, 'continueExpedition')
       : (Model.getLocalized(sp.ctaLabel, lang, defLang) || Model.ui(lang, 'startExpedition'));
@@ -205,6 +210,7 @@
         completedModuleIds: completedModuleIds,
         activeModuleId: (visibleMods.find(function (m) { return completedModuleIds.indexOf(m.id) < 0; }) || visibleMods[0]).id,
         onSelect: onSelectModule,
+        onLocalizedField: options.onLocalizedField,
         compact: false,
       });
       rSec.appendChild(host);
@@ -273,6 +279,7 @@
       var title = document.createElement('strong');
       title.className = 'xped-journey-title';
       title.textContent = Model.getLocalized(mod.title, lang, defaultLang) || ('Station ' + (idx + 1));
+      if (options.onLocalizedField) options.onLocalizedField(title, mod.title);
       cardMain.appendChild(title);
 
       var topMeta = document.createElement('div');
@@ -297,6 +304,7 @@
         var sub = document.createElement('p');
         sub.className = 'xped-journey-sub';
         sub.textContent = subTxt;
+        if (options.onLocalizedField) options.onLocalizedField(sub, mod.subtitle);
         cardMain.appendChild(sub);
       }
       btn.appendChild(cardMain);
@@ -316,7 +324,152 @@
     container.appendChild(track);
   }
 
+  function renderSummaryCard(exp, answers, lang) {
+    var Model = root.XpedElearningModel;
+    var defLang = exp.defaultLanguage || 'nl';
+    var card = document.createElement('article');
+    card.className = 'xped-card';
+    var h1 = document.createElement('h1');
+    h1.className = 'xped-step-title';
+    h1.textContent = Model.ui(lang, 'summaryTitle');
+    var sub = document.createElement('p');
+    sub.className = 'xped-caption';
+    sub.textContent = Model.ui(lang, 'summarySubtitle');
+    card.appendChild(h1);
+    card.appendChild(sub);
+
+    var reflections = [];
+    var plans = [];
+    var balances = [];
+    var insights = [];
+    (exp.modules || []).forEach(function (m) {
+      (m.steps || []).forEach(function (s) {
+        (s.blocks || []).forEach(function (b) {
+          var ans = answers[b.id];
+          if (b.type === 'reflection' && typeof ans === 'string' && ans.trim()) {
+            reflections.push({ q: Model.getLocalized(b.data.prompt, lang, defLang), a: ans });
+          } else if (b.type === 'mini_plan' && Model.hasMeaningfulAnswer(ans)) {
+            var normPlan = Model.normalizeMiniPlanAnswer(ans, (b.data && b.data.suggestions) || [], lang, defLang);
+            normPlan.ids.forEach(function (sid) {
+              var sug = ((b.data && b.data.suggestions) || []).find(function (item) { return item.id === sid; });
+              if (sug) {
+                var lbl = Model.getLocalized(sug.label, lang, defLang);
+                if (lbl) plans.push(lbl);
+              }
+            });
+            normPlan.custom.forEach(function (txt) {
+              if (txt) plans.push(txt);
+            });
+          } else if (b.type === 'balance_scale' && ans && typeof ans === 'object') {
+            var loadT = 0;
+            var resT = 0;
+            var loadNames = [];
+            var resNames = [];
+            (b.data.factors || []).forEach(function (f) {
+              var v = Number(ans[f.id] || 0);
+              var lbl = Model.getLocalized(f.label, lang, defLang);
+              if (f.category === 'resource') {
+                resT += v;
+                if (v >= 2 && lbl) resNames.push(lbl + ' (' + v + '/3)');
+              } else {
+                loadT += v;
+                if (v >= 2 && lbl) loadNames.push(lbl + ' (' + v + '/3)');
+              }
+            });
+            balances.push({ loadT: loadT, resT: resT, loadNames: loadNames, resNames: resNames });
+          } else if (b.type === 'myth_fact' && ans) {
+            var expTxt = Model.getLocalized(b.data.explanation, lang, defLang);
+            if (expTxt) insights.push(expTxt);
+          }
+        });
+      });
+    });
+
+    if (balances.length) {
+      var bSec = document.createElement('div');
+      bSec.className = 'el-summary-section';
+      var bh = document.createElement('h2');
+      bh.textContent = Model.ui(lang, 'myBalance');
+      bSec.appendChild(bh);
+      balances.forEach(function (bal) {
+        var bGrid = document.createElement('div');
+        bGrid.className = 'el-summary-balance-grid';
+        var lc = document.createElement('div');
+        lc.className = 'el-summary-balance-col';
+        var lTitle = document.createElement('strong');
+        lTitle.textContent = Model.ui(lang, 'load') + ': ' + bal.loadT;
+        lc.appendChild(lTitle);
+        lc.appendChild(document.createTextNode(bal.loadNames.join(', ') || '—'));
+        var rc = document.createElement('div');
+        rc.className = 'el-summary-balance-col';
+        var rTitle = document.createElement('strong');
+        rTitle.textContent = Model.ui(lang, 'resource') + ': ' + bal.resT;
+        rc.appendChild(rTitle);
+        rc.appendChild(document.createTextNode(bal.resNames.join(', ') || '—'));
+        bGrid.appendChild(lc);
+        bGrid.appendChild(rc);
+        bSec.appendChild(bGrid);
+      });
+      card.appendChild(bSec);
+    }
+
+    if (plans.length) {
+      var pSec = document.createElement('div');
+      pSec.className = 'el-summary-section';
+      var ph = document.createElement('h2');
+      ph.textContent = Model.ui(lang, 'myMiniPlan');
+      pSec.appendChild(ph);
+      var ul = document.createElement('ul');
+      ul.className = 'xped-sources-list';
+      plans.forEach(function (item) {
+        var li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+      pSec.appendChild(ul);
+      card.appendChild(pSec);
+    }
+
+    if (insights.length) {
+      var iSec = document.createElement('div');
+      iSec.className = 'el-summary-section';
+      var ih = document.createElement('h2');
+      ih.textContent = Model.ui(lang, 'myInsights');
+      iSec.appendChild(ih);
+      var iul = document.createElement('ul');
+      iul.className = 'xped-sources-list';
+      insights.forEach(function (txt) {
+        var li = document.createElement('li');
+        li.textContent = txt;
+        iul.appendChild(li);
+      });
+      iSec.appendChild(iul);
+      card.appendChild(iSec);
+    }
+
+    if (reflections.length) {
+      var rSec = document.createElement('div');
+      rSec.className = 'el-summary-section';
+      var rh = document.createElement('h2');
+      rh.textContent = Model.ui(lang, 'myReflections');
+      rSec.appendChild(rh);
+      reflections.forEach(function (ref) {
+        var q = document.createElement('strong');
+        q.textContent = ref.q;
+        var a = document.createElement('p');
+        a.textContent = ref.a;
+        a.className = 'el-reflection-answer';
+        rSec.appendChild(q);
+        rSec.appendChild(a);
+      });
+      card.appendChild(rSec);
+    }
+
+    return card;
+  }
+
   root.XpedElearningRouteMap = {
+    renderSummaryCard: renderSummaryCard,
     renderRouteMap: renderRouteMap,
     renderStartPage: renderStartPage,
   };

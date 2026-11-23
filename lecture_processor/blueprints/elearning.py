@@ -173,6 +173,11 @@ def api_expeditions():
     return service.list_expeditions(runtime)
 
 
+@elearning_bp.route('/api/elearning/import-preview', methods=['POST'])
+def api_import_preview():
+    return service.preview_import(get_runtime())
+
+
 @elearning_bp.route('/api/elearning/grant-session', methods=['POST'])
 def api_grant_session():
     return service.exchange_grant(get_runtime())

@@ -52,6 +52,7 @@
       rightLead: 'Klopt helemaal',
       wrongMythLead: 'Veel mensen denken dit — zo zit het eigenlijk',
       yourAnswer: 'Jouw keuze',
+      correctChoice: 'Juist antwoord',
       peerResults: 'Zo antwoordden anderen (anoniem)',
       responsesCount: '{n} reacties',
       addWordPlaceholder: 'Typ een woord en druk op Enter…',
@@ -151,6 +152,7 @@
       rightLead: 'Spot on',
       wrongMythLead: 'Many people think this — here is how it actually works',
       yourAnswer: 'Your choice',
+      correctChoice: 'Correct answer',
       peerResults: 'How others answered (anonymous)',
       responsesCount: '{n} responses',
       addWordPlaceholder: 'Type a word and press Enter…',
@@ -250,6 +252,7 @@
       rightLead: 'Genau richtig',
       wrongMythLead: 'Viele Menschen denken das — so funktioniert es wirklich',
       yourAnswer: 'Deine Wahl',
+      correctChoice: 'Richtige Antwort',
       peerResults: 'So haben andere geantwortet (anonym)',
       responsesCount: '{n} Antworten',
       addWordPlaceholder: 'Wort eingeben und Enter drücken…',
@@ -484,6 +487,16 @@
     { hex: '#5C4CE6', label: 'Indigo', text: '#FFFFFF' },
   ];
 
+  function pinTextColor(hex) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return '#ffffff';
+    var channels = hex.slice(1).match(/../g).map(function (v) {
+      var s = parseInt(v, 16) / 255;
+      return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    var luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    return luminance > 0.179 ? '#000000' : '#ffffff';
+  }
+
   var SCALE_ANCHOR_PRESETS = [
     {
       id: 'agreement',
@@ -568,6 +581,8 @@
     sideBody: 'Side panel text',
     description: 'Description',
     speakerRole: 'Speaker role',
+    speakerName: 'Speaker name',
+    agentBrief: 'Designer brief',
     quote: 'Quote',
     question: 'Question',
     explanation: 'Explanation',
@@ -642,45 +657,28 @@
     return false;
   }
 
-  function normalizeMiniPlanAnswer(raw, suggestions, lang, defaultLang) {
+  function normalizeMiniPlanAnswer(raw, suggestions) {
     var list = Array.isArray(suggestions) ? suggestions : [];
+    var validIds = new Set(list.map(function (item) { return item.id; }));
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       return {
-        ids: Array.isArray(raw.ids) ? raw.ids.slice() : [],
-        custom: Array.isArray(raw.custom) ? raw.custom.slice() : [],
+        ids: Array.from(new Set(Array.isArray(raw.ids) ? raw.ids.filter(function (id) { return validIds.has(id); }) : [])),
+        custom: Array.from(new Set(Array.isArray(raw.custom) ? raw.custom.filter(function (item) { return typeof item === 'string' && item.trim(); }) : [])),
       };
     }
-    var ids = [];
-    var custom = [];
-    if (Array.isArray(raw)) {
-      raw.forEach(function (entry) {
-        var text = String(entry || '').trim();
-        if (!text) return;
-        var matched = null;
-        for (var i = 0; i < list.length; i += 1) {
-          var s = list[i];
-          if (!s) continue;
-          if (s.id === text) { matched = s.id; break; }
-          var lbl = s.label || {};
-          if (
-            String(lbl[lang] || '').trim() === text
-            || String(lbl[defaultLang] || '').trim() === text
-            || String(lbl.nl || '').trim() === text
-            || String(lbl.en || '').trim() === text
-            || String(lbl.de || '').trim() === text
-          ) {
-            matched = s.id;
-            break;
-          }
-        }
-        if (matched) {
-          if (ids.indexOf(matched) < 0) ids.push(matched);
-        } else if (custom.indexOf(text) < 0) {
-          custom.push(text);
-        }
+    var ids = new Set();
+    var custom = new Set();
+    (Array.isArray(raw) ? raw : []).forEach(function (entry) {
+      var text = String(entry || '').trim();
+      if (!text) return;
+      if (validIds.has(text)) { ids.add(text); return; }
+      var matches = list.filter(function (item) {
+        return SUPPORTED_LANGS.some(function (code) { return (item.label?.[code] || '').trim() === text; });
       });
-    }
-    return { ids: ids, custom: custom };
+      if (matches.length === 1) ids.add(matches[0].id);
+      else custom.add(text);
+    });
+    return { ids: Array.from(ids), custom: Array.from(custom) };
   }
 
   function deriveStepContentState(step) {
@@ -1130,7 +1128,7 @@
   function extractTranslationRows(exp, sourceLang, targetLang) {
     var src = sourceLang || 'nl';
     var tgt = targetLang || 'de';
-    var altLang = src === 'nl' ? 'en' : 'nl';
+    var altLang = SUPPORTED_LANGS.find(function (lang) { return lang !== src && lang !== tgt; });
     var rows = [];
     function pushField(key, location, locObj, blockId) {
       if (!locObj || typeof locObj !== 'object') return;
@@ -1179,7 +1177,7 @@
           var data = blk.data || {};
           Object.keys(data).forEach(function (k) {
             if (blk.type === 'reflection' && k === 'helperNote') return;
-            var fLab = FIELD_LABELS[k] || k;
+            var fLab = FIELD_LABELS[k] || k.replace(/([a-z])([A-Z])/g, '$1 $2');
             var val = data[k];
             if (val && typeof val === 'object' && !Array.isArray(val) && ('nl' in val && 'en' in val && 'de' in val)) {
               pushField(bKey + '.' + k, bLab + ' · ' + fLab, val, blk.id);
@@ -1387,7 +1385,7 @@
       var pressedOutside = false;
       dlg.addEventListener('pointerdown', function (e) { pressedOutside = outside(e, dlg); });
       dlg.addEventListener('pointerup', function (e) {
-        if (pressedOutside && outside(e, dlg)) dlg.close();
+        if (pressedOutside && outside(e, dlg) && dlg.getAttribute('closedby') === 'any') dlg.close();
         pressedOutside = false;
       });
     });
@@ -1445,7 +1443,45 @@
     }
   }
 
+  // Merge independent edits by stable object ID. A collision needs the author's decision.
+  function mergeCourseEdits(base, local, latest) {
+    var conflicts = [];
+    function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+    function merge(before, ours, theirs, path) {
+      if (same(ours, before) || same(ours, theirs)) return theirs;
+      if (same(theirs, before)) return ours;
+      var values = [before, ours, theirs];
+      if (values.every(Array.isArray) && values.every(function (list) {
+        return list.every(function (entry) { return entry && typeof entry.id === 'string'; });
+      })) {
+        var lists = values.map(function (list) { return list.map(function (item) { return item.id; }); });
+        var ids = merge(lists[0], lists[1], lists[2], path + '.order');
+        var maps = values.map(function (list) { return new Map(list.map(function (item) { return [item.id, item]; })); });
+        // A deletion on one side and an edit on the other is a conflict too.
+        var allIds = new Set(lists.flat());
+        var items = new Map();
+        allIds.forEach(function (id) {
+          items.set(id, merge(maps[0].get(id), maps[1].get(id), maps[2].get(id), path + '.' + id));
+        });
+        return ids.map(function (id) { return items.get(id); });
+      }
+      if (values.every(function (v) { return v && typeof v === 'object' && !Array.isArray(v); })) {
+        var fields = [];
+        new Set(values.flatMap(Object.keys)).forEach(function (key) {
+          var value = merge(before[key], ours[key], theirs[key], path ? path + '.' + key : key);
+          if (value !== undefined) fields.push([key, value]);
+        });
+        return Object.fromEntries(fields);
+      }
+      conflicts.push(path);
+      return ours;
+    }
+    var expedition = merge(base, local, latest, '');
+    return { expedition: expedition, conflicts: conflicts };
+  }
+
   var api = {
+    mergeCourseEdits: mergeCourseEdits,
     SUPPORTED_LANGS: SUPPORTED_LANGS,
     LANG_LABELS: LANG_LABELS,
     DOMAIN_LABELS: DOMAIN_LABELS,
@@ -1454,6 +1490,7 @@
     BLOCK_CATEGORIES: BLOCK_CATEGORIES,
     BLOCK_CATALOG: BLOCK_CATALOG,
     HOTSPOT_PIN_COLORS: HOTSPOT_PIN_COLORS,
+    pinTextColor: pinTextColor,
     SCALE_ANCHOR_PRESETS: SCALE_ANCHOR_PRESETS,
     EXPEDITION_TEMPLATES: EXPEDITION_TEMPLATES,
     FIELD_LABELS: FIELD_LABELS,

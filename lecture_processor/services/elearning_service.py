@@ -187,7 +187,9 @@ def _summary_card(exp: dict, role: str) -> dict:
     step_count = sum(len(m.get('steps') or []) for m in modules)
     share = exp.get('share') or {}
     start_page = exp.get('startPage') or {}
-    cover_media = model.safe_media_ref(start_page.get('heroMedia'))
+    cover_media = model.safe_media_ref((start_page.get('heroMediaOverrides') or {}).get(exp.get('defaultLanguage')))
+    if cover_media['kind'] == 'none':
+        cover_media = model.safe_media_ref(start_page.get('heroMedia'))
     return {
         'id': exp['id'],
         'title': exp.get('title', 'Untitled Expedition'),
@@ -261,6 +263,33 @@ def _insert_expedition(db, doc):
             'expedition_id': doc['id'], 'updated_at': doc['updated_at'],
         })
     db.atomic(insert)
+
+
+def preview_import(runtime):
+    identity(runtime, required=True)
+    raw = payload()
+    if not isinstance(raw.get('modules'), list):
+        raise model.ElearningError('Choose an expedition JSON file containing a list of stations.', 400)
+    for module in raw['modules']:
+        if not isinstance(module, dict) or not isinstance(module.get('steps'), list):
+            raise model.ElearningError('Each imported station must contain a list of steps.', 400)
+        for step in module['steps']:
+            if not isinstance(step, dict) or not isinstance(step.get('blocks'), list):
+                raise model.ElearningError('Each imported step must contain a list of blocks.', 400)
+    course = model.validate_authored_expedition(raw)
+    if model.media_ids(course):
+        raise model.ElearningError('This JSON references uploaded files. Duplicate the original expedition to include its media, or remove these references before importing.', 400)
+    ids = set()
+    for module in course['modules']:
+        items = [module, *module['steps']]
+        for step in module['steps']:
+            items.extend(step['blocks'])
+        for item in items:
+            if item['id'] in ids:
+                raise model.ElearningError('Two items have the same ID. Give each station, step and block its own ID before importing.', 400)
+            ids.add(item['id'])
+    return jsonify(title=course['title'], enabledLanguages=course['enabledLanguages'],
+                   stationCount=len(course['modules']), stepCount=sum(len(module['steps']) for module in course['modules']))
 
 
 def create_expedition(runtime):
@@ -945,11 +974,11 @@ def _aggregate_block(block: dict, values: list) -> dict:
         counts = Counter()
         for val in values:
             if isinstance(val, list):
-                for item in val:
-                    counts[str(item)] += 1
-            elif val is not None and val != '':
-                counts[str(val)] += 1
-        return {'type': btype, 'count': count, 'counts': dict(counts)}
+                counts.update({item for item in val if isinstance(item, str) and item})
+            elif isinstance(val, str) and val:
+                counts[val] += 1
+        respondents = sum(bool(value) for value in values)
+        return {'type': btype, 'count': respondents, 'counts': dict(counts)}
     if btype == 'scale':
         nums = []
         buckets = Counter()
@@ -1072,11 +1101,9 @@ def get_responses(runtime, expedition_id: str):
                     values = [r['answers'][bid] for r in rows if bid in (r.get('answers') or {})]
                     agg = _aggregate_block(blk, values)
                     if blk['type'] == 'reflection':
-                        agg['samples'] = [
-                            model.safe_text(r.get('answers', {}).get(blk['id'], ''), 600)
-                            for r in rows
-                            if str(r.get('answers', {}).get(blk['id'], '') or '').strip()
-                        ][:50]
+                        reflections = [value for value in values if isinstance(value, str) and value.strip()]
+                        agg['sampleTotal'] = len(reflections)
+                        agg['samples'] = [model.safe_text(value, 600) for value in reflections[:50]]
                     block_stats[blk['id']] = agg
 
     feedback = []

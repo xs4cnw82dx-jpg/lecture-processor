@@ -647,6 +647,7 @@ button.xped-journey-card:hover { border-color: var(--xped-blue); background: var
   background: var(--xped-blue-soft);
   color: var(--xped-navy);
 }
+button.el-dropzone { width: 100%; font: inherit; }
 .el-dropzone strong { font-size: 0.92rem; color: var(--xped-navy); }
 .el-dropzone span { font-size: 0.8rem; }
 
@@ -701,6 +702,8 @@ button.xped-journey-card:hover { border-color: var(--xped-blue); background: var
   object-fit: contain;
   border-radius: var(--xped-radius-md);
 }
+.xped-image-figure img.is-cropped { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; object-position: var(--xped-focal-x, 50%) var(--xped-focal-y, 50%); }
+.xped-image-block:has(img.is-cropped) .xped-image-figure { width: 100%; }
 .xped-image-block.layout-framed .xped-image-figure {
   padding: 18px;
   background: var(--xped-canvas);
@@ -779,16 +782,17 @@ button.xped-journey-card:hover { border-color: var(--xped-blue); background: var
 .xped-story-meta strong { color: var(--xped-navy); }
 
 /* Smooth Animated Accordion (<details>) — Modern Web Guidance (S-15) */
-details::details-content {
+.xped-details::details-content {
   interpolate-size: allow-keywords;
   overflow: clip;
   contain: layout;
 }
-details:not([open])::details-content {
+.xped-details[open]::details-content { block-size: auto; }
+.xped-details:not([open])::details-content {
   block-size: 0;
 }
 @media (prefers-reduced-motion: no-preference) {
-  details::details-content {
+  .xped-details::details-content {
     transition: block-size, content-visibility, display;
     transition-duration: 0.28s;
     transition-timing-function: var(--xped-ease);
@@ -821,6 +825,7 @@ details:not([open])::details-content {
 }
 
 /* xPED Sources Disclosure Box (S-16 — matches xpeditiepijn.nl Bron block) */
+.el-field textarea[data-field-key="citation"] { field-sizing: content; min-height: 5lh; }
 .xped-sources-shell {
   background: #e6f7f2;
   padding: 14px;
@@ -878,13 +883,14 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
 .xped-sources-body {
   padding: 18px 20px;
   background: #ffffff;
-  color: var(--xped-ink);
+  color: #172b3a;
+  overflow-wrap: anywhere;
   font-size: 0.93rem;
   line-height: 1.62;
 }
 .xped-sources-list { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
 .xped-source-link {
-  color: var(--xped-blue);
+  color: #005b99;
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1037,6 +1043,8 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
 .xped-richtext-list { margin: 6px 0 10px; padding-left: 20px; display: grid; gap: 5px; }
 .el-fmt-bar {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: 4px;
   padding: 4px;
@@ -1045,6 +1053,7 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
   background: var(--xped-canvas);
   border: 1px solid var(--xped-border);
 }
+.el-fmt-bar .el-fmt-read { width: auto; min-width: 38px; padding-inline: .45rem; }
 .el-fmt-btn {
   display: inline-grid;
   place-items: center;
@@ -1270,10 +1279,25 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
 .xped-hotspot-stage.is-placeable { cursor: crosshair; }
 .xped-hotspot-stage img { display: block; width: 100%; height: auto; }
 .xped-hotspot-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.xped-hotspot-pin circle { fill: var(--pin-color, var(--xped-blue)); stroke: white; stroke-width: 2.2px; pointer-events: auto; cursor: pointer; }
-.xped-hotspot-pin text { fill: white; font: 700 .85rem var(--xped-font-body); pointer-events: none; }
-.xped-hotspot-pin.is-active circle { fill: var(--pin-color, var(--xped-yellow)); stroke: var(--xped-navy); stroke-width: 3.5px; }
-.xped-hotspot-pin.is-active text { fill: white; }
+.xped-hotspot-pin circle { stroke: white; stroke-width: 2.2px; pointer-events: auto; cursor: pointer; }
+.xped-hotspot-pin text { font: 700 .85rem var(--xped-font-body); pointer-events: none; }
+.xped-hotspot-pin.is-active circle { stroke: var(--xped-navy); stroke-width: 3.5px; }
+.xped-hotspot-stage.is-placeable .xped-hotspot-pin circle { touch-action: none; }
+.xped-inspector-pin, .el-field.xped-phone-pin-selector { display: none; }
+.el-insp-card.is-selected-pin { border-color: var(--xped-blue); }
+.el-swatch-btn svg { width: 100%; height: 100%; display: block; }
+@media (max-width: 920px) {
+  .xped-inspector-pin { display: flex; align-items: center; gap: .8rem; margin: .5rem 0; }
+  .xped-inspector-pin-image { position: relative; flex: none; }
+  .xped-inspector-pin-image img { height: 80px; max-width: 135px; width: auto; display: block; border-radius: 4px; }
+  .xped-inspector-pin-image circle { r: 10; }
+  .xped-inspector-pin-image text { font-size: .65rem; }
+  .el-field.xped-phone-pin-selector { display: grid; }
+  .el-insp-card[data-pin-id]:not(.is-selected-pin) { display: none; }
+  .xped-inspector-pin figcaption { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
+}
+.xped-pin-title { display: block; }
+.xped-pin-detail { margin: .35em 0 0; }
 .xped-pin-chip-dot {
   width: 10px;
   height: 10px;
@@ -1680,6 +1704,7 @@ dialog.el-dialog[open]:where(:not([data-closing]))::backdrop {
 }
 
 /* WP03 Polish: MCQ ARIA state badge, inline link popover, scale untouched, limits */
+.xped-option-key { font-size: .75em; font-weight: 600; }
 .xped-option-label { flex: 1; min-width: 0; }
 .xped-option-state {
   margin-left: auto;
@@ -1761,4 +1786,35 @@ dialog.el-dialog[open]:where(:not([data-closing]))::backdrop {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.el-reflection-answer { white-space: pre-wrap; }
+/* Balance Scale Snapshot in Personal Summary */
+.el-summary-balance-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+.el-summary-balance-col {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--xped-surface);
+  border: 1px solid var(--xped-border);
+  font-size: 0.88rem;
+}
+.el-summary-balance-col strong { display: block; margin-bottom: 4px; color: var(--xped-navy); }
+
+/* Personal Expedition Summary */
+.el-summary-section {
+  margin-top: 18px;
+  padding: 20px 22px;
+  border-radius: var(--xped-radius-md);
+  background: var(--xped-canvas);
+}
+.el-summary-section h2 { font-size: 1rem; margin-bottom: 10px; }
+
+
+@media (max-width: 600px) {
+  .el-summary-balance-grid { grid-template-columns: 1fr; }
 }

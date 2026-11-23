@@ -22,6 +22,9 @@
   var privateMedia = new Map();
   var saveVersion = 0;
   var savedVersion = 0;
+  var acceptedCourse = null;
+  var resolveConflict = false;
+  var renewBeforeSave = false;
   var writing = Promise.resolve();
 
   var urlParams = new URLSearchParams(window.location.search);
@@ -108,7 +111,7 @@
   var shareDialog = document.getElementById('el-share-dialog');
 
   // Hydrate crisp SVG chrome icons
-  document.getElementById('el-back-link').appendChild(Icons.icon('arrowLeft', 18));
+  document.getElementById('el-back-link').prepend(Icons.icon('arrowLeft', 16));
   document.getElementById('el-undo-btn').appendChild(Icons.icon('undo', 17));
   document.getElementById('el-redo-btn').appendChild(Icons.icon('redo', 17));
   document.getElementById('el-nav-start-icon').appendChild(Icons.icon('compass', 16));
@@ -117,10 +120,10 @@
   var vpMob = document.getElementById('el-vp-mobile');
   vpDesk.textContent = '';
   vpDesk.appendChild(Icons.icon('monitor', 14));
-  vpDesk.appendChild(document.createTextNode(' Desktop'));
+  vpDesk.appendChild(document.createTextNode(' Available width'));
   vpMob.textContent = '';
   vpMob.appendChild(Icons.icon('phone', 14));
-  vpMob.appendChild(document.createTextNode(' Mobile'));
+  vpMob.appendChild(document.createTextNode(' Phone'));
   var shareBtn = document.getElementById('el-share-btn');
   shareBtn.textContent = '';
   shareBtn.appendChild(Icons.icon('share', 15));
@@ -212,8 +215,9 @@
     items: LANG_OPTIONS,
     value: state.trSource,
     onChange: function (val) {
+      if (val === state.trTarget) return;
       state.trSource = val;
-      trSourceDD.setItems(LANG_OPTIONS, val);
+      trSourceDD.setItems(LANG_OPTIONS.filter(function (item) { return item.value !== state.trTarget; }), val);
       renderTranslateMode();
     },
   });
@@ -229,6 +233,8 @@
       if (hasPendingTranslations() && !(await saveTranslationsNow())) return;
       if (hasPendingTranslations()) return;
       state.trTarget = val;
+      if (state.trSource === val) state.trSource = Model.SUPPORTED_LANGS.find(function (lang) { return lang !== val; });
+      trSourceDD.setItems(LANG_OPTIONS.filter(function (item) { return item.value !== val; }), state.trSource);
       trTargetDD.setItems(LANG_OPTIONS, val);
       renderTranslateMode();
     },
@@ -274,13 +280,14 @@
       hide: function () { toastEl.hidden = true; },
     });
     if (typeof undoCb !== 'function') return;
+    var undoMode = state.mode;
     var ubtn = document.createElement('button');
     ubtn.type = 'button';
     ubtn.className = 'el-btn el-btn-sm';
     ubtn.textContent = 'Undo';
     ubtn.addEventListener('click', function () {
       toastEl.hidden = true;
-      undoCb();
+      if (undoMode === state.mode) undoCb();
     });
     toastEl.appendChild(ubtn);
   }
@@ -359,9 +366,18 @@
     return (pair.step.blocks || []).find(function (b) { return b.id === state.selectedBlockId; }) || null;
   }
 
+  var lastEditingField = null;
+  document.addEventListener('focusout', function (event) {
+    if (event.target === lastEditingField) lastEditingField = null;
+  });
+
+  function historyEntry(label) {
+    return { label: label || 'edit', snapshot: clone(state.exp), target: clone(state.selectedTarget), blockId: state.selectedBlockId };
+  }
+
   function pushUndo(label) {
     if (!state.exp) return;
-    state.undoStack.push({ label: label || 'edit', snapshot: clone(state.exp) });
+    state.undoStack.push(historyEntry(label));
     if (state.undoStack.length > 40) state.undoStack.shift();
     state.redoStack = [];
     updateUndoButtons();
@@ -371,23 +387,38 @@
     var snapshot = entry && entry.snapshot ? entry.snapshot : entry;
     if (!snapshot) return;
     snapshot.revision = state.exp.revision;
+    snapshot.share = state.exp.share;
     state.exp = snapshot;
+    if (entry.target) {
+      state.selectedTarget = clone(entry.target);
+      state.selectedBlockId = entry.blockId || '';
+    }
     updateUndoButtons();
     renderAll();
     scheduleSave();
   }
 
-  function rebaseUndoStacksWithTranslations(latestExp, langCode) {
+  function rebaseUndoStacksWithTranslations(latestExp, langCode, texts, media) {
     var latestRows = Model.extractTranslationRows(latestExp, state.trSource, langCode);
-    var latestMap = new Map(latestRows.map(function (r) { return [r.key, r.locObj[langCode]]; }));
+    var latestRowsByKey = new Map(latestRows.map(function (r) { return [r.key, r]; }));
+    var byBlock = new Map(Model.extractMediaTranslationRows(latestExp, langCode).map(function (r) { return [r.blockId, r.block.data.mediaOverrides?.[langCode]]; }));
     function patchStack(stack) {
       stack.forEach(function (entry) {
         var snap = entry && entry.snapshot;
         if (!snap) return;
         Model.extractTranslationRows(snap, state.trSource, langCode).forEach(function (row) {
-          if (latestMap.has(row.key)) {
-            row.locObj[langCode] = latestMap.get(row.key);
+          if ((!texts || Object.hasOwn(texts, row.key)) && latestRowsByKey.has(row.key)) {
+            row.locObj[langCode] = latestRowsByKey.get(row.key).locObj[langCode];
+            var live = latestRowsByKey.get(row.key).locObj._review || {};
+            if (live[langCode]) (row.locObj._review ||= {})[langCode] = true;
+            else if (row.locObj._review) delete row.locObj._review[langCode];
           }
+        });
+        Model.extractMediaTranslationRows(snap, langCode).forEach(function (r) {
+          if ((media && !Object.hasOwn(media, r.blockId)) || !byBlock.has(r.blockId)) return;
+          var localized = byBlock.get(r.blockId);
+          if (localized) (r.block.data.mediaOverrides ||= {})[langCode] = clone(localized);
+          else if (r.block.data.mediaOverrides) delete r.block.data.mediaOverrides[langCode];
         });
       });
     }
@@ -414,7 +445,7 @@
     if (saveRetryBtn) {
       var pendingCount = Math.max(0, saveVersion - savedVersion);
       saveRetryBtn.hidden = !showRetry;
-      saveRetryBtn.title = pendingCount > 0 ? (pendingCount + ' unsaved change(s)') : 'Retry saving';
+      saveRetryBtn.textContent = showRetry && pendingCount ? ('Retry save (' + pendingCount + ')') : 'Retry save';
     }
   }
 
@@ -443,10 +474,10 @@
   }
 
   async function saveNow() {
-    if (leavingAccount || savedVersion === saveVersion || !canEditStructure() || !state.exp) return;
-    if (!state.leaseToken) {
+    if (leavingAccount || resolveConflict || savedVersion === saveVersion || !canEditStructure() || !state.exp) return;
+    if (!state.leaseToken || renewBeforeSave) {
       await acquireLease(false);
-      if (!state.leaseToken) { setSaveStatus('Save paused', false, true); return; }
+      if (!state.leaseToken) { if (!resolveConflict) setSaveStatus('Save paused', false, true); return; }
     }
     var version = saveVersion;
     try {
@@ -458,17 +489,22 @@
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId), {
         method: 'PUT', body: JSON.stringify(body),
       });
+      acceptedCourse = clone(res.expedition);
       state.exp.revision = res.expedition.revision;
       syncReviewFlags(res.expedition);
       savedVersion = version;
       if (version === saveVersion) setSaveStatus('Saved', true, false);
     } catch (err) {
+      if (err.status === 409) {
+        renewBeforeSave = true;
+        clearInterval(state.leaseTimer);
+      }
       setSaveStatus('Save paused', false, true);
       showToast(err.message, 'error');
     }
   }
 
-  async function acquireLease(takeover) {
+  async function acquireLease(takeover, openSaved) {
     if (!canEditStructure() || !expeditionId) return;
     try {
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/lease', {
@@ -476,13 +512,52 @@
         body: JSON.stringify({ action: 'acquire', takeover: !!takeover }),
       });
       if (res.granted) {
+        if (openSaved || (res.revision && res.revision !== state.exp.revision && !hasPendingTranslations())) {
+          state.leaseToken = '';
+          workspace.inert = true;
+          titleInput.disabled = true;
+          var refreshed = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId));
+          var latest = refreshed.expedition;
+          var merged = openSaved || savedVersion === saveVersion ? { expedition: latest, conflicts: [] } : Model.mergeCourseEdits(acceptedCourse, state.exp, latest);
+          if (merged.conflicts.length) {
+            state.leaseToken = '';
+            clearInterval(state.leaseTimer);
+            titleInput.disabled = true;
+            workspace.inert = true;
+            leaseBanner.hidden = false;
+            leaseMsg.textContent = 'Both tabs changed the same part of this expedition. Download your draft before opening the saved version.';
+            resolveConflict = true;
+            document.getElementById('el-conflict-download').hidden = false;
+            document.getElementById('el-takeover-btn').textContent = 'Open saved version';
+            setSaveStatus('Conflicting edits', false, false);
+            return;
+          }
+          if (openSaved) {
+            savedVersion = saveVersion;
+            resolveConflict = false;
+            document.getElementById('el-conflict-download').hidden = true;
+            document.getElementById('el-takeover-btn').textContent = 'Take Over Editing';
+          }
+          acceptedCourse = clone(latest);
+          state.exp = merged.expedition;
+          state.leaseToken = res.lease_token;
+          if (state.selectedTarget.type === 'step' && !currentModuleAndStep().step) {
+            state.selectedTarget = {type: 'startPage'};
+            state.selectedBlockId = '';
+          }
+          state.undoStack = [];
+          state.redoStack = [];
+          updateUndoButtons();
+          renderAll();
+        }
         state.leaseToken = res.lease_token;
+        renewBeforeSave = false;
         titleInput.disabled = false;
         workspace.inert = false;
         leaseBanner.hidden = true;
         if (savedVersion === saveVersion) setSaveStatus('Saved', true, false);
         clearInterval(state.leaseTimer);
-        state.leaseTimer = setInterval(function () { acquireLease(false); }, 40000);
+        state.leaseTimer = setInterval(function () { writing = writing.then(function () { return acquireLease(false); }); }, 40000);
       } else {
         state.leaseToken = '';
         titleInput.disabled = true;
@@ -491,9 +566,9 @@
         var agoSec = (res.editor && res.editor.updated_at) ? Math.max(1, Math.round(Date.now() / 1000 - res.editor.updated_at)) : 0;
         var agoTxt = agoSec ? (' (active ' + (agoSec < 60 ? (agoSec + 's') : (Math.round(agoSec / 60) + 'm')) + ' ago)') : '';
         if (res.same_account) {
-          leaseMsg.textContent = 'You already have this expedition open in another browser tab or window' + agoTxt + '. Take over editing here to continue.';
+          leaseMsg.textContent = 'You already have this expedition open in another browser tab or window' + agoTxt + '. Taking over stops saves from that tab. Save pending edits there first.';
         } else {
-          leaseMsg.textContent = edName + ' is currently editing this expedition' + agoTxt + '. You can safely preview or take over.';
+          leaseMsg.textContent = edName + ' is currently editing this expedition' + agoTxt + '. Preview is available. Taking over stops their unsaved changes from being saved.';
         }
         leaseBanner.hidden = false;
         saveStateEl.textContent = res.same_account ? 'Open in another tab' : (edName + ' editing');
@@ -510,36 +585,67 @@
 
   function mutate(fn, opts) {
     if (!canEditStructure() || !state.leaseToken || !state.exp || leavingAccount) return;
-    if (!opts || opts.recordUndo !== false) pushUndo(opts && opts.label);
+    if (!opts || opts.recordUndo !== false) {
+      lastEditingField = null;
+      pushUndo(opts && opts.label);
+    } else {
+      var field = document.activeElement;
+      if (field && field.matches('input, textarea, [contenteditable]') && field !== lastEditingField) {
+        var fieldLabel = field.getAttribute('aria-label') || (field.labels && field.labels[0] && field.labels[0].textContent) || field.getAttribute('data-placeholder') || 'text';
+        pushUndo('edit ' + fieldLabel);
+        lastEditingField = field;
+      }
+    }
     fn();
     if (opts && opts.recordUndo === false && inspectorBodyEl.contains(document.activeElement)) {
-      renderCanvas();
+      var block = currentBlock();
+      var node = block && canvasCardEl.querySelector('[data-block-id="' + CSS.escape(block.id) + '"]');
+      if (node && state.inspectorTab === 'block') {
+        var open = Array.from(node.querySelectorAll('details'), function (detail) { return detail.open; });
+        var next = renderAuthorBlock(block, currentModuleAndStep());
+        next.querySelectorAll('details').forEach(function (detail, i) { detail.open = !!open[i]; });
+        node.replaceWith(next);
+        updateReadabilityCue();
+      } else {
+        renderCanvas();
+      }
       renderOutline();
     } else if (!opts || opts.rerender !== false) renderAll();
     else updateReadabilityCue();
     scheduleSave();
   }
 
+  function findLiveBlock(id) {
+    return (state.exp?.modules || []).flatMap(function (m) {
+      return (m.steps || []).flatMap(function (step) { return step.blocks || []; });
+    }).find(function (block) { return block.id === id; });
+  }
+
   var uploadsInProgress = 0;
   async function uploadFileForBlock(blk, file) {
     var upKey = blk === 'startPage' ? 'startPage' : (blk && blk.id ? blk.id : 'media');
     uploadsInProgress++;
-    state.blockUploads[upKey] = { status: 'uploading', fileName: file.name || 'media file', error: '', file: file };
+    var operation = { status: 'uploading', fileName: file.name || 'media file', error: '', file: file };
+    state.blockUploads[upKey] = operation;
     renderInspector();
     var fd = new FormData();
     fd.append('file', file);
     try {
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/assets', { method: 'POST', body: fd });
+      if (state.blockUploads[upKey] !== operation || leavingAccount || !state.exp) return;
       delete state.blockUploads[upKey];
+      var target = blk === 'startPage' ? state.exp.startPage : findLiveBlock(upKey);
+      if (!target) return;
       mutate(function () {
         if (blk === 'startPage') {
           state.exp.startPage.heroMedia = { kind: 'asset', assetId: res.asset.id, staticPath: '' };
         } else {
-          blk.data.media = { kind: 'asset', assetId: res.asset.id, staticPath: '' };
+          target.data.media = { kind: 'asset', assetId: res.asset.id, staticPath: '' };
         }
       }, { label: 'upload media' });
       showToast('Uploaded ' + (file.name || 'media'));
     } catch (err) {
+      if (state.blockUploads[upKey] !== operation || leavingAccount || !state.exp) return;
       state.blockUploads[upKey] = { status: 'error', fileName: file.name || 'media file', error: err.message || 'Upload failed', file: file };
       renderInspector();
       showToast(err.message, 'error');
@@ -550,6 +656,7 @@
 
   function setMode(nextMode) {
     if (!canEditStructure() && nextMode === 'edit') nextMode = 'translate';
+    if (state.mode !== nextMode) toastEl.hidden = true;
     state.mode = nextMode;
     document.querySelectorAll('.el-mode-tab').forEach(function (tab) {
       var active = tab.getAttribute('data-mode') === nextMode;
@@ -714,6 +821,7 @@
       toggleBtn.type = 'button';
       toggleBtn.className = 'el-module-toggle';
       toggleBtn.setAttribute('data-toggle-mod', mod.id);
+      toggleBtn.setAttribute('aria-controls', 'steps-' + mod.id);
       toggleBtn.title = isCollapsed ? 'Expand station' : 'Collapse station';
       toggleBtn.setAttribute('aria-label', (isCollapsed ? 'Expand ' : 'Collapse ') + modTitle + ' (' + stepTotal + (stepTotal === 1 ? ' step' : ' steps') + ')');
       toggleBtn.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
@@ -730,6 +838,11 @@
       headBtn.className = 'el-module-title-btn';
       var dot = document.createElement('span');
       dot.className = 'xped-domain-dot domain-' + (mod.domain || 'general');
+      if (mod.domain && mod.domain !== 'general') {
+        dot.title = { bio: 'Biological', psycho: 'Psychological', social: 'Social' }[mod.domain] || mod.domain;
+        dot.setAttribute('aria-label', dot.title);
+        dot.setAttribute('role', 'img');
+      }
       var label = document.createElement('span');
       label.setAttribute('translate', 'no');
       label.textContent = modTitle;
@@ -803,14 +916,17 @@
 
       var stepList = document.createElement('div');
       stepList.className = 'el-step-list';
+      stepList.id = 'steps-' + mod.id;
       (mod.steps || []).forEach(function (step, sIdx) {
         var active = state.selectedTarget.type === 'step' && state.selectedTarget.stepId === step.id;
         var rawStepTitle = Model.getLocalized(step.title, state.editLang, state.exp.defaultLanguage) || 'Untitled step';
-        var cleanStepTitle = rawStepTitle.replace(/^\d+\.\s+/, '');
+        // Only the legacy example shipped with numbers embedded in these titles.
+        var cleanStepTitle = rawStepTitle.replace(/^[123]\. (?=Prikkelende vraag$|Opening question$|Uitleg & video$|Explanation & video$|Korte reflectie$|Short reflection$)/, '');
         var stepLine = document.createElement('div');
         stepLine.className = 'el-step-line' + (active ? ' is-active' : '');
         var sbtn = document.createElement('button');
         stepLine.appendChild(sbtn);
+        sbtn.dataset.stepId = step.id;
         if (active) sbtn.setAttribute('aria-current', 'step');
         sbtn.type = 'button';
         sbtn.className = 'el-step-row' + (active ? ' is-active' : '');
@@ -929,7 +1045,16 @@
         var stDot = document.createElement('span');
         stDot.className = 'el-status-dot status-' + derivedStatus;
         stDot.title = 'Status: ' + derivedStatus;
+        stDot.setAttribute('role', 'img');
+        stDot.setAttribute('aria-label', stDot.title);
         sbtn.appendChild(stDot);
+        if ((step.branching || []).some(function (rule) { return !mod.steps.some(function (candidate) { return candidate.id === rule.targetStepId; }); })) {
+          var broken = Icons.icon('alertCircle', 14);
+          broken.setAttribute('aria-hidden', 'false');
+          broken.setAttribute('role', 'img');
+          broken.setAttribute('aria-label', 'Jump destination missing');
+          sbtn.appendChild(broken);
+        }
 
         sbtn.addEventListener('click', function () {
           state.selectedTarget = { type: 'step', moduleId: mod.id, stepId: step.id };
@@ -1104,12 +1229,24 @@
           targetPin.y = val.y;
           state.selectedPinId = targetPin.id;
         }, { label: 'move hotspot pin' });
+        if (val.keyboard) canvasCardEl.querySelector('[data-pin-id="' + CSS.escape(val.id) + '"]')?.focus({preventScroll:true});
       }
       return;
     }
     if (field === 'selectPin') {
       state.selectedPinId = val || '';
       if (state.selectedBlockId === blk.id && state.inspectorTab === 'block') {
+        renderInspector();
+      }
+      return;
+    }
+    var nestedField = field.match(/^(citation|pinLabel|pinDetail):(.+)$/);
+    if (nestedField) {
+      var isCitation = nestedField[1] === 'citation';
+      var item = (isCitation ? blk.data.items : blk.data.pins).find(function (entry) { return entry.id === nestedField[2]; });
+      var key = isCitation ? 'citation' : (nestedField[1] === 'pinLabel' ? 'label' : 'detail');
+      if (item) {
+        mutate(function () { item[key] = Model.setLocalized(item[key], lang, val); }, { recordUndo: false, rerender: false });
         renderInspector();
       }
       return;
@@ -1161,6 +1298,20 @@
     handle.setAttribute('aria-hidden', 'true');
     handle.appendChild(Icons.icon('grip', 13));
     bar.appendChild(handle);
+    var properties = document.createElement('button');
+    properties.type = 'button';
+    properties.className = 'el-block-properties';
+    properties.title = 'Block properties';
+    properties.setAttribute('aria-label', 'Block properties');
+    properties.appendChild(Icons.icon('sliders', 14));
+    properties.addEventListener('click', function () {
+      state.inspectorTab = 'block';
+      renderInspector();
+      selectPane('inspector');
+      var heading = inspectorBodyEl.querySelector('.el-insp-section-title');
+      if (heading) { heading.tabIndex = -1; heading.focus(); }
+    });
+    bar.appendChild(properties);
     [
       {
         ic: 'chevronUp',
@@ -1224,7 +1375,7 @@
           showToast('Block deleted.', function () {
             var m = (state.exp.modules || []).find(function (x) { return x.id === targetModId; });
             var s = m && (m.steps || []).find(function (x) { return x.id === targetStepId; });
-            if (!s) return;
+            if (!s || s.blocks.some(function (b) { return b.id === removed.id; })) return;
             mutate(function () {
               var ins = Math.min(liveIdx, s.blocks.length);
               s.blocks.splice(ins, 0, removed);
@@ -1239,6 +1390,7 @@
       b.type = 'button';
       b.title = a.title;
       b.setAttribute('aria-label', a.title);
+      if (a.ic === 'trash') b.className = 'el-block-delete';
       b.disabled = !!a.dis;
       b.appendChild(Icons.icon(a.ic, 14));
       b.addEventListener('click', function (ev) { ev.stopPropagation(); a.fn(); });
@@ -1248,7 +1400,7 @@
   }
 
   function syncBlockSelectionInDom(pair, nextBlockId) {
-    if (state.selectedBlockId === nextBlockId) return;
+    if (state.selectedBlockId === nextBlockId && state.inspectorTab === 'block') return;
     state.selectedBlockId = nextBlockId;
     state.inspectorTab = 'block';
     canvasCardEl.querySelectorAll('.el-canvas-block-wrap').forEach(function (node) {
@@ -1266,12 +1418,30 @@
     renderInspector();
   }
 
+  function renderAuthorBlock(blk, pair) {
+    return Blocks.renderBlock(blk, {
+      lang: state.editLang,
+      defaultLang: state.exp.defaultLanguage,
+      stepTitle: Model.getLocalized(pair.step.title, state.editLang, state.exp.defaultLanguage),
+      interactive: false,
+      editable: canEditStructure(),
+      selectedPinId: state.selectedPinId,
+      onFocusBlock: function (bid) { syncBlockSelectionInDom(pair, bid); },
+      onEdit: handleBlockInlineEdit,
+      onUploadFile: uploadFileForBlock,
+      assetUrl: assetUrl,
+      setMediaSource: setMediaSource,
+    });
+  }
+
   function renderCanvas() {
     var lang = state.editLang;
     var defLang = state.exp.defaultLanguage || 'nl';
     canvasCardEl.lang = lang;
     canvasFrameEl.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
-    canvasFrameEl.classList.toggle('is-mobile', state.viewport === 'mobile');
+    var simulatePhone = state.viewport === 'mobile' && !window.matchMedia('(max-width: 720px)').matches;
+    canvasFrameEl.classList.toggle('is-mobile', simulatePhone);
+    canvasFrameEl.setAttribute('aria-label', simulatePhone ? 'Editing canvas at phone width' : 'Editing canvas at available width');
 
     if (state.selectedTarget.type === 'startPage') {
       canvasCrumbEl.textContent = 'Start Page · ' + lang.toUpperCase();
@@ -1420,18 +1590,7 @@
         wrap.appendChild(buildBlockToolbar(pair, blk, bIdx));
       }
 
-      wrap.appendChild(Blocks.renderBlock(blk, {
-        lang: lang,
-        defaultLang: defLang,
-        stepTitle: curStepTitle,
-        interactive: false,
-        editable: canEditStructure(),
-        selectedPinId: state.selectedPinId,
-        onFocusBlock: function (bid) { syncBlockSelectionInDom(pair, bid); },
-        onEdit: handleBlockInlineEdit,
-        onUploadFile: uploadFileForBlock,
-        assetUrl: assetUrl, setMediaSource: setMediaSource,
-      }));
+      wrap.appendChild(renderAuthorBlock(blk, pair));
       stack.appendChild(wrap);
     });
 
@@ -1457,6 +1616,7 @@
       addBtn.className = 'el-btn';
       addBtn.appendChild(Icons.icon('plus', 15));
       addBtn.appendChild(document.createTextNode('Add Block'));
+      addBtn.setAttribute('aria-label', 'Add block at end');
       addBtn.addEventListener('click', function () { state.insertBlockAt = pair.step.blocks.length; openBlockPicker(); });
       addRow.appendChild(addBtn);
       stack.appendChild(addRow);
@@ -1469,6 +1629,17 @@
     // UX-013: Focus newly added step title immediately for inline naming
     if (state.focusStepTitleAfterRender) {
       state.focusStepTitleAfterRender = false;
+      selectPane('canvas');
+      var initialTitle = curStepTitle;
+      function cancelInitialTitle(event) {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        stepTitle.textContent = initialTitle;
+        stepTitle.dispatchEvent(new Event('input', { bubbles: true }));
+        stepTitle.blur();
+      }
+      stepTitle.addEventListener('keydown', cancelInitialTitle);
+      stepTitle.addEventListener('blur', function () { stepTitle.removeEventListener('keydown', cancelInitialTitle); }, { once: true });
       requestAnimationFrame(function () {
         stepTitle.focus();
         try {
@@ -1482,14 +1653,16 @@
     }
     // UX-025: Scroll & focus newly inserted block
     if (state.focusBlockAfterRender) {
+      selectPane('canvas');
       var fbId = state.focusBlockAfterRender;
       state.focusBlockAfterRender = '';
       requestAnimationFrame(function () {
         var bNode = canvasCardEl.querySelector('[data-block-id="' + CSS.escape(fbId) + '"]');
         if (bNode) {
           bNode.scrollIntoView({ behavior: ux.prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
-          var ed = bNode.querySelector('textarea, input, [contenteditable]');
-          if (ed) ed.focus();
+          var ed = bNode.querySelector('[contenteditable="plaintext-only"], textarea, input:not([type=hidden]), button');
+          if (!ed) { bNode.tabIndex = -1; ed = bNode; }
+          ed.focus({ preventScroll: true });
         }
       });
     }
@@ -1553,11 +1726,15 @@
     return lab;
   }
 
-  function buildVisualPicker(currentRef, targetForUpload, onPick, audioOnly, onPickAssetMeta) {
+  function buildVisualPicker(currentRef, targetForUpload, onPick, audioOnly) {
     var box = document.createElement('div');
     box.className = 'el-field';
     var upKey = targetForUpload === 'startPage' ? 'startPage' : (targetForUpload && targetForUpload.id ? targetForUpload.id : 'media');
     var hasMedia = !!(currentRef && currentRef.kind !== 'none');
+    function chooseMedia(ref, asset) {
+      delete state.blockUploads[upKey];
+      onPick(ref, asset);
+    }
 
     box.appendChild(Blocks.createDropzone(
       audioOnly ? (hasMedia ? 'Replace audio clip' : 'Upload audio clip') : (hasMedia ? 'Replace custom photo' : 'Upload custom photo'),
@@ -1570,6 +1747,7 @@
     var upState = state.blockUploads[upKey];
     if (upState) {
       var upBar = document.createElement('div');
+      upBar.setAttribute('role', 'status');
       upBar.className = 'el-upload-status' + (upState.status === 'error' ? ' is-error' : '');
       var upText = document.createElement('span');
       upText.textContent = upState.status === 'uploading'
@@ -1596,7 +1774,7 @@
       rmBtn.className = 'el-btn el-btn-danger el-btn-sm';
       rmBtn.textContent = audioOnly ? 'Remove audio' : 'Remove image';
       rmBtn.addEventListener('click', function () {
-        onPick({ kind: 'none', assetId: '', staticPath: '' });
+        chooseMedia({ kind: 'none', assetId: '', staticPath: '' });
       });
       rmRow.appendChild(rmBtn);
       box.appendChild(rmRow);
@@ -1629,7 +1807,7 @@
       noneBtn.className = 'el-asset-thumb' + (!currentRef || currentRef.kind === 'none' ? ' is-selected' : '');
       noneBtn.textContent = 'None';
       noneBtn.setAttribute('aria-pressed', String(!currentRef || currentRef.kind === 'none'));
-      noneBtn.addEventListener('click', function () { onPick({ kind: 'none', assetId: '', staticPath: '' }); });
+      noneBtn.addEventListener('click', function () { chooseMedia({ kind: 'none', assetId: '', staticPath: '' }); });
       grid.appendChild(noneBtn);
 
       Model.XPED_ASSETS.forEach(function (asset) {
@@ -1646,8 +1824,7 @@
         btn.appendChild(img);
         btn.appendChild(sp);
         btn.addEventListener('click', function () {
-          onPick({ kind: 'xped', assetId: '', staticPath: asset.path });
-          if (typeof onPickAssetMeta === 'function') onPickAssetMeta(asset);
+          chooseMedia({ kind: 'xped', assetId: '', staticPath: asset.path }, asset);
         });
         grid.appendChild(btn);
       });
@@ -1668,6 +1845,9 @@
       var on = t.getAttribute('data-insp') === state.inspectorTab;
       t.classList.toggle('is-active', on);
       t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      if (on) inspectorBodyEl.setAttribute('aria-labelledby', t.id);
+      t.tabIndex = on ? 0 : -1;
     });
     inspectorBodyEl.textContent = '';
     if (!state.exp) return;
@@ -1684,9 +1864,9 @@
       // UX-113: Visual Palette Cards with Swatches & Live Mini Specimen
       var currentPreset = (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand';
       var palettes = [
-        { id: 'xped-warm-sand', name: 'xPED Warm Sand (Recommended)', dots: ['#f6f1e9', '#062940', '#1fe4a9', '#ffd617'] },
-        { id: 'xped-clean', name: 'xPED Cool Light', dots: ['#f5f8fb', '#062940', '#007acc', '#1fe4a9'] },
-        { id: 'high-contrast', name: 'High Contrast (Accessibility)', dots: ['#ffffff', '#000000', '#005b99', '#087051'] },
+        { id: 'xped-warm-sand', name: 'xPED Warm Sand (Recommended)' },
+        { id: 'xped-clean', name: 'xPED Cool Light' },
+        { id: 'high-contrast', name: 'High Contrast (Accessibility)' },
       ];
       var palGrid = document.createElement('div');
       palGrid.className = 'el-palette-cards';
@@ -1697,42 +1877,68 @@
         cardBtn.setAttribute('aria-pressed', String(currentPreset === pal.id));
         var dots = document.createElement('div');
         dots.className = 'el-palette-dots';
-        pal.dots.forEach(function (hex) {
+        dots.dataset.xpedTheme = pal.id;
+        ['canvas', 'surface', 'action', 'accent'].forEach(function (tone) {
           var dEl = document.createElement('span');
-          dEl.className = 'el-palette-dot';
-          dEl.style.backgroundColor = hex;
+          dEl.className = 'el-palette-dot tone-' + tone;
           dots.appendChild(dEl);
         });
         var nm = document.createElement('strong');
         nm.textContent = pal.name;
+        cardBtn.dataset.palette = pal.id;
         cardBtn.append(dots, nm);
         cardBtn.addEventListener('click', function () {
-          mutate(function () { state.exp.theme.preset = pal.id; }, { label: 'change palette' });
+          spec.dataset.xpedTheme = pal.id;
+          palGrid.querySelectorAll('[data-palette]').forEach(function (button) {
+            var selected = button.dataset.palette === pal.id;
+            button.classList.toggle('is-selected', selected);
+            button.setAttribute('aria-pressed', String(selected));
+          });
+          applyPalette.disabled = pal.id === currentPreset;
         });
         palGrid.appendChild(cardBtn);
       });
       inspectorBodyEl.appendChild(palGrid);
 
       var spec = document.createElement('div');
-      spec.className = 'el-palette-specimen';
+      spec.className = 'el-palette-specimen xped-surface-scope';
       spec.setAttribute('data-xped-theme', currentPreset);
       var specCard = document.createElement('div');
       specCard.className = 'el-palette-specimen-card';
       var specT = document.createElement('strong');
-      specT.textContent = 'Live learner card preview';
+      specT.textContent = 'Your next step';
       var specP = document.createElement('span');
-      specP.textContent = 'Calm sand canvas, high-contrast typography, and subtle domain accents.';
-      specCard.append(specT, specP);
+      specP.textContent = 'A moment to reflect on what you learned.';
+      var sampleAction = document.createElement('span');
+      sampleAction.className = 'el-specimen-action';
+      sampleAction.textContent = 'Continue →';
+      var sampleFeedback = document.createElement('span');
+      sampleFeedback.className = 'el-specimen-feedback';
+      sampleFeedback.textContent = '✓ Answer saved';
+      specCard.append(specT, specP, sampleAction, sampleFeedback);
       spec.appendChild(specCard);
       inspectorBodyEl.appendChild(spec);
+      var applyPalette = document.createElement('button');
+      applyPalette.className = 'el-btn el-btn-sm';
+      applyPalette.type = 'button';
+      applyPalette.disabled = true;
+      applyPalette.textContent = 'Apply palette to expedition';
+      applyPalette.addEventListener('click', function () {
+        mutate(function () { state.exp.theme.preset = spec.dataset.xpedTheme; }, { label: 'change palette' });
+      });
+      inspectorBodyEl.appendChild(applyPalette);
 
       inspectorBodyEl.appendChild(fieldCheck('Show animated Expedition Route Map on Start Page', !state.exp.theme || state.exp.theme.showRouteMap !== false, function (v) {
         mutate(function () { state.exp.theme.showRouteMap = v; }, { label: 'toggle route map' });
       }));
 
-      // UX-114: Course Languages section linked from Translate Studio
+      return;
+    }
+
+    if (state.inspectorTab === 'languages') {
       var lh = document.createElement('div');
-      lh.id = 'el-design-languages';
+      lh.id = 'el-course-languages';
+      lh.tabIndex = -1;
       lh.className = 'el-insp-section-title';
       lh.textContent = 'Course Languages';
       inspectorBodyEl.appendChild(lh);
@@ -1831,22 +2037,25 @@
       var minLab = document.createElement('label');
       minLab.textContent = 'Estimated Minutes (author estimate, 1–120)';
       var minInp = document.createElement('input');
-      minInp.type = 'number';
-      minInp.min = '1';
-      minInp.max = '120';
-      minInp.step = '1';
+      minInp.type = 'text';
+      minInp.inputMode = 'numeric';
+      minInp.pattern = '[0-9]+';
       minInp.value = String(mod.estimatedMinutes || 5);
       minLab.htmlFor = minInp.id = Model.uid('mins');
       var minErr = document.createElement('p');
       minErr.className = 'el-insp-error';
       minErr.hidden = true;
+      minErr.id = minInp.id + '-error';
+      minInp.setAttribute('aria-describedby', minErr.id);
       minInp.addEventListener('input', function () {
         var n = Number(minInp.value);
-        if (!Number.isInteger(n) || n < 1 || n > 120) {
+        if (!/^\d+$/.test(minInp.value) || !Number.isInteger(n) || n < 1 || n > 120) {
+          minInp.setAttribute('aria-invalid', 'true');
           minErr.textContent = 'Enter a whole number between 1 and 120 minutes.';
           minErr.hidden = false;
         } else {
           minErr.hidden = true;
+          minInp.removeAttribute('aria-invalid');
           mutate(function () { mod.estimatedMinutes = n; }, { recordUndo: false });
         }
       });
@@ -1874,90 +2083,122 @@
 
       // UX-073, UX-074, UX-075: Complete Visual Branching Rule Builder
       var qBlocks = (step.blocks || []).filter(function (b) { return b.type === 'mcq' || b.type === 'myth_fact' || b.type === 'scale'; });
-      var curRule = (step.branching && step.branching[0]) || null;
-      if (curRule && !(mod.steps || []).some(function (s) { return s.id === curRule.targetStepId; })) {
-        var brokenWarn = document.createElement('div');
-        brokenWarn.className = 'el-insp-warn';
-        brokenWarn.textContent = 'This step has a branching jump pointing to a deleted step. Choose a new target or clear the rule.';
-        var clrBtn = document.createElement('button');
-        clrBtn.type = 'button';
-        clrBtn.className = 'el-btn el-btn-sm';
-        clrBtn.textContent = 'Clear broken rule';
-        clrBtn.addEventListener('click', function () {
-          mutate(function () { step.branching = []; }, { label: 'clear broken jump rule' });
-        });
-        brokenWarn.appendChild(document.createElement('br'));
-        brokenWarn.appendChild(clrBtn);
-        inspectorBodyEl.appendChild(brokenWarn);
-      }
-
-      if (qBlocks.length && mod.steps.length > 1) {
-        var brCard = document.createElement('div');
-        brCard.className = 'el-insp-card';
-        var brHead = document.createElement('div');
-        brHead.className = 'el-insp-card-head';
-        brHead.textContent = 'Conditional Jump Rule';
-        brCard.appendChild(brHead);
-
-        var targetOpts = [['', 'Continue to next step (no jump)']].concat(
-          mod.steps.filter(function (s) { return s.id !== step.id; }).map(function (s, i) {
-            return [s.id, 'Jump to: ' + (Model.getLocalized(s.title, lang, defLang) || ('Step ' + (i + 1)))];
-          })
-        );
-        brCard.appendChild(fieldSelect('When answered…', curRule ? curRule.targetStepId : '', targetOpts, function (tid) {
-          mutate(function () {
-            if (!tid) { step.branching = []; return; }
-            var firstQ = qBlocks[0];
-            var defVal = firstQ.type === 'myth_fact' ? 'myth' : (firstQ.type === 'mcq' ? ((firstQ.data.options && firstQ.data.options[0] && firstQ.data.options[0].id) || '') : '5');
-            step.branching = [{ blockId: (curRule && curRule.blockId) || firstQ.id, operator: (curRule && curRule.operator) || 'equals', value: (curRule && curRule.value) || defVal, targetStepId: tid }];
-          }, { label: 'update jump rule' });
-        }));
-
-        if (curRule) {
-          var srcBlock = qBlocks.find(function (b) { return b.id === curRule.blockId; }) || qBlocks[0];
-          if (qBlocks.length > 1) {
-            var qOpts = qBlocks.map(function (qb, qi) {
-              var qTxt = Model.getLocalized(qb.data.question || qb.data.statement, lang, defLang) || (Model.getBlockMeta(qb.type).label + ' #' + (qi + 1));
-              return [qb.id, qTxt.slice(0, 48)];
-            });
-            brCard.appendChild(fieldSelect('Source question', srcBlock.id, qOpts, function (bid) {
-              var pickedB = qBlocks.find(function (b) { return b.id === bid; }) || qBlocks[0];
-              mutate(function () {
-                curRule.blockId = pickedB.id;
-                curRule.operator = pickedB.type === 'scale' ? 'lte' : 'equals';
-                curRule.value = pickedB.type === 'myth_fact' ? 'myth' : (pickedB.type === 'mcq' ? ((pickedB.data.options && pickedB.data.options[0] && pickedB.data.options[0].id) || '') : '5');
-              }, { label: 'change jump source' });
-            }));
-          }
-
-          if (srcBlock.type === 'myth_fact') {
-            brCard.appendChild(fieldSelect('If learner chooses', curRule.value || 'myth', [
-              ['myth', 'Fabel / Myth'],
-              ['fact', 'Feit / Fact'],
-            ], function (val) {
-              mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: 'update jump answer' });
-            }));
-          } else if (srcBlock.type === 'mcq') {
-            var optChoices = (srcBlock.data.options || []).map(function (o, oi) {
-              return [o.id, Model.getLocalized(o.label, lang, defLang) || ('Option ' + (oi + 1))];
-            });
-            brCard.appendChild(fieldSelect('If learner chooses option', curRule.value || (optChoices[0] && optChoices[0][0]) || '', optChoices, function (val) {
-              mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: 'update jump option' });
-            }));
-          } else if (srcBlock.type === 'scale') {
-            brCard.appendChild(fieldSelect('Condition', curRule.operator || 'lte', [
-              ['lte', 'Score is at most (≤)'],
-              ['gte', 'Score is at least (≥)'],
-              ['equals', 'Score equals (=)'],
-            ], function (op) {
-              mutate(function () { curRule.operator = op; }, { label: 'update jump operator' });
-            }));
-            brCard.appendChild(fieldText('Threshold (' + (srcBlock.data.min ?? 0) + '–' + (srcBlock.data.max ?? 10) + ')', curRule.value || '5', function (v) {
-              mutate(function () { curRule.value = v; }, { recordUndo: false });
-            }));
-          }
+      var rules = step.branching || [];
+      (rules.length ? rules : [null]).forEach(function (curRule, ruleIndex) {
+        if (curRule && (!mod.steps.some(function (s) { return s.id === curRule.targetStepId; }) || !qBlocks.some(function (b) { return b.id === curRule.blockId; }))) {
+          var brokenWarn = document.createElement('div');
+          brokenWarn.className = 'el-insp-warn';
+          brokenWarn.textContent = 'This jump has a missing question or destination. Choose a replacement or clear the rule.';
+          var clrBtn = document.createElement('button');
+          clrBtn.type = 'button';
+          clrBtn.className = 'el-btn el-btn-sm';
+          clrBtn.textContent = 'Clear broken rule';
+          clrBtn.addEventListener('click', function () {
+            mutate(function () { step.branching.splice(ruleIndex, 1); }, { label: 'clear broken jump rule' });
+          });
+          brokenWarn.appendChild(document.createElement('br'));
+          brokenWarn.appendChild(clrBtn);
+          inspectorBodyEl.appendChild(brokenWarn);
         }
-        inspectorBodyEl.appendChild(brCard);
+
+        if (qBlocks.length && mod.steps.length > 1) {
+          var brCard = document.createElement('div');
+          brCard.className = 'el-insp-card';
+          var brHead = document.createElement('div');
+          brHead.className = 'el-insp-card-head';
+          brHead.textContent = rules.length > 1 ? 'Conditional jump ' + (ruleIndex + 1) : 'Conditional jump';
+          brCard.appendChild(brHead);
+
+          var targetOpts = [['', 'Continue to next step (no jump)']].concat(
+            mod.steps.filter(function (s) { return s.id !== step.id; }).map(function (s, i) {
+              return [s.id, 'Jump to: ' + (Model.getLocalized(s.title, lang, defLang) || ('Step ' + (i + 1)))];
+            })
+          );
+          brCard.appendChild(fieldSelect('When answered…', curRule ? curRule.targetStepId : '', targetOpts, function (tid) {
+            mutate(function () {
+              if (!tid) { if (curRule) step.branching.splice(ruleIndex, 1); return; }
+              if (curRule) { curRule.targetStepId = tid; return; }
+              var firstQ = qBlocks[0];
+              var defVal = firstQ.type === 'myth_fact' ? 'myth' : (firstQ.type === 'mcq' ? ((firstQ.data.options && firstQ.data.options[0] && firstQ.data.options[0].id) || '') : '5');
+              step.branching = [{ blockId: firstQ.id, operator: firstQ.type === 'scale' ? 'lte' : 'equals', value: defVal, targetStepId: tid }];
+            }, { label: 'update jump rule' });
+          }));
+
+          if (curRule) {
+            var srcBlock = qBlocks.find(function (b) { return b.id === curRule.blockId; }) || qBlocks[0];
+            if (qBlocks.length > 1 || !qBlocks.some(function (b) { return b.id === curRule.blockId; })) {
+              var qOpts = qBlocks.map(function (qb, qi) {
+                var qTxt = Model.getLocalized(qb.data.question || qb.data.statement, lang, defLang) || (Model.getBlockMeta(qb.type).label + ' #' + (qi + 1));
+                return [qb.id, qTxt];
+              });
+              brCard.appendChild(fieldSelect('Source question', curRule.blockId, qOpts, function (bid) {
+                var pickedB = qBlocks.find(function (b) { return b.id === bid; }) || qBlocks[0];
+                mutate(function () {
+                  curRule.blockId = pickedB.id;
+                  curRule.operator = pickedB.type === 'scale' ? 'lte' : 'equals';
+                  curRule.value = pickedB.type === 'myth_fact' ? 'myth' : (pickedB.type === 'mcq' ? ((pickedB.data.options && pickedB.data.options[0] && pickedB.data.options[0].id) || '') : '5');
+                }, { label: 'change jump source' });
+              }));
+            }
+
+            if (srcBlock.type === 'myth_fact') {
+              brCard.appendChild(fieldSelect('If learner chooses', curRule.value || 'myth', [
+                ['myth', 'Fabel / Myth'],
+                ['fact', 'Feit / Fact'],
+              ], function (val) {
+                mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: 'update jump answer' });
+              }));
+            } else if (srcBlock.type === 'mcq') {
+              var optChoices = (srcBlock.data.options || []).map(function (o, oi) {
+                return [o.id, Model.getLocalized(o.label, lang, defLang) || ('Option ' + (oi + 1))];
+              });
+              brCard.appendChild(fieldSelect('If learner chooses option', curRule.value || (optChoices[0] && optChoices[0][0]) || '', optChoices, function (val) {
+                mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: 'update jump option' });
+              }));
+            } else if (srcBlock.type === 'scale') {
+              brCard.appendChild(fieldSelect('Condition', curRule.operator || 'lte', [
+                ['lte', 'Score is at most (≤)'],
+                ['gte', 'Score is at least (≥)'],
+                ['equals', 'Score equals (=)'],
+              ], function (op) {
+                mutate(function () { curRule.operator = op; }, { label: 'update jump operator' });
+              }));
+              brCard.appendChild(fieldText('Threshold (' + (srcBlock.data.min ?? 0) + '–' + (srcBlock.data.max ?? 10) + ')', curRule.value || '5', function (v) {
+                mutate(function () { curRule.value = v; }, { recordUndo: false });
+              }));
+            }
+          }
+          inspectorBodyEl.appendChild(brCard);
+        }
+
+      });
+
+      var otherStations = state.exp.modules.filter(function (other) { return other.id !== mod.id; });
+      if (otherStations.length) {
+        var moveLabel = document.createElement('div');
+        moveLabel.className = 'el-insp-section-title';
+        moveLabel.textContent = 'Move step';
+        inspectorBodyEl.appendChild(moveLabel);
+        if (mod.steps.length > 1) {
+          var destinations = otherStations.map(function (other) {
+            return [other.id, Model.getLocalized(other.title, lang, defLang) || 'Untitled station'];
+          });
+          inspectorBodyEl.appendChild(fieldSelect('Move to station', '', [['', 'Choose a station…']].concat(destinations), function (id) {
+            var destination = otherStations.find(function (other) { return other.id === id; });
+            if (!destination) return;
+            mutate(function () {
+              mod.steps.splice(mod.steps.indexOf(step), 1);
+              destination.steps.push(step);
+              state.selectedTarget = { type: 'step', moduleId: destination.id, stepId: step.id };
+            }, { label: 'move step to station' });
+            announceOutline('Moved step to ' + Model.getLocalized(destination.title, lang, defLang));
+          }));
+        } else {
+          var reason = document.createElement('p');
+          reason.className = 'xped-caption';
+          reason.textContent = 'Add another step to this station before moving its only step elsewhere.';
+          inspectorBodyEl.appendChild(reason);
+        }
       }
 
       // UX-019: Explain & disable Delete Step when station has only 1 step + offer quick Add step
@@ -1976,17 +2217,15 @@
         var targetModId = mod.id;
         mutate(function () {
           mod.steps = mod.steps.filter(function (s) { return s.id !== step.id; });
-          // UX-075: Clean up broken branching targets pointing to this deleted step
-          mod.steps.forEach(function (other) {
-            if (Array.isArray(other.branching)) {
-              other.branching = other.branching.filter(function (r) { return r.targetStepId !== step.id; });
-            }
-          });
+          // Keep incoming rules repairable. A scoped undo immediately restores their destination.
           state.selectedTarget = { type: 'step', moduleId: mod.id, stepId: mod.steps[Math.min(removedIdx, mod.steps.length - 1)].id };
         }, { label: 'delete step' });
-        showToast('Step deleted.', function () {
+        var affected = mod.steps.filter(function (other) {
+          return (other.branching || []).some(function (rule) { return rule.targetStepId === step.id; });
+        }).map(function (other) { return Model.getLocalized(other.title, lang, defLang) || 'Untitled step'; });
+        showToast(affected.length ? 'Step deleted. Review the jump from ' + affected.join(', ') + '.' : 'Step deleted.', function () {
           var m = (state.exp.modules || []).find(function (x) { return x.id === targetModId; });
-          if (!m) return;
+          if (!m || m.steps.some(function (s) { return s.id === removedStep.id; })) return;
           mutate(function () {
             m.steps.splice(Math.min(removedIdx, m.steps.length), 0, removedStep);
             state.selectedTarget = { type: 'step', moduleId: targetModId, stepId: removedStep.id };
@@ -2006,6 +2245,7 @@
           state.selectedTarget = { type: 'startPage' };
         }, { label: 'delete station' });
         showToast('Station deleted.', function () {
+          if (state.exp.modules.some(function (m) { return m.id === removedMod.id; })) return;
           mutate(function () {
             state.exp.modules.splice(Math.min(removedModIdx, state.exp.modules.length), 0, removedMod);
             state.selectedTarget = { type: 'step', moduleId: removedMod.id, stepId: removedMod.steps[0].id };
@@ -2048,12 +2288,19 @@
     var mobPrev = document.createElement('div');
     mobPrev.className = 'el-insp-mobile-preview';
     var mobStrong = document.createElement('strong');
-    mobStrong.textContent = metaInfo.label;
+    mobStrong.textContent = Model.getLocalized(pair.step.title, lang, defLang) || metaInfo.label;
     var mobBack = document.createElement('button');
     mobBack.type = 'button';
     mobBack.className = 'el-btn el-btn-sm';
     mobBack.textContent = 'View on canvas';
-    mobBack.addEventListener('click', function () { selectPane('canvas'); });
+    mobBack.addEventListener('click', function () {
+      selectPane('canvas');
+      var wrap = canvasCardEl.querySelector('[data-wrap-block-id="' + CSS.escape(blk.id) + '"]');
+      if (wrap) {
+        wrap.tabIndex = -1;
+        wrap.focus();
+      }
+    });
     mobPrev.append(mobStrong, mobBack);
     inspectorBodyEl.appendChild(mobPrev);
 
@@ -2079,7 +2326,8 @@
     // UX-076: Warn / guard revealAfterAnswer if step has no interactive question block
     if (blk.type === 'callout' || blk.type === 'richtext' || blk.type === 'image' || blk.type === 'story' || blk.type === 'sources') {
       var interactiveSet = { mcq: 1, myth_fact: 1, scale: 1, reflection: 1, wordcloud: 1, ranking: 1, hotspot: 1, balance_scale: 1, mini_plan: 1 };
-      var stepHasInteractive = (pair.step.blocks || []).some(function (b) { return b.id !== blk.id && !!interactiveSet[b.type]; });
+      var eligible = (pair.step.blocks || []).filter(function (b) { return b.id !== blk.id && !!interactiveSet[b.type] && !(b.settings && b.settings.revealAfterAnswer); });
+      var stepHasInteractive = eligible.length > 0;
       var revOn = !!(blk.settings && blk.settings.revealAfterAnswer);
       inspectorBodyEl.appendChild(fieldCheck(
         'Reveal only after learner answers a question on this step',
@@ -2092,6 +2340,14 @@
         },
         !stepHasInteractive && !revOn
       ));
+      if (stepHasInteractive && revOn) {
+        var questionHint = document.createElement('p');
+        questionHint.className = 'xped-caption';
+        questionHint.textContent = 'Unlocks after an answer to ' + eligible.map(function (b) {
+          return Model.getLocalized(b.data.question || b.data.statement || b.data.prompt || b.data.title, lang, defLang) || Model.getBlockMeta(b.type).label;
+        }).join(', ') + '.';
+        inspectorBodyEl.appendChild(questionHint);
+      }
       if (!stepHasInteractive) {
         var revWarn = document.createElement('div');
         revWarn.className = 'el-insp-warn';
@@ -2106,6 +2362,18 @@
       inspectorBodyEl.appendChild(fieldText(lbl, (d[key] && d[key][lang]) || '', function (v) {
         mutate(function () { d[key] = Model.setLocalized(d[key], lang, v); }, { recordUndo: false });
       }, multi, key));
+    }
+
+    function setFigureMedia(ref, asset) {
+      mutate(function () {
+        var previous = Model.XPED_ASSETS.find(function (a) { return a.path === d.media?.staticPath; });
+        var alt = Object.assign({}, d.alt);
+        Model.SUPPORTED_LANGS.forEach(function (code) {
+          if (!alt[code] || alt[code] === previous?.alt?.[code]) alt[code] = asset?.alt?.[code] || '';
+        });
+        d.media = ref;
+        d.alt = alt;
+      }, {label: 'update image'});
     }
 
     if (blk.type === 'video') {
@@ -2125,26 +2393,42 @@
         var v = urlInp.value.trim();
         var oldId = d.videoId || '';
         var p = Model.parseVideoUrl(v);
-        var hadManualTrim = (d.startSeconds !== null && d.startSeconds !== undefined) || (d.endSeconds !== null && d.endSeconds !== undefined);
-        mutate(function () {
-          d.url = v;
-          d.provider = p.provider || '';
-          d.videoId = p.videoId || '';
-          d.embedUrl = p.embedUrl || '';
-          if (p.startSeconds !== null && !hadManualTrim) d.startSeconds = p.startSeconds;
-        }, { label: 'update video link' });
-        if (oldId && p.videoId && p.videoId !== oldId && hadManualTrim) {
-          trimPrompt.textContent = 'You replaced the video while a start/end trim is set. ';
-          var rst = document.createElement('button');
-          rst.type = 'button';
-          rst.className = 'el-btn el-btn-sm';
-          rst.textContent = 'Reset trim';
-          rst.addEventListener('click', function () {
-            mutate(function () { d.startSeconds = p.startSeconds; d.endSeconds = null; }, { label: 'reset video trim' });
-          });
-          trimPrompt.appendChild(rst);
+        var hadManualTrim = d.startSeconds != null || d.endSeconds != null;
+        if (v && !p.embedUrl) {
+          trimPrompt.textContent = p.error || 'Use a YouTube or Vimeo link.';
           trimPrompt.hidden = false;
+          return;
         }
+        function applyVideo(keepTrim) {
+          mutate(function () {
+            d.url = v;
+            d.provider = p.provider || '';
+            d.videoId = p.videoId || '';
+            d.embedUrl = p.embedUrl || '';
+            if (!keepTrim) { d.startSeconds = p.startSeconds; d.endSeconds = null; }
+          }, { label: 'update video link' });
+        }
+        if (!v || !oldId || !hadManualTrim || (oldId === p.videoId && p.startSeconds == null)) {
+          applyVideo(!!v && oldId === p.videoId && hadManualTrim);
+          return;
+        }
+        trimPrompt.replaceChildren();
+        var promptCopy = document.createElement('p');
+        var previousTrim = formatSecondsHuman(d.startSeconds || 0) + ' – ' + (d.endSeconds == null ? 'end' : formatSecondsHuman(d.endSeconds));
+        promptCopy.textContent = 'This video has a different start point. Choose which trim to use.';
+        var fromLink = document.createElement('button');
+        fromLink.type = 'button';
+        fromLink.className = 'el-btn el-btn-primary el-btn-sm';
+        fromLink.textContent = 'Use link time (' + formatSecondsHuman(p.startSeconds || 0) + ')';
+        fromLink.onclick = function () { applyVideo(false); };
+        var keep = document.createElement('button');
+        keep.type = 'button';
+        keep.className = 'el-btn el-btn-sm';
+        keep.textContent = 'Keep ' + previousTrim;
+        keep.onclick = function () { applyVideo(true); };
+        trimPrompt.append(promptCopy, fromLink, keep);
+        trimPrompt.hidden = false;
+
       });
       urlWrap.append(urlLab, urlInp);
       inspectorBodyEl.append(urlWrap, trimPrompt);
@@ -2199,7 +2483,9 @@
       locField('Collapsible Transcript / Summary', 'transcript', true);
     } else if (blk.type === 'image') {
       // UX-037: Warn when switching split -> full/framed if side text exists
-      var hasSideText = !!(Model.getLocalized(d.sideHeading, lang, defLang).trim() || Model.getLocalized(d.sideBody, lang, defLang).trim());
+      var hasSideText = Model.SUPPORTED_LANGS.some(function (code) {
+        return !!((d.sideHeading || {})[code]?.trim() || (d.sideBody || {})[code]?.trim());
+      });
       var wasSplit = d.layout === 'split-left' || d.layout === 'split-right';
       inspectorBodyEl.appendChild(fieldSelect('Layout', d.layout || 'full', [
         ['full', 'Full Width'],
@@ -2207,12 +2493,17 @@
         ['split-left', 'Split: Image Left'],
         ['split-right', 'Split: Image Right'],
       ], function (v) {
-        var isNextSplit = v === 'split-left' || v === 'split-right';
-        mutate(function () { d.layout = v; }, { label: 'change image layout' });
-        if (wasSplit && !isNextSplit && hasSideText) {
-          showToast('Side text is hidden in this layout (preserved if you switch back to Split).');
-        }
+        mutate(function () {
+          if (wasSplit && hasSideText && (v === 'full' || v === 'framed')) d.sideTextBelow = true;
+          d.layout = v;
+        }, { label: 'change image layout' });
       }));
+      if (!wasSplit && hasSideText) {
+        inspectorBodyEl.appendChild(fieldCheck('Show the saved side text below this image', !!d.sideTextBelow, function (checked) {
+          mutate(function () { d.sideTextBelow = checked; }, {label:'show or hide image text'});
+        }));
+      }
+
       // S-06: Image Alignment & Focal Point Controls
       if (!wasSplit) {
         inspectorBodyEl.appendChild(fieldSelect('Alignment', d.align || 'center', [
@@ -2221,7 +2512,11 @@
           ['right', 'Right aligned'],
         ], function (v) { mutate(function () { d.align = v; }, { label: 'change image alignment' }); }));
       }
+      inspectorBodyEl.appendChild(fieldCheck('Crop to a landscape frame', !!d.crop, function (checked) {
+        mutate(function () { d.crop = checked; }, {label: 'change image crop'});
+      }));
       var focalCard = document.createElement('div');
+      focalCard.hidden = !d.crop;
       focalCard.className = 'el-insp-card';
       var fcHead = document.createElement('div');
       fcHead.className = 'el-insp-card-head';
@@ -2235,12 +2530,14 @@
         var fl = document.createElement('label');
         fl.textContent = axis === 'focalX' ? 'Horizontal %' : 'Vertical %';
         var fi = document.createElement('input');
+        fl.htmlFor = fi.id = Model.uid('focal');
         fi.type = 'number';
         fi.min = '0';
         fi.max = '100';
         fi.value = String(d[axis] ?? 50);
-        fi.addEventListener('input', function () {
-          var nv = Math.max(0, Math.min(100, Number(fi.value) || 50));
+        fi.addEventListener('change', function () {
+          if (!fi.value || !fi.checkValidity()) { fi.reportValidity(); return; }
+          var nv = Number(fi.value);
           mutate(function () { d[axis] = nv; }, { recordUndo: false });
         });
         fw.append(fl, fi);
@@ -2249,14 +2546,7 @@
       focalCard.appendChild(fRow);
       inspectorBodyEl.appendChild(focalCard);
 
-      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) {
-        mutate(function () { d.media = ref; }, { label: 'update image' });
-      }, false, function (asset) {
-        // UX-036: Auto-populate localized alt text when picking official xPED asset if empty
-        if (asset && asset.alt && !Model.getLocalized(d.alt, lang, defLang).trim()) {
-          mutate(function () { d.alt = Object.assign({ nl: '', en: '', de: '' }, asset.alt); }, { recordUndo: false });
-        }
-      }));
+      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, setFigureMedia, false));
       locField('Alt Text (Accessibility)', 'alt', false);
     } else if (blk.type === 'audio') {
       inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) { mutate(function () { d.media = ref; }, { label: 'update audio' }); }, true));
@@ -2283,18 +2573,22 @@
         rmSrc.type = 'button';
         rmSrc.className = 'el-btn el-btn-danger el-btn-sm';
         rmSrc.textContent = 'Remove';
+        rmSrc.setAttribute('aria-label', 'Remove reference ' + (idx + 1));
         rmSrc.addEventListener('click', function () {
           var removed = clone(item);
           mutate(function () { d.items.splice(idx, 1); }, { label: 'remove reference' });
           showToast('Reference removed.', function () {
-            mutate(function () { d.items.splice(Math.min(idx, d.items.length), 0, removed); }, { label: 'restore reference' });
+            var entries = findLiveBlock(blk.id)?.data.items;
+            if (entries && !entries.some(function (entry) { return entry.id === removed.id; })) {
+              mutate(function () { entries.splice(Math.min(idx, entries.length), 0, removed); }, { label: 'restore reference' });
+            }
           });
         });
         sHead.appendChild(rmSrc);
         sCard.appendChild(sHead);
         sCard.appendChild(fieldText('Citation (' + lang.toUpperCase() + ')', item.citation[lang], function (v) {
           mutate(function () { item.citation = Model.setLocalized(item.citation, lang, v); }, { recordUndo: false });
-        }, true));
+        }, true, 'citation'));
         sCard.appendChild(fieldText('DOI or URL (e.g. 10.3174/ajnr.A4173)', item.url || '', function (v) {
           mutate(function () { item.url = v; }, { recordUndo: false });
         }));
@@ -2324,7 +2618,7 @@
       ], function (v) {
         mutate(function () {
           d.graded = v === 'graded';
-          if (d.graded && blk.settings.allowMultiple && !d.checkMode) d.checkMode = 'submit';
+          if (d.graded && blk.settings.allowMultiple) d.checkMode = 'submit';
         }, { label: 'change question mode' });
       }));
       inspectorBodyEl.appendChild(fieldCheck('Allow multiple selections', blk.settings.allowMultiple, function (v) {
@@ -2423,23 +2717,60 @@
       });
       inspectorBodyEl.appendChild(addRank);
     } else if (blk.type === 'hotspot') {
-      // S-13: Full Hotspot Pin Manager (color swatches, X/Y coords, reorder, delete)
-      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) {
-        mutate(function () { d.media = ref; }, { label: 'update hotspot image' });
-      }, false, function (asset) {
-        if (asset && asset.alt && !Model.getLocalized(d.alt, lang, defLang).trim()) {
-          mutate(function () { d.alt = Object.assign({ nl: '', en: '', de: '' }, asset.alt); }, { recordUndo: false });
+      var selectedPin = (d.pins || []).find(function (p) { return p.id === state.selectedPinId; }) || (d.pins || [])[0];
+      if (selectedPin) {
+        var preview = document.createElement('figure');
+        preview.className = 'xped-inspector-pin';
+        var imgUrl = Model.resolveMediaUrl(d.media, null, lang, assetUrl);
+        if (imgUrl) {
+          var thumb = document.createElement('div');
+          thumb.className = 'xped-inspector-pin-image';
+          var previewImage = document.createElement('img');
+          previewImage.alt = '';
+          setMediaSource(previewImage, imgUrl);
+          var markers = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          markers.classList.add('xped-hotspot-overlay');
+          markers.setAttribute('aria-hidden', 'true');
+          markers.appendChild(Blocks.pinMarker(selectedPin, d.pins.indexOf(selectedPin) + 1));
+          thumb.append(previewImage, markers);
+          preview.appendChild(thumb);
         }
-      }));
-      locField('Image Alt Description', 'alt', false);
-
+        var previewCaption = document.createElement('figcaption');
+        previewCaption.textContent = Model.getLocalized(pair.step.title, lang, defLang) + ' · ' + (Model.getLocalized(selectedPin.label, lang, defLang) || 'Pin ' + (d.pins.indexOf(selectedPin) + 1));
+        preview.appendChild(previewCaption);
+        inspectorBodyEl.appendChild(preview);
+        if (d.pins.length > 1) {
+          var selector = fieldSelect('Selected point', selectedPin.id, d.pins.map(function (pin, index) {
+            return [pin.id, (index + 1) + '. ' + (Model.getLocalized(pin.label, lang, defLang) || 'Untitled point')];
+          }), function (id) {
+            state.selectedPinId = id;
+            renderInspector();
+            renderCanvas();
+            inspectorBodyEl.querySelector('.is-selected-pin input')?.focus({preventScroll:true});
+          });
+          selector.classList.add('xped-phone-pin-selector');
+          inspectorBodyEl.appendChild(selector);
+        }
+      }
       (d.pins || []).forEach(function (pin, idx) {
         var pCard = document.createElement('div');
         pCard.className = 'el-insp-card';
-        if (pin.id === state.selectedPinId) pCard.style.borderColor = 'var(--xped-blue)';
+        pCard.dataset.pinId = pin.id;
+        pCard.classList.toggle('is-selected-pin', pin === selectedPin);
         var pHead = document.createElement('div');
         pHead.className = 'el-insp-card-head';
-        pHead.appendChild(document.createTextNode('Pin #' + (idx + 1)));
+        var pinHeading = document.createElement('button');
+        pinHeading.type = 'button';
+        pinHeading.className = 'el-btn el-btn-sm';
+        pinHeading.textContent = 'Pin ' + (idx + 1);
+        pinHeading.setAttribute('aria-pressed', String(pin === selectedPin));
+        pinHeading.onclick = function () {
+          state.selectedPinId = pin.id;
+          renderInspector();
+          renderCanvas();
+          inspectorBodyEl.querySelector('[data-pin-id="' + CSS.escape(pin.id) + '"] input')?.focus({ preventScroll:true });
+        };
+        pHead.appendChild(pinHeading);
         var pActs = document.createElement('div');
         pActs.className = 'el-btn-row';
         if ((d.pins || []).length > 1) {
@@ -2471,7 +2802,10 @@
           var removedPin = clone(pin);
           mutate(function () { d.pins.splice(idx, 1); }, { label: 'delete hotspot pin' });
           showToast('Pin removed.', function () {
-            mutate(function () { d.pins.splice(Math.min(idx, d.pins.length), 0, removedPin); }, { label: 'restore pin' });
+            var entries = findLiveBlock(blk.id)?.data.pins;
+            if (entries && !entries.some(function (entry) { return entry.id === removedPin.id; })) {
+              mutate(function () { entries.splice(Math.min(idx, entries.length), 0, removedPin); }, { label: 'restore pin' });
+            }
           });
         });
         pActs.appendChild(pDel);
@@ -2485,15 +2819,16 @@
           mutate(function () { pin.detail = Model.setLocalized(pin.detail, lang, v); }, { recordUndo: false });
         }, true));
 
-        // Pin color swatches
+        // Pin colors
         var swRow = document.createElement('div');
         swRow.className = 'el-swatch-row';
         (Model.HOTSPOT_PIN_COLORS || []).forEach(function (col) {
           var swBtn = document.createElement('button');
           swBtn.type = 'button';
           swBtn.className = 'el-swatch-btn' + ((pin.color || '#0072CE').toUpperCase() === col.hex ? ' is-active' : '');
-          swBtn.style.backgroundColor = col.hex;
+          swBtn.appendChild(Blocks.colorSwatch(col.hex));
           swBtn.title = col.label;
+          swBtn.setAttribute('aria-pressed', String((pin.color || '#0072CE').toUpperCase() === col.hex));
           swBtn.setAttribute('aria-label', 'Pin ' + (idx + 1) + ' color: ' + col.label);
           swBtn.addEventListener('click', function () {
             mutate(function () { pin.color = col.hex; }, { label: 'change pin color' });
@@ -2511,12 +2846,14 @@
           var cl = document.createElement('label');
           cl.textContent = axis.toUpperCase() + ' %';
           var ci = document.createElement('input');
+          cl.htmlFor = ci.id = Model.uid('pin-coordinate');
           ci.type = 'number';
-          ci.min = '2';
-          ci.max = '98';
+          ci.min = '0';
+          ci.max = '100';
           ci.value = String(Math.round(pin[axis] ?? 50));
-          ci.addEventListener('input', function () {
-            var nv = Math.max(2, Math.min(98, Number(ci.value) || 50));
+          ci.addEventListener('change', function () {
+            if (!ci.value || !ci.checkValidity()) { ci.reportValidity(); return; }
+            var nv = Number(ci.value);
             mutate(function () { pin[axis] = nv; }, { recordUndo: false });
           });
           cw.append(cl, ci);
@@ -2525,6 +2862,8 @@
         pCard.appendChild(coordRow);
         inspectorBodyEl.appendChild(pCard);
       });
+      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, setFigureMedia, false));
+      locField('Image Alt Description', 'alt', false);
     } else if (blk.type === 'balance_scale') {
       locField('Left Label (Load)', 'loadLabel', false);
       locField('Right Label (Resources)', 'resourceLabel', false);
@@ -2607,26 +2946,55 @@
       mvHead.textContent = 'Organize Block';
       inspectorBodyEl.appendChild(mvHead);
       inspectorBodyEl.appendChild(fieldSelect('Move block to another step…', '', [['', 'Choose destination step…']].concat(allDestinations), function (destKey) {
-        if (!destKey) return;
+        if (!destKey) { mvControls.hidden = true; return; }
         var parts = destKey.split('::');
         var targetMod = (state.exp.modules || []).find(function (m) { return m.id === parts[0]; });
         var targetStep = targetMod && (targetMod.steps || []).find(function (s) { return s.id === parts[1]; });
         if (!targetStep) return;
-        mutate(function () {
-          var curIdx = (pair.step.blocks || []).findIndex(function (b) { return b.id === blk.id; });
-          if (curIdx < 0) return;
-          var movedBlk = pair.step.blocks.splice(curIdx, 1)[0];
-          targetStep.blocks.push(movedBlk);
-          if (targetStep.status === 'empty') targetStep.status = 'draft';
-          state.selectedTarget = { type: 'step', moduleId: targetMod.id, stepId: targetStep.id };
-          state.selectedBlockId = movedBlk.id;
-        }, { label: 'move block to another step' });
-        showToast('Block moved to ' + (Model.getLocalized(targetStep.title, lang, defLang) || 'step'));
+        mvPosition.textContent = '';
+        targetStep.blocks.forEach(function (targetBlock, index) {
+          mvPosition.add(new Option('Before ' + (index + 1) + '. ' + Model.getBlockMeta(targetBlock.type).label, String(index)));
+        });
+        mvPosition.add(new Option('At the end', String(targetStep.blocks.length), true, true));
+        mvControls.hidden = false;
+        moveButton.onclick = function () {
+          mutate(function () {
+            var curIdx = pair.step.blocks.findIndex(function (block) { return block.id === blk.id; });
+            if (curIdx < 0) return;
+            targetStep.blocks.splice(Number(mvPosition.value), 0, pair.step.blocks.splice(curIdx, 1)[0]);
+            if (targetStep.status === 'empty') targetStep.status = 'draft';
+            state.selectedTarget = { type: 'step', moduleId: targetMod.id, stepId: targetStep.id };
+            state.selectedBlockId = blk.id;
+          }, { label: 'move block to another step' });
+          showToast('Block moved to ' + (Model.getLocalized(targetStep.title, lang, defLang) || 'step'));
+        };
       }));
+      var mvControls = document.createElement('div');
+      mvControls.className = 'el-field';
+      mvControls.hidden = true;
+      var mvPosition = document.createElement('select');
+      mvPosition.id = 'el-move-position';
+      var posLabel = document.createElement('label');
+      posLabel.htmlFor = mvPosition.id;
+      posLabel.textContent = 'Insert position';
+      var moveButton = document.createElement('button');
+      moveButton.type = 'button';
+      moveButton.className = 'el-btn el-btn-sm';
+      moveButton.textContent = 'Move block here';
+      mvControls.append(posLabel, mvPosition, moveButton);
+      inspectorBodyEl.appendChild(mvControls);
     }
   }
 
   /* ---- Split-Screen German Translation Studio with Live Slide Preview & Autosave ---- */
+  function translationLocation(location) {
+    if (!window.LectureI18n) return location;
+    return location.split(' · ').map(function (part) {
+      var number = part.match(/^(.*?) (#[0-9]+|[0-9]+)$/);
+      return number ? window.LectureI18n.t(number[1]) + ' ' + number[2] : window.LectureI18n.t(part);
+    }).join(' · ');
+  }
+
   function renderTranslatePreviewInto(stageEl) {
     if (!state.exp || !stageEl) return;
     var scrollPos = translatePreviewPane ? translatePreviewPane.scrollTop : 0;
@@ -2640,34 +3008,36 @@
 
     var ctx = state.trActiveContext;
     var allRows = Model.extractTranslationRows(state.exp, state.trSource, state.trTarget);
-    var contextRows = allRows.filter(function (r) {
-      if (ctx.type === 'startPage') return r.key.indexOf('startPage') === 0;
-      return r.key.indexOf('mod.' + ctx.moduleId + '.stp.' + ctx.stepId) === 0;
-    });
-    var fallbackRows = contextRows.filter(function (r) {
-      var liveVal = state.trPendingTexts[r.key] !== undefined ? state.trPendingTexts[r.key] : r.target;
-      return !String(liveVal || '').trim() && String(r.source || '').trim();
-    });
-
-    function prependFallbackBar(container) {
-      if (!fallbackRows.length) return;
-      var fbBar = document.createElement('div');
-      fbBar.className = 'el-tr-fallback-bar';
-      fallbackRows.slice(0, 5).forEach(function (fr) {
-        var pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'el-tr-fallback-pill';
-        var shortLoc = fr.location.split(' · ').slice(-1)[0] || fr.location;
-        pill.textContent = '[' + (state.exp.defaultLanguage || 'nl').toUpperCase() + ' fallback] ' + shortLoc;
-        pill.title = 'Jump to untranslated field: ' + fr.location;
-        pill.addEventListener('click', function () {
-          var sheet = document.getElementById('el-tr-preview-dialog');
-          if (sheet && sheet.open) sheet.close();
-          jumpToTranslationField(fr.key);
-        });
-        fbBar.appendChild(pill);
+    var byField = new Map(allRows.map(function (row) { return [row.locObj, row]; }));
+    var badges = new WeakMap();
+    function annotateField(node, localized) {
+      var row = byField.get(localized);
+      var oldBadge = badges.get(node);
+      if (oldBadge) { oldBadge.remove(); badges.delete(node); }
+      node.removeAttribute('lang');
+      if (!row || String(localized[state.trTarget] || '').trim()) return;
+      var actualLang = [state.exp.defaultLanguage || 'nl'].concat(Model.SUPPORTED_LANGS).find(function (lang) {
+        return String(localized[lang] || '').trim();
       });
-      container.insertBefore(fbBar, container.firstChild);
+      if (!actualLang) return;
+      node.lang = actualLang;
+      var pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'el-tr-fallback-pill';
+      pill.textContent = actualLang.toUpperCase() + ' fallback';
+      pill.setAttribute('aria-label', 'Translate ' + translationLocation(row.location) + ' (' + actualLang.toUpperCase() + ' fallback)');
+      pill.addEventListener('click', function () {
+        var sheet = document.getElementById('el-tr-preview-dialog');
+        if (sheet.open) { state.trLastActiveKey = row.key; sheet.close(); }
+        jumpToTranslationField(row.key);
+      });
+      badges.set(node, pill);
+      queueMicrotask(function () {
+        if (!stageEl.contains(node) || badges.get(node) !== pill) return;
+        var anchor = node.closest('button, a, label, summary') || node;
+        if (anchor.tagName === 'SUMMARY') anchor.parentElement.before(pill);
+        else anchor.after(pill);
+      });
     }
 
     if (ctx.type === 'startPage') {
@@ -2675,26 +3045,25 @@
         exp: state.exp,
         lang: state.trTarget,
         editable: false,
-        assetUrl: assetUrl, setMediaSource: setMediaSource,
+        onLocalizedField: annotateField, assetUrl: assetUrl, setMediaSource: setMediaSource,
       });
-      prependFallbackBar(stageEl);
       if (translatePreviewPane) translatePreviewPane.scrollTop = scrollPos;
       return;
     }
     var mod = (state.exp.modules || []).find(function (m) { return m.id === ctx.moduleId; });
     var step = mod && (mod.steps || []).find(function (s) { return s.id === ctx.stepId; });
     if (!mod || !step) {
-      RouteMap.renderStartPage(stageEl, { exp: state.exp, lang: state.trTarget, editable: false, assetUrl: assetUrl, setMediaSource: setMediaSource });
+      RouteMap.renderStartPage(stageEl, { exp: state.exp, lang: state.trTarget, editable: false, onLocalizedField: annotateField, assetUrl: assetUrl, setMediaSource: setMediaSource });
       return;
     }
     stageEl.textContent = '';
-    prependFallbackBar(stageEl);
     var card = document.createElement('div');
     card.className = 'xped-card domain-accent-' + (mod.domain || 'general');
     var h1 = document.createElement('h1');
     h1.className = 'xped-step-title';
     var stTitle = Model.getLocalized(step.title, state.trTarget, state.exp.defaultLanguage);
     h1.textContent = stTitle;
+    annotateField(h1, step.title);
     card.appendChild(h1);
     var stack = document.createElement('div');
     stack.className = 'xped-blocks-stack';
@@ -2705,7 +3074,7 @@
         stepTitle: stTitle,
         interactive: false,
         highlightBlockId: ctx.blockId || '',
-        assetUrl: assetUrl, setMediaSource: setMediaSource,
+        onLocalizedField: annotateField, assetUrl: assetUrl, setMediaSource: setMediaSource,
       }));
     });
     card.appendChild(stack);
@@ -2778,10 +3147,21 @@
         method: 'POST',
         body: JSON.stringify({ targetLanguage: target, textUpdates: texts, mediaUpdates: media }),
       });
-      if (res.expedition.revision !== previousRevision + 1) {
+      acceptedCourse = clone(res.expedition);
+      var receivedOtherEdits = res.expedition.revision !== previousRevision + 1;
+      if (receivedOtherEdits) {
+        // Whole-course undo snapshots cannot be replayed over another contributor's structural changes.
+        state.undoStack = [];
+        state.redoStack = [];
         var localRows = Model.extractTranslationRows(res.expedition, state.trSource, target);
         localRows.forEach(function (row) {
           if (Object.hasOwn(state.trPendingTexts, row.key)) row.locObj[target] = state.trPendingTexts[row.key];
+        });
+        Model.extractMediaTranslationRows(res.expedition, target).forEach(function (r) {
+          if (!Object.hasOwn(state.trPendingMedia, r.blockId)) return;
+          var url = state.trPendingMedia[r.blockId];
+          if (url) (r.block.data.mediaOverrides ||= {})[target] = Object.assign({ url: url }, Model.parseVideoUrl(url));
+          else if (r.block.data.mediaOverrides) delete r.block.data.mediaOverrides[target];
         });
         state.exp = res.expedition;
       } else {
@@ -2790,7 +3170,7 @@
       syncReviewFlags(res.expedition);
       refreshTranslationStatuses();
       // UX-066: Preserve structural undo history by rebasing localized strings instead of wiping undoStack
-      rebaseUndoStacksWithTranslations(state.exp, target);
+      rebaseUndoStacksWithTranslations(state.exp, target, texts, media);
       updateUndoButtons();
       Object.keys(texts).forEach(function (key) {
         if (state.trPendingTexts[key] === texts[key]) delete state.trPendingTexts[key];
@@ -2800,12 +3180,15 @@
       });
       if (!hasPendingTranslations()) {
         translateAutosaveEl.textContent = 'Saved';
+        document.getElementById('el-tr-save-btn').textContent = 'Save now';
         translateAutosaveEl.className = 'el-status-inline is-live';
         if (saveVersion === savedVersion) setSaveStatus('Saved', true, false);
       }
       return true;
     } catch (err) {
-      translateAutosaveEl.textContent = 'Save failed';
+      translateAutosaveEl.textContent = 'Unsaved translation';
+      translateAutosaveEl.className = 'el-status-inline is-warn';
+      document.getElementById('el-tr-save-btn').textContent = 'Retry save';
       showToast(err.message, 'error');
       return false;
     }
@@ -2858,6 +3241,8 @@
       inp.type = 'text';
       inp.placeholder = 'Paste ' + state.trTarget.toUpperCase() + ' YouTube/Vimeo URL (leave blank to reuse default)';
       inp.value = mr.targetUrl || '';
+      inp.id = 'el-media-translation-' + mr.blockId;
+      lbl.htmlFor = inp.id;
       inp.addEventListener('input', function () {
         var val = inp.value.trim();
         state.trPendingMedia[mr.blockId] = val;
@@ -2874,7 +3259,7 @@
   }
 
   function focusNextMissingTranslation() {
-    var tas = Array.prototype.slice.call(translateRowsEl.querySelectorAll('textarea.xped-textarea'));
+    var tas = Array.from(translateRowsEl.querySelectorAll('textarea.xped-textarea'));
     if (!tas.length) {
       showToast('All fields in this view are translated!');
       return;
@@ -2920,18 +3305,32 @@
     var rows = Model.extractTranslationRows(state.exp, state.trSource, state.trTarget);
     var byKey = new Map(rows.map(function (row) { return [row.key, row.status]; }));
     translateRowsEl.querySelectorAll('.el-tr-row').forEach(function (node) {
-      updateTranslationBadge(node, node.querySelector('.el-status-inline'), byKey.get(node.dataset.fieldKey) || 'untranslated');
+      var status = byKey.get(node.dataset.fieldKey) || 'untranslated';
+      updateTranslationBadge(node, node.querySelector('.el-status-inline'), status);
+      if (state.trFilter !== 'all' && status !== state.trFilter && !node.contains(document.activeElement)) node.remove();
     });
-    updateTranslationProgress(rows);
+    translateRowsEl.querySelectorAll('.el-tr-group').forEach(function (group) {
+      var count = group.querySelectorAll('.el-tr-row').length;
+      if (!count) group.remove();
+      else group.querySelector('summary .xped-caption').textContent = count + (count === 1 ? ' field' : ' fields');
+    });
+    if (!translateRowsEl.childElementCount) renderTranslateMode();
+    else updateTranslationProgress(rows);
   }
 
   function renderTranslateMode() {
     if (!state.exp) return;
+    if (state.trSource === state.trTarget) state.trSource = Model.SUPPORTED_LANGS.find(function (lang) { return lang !== state.trTarget; });
+    trSourceDD.setItems(LANG_OPTIONS.filter(function (item) { return item.value !== state.trTarget; }), state.trSource);
     document.querySelector('#el-tr-welcome p').hidden = (state.role !== 'translate' && !grantToken);
     var manageLangsBtn = document.getElementById('el-tr-manage-langs');
     if (manageLangsBtn) manageLangsBtn.hidden = !canEditStructure();
     var altBtn = document.getElementById('el-tr-alt-toggle');
-    if (altBtn) altBtn.setAttribute('aria-pressed', String(!!state.trShowAltLang));
+    if (altBtn) {
+      var altLanguage = Model.SUPPORTED_LANGS.find(function (l) { return l !== state.trSource && l !== state.trTarget; });
+      altBtn.textContent = altLanguage.toUpperCase() + ' reference';
+      altBtn.setAttribute('aria-pressed', String(!!state.trShowAltLang));
+    }
     document.getElementById('el-tr-toggle-preview').setAttribute('aria-pressed', String(state.trShowPreview));
     translatePreviewPane.hidden = !state.trShowPreview;
     translateSplit.classList.toggle('no-preview', !state.trShowPreview);
@@ -2940,6 +3339,9 @@
     var rows = Model.extractTranslationRows(state.exp, state.trSource, state.trTarget);
     updateTranslationProgress(rows);
 
+    translateRowsEl.querySelectorAll('details[data-group-key]').forEach(function (group) {
+      if (!group.classList.contains('app-details-animating')) state.trCollapsedGroups[group.dataset.groupKey] = !group.open;
+    });
     translateRowsEl.textContent = '';
     var filtered = rows.filter(function (r) { return state.trFilter === 'all' || r.status === state.trFilter; });
     if (!filtered.length) {
@@ -2947,12 +3349,12 @@
       var box = document.createElement('div');
       box.className = 'el-tr-complete';
       var stg = document.createElement('strong');
-      stg.textContent = state.trFilter === 'untranslated'
+      stg.textContent = !rows.length ? 'No course text to translate yet.' : state.trFilter === 'untranslated'
         ? ('All ' + state.trTarget.toUpperCase() + ' fields are translated!')
         : (state.trFilter === 'needs_review' ? 'No fields waiting for review.' : 'No fields match this filter.');
       var desc = document.createElement('p');
       desc.className = 'xped-caption';
-      desc.textContent = state.trFilter === 'untranslated'
+      desc.textContent = !rows.length ? 'Fields appear here when the author adds course content.' : state.trFilter === 'untranslated'
         ? 'Great work — switch back to All fields anytime to review or refine wording.'
         : 'Everything in this filter is clear.';
       var showAllBtn = document.createElement('button');
@@ -2967,6 +3369,7 @@
       box.append(stg, desc);
       if (state.trFilter !== 'all') box.appendChild(showAllBtn);
       translateRowsEl.appendChild(box);
+      renderTranslateMediaOverrides();
       renderTranslatePreview();
       return;
     }
@@ -2995,8 +3398,11 @@
       det.dataset.groupKey = grp.key;
       // UX-060: Persist collapsed group state across re-renders
       det.open = !state.trCollapsedGroups[grp.key];
+      det.addEventListener('app:disclosurechange', function (event) {
+        state.trCollapsedGroups[grp.key] = !event.detail.open;
+      });
       det.addEventListener('toggle', function () {
-        state.trCollapsedGroups[grp.key] = !det.open;
+        if (det.isConnected && !det.classList.contains('app-details-animating')) state.trCollapsedGroups[grp.key] = !det.open;
       });
       var sum = document.createElement('summary');
       var left = document.createElement('span');
@@ -3017,7 +3423,8 @@
         var rHead = document.createElement('div');
         rHead.className = 'el-tr-row-head';
         var locSpan = document.createElement('strong');
-        locSpan.textContent = row.location;
+        var location = translationLocation(row.location);
+        locSpan.textContent = location;
         var rightMeta = document.createElement('div');
         rightMeta.className = 'el-btn-row';
         var st = document.createElement('span');
@@ -3026,9 +3433,11 @@
         var copySrc = document.createElement('button');
         copySrc.type = 'button';
         copySrc.className = 'el-btn el-btn-sm';
-        copySrc.title = 'Insert ' + state.trSource.toUpperCase() + ' source text into target box';
+        copySrc.disabled = !row.source.trim() || state.trSource === state.trTarget;
+        copySrc.title = 'Use ' + state.trSource.toUpperCase() + ' text in the ' + state.trTarget.toUpperCase() + ' translation';
         copySrc.appendChild(Icons.icon('copy', 13));
-        copySrc.appendChild(document.createTextNode('Use ' + state.trSource.toUpperCase() + ' text'));
+        var sourceNames = { nl: 'Use Dutch text', de: 'Use German text', en: 'Use English text' };
+        copySrc.appendChild(document.createTextNode(sourceNames[state.trSource]));
         rightMeta.appendChild(st);
         rightMeta.appendChild(copySrc);
         rHead.appendChild(locSpan);
@@ -3057,16 +3466,17 @@
         var ta = document.createElement('textarea');
         ta.className = 'xped-textarea';
         ta.lang = state.trTarget;
-        ta.setAttribute('aria-label', row.location + ' (' + state.trTarget.toUpperCase() + ')');
+        ta.setAttribute('aria-label', location + ' (' + state.trTarget.toUpperCase() + ')');
         ta.rows = row.source.length > 90 ? 3 : 2;
         // UX-065: Clean placeholder without repeating shortcut
         ta.placeholder = 'Write ' + state.trTarget.toUpperCase() + ' translation…';
         ta.value = state.trPendingTexts[row.key] !== undefined ? state.trPendingTexts[row.key] : row.target;
 
         var rowExp = state.exp;
+        var targetLang = state.trTarget;
         function updateLocalizedText(value) {
           var activeRow = rowExp === state.exp ? row : Model.extractTranslationRows(state.exp, state.trSource, state.trTarget).find(function (item) { return item.key === row.key; });
-          if (activeRow) activeRow.locObj[state.trTarget] = value;
+          if (activeRow) activeRow.locObj[targetLang] = value;
           state.trPendingTexts[row.key] = value;
         }
         function focusContext() {
@@ -3082,6 +3492,17 @@
           renderTranslatePreview();
         }
         ta.addEventListener('focus', focusContext);
+        var previewField = document.createElement('button');
+        previewField.type = 'button';
+        previewField.className = 'el-btn el-btn-sm el-tr-field-preview';
+        previewField.textContent = 'Preview';
+        previewField.setAttribute('aria-label', 'Preview ' + location);
+        previewField.addEventListener('click', function () {
+          focusContext();
+          renderTranslatePreviewInto(trSheetStage);
+          trSheetDialog.showModal();
+        });
+        rightMeta.appendChild(previewField);
         ta.addEventListener('keydown', function (ev) {
           if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
             ev.preventDefault();
@@ -3096,10 +3517,10 @@
           scheduleTranslateAutosave();
         });
         // UX-068: Reconcile filter membership gently on blur if row no longer matches active filter
-        ta.addEventListener('blur', function () {
-          if (state.trFilter === 'untranslated' && ta.value.trim()) {
-            refreshTranslationStatuses();
-          }
+        rEl.addEventListener('focusout', function () {
+          if (state.trFilter !== 'all') setTimeout(function () {
+            if (rEl.isConnected) refreshTranslationStatuses();
+          }, 0);
         });
         copySrc.addEventListener('click', function () {
           var prevVal = ta.value;
@@ -3109,8 +3530,10 @@
           scheduleTranslateAutosave();
           if (prevVal.trim() && prevVal !== row.source) {
             showToast('Replaced with ' + state.trSource.toUpperCase() + ' text.', function () {
-              ta.value = prevVal;
+              if (state.trTarget !== targetLang || state.mode !== 'translate') return;
               updateLocalizedText(prevVal);
+              renderTranslateMode();
+              jumpToTranslationField(row.key);
               scheduleTranslatePreview();
               scheduleTranslateAutosave();
             });
@@ -3153,9 +3576,10 @@
     if (!state.previewSamplePeers) return Promise.resolve(null);
     if (blk.type === 'mcq') {
       var counts = {};
-      var total = 24;
-      (blk.data.options || []).forEach(function (o, i) {
-        counts[o.id] = Math.max(2, Math.round(total / Math.max(1, (blk.data.options || []).length)) + (i === 0 ? 4 : -1));
+      var options = blk.data.options || [];
+      var total = options.length ? 24 : 0;
+      options.forEach(function (o, i) {
+        counts[o.id] = Math.floor(total / options.length) + (i < total % options.length ? 1 : 0);
       });
       return Promise.resolve({ type: 'mcq', count: total, counts: counts });
     }
@@ -3184,7 +3608,9 @@
     var defLang = state.exp.defaultLanguage || 'nl';
     previewContainerEl.lang = pLang;
     previewContainerEl.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
-    previewContainerEl.classList.toggle('is-mobile', state.previewViewport === 'mobile');
+    var simulatePhone = state.previewViewport === 'mobile' && !window.matchMedia('(max-width: 720px)').matches;
+    previewContainerEl.classList.toggle('is-mobile', simulatePhone);
+    previewContainerEl.setAttribute('aria-label', simulatePhone ? 'Learner preview at phone width' : 'Learner preview at available width');
     previewContainerEl.textContent = '';
     var visibleMods = (state.exp.modules || []).filter(function (m) { return m.visibleToLearners !== false; });
 
@@ -3217,23 +3643,8 @@
 
     // UX-070: Real completion summary view at the end of Preview
     if (state.previewPos.view === 'summary') {
-      var sumCard = document.createElement('div');
-      sumCard.className = 'xped-card anim-next';
-      var sh1 = document.createElement('h1');
-      sh1.className = 'xped-step-title';
-      sh1.textContent = Model.ui(pLang, 'summaryTitle');
-      var sSub = document.createElement('p');
-      sSub.className = 'xped-caption';
-      sSub.textContent = Model.ui(pLang, 'summarySubtitle');
-      sumCard.append(sh1, sSub);
-
-      var ansCount = Object.keys(state.previewPos.answers || {}).filter(function (k) {
-        return Model.hasMeaningfulAnswer(state.previewPos.answers[k]);
-      }).length;
-      var noteP = document.createElement('p');
-      noteP.textContent = 'Preview completed · ' + visibleMods.length + ' station(s) · ' + ansCount + ' answered activity block(s).';
-      sumCard.appendChild(noteP);
-
+      var sumCard = RouteMap.renderSummaryCard(state.exp, state.previewPos.answers, pLang);
+      sumCard.classList.add('anim-next');
       var sNav = document.createElement('div');
       sNav.className = 'el-player-nav';
       var sStart = document.createElement('button');
@@ -3272,6 +3683,7 @@
       mBtn.className = 'xped-btn xped-btn-sun';
       mBtn.textContent = Model.ui(pLang, 'milestoneNext');
       mBtn.addEventListener('click', function () {
+        state.previewPos.navHistory.push({ modIdx: state.previewPos.modIdx, stepIdx: state.previewPos.stepIdx });
         state.previewPos.modIdx += 1;
         state.previewPos.stepIdx = 0;
         state.previewPos.navDir = 'next';
@@ -3299,7 +3711,7 @@
     pvDot.className = 'xped-domain-dot domain-' + (mod.domain || 'general');
     pvCrumb.append(pvDot, document.createTextNode(Model.getLocalized(mod.title, pLang, defLang) || ('Station ' + (state.previewPos.modIdx + 1))));
     pvKicker.appendChild(pvCrumb);
-    if ((mod.steps || []).length > 1) {
+    {
       var pvSegs = document.createElement('span');
       pvSegs.textContent = Model.ui(pLang, 'stepOf', { cur: state.previewPos.stepIdx + 1, total: mod.steps.length });
       pvKicker.appendChild(pvSegs);
@@ -3427,32 +3839,50 @@
     custom_visual: 'wand',
   };
 
-  function renderPickerPreview(blockType) {
+  var pickerItem = null;
+  var breathingActivity = { type: 'custom_visual', preset: 'breathing-circle', category: 'pain_tools',
+    label: 'Guided breathing', desc: 'A gently expanding circle for a paced breathing exercise.',
+    aliases: ['breathing visual', 'ademcirkel', 'ademhaling', 'atemübung', 'atemkreis'] };
+
+  function createPickerBlock(item) {
+    var block = Model.createBlock(item.type);
+    if (item.preset) block.data.preset = item.preset;
+    return block;
+  }
+
+  function renderPickerPreview(item) {
+    pickerItem = item;
+    var blockType = item.type;
+    var add = document.getElementById('el-picker-insert');
+    add.disabled = false;
+    add.textContent = 'Add ' + item.label;
+    document.getElementById('el-picker-preview-heading').textContent = item.label;
+    document.querySelectorAll('#el-picker-body [data-picker-key]').forEach(function (button) {
+      button.setAttribute('aria-pressed', String(button.dataset.pickerKey === (item.preset || item.type)));
+    });
     var previewEl = document.getElementById('el-picker-preview');
     if (!previewEl) return;
     previewEl.textContent = '';
-    var sample = Model.createBlock(blockType);
+    var sample = createPickerBlock(item);
     if (blockType === 'richtext') {
       sample.data.heading = Model.loc('Wat gebeurt er in het zenuwstelsel?', 'What happens in the nervous system?', '');
       sample.data.body = Model.loc('Pijn is een **beschermingssignaal** dat je lichaam waarschuwt.', 'Pain is a **protective signal** from your nervous system.', '');
-    } else if (blockType === 'video') {
+    } else if (blockType === 'video' || blockType === 'audio') {
       var vBox = document.createElement('div');
       vBox.className = 'xped-picker-media-mock';
-      vBox.appendChild(Icons.icon('video', 22));
+      var isAudio = blockType === 'audio';
+      vBox.appendChild(Icons.icon(isAudio ? 'audio' : 'video', 22));
       var vTitle = document.createElement('strong');
-      vTitle.textContent = state.editLang === 'nl' ? 'Korte uitlegvideo (YouTube / Vimeo)' : 'Short explainer clip (YouTube / Vimeo)';
+      vTitle.textContent = isAudio ? 'Guided listening exercise' : 'Short explainer clip';
       var vCap = document.createElement('span');
       vCap.className = 'xped-caption';
-      vCap.textContent = '0:15 – 2:30 · Privacy-enhanced embed';
+      vCap.textContent = isAudio ? '0:00 / 2:00  ·  Audio recording' : '0:15 – 2:30  ·  YouTube or Vimeo';
       vBox.append(vTitle, vCap);
       previewEl.appendChild(vBox);
       return;
     } else if (blockType === 'image') {
       sample.data.media = { kind: 'xped', assetId: '', staticPath: '/static/images/xped/xped-wandelaar-met-kaart.png' };
       sample.data.caption = Model.loc('Stap voor stap op ontdekkingstocht', 'Step by step on your journey', '');
-    } else if (blockType === 'audio') {
-      sample.data.title = Model.loc('Rustige ademhalingsoefening (2 min)', 'Calm breathing exercise (2 min)', '');
-      sample.data.description = Model.loc('Luister op je eigen tempo.', 'Listen at your own pace.', '');
     } else if (blockType === 'callout') {
       sample.data.title = Model.loc('Goed om te onthouden', 'Key takeaway', '');
       sample.data.body = Model.loc('Pijn is altijd echt — ook als weefsel al hersteld is.', 'Pain is always real — even after tissue has healed.', '');
@@ -3485,7 +3915,10 @@
       assetUrl: assetUrl,
       setMediaSource: setMediaSource,
     });
-    if (rendered) previewEl.appendChild(rendered);
+    if (rendered) {
+      rendered.inert = true;
+      previewEl.appendChild(rendered);
+    }
   }
 
   function renderBlockPickerList(query) {
@@ -3493,9 +3926,9 @@
     var q = String(query || '').trim().toLowerCase();
     body.textContent = '';
     var anyRendered = false;
-    var firstType = '';
+    var firstItem = null;
     (Model.BLOCK_CATEGORIES || []).forEach(function (cat) {
-      var items = Model.BLOCK_CATALOG.filter(function (b) {
+      var items = Model.BLOCK_CATALOG.concat(breathingActivity).filter(function (b) {
         if (b.category !== cat.key) return false;
         if (!q) return true;
         var hay = (b.label + ' ' + b.desc + ' ' + b.type + ' ' + ((b.aliases || []).join(' '))).toLowerCase();
@@ -3511,10 +3944,11 @@
       var grid = document.createElement('div');
       grid.className = 'el-picker-grid';
       items.forEach(function (item) {
-        if (!firstType) firstType = item.type;
+        if (!firstItem) firstItem = item;
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'el-picker-card';
+        btn.dataset.pickerKey = item.preset || item.type;
         var icoBox = document.createElement('span');
         icoBox.className = 'el-picker-ico';
         icoBox.appendChild(Icons.icon(BLOCK_ICONS[item.type] || 'spark', 17));
@@ -3528,29 +3962,26 @@
         bodyCol.appendChild(sp);
         btn.appendChild(icoBox);
         btn.appendChild(bodyCol);
-        btn.addEventListener('mouseenter', function () { renderPickerPreview(item.type); });
-        btn.addEventListener('focus', function () { renderPickerPreview(item.type); });
+        btn.addEventListener('focus', function () { renderPickerPreview(item); });
         btn.addEventListener('click', function () {
-          var pair = currentModuleAndStep();
-          if (pair.step) {
-            var nb = Model.createBlock(item.type);
-            state.focusBlockAfterRender = nb.id;
-            mutate(function () {
-              var idx = state.insertBlockAt >= 0 ? state.insertBlockAt : pair.step.blocks.length;
-              pair.step.blocks.splice(idx, 0, nb);
-              if (pair.step.status === 'empty') pair.step.status = 'draft';
-              state.selectedBlockId = nb.id;
-              state.inspectorTab = 'block';
-            }, { label: 'add ' + item.label });
+          renderPickerPreview(item);
+          if (window.matchMedia('(max-width: 780px)').matches) {
+            blockPickerDialog.classList.add('is-reviewing-block');
+            document.getElementById('el-picker-insert').focus();
           }
-          Icons.closeDialogAnimated(blockPickerDialog);
         });
         grid.appendChild(btn);
       });
       sec.appendChild(grid);
       body.appendChild(sec);
     });
-    if (firstType) renderPickerPreview(firstType);
+    if (firstItem) renderPickerPreview(firstItem);
+    else {
+      pickerItem = null;
+      document.getElementById('el-picker-insert').disabled = true;
+      document.getElementById('el-picker-preview').textContent = '';
+      document.getElementById('el-picker-preview-heading').textContent = 'No matching block';
+    }
     if (!anyRendered) {
       var empty = document.createElement('p');
       empty.className = 'xped-caption';
@@ -3559,7 +3990,36 @@
     }
   }
 
+  document.getElementById('el-picker-change').addEventListener('click', function () {
+    blockPickerDialog.classList.remove('is-reviewing-block');
+    var selected = blockPickerDialog.querySelector('[data-picker-key][aria-pressed="true"]');
+    if (selected) selected.focus();
+  });
+  document.getElementById('el-picker-insert').addEventListener('click', async function () {
+    var pair = currentModuleAndStep();
+    if (!pickerItem || !pair.step) return;
+    var item = pickerItem;
+    var nb = createPickerBlock(item);
+    await Icons.closeDialogAnimated(blockPickerDialog);
+    state.focusBlockAfterRender = nb.id;
+    mutate(function () {
+      var idx = state.insertBlockAt >= 0 ? state.insertBlockAt : pair.step.blocks.length;
+      pair.step.blocks.splice(idx, 0, nb);
+      if (pair.step.status === 'empty') pair.step.status = 'draft';
+      state.selectedBlockId = nb.id;
+      state.inspectorTab = 'block';
+    }, { label: 'add ' + item.label });
+  });
+
+  document.getElementById('el-picker-search').addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape' || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    Icons.closeDialogAnimated(blockPickerDialog);
+  });
+
   function openBlockPicker() {
+    blockPickerDialog.classList.remove('is-reviewing-block');
     var searchInp = document.getElementById('el-picker-search');
     if (searchInp) searchInp.value = '';
     renderBlockPickerList('');
@@ -3573,17 +4033,25 @@
       var on = t.getAttribute('data-share-tab') === state.shareTab;
       t.classList.toggle('is-active', on);
       t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
     });
     shareDialog.querySelectorAll('.el-share-panel').forEach(function (p) {
       p.hidden = p.getAttribute('data-share-panel') !== state.shareTab;
     });
   }
 
+  function updateShareLabel() {
+    var share = state.exp && state.exp.share;
+    var badge = document.getElementById('el-share-visibility');
+    badge.hidden = !share || !canEditStructure();
+    if (share) badge.textContent = share.enabled ? 'Link active' : 'Private';
+  }
+
   function syncShareActiveVisibility(enabled) {
     var activeBox = document.getElementById('el-share-active-box');
     var inactiveCard = document.getElementById('el-share-inactive-card');
     if (activeBox) activeBox.hidden = !enabled;
-    if (inactiveCard) inactiveCard.hidden = !!enabled;
+    if (inactiveCard) inactiveCard.hidden = !!enabled || (savingShare && document.getElementById('el-share-enabled').checked);
   }
 
   function updateShareUrlAndQr() {
@@ -3604,6 +4072,7 @@
   }
 
   async function loadShareDialogData() {
+    var loadVersion = ++shareLoadVersion;
     var loadingBox = document.getElementById('el-share-loading');
     var loadingMsg = document.getElementById('el-share-loading-msg');
     var retryBtn = document.getElementById('el-share-retry-btn');
@@ -3614,16 +4083,16 @@
     if (contentBox) contentBox.hidden = true;
 
     try {
+      await state.shareQueue;
       var data = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing');
+      if (loadVersion !== shareLoadVersion) return;
       state.shareData = data;
-      var share = data.share || {};
-      document.getElementById('el-share-enabled').checked = !!share.enabled;
-      document.getElementById('el-share-peer-results').checked = share.showPeerResults !== false;
-      document.getElementById('el-share-pilot-feedback').checked = share.collectPilotFeedback !== false;
-      var scChk = document.getElementById('el-share-step-comments');
-      if (scChk) scChk.checked = !!share.allowStepComments;
-      syncShareActiveVisibility(!!share.enabled);
-      updateShareUrlAndQr();
+      applyConfirmedShare(data.share || {});
+      var owner = state.role === 'owner';
+      Object.values(shareFields).forEach(function (id) { document.getElementById(id).disabled = !owner; });
+      document.getElementById('el-share-rotate-btn').hidden = !owner;
+      shareDialog.querySelectorAll('[data-share-tab]:not([data-share-tab="learners"])').forEach(function (tab) { tab.hidden = !owner; });
+      document.getElementById('el-share-status').textContent = '';
       document.getElementById('el-share-cohort').oninput = updateShareUrlAndQr;
       renderMembersList(data.members || []);
       renderGrantsList(data.grants || []);
@@ -3631,6 +4100,7 @@
       if (loadingBox) loadingBox.hidden = true;
       if (contentBox) contentBox.hidden = false;
     } catch (err) {
+      if (loadVersion !== shareLoadVersion) return;
       if (loadingMsg) loadingMsg.textContent = err.message || 'Could not load sharing settings.';
       if (retryBtn) retryBtn.hidden = false;
     }
@@ -3639,7 +4109,10 @@
   function openShareDialog() {
     if (!expeditionId) return;
     // UX-084: Show dialog shell immediately so clicks never feel unresponsive
-    if (!shareDialog.open) shareDialog.showModal();
+    if (!shareDialog.open) {
+      setShareTab('learners');
+      shareDialog.showModal();
+    }
     loadShareDialogData();
   }
 
@@ -3732,12 +4205,9 @@
           'Revoke link'
         );
         if (!ok) return;
-        await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
-          method: 'POST',
-          body: JSON.stringify({ action: 'revoke_grant', grantId: g.id }),
-        });
-        showToast('Translator link revoked.');
-        loadShareDialogData();
+        api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
+          method: 'POST', body: JSON.stringify({ action: 'revoke_grant', grantId: g.id }),
+        }).then(loadShareDialogData).catch(function (err) { showToast(err.message, 'error'); });
       });
       row.append(lbl, inp, cpWrap, rev);
       host.appendChild(row);
@@ -3862,6 +4332,16 @@
     }
   });
 
+  function downloadCurrentDraft() {
+    if (!state.exp) return;
+    var blob = new Blob([JSON.stringify(state.exp, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (state.exp.title || 'xped-expedition').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        }
+
   function refreshMoreMenu() {
     var mediaActions = state.mode === 'edit' && state.leaseToken ? [
       { label: 'Free unused media', icon: 'trash', onClick: openUnusedMedia },
@@ -3876,15 +4356,7 @@
       {
         label: 'Export JSON Backup',
         icon: 'upload',
-        onClick: function () {
-          if (!state.exp) return;
-          var blob = new Blob([JSON.stringify(state.exp, null, 2)], { type: 'application/json' });
-          var a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = (state.exp.title || 'xped-expedition').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
-          a.click();
-          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-        },
+        onClick: downloadCurrentDraft,
       },
     ]);
   }
@@ -3895,12 +4367,13 @@
     titleInput.disabled = !canEditStructure() || !state.leaseToken;
     workspace.inert = !state.leaseToken;
     document.getElementById('el-share-btn').hidden = !canEditStructure();
+    updateShareLabel();
     moreMenuDD.el.hidden = !canEditStructure();
     var editTab = document.querySelector('.el-mode-tab[data-mode="edit"]');
     if (editTab) editTab.hidden = !canEditStructure();
     utilitiesButton.hidden = !canEditStructure();
-    document.getElementById('el-undo-btn').hidden = !canEditStructure();
-    document.getElementById('el-redo-btn').hidden = !canEditStructure();
+    document.getElementById('el-undo-btn').hidden = !canEditStructure() || state.mode !== 'edit';
+    document.getElementById('el-redo-btn').hidden = !canEditStructure() || state.mode !== 'edit';
     refreshMoreMenu();
 
     if (state.mode === 'edit') {
@@ -3946,7 +4419,36 @@
   });
 
   /* ---- Wire Controls ---- */
+  var titleWrap = titleInput.closest('.el-title-wrap');
+  var titleDone = document.getElementById('el-title-done');
+  function fitTitle() {
+    titleInput.rows = 1;
+    if (titleWrap.classList.contains('is-writing-title')) {
+      var textStyle = getComputedStyle(titleInput);
+      var padding = parseFloat(textStyle.paddingTop) + parseFloat(textStyle.paddingBottom);
+      titleInput.rows = Math.max(1, Math.ceil((titleInput.scrollHeight - padding) / parseFloat(textStyle.lineHeight)));
+    }
+  }
+  titleInput.addEventListener('focus', function () {
+    if (!window.matchMedia('(max-width: 720px)').matches) return;
+    titleWrap.classList.add('is-writing-title');
+    fitTitle();
+  });
+  titleWrap.addEventListener('focusout', function (event) {
+    if (titleWrap.contains(event.relatedTarget)) return;
+    titleWrap.classList.remove('is-writing-title');
+    fitTitle();
+  });
+  titleDone.addEventListener('click', function () { document.querySelector('.el-mode-tab.is-active').focus(); });
+  titleInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      document.querySelector('.el-mode-tab.is-active').focus();
+    }
+  });
   titleInput.addEventListener('input', function () {
+    if (titleInput.value.includes('\n')) titleInput.value = titleInput.value.replace(/\n+/g, ' ');
+    fitTitle();
     mutate(function () { state.exp.title = titleInput.value; }, { recordUndo: false, rerender: false });
   });
   authorNotesEl.addEventListener('input', function () {
@@ -3984,35 +4486,57 @@
         state.exp.modules.push(mod);
         state.selectedTarget = { type: 'step', moduleId: mod.id, stepId: mod.steps[0].id };
         state.selectedBlockId = (mod.steps[0].blocks && mod.steps[0].blocks[0]) ? mod.steps[0].blocks[0].id : '';
+        selectPane('canvas');
       }, { label: 'add station' });
       Icons.closeDialogAnimated(moduleRecipeDialog);
     });
   });
 
-  // UX-106: Coalesce rapid mode transitions cleanly while waiting for saves
+  function markRequestedMode(mode) {
+    state.pendingMode = mode;
+    document.querySelectorAll('.el-mode-tab').forEach(function (button) {
+      button.classList.toggle('is-pending', !!mode && button.dataset.mode === mode);
+    });
+    document.querySelector('.el-mode-tabs').setAttribute('aria-busy', String(!!mode));
+  }
+
+  // A slower save may resolve after the user has chosen a different workspace.
   document.querySelectorAll('.el-mode-tab').forEach(function (tab) {
     tab.addEventListener('click', async function () {
       if (!state.exp) return;
       var requested = tab.getAttribute('data-mode');
-      state.pendingMode = requested;
+      markRequestedMode(requested);
       if (state.mode === 'edit' && savedVersion !== saveVersion) {
         clearTimeout(state.saveTimer);
         await queueStructureSave();
-        if (savedVersion !== saveVersion) { state.pendingMode = ''; return; }
+        if (savedVersion !== saveVersion) { if (state.pendingMode === requested) markRequestedMode(''); return; }
       }
       if (state.mode === 'translate' && hasPendingTranslations()) {
         clearTimeout(state.trSaveTimer);
-        if (!(await saveTranslationsNow()) || hasPendingTranslations()) { state.pendingMode = ''; return; }
+        if (!(await saveTranslationsNow()) || hasPendingTranslations()) { if (state.pendingMode === requested) markRequestedMode(''); return; }
       }
       if (state.pendingMode !== requested) return;
-      state.pendingMode = '';
+      markRequestedMode('');
       setMode(requested);
+      tab.focus({ preventScroll: true });
     });
   });
-  document.querySelectorAll('.el-insp-tab').forEach(function (tab) {
+  var inspectorTabs = Array.from(document.querySelectorAll('.el-insp-tab'));
+  inspectorTabs.forEach(function (tab, index) {
     tab.addEventListener('click', function () {
-      state.inspectorTab = tab.getAttribute('data-insp');
+      state.inspectorTab = tab.dataset.insp;
       renderInspector();
+    });
+    tab.addEventListener('keydown', function (event) {
+      var next;
+      if (event.key === 'ArrowRight') next = (index + 1) % inspectorTabs.length;
+      else if (event.key === 'ArrowLeft') next = (index + inspectorTabs.length - 1) % inspectorTabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = inspectorTabs.length - 1;
+      else return;
+      event.preventDefault();
+      inspectorTabs[next].focus();
+      inspectorTabs[next].click();
     });
   });
 
@@ -4034,16 +4558,16 @@
   });
 
   function performUndo() {
-    if (!state.undoStack.length) return;
+    if (state.mode !== 'edit' || !canEditStructure() || !state.leaseToken || !state.undoStack.length) return;
     var entry = state.undoStack.pop();
-    state.redoStack.push({ label: entry.label || 'edit', snapshot: clone(state.exp) });
+    state.redoStack.push(historyEntry(entry.label));
     restoreSnapshot(entry);
     showToast('Undid ' + (entry.label || 'change'));
   }
   function performRedo() {
-    if (!state.redoStack.length) return;
+    if (state.mode !== 'edit' || !canEditStructure() || !state.leaseToken || !state.redoStack.length) return;
     var entry = state.redoStack.pop();
-    state.undoStack.push({ label: entry.label || 'edit', snapshot: clone(state.exp) });
+    state.undoStack.push(historyEntry(entry.label));
     restoreSnapshot(entry);
     showToast('Redid ' + (entry.label || 'change'));
   }
@@ -4054,6 +4578,7 @@
     if (state.mode !== 'edit' || !canEditStructure() || !state.leaseToken) return;
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
     var active = document.activeElement;
+    if (event.isComposing || document.querySelector('dialog[open]')) return;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
     var key = String(event.key || '').toLowerCase();
     if (key === 'z' && !event.shiftKey) {
@@ -4073,72 +4598,83 @@
     });
   }
 
-  document.getElementById('el-takeover-btn').addEventListener('click', function () { acquireLease(true); });
+  document.getElementById('el-conflict-download').addEventListener('click', downloadCurrentDraft);
+  document.getElementById('el-takeover-btn').addEventListener('click', async function () {
+    if (resolveConflict) {
+      var proceed = await showConfirmDialog('Open the saved version?', 'Unsaved edits in this tab will be discarded. You can cancel and download a copy first.', 'Open saved version');
+      if (!proceed) return;
+    }
+    var openSaved = resolveConflict;
+    writing = writing.then(function () { return acquireLease(true, openSaved); });
+    await writing;
+  });
   shareBtn.addEventListener('click', openShareDialog);
 
   shareDialog.querySelectorAll('.el-share-tab').forEach(function (t) {
-    t.addEventListener('click', function () { setShareTab(t.getAttribute('data-share-tab')); });
+    t.addEventListener('click', function () { setShareTab(t.dataset.shareTab); });
+    t.addEventListener('keydown', function (event) {
+      var tabs = Array.from(shareDialog.querySelectorAll('[data-share-tab]:not([hidden])'));
+      var index = tabs.indexOf(t);
+      var positions = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: tabs.length - 1 };
+      if (!Object.hasOwn(positions, event.key)) return;
+      event.preventDefault();
+      var next = tabs[(positions[event.key] + tabs.length) % tabs.length];
+      setShareTab(next.dataset.shareTab);
+      next.focus();
+    });
   });
   var shareRetryBtn = document.getElementById('el-share-retry-btn');
   if (shareRetryBtn) shareRetryBtn.addEventListener('click', loadShareDialogData);
 
   // UX-082: Serialize share toggle writes and roll back checkbox state on error
-  function savePublicShareSettings(extra, changedEl) {
-    var enabledEl = document.getElementById('el-share-enabled');
-    var peerEl = document.getElementById('el-share-peer-results');
-    var pilotEl = document.getElementById('el-share-pilot-feedback');
-    var scEl = document.getElementById('el-share-step-comments');
-    var prevState = {
-      enabled: state.shareData && state.shareData.share ? !!state.shareData.share.enabled : !enabledEl.checked,
-      showPeerResults: state.shareData && state.shareData.share ? state.shareData.share.showPeerResults !== false : peerEl.checked,
-      collectPilotFeedback: state.shareData && state.shareData.share ? state.shareData.share.collectPilotFeedback !== false : pilotEl.checked,
-      allowStepComments: state.shareData && state.shareData.share ? !!state.shareData.share.allowStepComments : !!(scEl && scEl.checked),
-    };
-    var body = Object.assign({
-      action: 'update_public',
-      enabled: enabledEl.checked,
-      showPeerResults: peerEl.checked,
-      collectPilotFeedback: pilotEl.checked,
-      allowStepComments: !!(scEl && scEl.checked),
-    }, extra || {});
-    syncShareActiveVisibility(body.enabled);
+  var shareFields = {
+    enabled: 'el-share-enabled',
+    showPeerResults: 'el-share-peer-results',
+    collectPilotFeedback: 'el-share-pilot-feedback',
+    allowStepComments: 'el-share-step-comments',
+  };
+  var savingShare = 0;
+  var shareLoadVersion = 0;
+
+  function applyConfirmedShare(share) {
+    Object.keys(shareFields).forEach(function (key) {
+      var defaultOn = key === 'showPeerResults' || key === 'collectPilotFeedback';
+      document.getElementById(shareFields[key]).checked = share[key] == null ? defaultOn : !!share[key];
+    });
+    syncShareActiveVisibility(!!share.enabled);
+    updateShareUrlAndQr();
+  }
+
+  function savePublicShareSettings(change) {
+    if (state.role !== 'owner' || !state.shareData) return;
+    var status = document.getElementById('el-share-status');
+    savingShare++;
+    status.textContent = 'Saving sharing settings…';
+    var intended = document.getElementById('el-share-enabled').checked;
+    syncShareActiveVisibility(intended && state.shareData.share.enabled);
     state.shareQueue = state.shareQueue.then(async function () {
       try {
         var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
-          method: 'POST',
-          body: JSON.stringify(body),
+          method: 'POST', body: JSON.stringify(Object.assign({ action: 'update_public' }, change)),
         });
-        if (state.shareData) state.shareData.share = res.share;
-        syncShareActiveVisibility(!!(res.share && res.share.enabled));
-        updateShareUrlAndQr();
-        showToast('Share settings updated.');
+        state.shareData.share = res.share;
+        state.exp.share = res.share;
+        updateShareLabel();
+        if (savingShare === 1) status.textContent = 'Sharing settings saved.';
       } catch (err) {
-        if (changedEl) {
-          enabledEl.checked = prevState.enabled;
-          peerEl.checked = prevState.showPeerResults;
-          pilotEl.checked = prevState.collectPilotFeedback;
-          if (scEl) scEl.checked = prevState.allowStepComments;
-          syncShareActiveVisibility(prevState.enabled);
-        }
-        showToast(err.message, 'error');
+        status.textContent = err.message || 'Could not save sharing settings.';
+      } finally {
+        if (--savingShare === 0) applyConfirmedShare(state.shareData.share);
       }
     });
     return state.shareQueue;
   }
-  document.getElementById('el-share-enabled').addEventListener('change', function (e) { savePublicShareSettings(null, e.target); });
-  var activateShareBtn = document.getElementById('el-share-activate-btn');
-  if (activateShareBtn) {
-    activateShareBtn.addEventListener('click', function () {
-      var cb = document.getElementById('el-share-enabled');
-      cb.checked = true;
-      savePublicShareSettings(null, cb);
-    });
-  }
-  document.getElementById('el-share-peer-results').addEventListener('change', function (e) { savePublicShareSettings(null, e.target); });
-  document.getElementById('el-share-pilot-feedback').addEventListener('change', function (e) { savePublicShareSettings(null, e.target); });
-  var shareStepCommentsEl = document.getElementById('el-share-step-comments');
-  if (shareStepCommentsEl) shareStepCommentsEl.addEventListener('change', function (e) { savePublicShareSettings(null, e.target); });
 
+  Object.keys(shareFields).forEach(function (key) {
+    document.getElementById(shareFields[key]).addEventListener('change', function () {
+      savePublicShareSettings({ [key]: this.checked });
+    });
+  });
   var pickerSearchEl = document.getElementById('el-picker-search');
   if (pickerSearchEl) pickerSearchEl.addEventListener('input', function () { renderBlockPickerList(pickerSearchEl.value); });
 
@@ -4154,7 +4690,7 @@
       renderTranslateMode();
     });
   }
-  // UX-114: Jump from Translate mode straight to Design -> Course Languages
+  // Course languages is available directly from the translation workspace.
   var manageLangsBtn = document.getElementById('el-tr-manage-langs');
   if (manageLangsBtn) {
     manageLangsBtn.addEventListener('click', async function () {
@@ -4162,11 +4698,11 @@
         clearTimeout(state.trSaveTimer);
         if (!(await saveTranslationsNow())) return;
       }
-      state.inspectorTab = 'theme';
+      state.inspectorTab = 'languages';
       setMode('edit');
       if (window.matchMedia('(max-width: 920px)').matches) selectPane('inspector');
-      var sec = document.getElementById('el-design-languages');
-      if (sec) sec.scrollIntoView({ behavior: ux.prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+      var sec = document.getElementById('el-course-languages');
+      if (sec) sec.focus();
     });
   }
 
@@ -4193,6 +4729,15 @@
       renderPreviewMode();
     });
   }
+  window.matchMedia('(max-width: 720px)').addEventListener('change', function () {
+    if (!state.exp) return;
+    var narrow = window.matchMedia('(max-width: 720px)').matches;
+    [[canvasFrameEl, state.viewport, 'Editing canvas'], [previewContainerEl, state.previewViewport, 'Learner preview']].forEach(function (entry) {
+      var phone = !narrow && entry[1] === 'mobile';
+      entry[0].classList.toggle('is-mobile', phone);
+      entry[0].setAttribute('aria-label', entry[2] + (phone ? ' at phone width' : ' at available width'));
+    });
+  });
   var pvSamplePeers = document.getElementById('el-pv-sample-peers');
   if (pvSamplePeers) {
     pvSamplePeers.addEventListener('change', function () {
@@ -4255,7 +4800,7 @@
     } catch (err) { showToast(err.message, 'error'); }
   });
   document.getElementById('el-create-grant-btn').addEventListener('click', async function () {
-    var label = document.getElementById('el-grant-label').value.trim() || 'German Editor';
+    var label = document.getElementById('el-grant-label').value.trim() || (grantLangValue.toUpperCase() + ' translator');
     var lang = grantLangValue || 'de';
     try {
       await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
@@ -4324,8 +4869,13 @@
         method: 'POST',
         body: fd,
       });
+      var changedElsewhere = res.expedition.revision !== state.exp.revision + 1;
       state.exp = res.expedition;
-      rebaseUndoStacksWithTranslations(state.exp, state.trTarget);
+      acceptedCourse = clone(res.expedition);
+      if (changedElsewhere) {
+        state.undoStack = [];
+        state.redoStack = [];
+      } else rebaseUndoStacksWithTranslations(state.exp, state.trTarget);
       updateUndoButtons();
       showToast('Imported ' + (res.appliedCount || 0) + ' translated fields!');
       renderTranslateMode();
@@ -4383,6 +4933,7 @@
       }
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId));
       state.exp = res.expedition;
+      acceptedCourse = clone(state.exp);
       state.role = res.expedition.role || '';
       state.editLang = state.exp.defaultLanguage || 'nl';
       state.previewLang = state.editLang;

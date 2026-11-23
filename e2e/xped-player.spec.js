@@ -116,6 +116,7 @@ test('a hotspot and its keyboard button select the same point', async ({ page })
   const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
   const block = Model.createBlock('hotspot');
   block.data.pins[0].x = 0;
+  block.data.pins.forEach(pin => { pin.detail = { nl: 'Meer informatie over dit punt.' }; });
   course.modules[0].steps[0].blocks = [block];
   await openCourse(page, course);
   await page.getByRole('button', { name: 'Start de xPEDitie' }).click();

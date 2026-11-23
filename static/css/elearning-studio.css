@@ -5,6 +5,32 @@
    ========================================================================== */
 
 /* Expedition library and report inside the shared app shell. */
+.el-library-body .el-lang-cov { font-family: inherit; line-height: 1.45; }
+.el-library-body button.el-lang-cov { min-height: 24px; cursor: pointer; }
+.el-library-body button.el-lang-cov:hover, .el-library-body button.el-lang-cov[aria-expanded=true] { border-color: var(--theme-muted); }
+.el-exp-meta time:focus-visible { display: inline-block; outline: 2px solid var(--theme-accent-ink); outline-offset: 2px; border-radius: 2px; }
+.el-exp-meta time:focus-visible::after { content: ' (' attr(title) ')'; }
+.el-library-body .el-exp-card-actions .btn, .el-library-body .el-exp-card-actions .el-action-link { min-height: 44px; }
+.el-library-body .el-exp-card-actions .btn { font-weight: 700; }
+.el-library-body .el-exp-card-actions .el-dd-trigger svg { width: 18px; height: 18px; stroke-width: 3.5; }
+.el-library-body .el-dd-menu .is-danger { color: var(--theme-danger-ink); }
+.el-library-body .el-lang-cov.is-warn { color: var(--theme-warning-ink); background: var(--theme-warning-soft); border-color: var(--theme-warning-line); }
+.el-library-body .el-dash-header:has(#el-response-actions) { margin-bottom: 12px; }
+.el-library-body #el-resp-blocks { align-items: start; }
+.el-library-body #el-resp-blocks h2 { scroll-margin-top: 90px; }
+.el-library-body #el-resp-blocks blockquote { margin: .5rem 0; border-inline-start: 2px solid var(--theme-line); padding-inline-start: .65rem; }
+.el-dash-empty .btn { margin-top: 12px; }
+#el-create-confirm { min-inline-size: 13em; }
+.el-library-body #el-resp-status { min-height: 1.5em; font-size: .875rem; line-height: 1.5; color: var(--theme-muted-strong); margin: 0 0 8px; }
+.el-library-body .el-dash-search-row #el-dash-status { margin: 0; }
+.el-library-body #el-author-actions { justify-content: flex-end; }
+.el-library-body #el-resp-feedback, .el-library-body #el-resp-comments { display: grid; gap: 8px; }
+.el-library-body #el-resp-comments .el-exp-meta { display: block; margin-top: .35rem; }
+@media (max-width: 560px) {
+  .el-library-body .el-library-header { margin-bottom: 12px; }
+  .el-library-body #el-author-actions { justify-content: flex-start; }
+  .el-library-body .el-dash-search-input { max-width: none; }
+}
 .el-dash { max-width: 1160px; }
 .el-dash-header {
   display: flex;
@@ -873,13 +899,13 @@ button.el-dropzone {
   margin: 10px 0 16px;
 }
 .el-qr-box {
-  background: #ffffff;
+  background: var(--xped-surface);
   padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--xped-border);
   text-align: center;
 }
-.el-qr-box svg { width: 128px; height: 128px; display: block; margin: 0 auto 8px; }
+.el-qr-box svg { background: #fff; width: 128px; height: 128px; display: block; margin: 0 auto 8px; }
 .el-member-row {
   display: flex;
   align-items: center;
@@ -1306,8 +1332,8 @@ button.el-dropzone {
 .el-save-retry {
   padding: 2px 8px;
   font-size: 0.74rem;
-  border-color: var(--theme-danger-line, #d9823b);
-  color: var(--theme-danger-ink, #9a5b13);
+  border-color: var(--theme-danger-line);
+  color: var(--theme-danger-ink);
 }
 .el-block-drag-handle {
   display: inline-flex;
@@ -1701,3 +1727,82 @@ dialog.el-dialog-sm { max-width: min(440px, calc(100vw - 32px)); }
 }
 .el-template-preview ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; color: var(--xped-ink-muted); }
 .el-resp-updating { opacity: 0.65; transition: opacity 0.16s ease; }
+
+#el-share-visibility {
+  color: var(--xped-ink-muted);
+  font-size: .76rem;
+  white-space: nowrap;
+}
+#el-share-status:not(:empty) {
+  margin-bottom: 10px;
+  font-size: .85rem;
+  color: var(--xped-ink-muted);
+}
+.el-tr-field-preview { display: none; }
+.el-tr-fallback-pill { margin: .25em .35em; vertical-align: middle; }
+.el-tr-source, .el-tr-row-head strong, .el-member-row > span { overflow-wrap: anywhere; }
+.el-tr-row-head > strong { min-width: 0; }
+.el-tr-row-head .el-btn-row { flex-shrink: 0; }
+.el-tr-group summary > :first-child { margin-inline-end: auto; }
+.el-tr-group:not([open]) > summary { border-bottom: 0; }
+@media (max-width: 720px) {
+  .el-tr-field-preview { display: inline-flex; }
+  .el-tr-row-head { align-items: start; flex-wrap: wrap; }
+  .el-share-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .el-share-tab { min-width: 0; padding-inline: 3px; }
+  .el-member-row { flex-wrap: wrap; }
+  .el-member-row .el-grant-url { flex-basis: 100%; }
+  .el-field input, .el-field textarea, .el-tr-source { min-width: 0; }
+  .el-canvas-frame.is-mobile { max-width: 100%; }
+  .el-tr-shortcut-hint { margin-block: .6rem; }
+}
+
+
+.el-tr-fallback-pill { justify-self: start; align-self: start; width: fit-content; }
+.el-tr-transfer { position: relative; }
+.el-tr-transfer > summary { cursor: pointer; }
+.el-tr-transfer-actions {
+  position: absolute;
+  z-index: var(--z-page);
+  inset: calc(100% + 4px) 0 auto auto;
+  display: grid;
+  gap: 4px;
+  min-width: 8rem;
+  padding: 6px;
+  border: 1px solid var(--xped-border);
+  border-radius: 10px;
+  background: var(--xped-surface);
+  box-shadow: var(--xped-shadow-sm);
+}
+.el-tr-actions { align-items: center; }
+.el-preview-controls { flex: 1; }
+#el-preview-reset { flex: none; }
+@media (max-width: 720px) {
+  #el-mode-preview > .el-stage-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .el-preview-controls h2 { flex-basis: auto; }
+  .el-preview-controls { gap: 6px; }
+  .el-tr-shortcut-hint { color: var(--xped-ink-muted); }
+}
+
+.el-tr-transfer.app-disclosure:not([data-app-menu]) > summary {
+  min-height: 30px;
+  padding: 4px 9px;
+  gap: 4px;
+  border: 1px solid var(--xped-border-strong);
+  border-radius: 7px;
+  color: var(--xped-ink);
+  background: var(--xped-surface);
+  font-size: .8rem;
+}
+@media (max-width: 720px) {
+  .el-topbar .el-title-wrap:not(.is-writing-title) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1px 5px;
+    align-content: center;
+  }
+  .el-title-wrap:not(.is-writing-title) .el-title-input { grid-column: 1 / -1; padding-block: 3px; }
+  .el-title-wrap:not(.is-writing-title) .el-save-chip { width: fit-content; }
+  .el-title-wrap #el-share-visibility { padding-inline-start: 4px; }
+  .el-title-wrap.is-writing-title #el-share-visibility { display: none; }
+}

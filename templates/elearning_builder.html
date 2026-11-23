@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-builder-authoring.css') }}">
 </head>
 <body
   class="el-studio-body"
@@ -18,9 +19,11 @@
 >
   <header class="el-topbar">
     <div class="el-topbar-left">
-      <a href="/physio/elearning" class="el-icon-btn" id="el-back-link" aria-label="Back to Expeditions" title="Back to Expeditions"></a>
+      <a href="/physio/elearning" class="el-icon-btn" id="el-back-link" aria-label="Back to Expeditions" title="Back to Expeditions"><span>Expeditions</span></a>
       <div class="el-title-wrap">
-        <input type="text" class="el-title-input" id="el-exp-title" aria-label="Expedition title" maxlength="200">
+        <textarea rows="1" class="el-title-input" id="el-exp-title" aria-label="Expedition title" maxlength="200"></textarea>
+        <button type="button" class="el-btn el-btn-sm" id="el-title-done">Done</button>
+        <span id="el-share-visibility" hidden></span>
         <span class="el-save-chip" id="el-save-state" role="status" aria-live="polite">Loading…</span>
         <button type="button" class="el-btn el-btn-sm el-save-retry" id="el-save-retry" hidden>Retry save</button>
       </div>
@@ -35,15 +38,18 @@
     </div>
 
     <div class="el-topbar-right">
-      <button type="button" class="el-icon-btn el-utilities-toggle" id="el-utilities-toggle" aria-label="Editor tools" aria-controls="el-editor-utilities" aria-expanded="false"></button>
-      <div id="el-editor-utilities" class="el-utilities">
-        <div id="el-edit-lang-host"></div>
-      <div class="el-topbar-sep" aria-hidden="true"></div>
-      <button type="button" class="el-icon-btn" id="el-undo-btn" aria-label="Undo" title="Undo" disabled></button>
-      <button type="button" class="el-icon-btn" id="el-redo-btn" aria-label="Redo" title="Redo" disabled></button>
-      <div id="el-more-menu-host"></div>
+      <div class="el-tools-anchor">
+        <button type="button" class="el-icon-btn el-utilities-toggle" id="el-utilities-toggle" aria-label="Editor tools" aria-controls="el-editor-utilities" aria-expanded="false"></button>
+        <div id="el-editor-utilities" class="el-utilities">
+          <a class="el-btn el-btn-sm el-mobile-expeditions" href="/physio/elearning">Expeditions</a>
+          <div id="el-edit-lang-host"></div>
+          <div class="el-topbar-sep" aria-hidden="true"></div>
+          <button type="button" class="el-icon-btn" id="el-undo-btn" aria-label="Undo" title="Undo" disabled></button>
+          <button type="button" class="el-icon-btn" id="el-redo-btn" aria-label="Redo" title="Redo" disabled></button>
+          <div id="el-more-menu-host"></div>
+        </div>
       </div>
-      <button type="button" class="el-btn el-btn-primary" id="el-share-btn">Share</button>
+      <button type="button" class="el-btn el-btn-primary" id="el-share-btn" hidden>Share</button>
     </div>
   </header>
 
@@ -56,6 +62,7 @@
     <div>
       <strong id="el-lease-message">Another collaborator is currently editing.</strong>
     </div>
+    <button type="button" class="el-btn el-btn-sm" id="el-conflict-download" hidden>Download my draft</button>
     <button type="button" class="el-btn el-btn-sun el-btn-sm" id="el-takeover-btn">Take Over Editing</button>
   </div>
 
@@ -86,12 +93,12 @@
       <div class="el-stage-bar">
         <span class="el-stage-crumb" id="el-canvas-crumb">Start Page</span>
         <div class="el-vp-switch" role="group" aria-label="Canvas width">
-          <button type="button" class="el-vp-btn is-active" id="el-vp-desktop" aria-pressed="true">Desktop</button>
-          <button type="button" class="el-vp-btn" id="el-vp-mobile" aria-pressed="false">Mobile</button>
+          <button type="button" class="el-vp-btn is-active" id="el-vp-desktop" aria-pressed="true">Available width</button>
+          <button type="button" class="el-vp-btn" id="el-vp-mobile" aria-pressed="false">Phone</button>
         </div>
       </div>
 
-      <div class="el-canvas-frame xped-surface-scope" id="el-canvas-frame" data-xped-theme="xped-warm-sand">
+      <div class="el-canvas-frame xped-surface-scope" aria-label="Editing canvas at available width" id="el-canvas-frame" data-xped-theme="xped-warm-sand">
         <div id="el-canvas-card" data-i18n-ignore></div>
       </div>
 
@@ -110,12 +117,13 @@
     </section>
 
     <aside class="el-inspector" id="el-inspector" aria-label="Inspector">
-      <div class="el-insp-tabs" role="tablist">
-        <button type="button" role="tab" class="el-insp-tab is-active" data-insp="block" aria-selected="true">Settings</button>
-        <button type="button" role="tab" class="el-insp-tab" data-insp="step" aria-selected="false">Station</button>
-        <button type="button" role="tab" class="el-insp-tab" data-insp="theme" aria-selected="false">Design</button>
+      <div class="el-insp-tabs" role="tablist" aria-label="Inspector sections">
+        <button type="button" role="tab" class="el-insp-tab is-active" data-insp="block" id="el-insp-block" aria-controls="el-inspector-body" tabindex="0" aria-selected="true">Settings</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="step" id="el-insp-step" aria-controls="el-inspector-body" tabindex="-1" aria-selected="false">Station</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="theme" id="el-insp-theme" aria-controls="el-inspector-body" tabindex="-1" aria-selected="false">Design</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="languages" id="el-insp-languages" aria-controls="el-inspector-body" tabindex="-1" aria-selected="false">Languages</button>
       </div>
-      <div id="el-inspector-body"></div>
+      <div id="el-inspector-body" role="tabpanel" aria-labelledby="el-insp-block"></div>
     </aside>
   </main>
 
@@ -142,13 +150,18 @@
         <button type="button" class="el-btn el-btn-sm" id="el-tr-alt-toggle" aria-pressed="false">3rd language ref</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-next-missing">Next missing</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-toggle-preview" aria-pressed="true">Live Preview</button>
+        <details class="el-tr-transfer">
+          <summary class="el-btn el-btn-sm">CSV files</summary>
+          <div class="el-tr-transfer-actions">
         <button type="button" class="el-btn el-btn-sm" id="el-tr-export-csv">Export CSV</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-import-csv-btn">Import CSV</button>
         <input type="file" id="el-tr-import-csv-input" accept=".csv,text/csv" hidden>
+          </div>
+        </details>
         <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-tr-save-btn">Save Now</button>
       </div>
     </div>
-    <p class="el-tr-shortcut-hint">Shortcut: press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> in any translation field to jump to the next missing item.</p>
+    <p class="el-tr-shortcut-hint"><kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> moves to the next missing translation.</p>
 
     <details class="el-tr-glossary" id="el-tr-glossary">
       <summary><span>Pain-Education Glossary</span><span class="xped-caption" id="el-tr-glossary-summary">Shared key terms</span></summary>
@@ -181,8 +194,8 @@
           <button type="button" class="el-vp-btn" id="el-pv-from-start" aria-pressed="false">Start page</button>
         </div>
         <div class="el-vp-switch el-vp-width-switch" role="group" aria-label="Preview width">
-          <button type="button" class="el-vp-btn is-active" id="el-pv-desktop" aria-pressed="true">Desktop</button>
-          <button type="button" class="el-vp-btn" id="el-pv-mobile" aria-pressed="false">Mobile</button>
+          <button type="button" class="el-vp-btn is-active" id="el-pv-desktop" aria-pressed="true">Available width</button>
+          <button type="button" class="el-vp-btn" id="el-pv-mobile" aria-pressed="false">Phone</button>
         </div>
         <label class="el-field-check el-pv-peer-toggle">
           <input type="checkbox" id="el-pv-sample-peers">
@@ -191,7 +204,7 @@
       </div>
       <button type="button" class="el-btn el-btn-sm" id="el-preview-reset">Reset preview</button>
     </div>
-    <div class="el-canvas-frame xped-surface-scope" id="el-preview-container" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+    <div class="el-canvas-frame xped-surface-scope" aria-label="Learner preview at available width" id="el-preview-container" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
   </section>
 
   <!-- Categorized + Add Block Dialog with Search & Live Preview -->
@@ -207,8 +220,11 @@
       <div class="el-picker-split">
         <div id="el-picker-body"></div>
         <aside class="el-picker-preview-pane" aria-label="Block preview">
+          <button type="button" class="el-btn el-btn-sm" id="el-picker-change">← All blocks</button>
           <div class="el-picker-preview-head">Learner preview</div>
+          <h3 id="el-picker-preview-heading"></h3>
           <div id="el-picker-preview" class="xped-surface-scope" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+          <button type="button" class="el-btn el-btn-primary" id="el-picker-insert">Add block</button>
         </aside>
       </div>
     </div>
@@ -275,7 +291,7 @@
   <!-- Share, QR Code & Collaborator / German Translator Dialog -->
   <dialog class="el-dialog" id="el-share-dialog" closedby="any" aria-labelledby="el-share-title">
     <div class="el-dialog-header">
-      <h2 id="el-share-title">Share, Test Links &amp; Team Access</h2>
+      <h2 id="el-share-title">Share expedition</h2>
       <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
     </div>
     <div class="el-dialog-body">
@@ -284,23 +300,23 @@
         <button type="button" class="el-btn el-btn-sm" id="el-share-retry-btn" hidden>Retry</button>
       </div>
       <div id="el-share-content">
+        <div role="status" id="el-share-status"></div>
         <div class="el-share-tabs" role="tablist" aria-label="Share audience">
-          <button type="button" role="tab" class="el-share-tab is-active" data-share-tab="learners" aria-selected="true">Learners</button>
-          <button type="button" role="tab" class="el-share-tab" data-share-tab="collaborators" aria-selected="false">Collaborators</button>
-          <button type="button" role="tab" class="el-share-tab" data-share-tab="translators" aria-selected="false">Translators</button>
+          <button type="button" role="tab" class="el-share-tab is-active" id="el-tab-learners" aria-controls="el-panel-learners" data-share-tab="learners" aria-selected="true">Learners</button>
+          <button type="button" role="tab" class="el-share-tab" id="el-tab-collaborators" aria-controls="el-panel-collaborators" data-share-tab="collaborators" aria-selected="false">Collaborators</button>
+          <button type="button" role="tab" class="el-share-tab" id="el-tab-translators" aria-controls="el-panel-translators" data-share-tab="translators" aria-selected="false">Translators</button>
         </div>
 
-        <section class="el-share-panel" data-share-panel="learners">
-          <p class="xped-caption">Zero-login public link for patients, students, or pilot testers. Pause or reset anytime.</p>
+        <section class="el-share-panel" id="el-panel-learners" role="tabpanel" aria-labelledby="el-tab-learners" data-share-panel="learners">
+          <p class="xped-caption">Anyone with an active link can take this expedition without signing in.</p>
           <label class="el-field-check">
             <input type="checkbox" id="el-share-enabled">
-            <span>Public test link is active</span>
+            <span>Enable learner link</span>
           </label>
 
           <div class="el-share-inactive-card" id="el-share-inactive-card" hidden>
             <strong>This expedition is currently private.</strong>
-            <p class="xped-caption">Learners and testers cannot open the link until you activate it.</p>
-            <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-share-activate-btn">Activate public link</button>
+            <p class="xped-caption">Enable the learner link to invite testers.</p>
           </div>
 
           <div class="el-share-box" id="el-share-active-box">
@@ -343,7 +359,7 @@
           </label>
         </section>
 
-        <section class="el-share-panel" data-share-panel="collaborators" hidden>
+        <section class="el-share-panel" id="el-panel-collaborators" role="tabpanel" aria-labelledby="el-tab-collaborators" data-share-panel="collaborators" hidden>
           <p class="xped-caption">Co-Editors can edit structure and content with their account. Translators can edit localized text only.</p>
           <div class="el-share-inline-row">
             <input type="email" aria-label="Collaborator email" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
@@ -353,10 +369,10 @@
           <div id="el-members-list"></div>
         </section>
 
-        <section class="el-share-panel" data-share-panel="translators" hidden>
+        <section class="el-share-panel" id="el-panel-translators" role="tabpanel" aria-labelledby="el-tab-translators" data-share-panel="translators" hidden>
           <p class="xped-caption">Direct link for an external editor (no account needed). Locked to their assigned target language.</p>
           <div class="el-share-inline-row">
-            <input type="text" aria-label="Translator link label" id="el-grant-label" class="xped-input" placeholder="German Editor (DE)">
+            <input type="text" aria-label="Translator link label" id="el-grant-label" class="xped-input" placeholder="Recipient name">
             <div id="el-grant-lang-host"></div>
             <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">Create Link</button>
           </div>

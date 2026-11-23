@@ -84,6 +84,7 @@
       if (saved.peerDisclosureTypes && typeof saved.peerDisclosureTypes === 'object') {
         state.peerDisclosureTypes = Object.assign(Object.create(null), saved.peerDisclosureTypes);
       }
+      if (Array.isArray(saved.navHistory)) state.navHistory = saved.navHistory.filter(function (id) { return typeof id === 'string'; });
       if (Array.isArray(saved.visitedStepIds)) state.visitedStepIds = saved.visitedStepIds;
       if (Array.isArray(saved.completedModuleIds)) state.completedModuleIds = saved.completedModuleIds;
       if (Array.isArray(saved.stepComments)) state.stepComments = saved.stepComments;
@@ -105,6 +106,7 @@
         answers: state.answers,
         peerDisclosureTypes: state.peerDisclosureTypes,
         pilotSent: state.pilotSent,
+        navHistory: state.navHistory,
         visitedStepIds: state.visitedStepIds,
         completedModuleIds: state.completedModuleIds,
         stepComments: state.stepComments,
@@ -206,11 +208,13 @@
   function goBack() {
     var mods = (state.exp && state.exp.modules) || [];
     state.navDir = 'prev';
-    if (state.navHistory.length) {
-      var prevPos = state.navHistory.pop();
-      if (mods[prevPos.modIdx] && (mods[prevPos.modIdx].steps || [])[prevPos.stepIdx]) {
-        state.modIdx = prevPos.modIdx;
-        state.stepIdx = prevPos.stepIdx;
+    while (state.navHistory.length) {
+      var previousId = state.navHistory.pop();
+      for (var i = 0; i < mods.length; i++) {
+        var index = (mods[i].steps || []).findIndex(function (step) { return step.id === previousId; });
+        if (index < 0) continue;
+        state.modIdx = i;
+        state.stepIdx = index;
         state.view = 'step';
         showCurrentView();
         return;
@@ -234,10 +238,10 @@
     state.navDir = 'next';
     var jumpIdx = evaluateBranching(mod, step);
     if (jumpIdx >= 0 && jumpIdx !== state.stepIdx) {
-      state.navHistory.push({ modIdx: state.modIdx, stepIdx: state.stepIdx });
+      state.navHistory.push(step.id);
       state.stepIdx = jumpIdx;
     } else if (!isLastStep) {
-      state.navHistory.push({ modIdx: state.modIdx, stepIdx: state.stepIdx });
+      state.navHistory.push(step.id);
       state.stepIdx += 1;
     } else {
       if (state.completedModuleIds.indexOf(mod.id) < 0) state.completedModuleIds.push(mod.id);
@@ -616,6 +620,7 @@
     btn.appendChild(Icons.icon('arrowRight', 18));
     btn.addEventListener('click', function () {
       state.navDir = 'next';
+      if (mod.steps[state.stepIdx]) state.navHistory.push(mod.steps[state.stepIdx].id);
       state.modIdx += 1;
       state.stepIdx = 0;
       state.view = 'step';
@@ -645,146 +650,9 @@
     document.body.removeAttribute('data-active-domain');
     var exp = state.exp;
     var lang = state.lang;
-    var defLang = exp.defaultLanguage || 'nl';
     mainEl.textContent = '';
 
-    var card = document.createElement('article');
-    card.className = 'xped-card';
-    var h1 = document.createElement('h1');
-    h1.className = 'xped-step-title';
-    h1.textContent = Model.ui(lang, 'summaryTitle');
-    var sub = document.createElement('p');
-    sub.className = 'xped-caption';
-    sub.textContent = Model.ui(lang, 'summarySubtitle');
-    card.appendChild(h1);
-    card.appendChild(sub);
-
-    var reflections = [];
-    var plans = [];
-    var balances = [];
-    var insights = [];
-    (exp.modules || []).forEach(function (m) {
-      (m.steps || []).forEach(function (s) {
-        (s.blocks || []).forEach(function (b) {
-          var ans = state.answers[b.id];
-          if (b.type === 'reflection' && typeof ans === 'string' && ans.trim()) {
-            reflections.push({ q: Model.getLocalized(b.data.prompt, lang, defLang), a: ans });
-          } else if (b.type === 'mini_plan' && Model.hasMeaningfulAnswer(ans)) {
-            var normPlan = Model.normalizeMiniPlanAnswer(ans, (b.data && b.data.suggestions) || [], lang, defLang);
-            normPlan.ids.forEach(function (sid) {
-              var sug = ((b.data && b.data.suggestions) || []).find(function (item) { return item.id === sid; });
-              if (sug) {
-                var lbl = Model.getLocalized(sug.label, lang, defLang);
-                if (lbl) plans.push(lbl);
-              }
-            });
-            normPlan.custom.forEach(function (txt) {
-              if (txt) plans.push(txt);
-            });
-          } else if (b.type === 'balance_scale' && ans && typeof ans === 'object') {
-            var loadT = 0;
-            var resT = 0;
-            var loadNames = [];
-            var resNames = [];
-            (b.data.factors || []).forEach(function (f) {
-              var v = Number(ans[f.id] || 0);
-              var lbl = Model.getLocalized(f.label, lang, defLang);
-              if (f.category === 'resource') {
-                resT += v;
-                if (v >= 2 && lbl) resNames.push(lbl + ' (' + v + '/3)');
-              } else {
-                loadT += v;
-                if (v >= 2 && lbl) loadNames.push(lbl + ' (' + v + '/3)');
-              }
-            });
-            balances.push({ loadT: loadT, resT: resT, loadNames: loadNames, resNames: resNames });
-          } else if (b.type === 'myth_fact' && ans) {
-            var expTxt = Model.getLocalized(b.data.explanation, lang, defLang);
-            if (expTxt) insights.push(expTxt);
-          }
-        });
-      });
-    });
-
-    if (balances.length) {
-      var bSec = document.createElement('div');
-      bSec.className = 'el-summary-section';
-      var bh = document.createElement('h3');
-      bh.textContent = Model.ui(lang, 'myBalance');
-      bSec.appendChild(bh);
-      balances.forEach(function (bal) {
-        var bGrid = document.createElement('div');
-        bGrid.className = 'el-summary-balance-grid';
-        var lc = document.createElement('div');
-        lc.className = 'el-summary-balance-col';
-        var lTitle = document.createElement('strong');
-        lTitle.textContent = Model.ui(lang, 'load') + ': ' + bal.loadT;
-        lc.appendChild(lTitle);
-        lc.appendChild(document.createTextNode(bal.loadNames.join(', ') || '—'));
-        var rc = document.createElement('div');
-        rc.className = 'el-summary-balance-col';
-        var rTitle = document.createElement('strong');
-        rTitle.textContent = Model.ui(lang, 'resource') + ': ' + bal.resT;
-        rc.appendChild(rTitle);
-        rc.appendChild(document.createTextNode(bal.resNames.join(', ') || '—'));
-        bGrid.appendChild(lc);
-        bGrid.appendChild(rc);
-        bSec.appendChild(bGrid);
-      });
-      card.appendChild(bSec);
-    }
-
-    if (plans.length) {
-      var pSec = document.createElement('div');
-      pSec.className = 'el-summary-section';
-      var ph = document.createElement('h3');
-      ph.textContent = Model.ui(lang, 'myMiniPlan');
-      pSec.appendChild(ph);
-      var ul = document.createElement('ul');
-      ul.className = 'xped-sources-list';
-      plans.forEach(function (item) {
-        var li = document.createElement('li');
-        li.textContent = item;
-        ul.appendChild(li);
-      });
-      pSec.appendChild(ul);
-      card.appendChild(pSec);
-    }
-
-    if (insights.length) {
-      var iSec = document.createElement('div');
-      iSec.className = 'el-summary-section';
-      var ih = document.createElement('h3');
-      ih.textContent = Model.ui(lang, 'myInsights');
-      iSec.appendChild(ih);
-      var iul = document.createElement('ul');
-      iul.className = 'xped-sources-list';
-      insights.forEach(function (txt) {
-        var li = document.createElement('li');
-        li.textContent = txt;
-        iul.appendChild(li);
-      });
-      iSec.appendChild(iul);
-      card.appendChild(iSec);
-    }
-
-    if (reflections.length) {
-      var rSec = document.createElement('div');
-      rSec.className = 'el-summary-section';
-      var rh = document.createElement('h3');
-      rh.textContent = Model.ui(lang, 'myReflections');
-      rSec.appendChild(rh);
-      reflections.forEach(function (ref) {
-        var q = document.createElement('strong');
-        q.textContent = ref.q;
-        var a = document.createElement('p');
-        a.textContent = ref.a;
-        a.className = 'el-reflection-answer';
-        rSec.appendChild(q);
-        rSec.appendChild(a);
-      });
-      card.appendChild(rSec);
-    }
+    var card = RouteMap.renderSummaryCard(exp, state.answers, lang);
 
     var actions = document.createElement('div');
     actions.className = 'el-player-nav el-no-print';
@@ -944,6 +812,10 @@
       activeModuleId: (state.exp.modules[state.modIdx] && state.exp.modules[state.modIdx].id) || '',
       compact: true,
       onSelect: function (_m, idx) {
+        if (state.view === 'step' && (idx !== state.modIdx || state.stepIdx !== 0)) {
+          var previous = state.exp.modules[state.modIdx].steps[state.stepIdx];
+          if (previous) state.navHistory.push(previous.id);
+        }
         state.navDir = 'next';
         state.modIdx = idx;
         state.stepIdx = 0;
@@ -966,6 +838,7 @@
         state.peerDisclosureTypes = Object.create(null);
         state.stepComments = [];
         state.pilotSent = false;
+        state.navHistory = [];
         state.visitedStepIds = [];
         state.completedModuleIds = [];
         state.modIdx = 0;
