@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/study.css') }}">
+  {% include '_study_stylesheets.html' %}
 </head>
 
 <body data-study-entry-mode="{{ study_entry_mode or '' }}">

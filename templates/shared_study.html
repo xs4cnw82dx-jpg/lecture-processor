@@ -8,7 +8,7 @@
   <title>Shared Study Content · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/study.css') }}">
+  {% include '_study_stylesheets.html' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-study.css') }}">
 </head>
 <body>
