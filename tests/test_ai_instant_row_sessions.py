@@ -126,17 +126,22 @@ def test_each_row_uses_one_session_and_named_stages(core, row_env, mode, stages)
     if 'slides_extraction' in stages:
         assert usage['slide_extraction']['model'] == 'routed-slides_extraction'
     if 'audio_transcription' in stages:
-        assert usage['audio_transcription']['model'] == core.MODEL_AUDIO
+        assert usage['audio_transcription']['model'] == 'routed-audio_transcription'
 
 
 def test_timestamped_rows_fall_back_through_the_same_session(core, row_env, monkeypatch):
     monkeypatch.setattr(core, 'FEATURE_AUDIO_SECTION_SYNC', True)
-    run_row(core, row_env, 'lecture-notes')
+    row = run_row(core, row_env, 'lecture-notes')
     stages = [call[0] for call in row_env.sessions[0].calls]
     assert stages == ['slides_extraction', 'audio_transcription_timestamped', 'audio_transcription', 'notes_merge']
     primary, fallback = row_env.sessions[0].calls[1:3]
     assert primary[1][0] is fallback[1][0]
     assert fallback[2]['operation_name'] == 'audio_transcription_fallback'
+    usage = row['token_usage_by_stage']
+    assert usage['audio_transcription']['model'] == 'routed-audio_transcription_timestamped'
+    assert usage['audio_transcription_fallback']['model'] == 'routed-audio_transcription'
+    assert usage['audio_transcription_fallback']['billing_mode'] == 'instant_batch'
+    assert row['token_total'] == 19 * len(stages)
 
 
 def test_row_that_fails_before_generation_never_opens_a_session(core, row_env):

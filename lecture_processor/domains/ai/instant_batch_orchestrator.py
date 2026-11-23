@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from functools import partial
 
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import provider as ai_provider
@@ -268,34 +269,30 @@ def _run_audio_transcription(batch_id, row, throttler, tokens, retry_tracker, ru
     audio_mime = row.get('audio_mime_type', 'audio/mpeg')
     audio_file = PreparedFilePart(row.get('audio_file_uri', ''), audio_mime)
     output_language = row.get('output_language', 'English')
+    on_audio_usage = partial(tokens.record_usage, input_modality='audio', billing_mode='instant_batch')
     with _row_session(runtime, provider_session) as session:
         if timestamped:
-            transcript, segments, usage = runtime.transcribe_audio_with_timestamps(
+            transcript, segments, _ = runtime.transcribe_audio_with_timestamps(
                 audio_file,
                 audio_mime,
                 output_language,
                 retry_tracker=retry_tracker,
                 include_usage=True,
                 provider_session=session,
+                on_usage=on_audio_usage,
             )
         else:
-            transcript, usage = runtime.transcribe_audio_plain(
+            transcript, _ = runtime.transcribe_audio_plain(
                 audio_file,
                 audio_mime,
                 output_language,
                 retry_tracker=retry_tracker,
                 include_usage=True,
                 provider_session=session,
+                on_usage=on_audio_usage,
             )
             segments = []
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
-    tokens.record_usage(
-        'audio_transcription',
-        usage,
-        model=runtime.MODEL_AUDIO,
-        billing_mode='instant_batch',
-        input_modality='audio',
-    )
     row['transcript'] = transcript
     row['transcript_segments'] = segments
     row['result'] = transcript

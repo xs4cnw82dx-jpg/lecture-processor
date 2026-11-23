@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai.providers import factory as provider_factory
 from lecture_processor.domains.ai.providers.contracts import AudioPart
@@ -271,24 +273,18 @@ def _run_general_transcription_job(app_ctx, job_id: str, audio_path: str, runtim
         set_fields(step_description='Generating transcript…')
         failed_stage = 'audio_transcription'
         output_language = get_fields().get('output_language', 'English')
-        transcript_text, usage = app_ctx.transcribe_audio_plain(
+        transcript_text, _ = app_ctx.transcribe_audio_plain(
             audio_part,
             audio_mime_type,
             output_language=output_language,
             retry_tracker=retry_tracker,
             include_usage=True,
             provider_session=provider_session,
+            on_usage=partial(tokens.record_usage, input_modality='audio'),
             stage='tools_transcription',
         )
         if not str(transcript_text or '').strip():
             raise ValueError('Transcript generation returned empty output.')
-        tokens.record_usage(
-            'audio_transcription',
-            usage,
-            model=app_ctx.MODEL_AUDIO,
-            billing_mode='standard',
-            input_modality='audio',
-        )
         set_fields(
             status='complete',
             step=1,

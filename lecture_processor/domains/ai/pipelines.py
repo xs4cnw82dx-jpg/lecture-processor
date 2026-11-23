@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from functools import partial
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import provider as ai_provider
@@ -312,32 +313,28 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
 
         set_fields(step_description='Generating transcript...')
         failed_stage = 'audio_transcription'
+        on_audio_usage = partial(tokens.record_usage, input_modality='audio')
         if resolved_runtime.FEATURE_AUDIO_SECTION_SYNC:
-            transcript, transcript_segments, transcription_usage = resolved_runtime.transcribe_audio_with_timestamps(
+            transcript, transcript_segments, _ = resolved_runtime.transcribe_audio_with_timestamps(
                 audio_part,
                 audio_mime_type,
                 output_language,
                 retry_tracker=retry_tracker,
                 include_usage=True,
                 provider_session=provider_session,
+                on_usage=on_audio_usage,
             )
         else:
-            transcript, transcription_usage = resolved_runtime.transcribe_audio_plain(
+            transcript, _ = resolved_runtime.transcribe_audio_plain(
                 audio_part,
                 audio_mime_type,
                 output_language,
                 retry_tracker=retry_tracker,
                 include_usage=True,
                 provider_session=provider_session,
+                on_usage=on_audio_usage,
             )
             transcript_segments = []
-        tokens.record_usage(
-            'audio_transcription',
-            transcription_usage,
-            model=resolved_runtime.MODEL_AUDIO,
-            billing_mode='standard',
-            input_modality='audio',
-        )
 
         set_fields(
             transcript=transcript,

@@ -1,12 +1,13 @@
 """General transcription owns one workflow session with isolated provider doubles."""
 from copy import deepcopy
+from dataclasses import replace
 import os
 import socket
 from types import SimpleNamespace
 
 import pytest
 
-from lecture_processor.domains.ai.providers import factory
+from lecture_processor.domains.ai.providers import factory, routing
 from lecture_processor.domains.ai.providers.contracts import AudioPart
 from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.billing import job_charges
@@ -138,8 +139,12 @@ def assert_owned_session(state):
     assert all(names.index('close') < i for i, name in enumerate(names) if name == 'remote_delete')
 
 
-def test_general_transcription_uses_one_session_on_the_tools_stage(workflow):
+@pytest.mark.parametrize('model', ['gemini-3.8-flash', 'gemini-3.5-flash-lite'])
+def test_general_transcription_uses_one_session_on_the_tools_stage(workflow, monkeypatch, model):
     state = workflow
+    snapshot = state.core.AI_ROUTING_SNAPSHOT
+    routes = dict(snapshot.routes, tools_transcription=routing.Route('gemini', model))
+    monkeypatch.setattr(state.core, 'AI_ROUTING_SNAPSHOT', replace(snapshot, routes=routes))
     path = run_job(state)
     assert_owned_session(state)
     part = AudioPart(path, 'audio/mpeg')
@@ -150,10 +155,10 @@ def test_general_transcription_uses_one_session_on_the_tools_stage(workflow):
     assert (stage, operation) == ('tools_transcription', 'audio_transcription') and parts[0] == part
     assert [name for name, _ in state.events].count('remote_upload') == 1
     assert [name for name, _ in state.events].count('remote_delete') == 1
-    assert len(state.calls) == 1 and state.calls[0]['model'] == state.core.MODEL_AUDIO
+    assert len(state.calls) == 1 and state.calls[0]['model'] == model
     assert state.job['status'] == 'complete' and state.job['transcript'] == 'Synthetic transcript.'
     assert state.job['token_usage_by_stage'] == {'audio_transcription': {
-        'input_tokens': 11, 'output_tokens': 10, 'total_tokens': 21, 'model': state.core.MODEL_AUDIO,
+        'input_tokens': 11, 'output_tokens': 10, 'total_tokens': 21, 'model': model,
         'billing_mode': 'standard', 'input_modality': 'audio'}}
 
 
