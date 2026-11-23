@@ -103,6 +103,8 @@ test('UX review model helpers: presets, DOI links, readable labels, nested check
   const doi = Model.normalizeCitationLink('10.3174/ajnr.A4173');
   assert.equal(doi.url, 'https://doi.org/10.3174/ajnr.A4173');
   assert.equal(doi.host, 'doi.org');
+  assert.equal(Model.normalizeCitationLink('https://example.org/handouts/session one.pdf').url,
+    'https://example.org/handouts/session%20one.pdf');
 
   assert.equal(Model.hasMeaningfulAnswer(0), true);
   assert.equal(Model.hasMeaningfulAnswer(''), false);

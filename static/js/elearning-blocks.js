@@ -195,7 +195,7 @@
     var url = '';
     for (var i = start; i < line.length; i++) {
       var ch = line[i];
-      if (/\s/.test(ch)) break;
+      // Older stored links can contain unescaped spaces in the URL path.
       if (ch === '\\' && /[\\()]/.test(line[i + 1] || '')) {
         url += line[++i];
         continue;

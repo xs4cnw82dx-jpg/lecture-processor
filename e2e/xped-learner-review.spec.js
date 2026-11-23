@@ -411,16 +411,17 @@ test('the mini-plan picker lets an author leave custom steps out before insertio
 
 test('literal Markdown and formatted DOI labels survive editing, saving and learner rendering', async ({page}) => {
   const doi = 'https://doi.org/10.1000/study(2024)';
-  const rich = make('richtext', {body:local('[**Study** results](' + doi + ').')});
+  const handout = 'https://example.org/handouts/session one.pdf';
+  const rich = make('richtext', {body:local('[**Study** results](' + doi + '). [Handout](' + handout + ').')});
   const fixture = await author(page, [rich]);
   const area = page.getByRole('textbox', {name:'Paragraph text'});
+  await expect(area.getByRole('link', {name:'Handout'})).toHaveAttribute('href', new URL(handout).href);
   const link = area.getByRole('link', {name:'Study results'});
   await expect(link).toHaveAttribute('href', doi);
   await expect(link.locator('strong')).toHaveText('Study');
   await area.evaluate(editor => {
     editor.focus();
-    const lastText = editor.lastChild.lastChild;
-    window.getSelection().collapse(lastText, lastText.length);
+    window.getSelection().collapse(editor.lastChild, editor.lastChild.childNodes.length);
   });
   const lines = ['- item', '1. first', '2) second', '## literal heading', '**literal** and [label](https://example.org)'];
   for (const line of lines) {
@@ -431,9 +432,10 @@ test('literal Markdown and formatted DOI labels survive editing, saving and lear
   const savedBlock = fixture.writes.at(-1).body.modules[0].steps[0].blocks[0];
   await enter(page, [savedBlock]);
   const body = page.locator('.xped-richtext-body');
-  await expect(body.locator('p')).toHaveText(['Study results.', ...lines]);
-  await expect(body.getByRole('link')).toHaveCount(1);
-  await expect(body.getByRole('link')).toHaveAttribute('href', doi);
+  await expect(body.locator('p')).toHaveText(['Study results. Handout.', ...lines]);
+  await expect(body.getByRole('link')).toHaveCount(2);
+  await expect(body.getByRole('link', {name:'Study results'})).toHaveAttribute('href', doi);
+  await expect(body.getByRole('link', {name:'Handout'})).toHaveAttribute('href', new URL(handout).href);
   await expect(body.locator('a strong')).toHaveText('Study');
 });
 

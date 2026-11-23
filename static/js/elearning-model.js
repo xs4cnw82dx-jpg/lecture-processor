@@ -715,7 +715,7 @@
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { url: '', label: '', host: '' };
       var host = (parsed.hostname || '').replace(/^www\./, '');
       var label = host === 'doi.org' ? ('DOI: ' + parsed.pathname.replace(/^\/+/, '')) : host;
-      return { url: text, label: label, host: host };
+      return { url: parsed.href, label: label, host: host };
     } catch (_e) {
       return { url: '', label: '', host: '' };
     }
