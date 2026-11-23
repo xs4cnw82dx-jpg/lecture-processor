@@ -32,6 +32,7 @@ EXPECTED_ROUTES = [
     ('GET', '/elearning/p/<share_token>', 'elearning.public_player_page'),
     ('GET', '/api/elearning/expeditions', 'elearning.api_expeditions'),
     ('POST', '/api/elearning/expeditions', 'elearning.api_expeditions'),
+    ('POST', '/api/elearning/import-preview', 'elearning.api_import_preview'),
     ('POST', '/api/elearning/grant-session', 'elearning.api_grant_session'),
     ('GET', '/api/elearning/expeditions/<expedition_id>', 'elearning.api_expedition_detail'),
     ('PUT', '/api/elearning/expeditions/<expedition_id>', 'elearning.api_expedition_detail'),

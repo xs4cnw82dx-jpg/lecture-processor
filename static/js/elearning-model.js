@@ -52,6 +52,7 @@
       rightLead: 'Klopt helemaal',
       wrongMythLead: 'Veel mensen denken dit — zo zit het eigenlijk',
       yourAnswer: 'Jouw keuze',
+      correctChoice: 'Juist antwoord',
       peerResults: 'Zo antwoordden anderen (anoniem)',
       responsesCount: '{n} reacties',
       addWordPlaceholder: 'Typ een woord en druk op Enter…',
@@ -99,6 +100,20 @@
       pausedFallback: 'Deze module is tijdelijk gepauzeerd.',
       notFound: 'Deze link bestaat niet of is niet meer actief.',
       hotspotListLabel: 'Kies een punt om te bekijken:',
+      hotspotUnselected: 'Kies een punt op de afbeelding om uitleg te bekijken.',
+      checkAnswers: 'Controleer antwoorden',
+      allCorrect: 'Alle juiste antwoorden gekozen!',
+      partialCorrect: 'Je hebt een deel goed — bekijk de toelichting hieronder.',
+      notChosenYet: 'Nog niet gekozen',
+      chooseMidpoint: 'Kies midden ({n})',
+      wordsRemaining: '{n} van {max} woorden toegevoegd',
+      wordsLimitReached: 'Maximum van {max} woorden bereikt — verwijder eerst een woord om een nieuw woord toe te voegen.',
+      removeWord: 'Verwijder "{word}"',
+      goalsSelectedCount: '{n} van {max} gekozen',
+      goalsLimitReached: 'Maximum van {max} stappen bereikt — deselecteer eerst een stap om deze toe te voegen.',
+      movedItem: '{label} verplaatst naar positie {pos} van {total}',
+      sourcesBar: 'Bron',
+      openSource: 'Open bron ({host})',
       up: 'Omhoog',
       down: 'Omlaag',
     },
@@ -137,6 +152,7 @@
       rightLead: 'Spot on',
       wrongMythLead: 'Many people think this — here is how it actually works',
       yourAnswer: 'Your choice',
+      correctChoice: 'Correct answer',
       peerResults: 'How others answered (anonymous)',
       responsesCount: '{n} responses',
       addWordPlaceholder: 'Type a word and press Enter…',
@@ -184,6 +200,20 @@
       pausedFallback: 'This module is temporarily paused.',
       notFound: 'This link could not be found or is no longer active.',
       hotspotListLabel: 'Select a point to explore:',
+      hotspotUnselected: 'Choose a point on the image to read its explanation.',
+      checkAnswers: 'Check answers',
+      allCorrect: 'All correct answers selected!',
+      partialCorrect: 'You got part of it — check the explanation below.',
+      notChosenYet: 'Not chosen yet',
+      chooseMidpoint: 'Choose midpoint ({n})',
+      wordsRemaining: '{n} of {max} words added',
+      wordsLimitReached: 'Limit of {max} words reached — remove a word first to add another.',
+      removeWord: 'Remove "{word}"',
+      goalsSelectedCount: '{n} of {max} selected',
+      goalsLimitReached: 'Limit of {max} steps reached — deselect one first to add this.',
+      movedItem: 'Moved {label} to position {pos} of {total}',
+      sourcesBar: 'Source',
+      openSource: 'Open source ({host})',
       up: 'Up',
       down: 'Down',
     },
@@ -222,6 +252,7 @@
       rightLead: 'Genau richtig',
       wrongMythLead: 'Viele Menschen denken das — so funktioniert es wirklich',
       yourAnswer: 'Deine Wahl',
+      correctChoice: 'Richtige Antwort',
       peerResults: 'So haben andere geantwortet (anonym)',
       responsesCount: '{n} Antworten',
       addWordPlaceholder: 'Wort eingeben und Enter drücken…',
@@ -269,6 +300,20 @@
       pausedFallback: 'Dieses Modul ist vorübergehend pausiert.',
       notFound: 'Dieser Link wurde nicht gefunden oder ist nicht mehr aktiv.',
       hotspotListLabel: 'Wähle einen Punkt zum Entdecken:',
+      hotspotUnselected: 'Wähle einen Punkt auf dem Bild, um die Erklärung zu lesen.',
+      checkAnswers: 'Antworten prüfen',
+      allCorrect: 'Alle richtigen Antworten gewählt!',
+      partialCorrect: 'Ein Teil stimmt — schau dir die Erklärung unten an.',
+      notChosenYet: 'Noch nicht gewählt',
+      chooseMidpoint: 'Mitte wählen ({n})',
+      wordsRemaining: '{n} von {max} Wörtern hinzugefügt',
+      wordsLimitReached: 'Limit von {max} Wörtern erreicht — entferne zuerst ein Wort, um ein neues hinzuzufügen.',
+      removeWord: '„{word}“ entfernen',
+      goalsSelectedCount: '{n} von {max} gewählt',
+      goalsLimitReached: 'Limit von {max} Schritten erreicht — wähle zuerst einen ab, um diesen hinzuzufügen.',
+      movedItem: '{label} auf Position {pos} von {total} verschoben',
+      sourcesBar: 'Quelle',
+      openSource: 'Quelle öffnen ({host})',
       up: 'Hoch',
       down: 'Runter',
     },
@@ -283,40 +328,367 @@
   ];
 
   var XPED_ASSETS = [
-    { id: 'wandelaar-kaart', label: 'Expeditie kaart', path: '/static/images/xped/xped-wandelaar-met-kaart.png' },
-    { id: 'jan', label: 'Jan', path: '/static/images/xped/xped-jan.png' },
-    { id: 'inge', label: 'Inge', path: '/static/images/xped/xped-inge.png' },
-    { id: 'esther', label: 'Esther', path: '/static/images/xped/xped-esther.png' },
-    { id: 'arts', label: 'Arts & patiënt', path: '/static/images/xped/xped-arts.png' },
-    { id: 'wandelen', label: 'Wandelen', path: '/static/images/xped/xped-wandelen.png' },
-    { id: 'brein-mascotte', label: 'Brein mascotte', path: '/static/images/xped/xped-brein-mascotte-met-gloeilamp.png' },
-    { id: 'icon-brein', label: 'Icon: Brein', path: '/static/images/xped/icon-brein.png' },
-    { id: 'icon-lamp', label: 'Icon: Inzicht', path: '/static/images/xped/icon-lamp.png' },
-    { id: 'icon-sociaal', label: 'Icon: Sociaal', path: '/static/images/xped/icon-sociaal.png' },
-    { id: 'icon-voetstappen', label: 'Icon: Stappen', path: '/static/images/xped/icon-voetstappen.png' },
-    { id: 'logo-nl', label: 'xPED Logo', path: '/static/images/xped/logo_nl.svg' },
+    {
+      id: 'wandelaar-kaart',
+      label: 'Expeditie kaart',
+      path: '/static/images/xped/xped-wandelaar-met-kaart.png',
+      alt: {
+        nl: 'Illustratie van een wandelaar met rugzak die een routekaart vasthoudt',
+        en: 'Illustration of a hiker with a backpack holding a route map',
+        de: 'Illustration einer wandernden Person mit Rucksack und Routenkarte',
+      },
+    },
+    {
+      id: 'jan',
+      label: 'Jan',
+      path: '/static/images/xped/xped-jan.png',
+      alt: {
+        nl: 'Portretillustratie van Jan uit de xPEDitie Pijn-verhalen',
+        en: 'Portrait illustration of Jan from the xPEDitie Pain stories',
+        de: 'Porträtillustration von Jan aus den xPEDition-Schmerz-Geschichten',
+      },
+    },
+    {
+      id: 'inge',
+      label: 'Inge',
+      path: '/static/images/xped/xped-inge.png',
+      alt: {
+        nl: 'Portretillustratie van Inge uit de xPEDitie Pijn-verhalen',
+        en: 'Portrait illustration of Inge from the xPEDitie Pain stories',
+        de: 'Porträtillustration von Inge aus den xPEDition-Schmerz-Geschichten',
+      },
+    },
+    {
+      id: 'esther',
+      label: 'Esther',
+      path: '/static/images/xped/xped-esther.png',
+      alt: {
+        nl: 'Portretillustratie van Esther uit de xPEDitie Pijn-verhalen',
+        en: 'Portrait illustration of Esther from the xPEDitie Pain stories',
+        de: 'Porträtillustration von Esther aus den xPEDition-Schmerz-Geschichten',
+      },
+    },
+    {
+      id: 'arts',
+      label: 'Arts & patiënt',
+      path: '/static/images/xped/xped-arts.png',
+      alt: {
+        nl: 'Illustratie van een zorgverlener in gesprek met een patiënt',
+        en: 'Illustration of a clinician talking with a patient',
+        de: 'Illustration einer Fachperson im Gespräch mit einer Patientin oder einem Patienten',
+      },
+    },
+    {
+      id: 'wandelen',
+      label: 'Wandelen',
+      path: '/static/images/xped/xped-wandelen.png',
+      alt: {
+        nl: 'Illustratie van iemand die rustig buiten wandelt langs een pad',
+        en: 'Illustration of a person walking calmly along an outdoor path',
+        de: 'Illustration einer Person beim ruhigen Spaziergang auf einem Weg',
+      },
+    },
+    {
+      id: 'brein-mascotte',
+      label: 'Brein mascotte',
+      path: '/static/images/xped/xped-brein-mascotte-met-gloeilamp.png',
+      alt: {
+        nl: 'Illustratie van het xPED-brein met een brandende gloeilamp voor inzicht',
+        en: 'Illustration of the xPED brain character holding a lit lightbulb for insight',
+        de: 'Illustration der xPED-Gehirnfigur mit einer leuchtenden Glühbirne',
+      },
+    },
+    {
+      id: 'icon-brein',
+      label: 'Icon: Brein',
+      path: '/static/images/xped/icon-brein.png',
+      alt: {
+        nl: 'Pictogram van een brein als symbool voor het zenuwstelsel',
+        en: 'Brain icon representing the nervous system',
+        de: 'Gehirn-Symbol für das Nervensystem',
+      },
+    },
+    {
+      id: 'icon-lamp',
+      label: 'Icon: Inzicht',
+      path: '/static/images/xped/icon-lamp.png',
+      alt: {
+        nl: 'Pictogram van een gloeilamp als symbool voor een inzicht',
+        en: 'Lightbulb icon representing an insight',
+        de: 'Glühbirnen-Symbol für eine Erkenntnis',
+      },
+    },
+    {
+      id: 'icon-sociaal',
+      label: 'Icon: Sociaal',
+      path: '/static/images/xped/icon-sociaal.png',
+      alt: {
+        nl: 'Pictogram van mensen samen als symbool voor sociale steun',
+        en: 'People icon representing social support',
+        de: 'Personen-Symbol für soziale Unterstützung',
+      },
+    },
+    {
+      id: 'icon-voetstappen',
+      label: 'Icon: Stappen',
+      path: '/static/images/xped/icon-voetstappen.png',
+      alt: {
+        nl: 'Pictogram van voetstappen als symbool voor kleine haalbare stappen',
+        en: 'Footsteps icon representing small achievable steps',
+        de: 'Fußspuren-Symbol für kleine machbare Schritte',
+      },
+    },
+    {
+      id: 'logo-nl',
+      label: 'xPED Logo',
+      path: '/static/images/xped/logo_nl.svg',
+      alt: {
+        nl: 'Logo van xPEDitie Pijn',
+        en: 'xPEDitie Pain logo',
+        de: 'Logo von xPEDition Schmerz',
+      },
+    },
+  ];
+
+  var BLOCK_CATEGORIES = [
+    { key: 'explain', label: 'Explain & illustrate' },
+    { key: 'ask', label: 'Ask a question' },
+    { key: 'pain_tools', label: 'Pain education tools' },
+    { key: 'advanced', label: 'Advanced' },
   ];
 
   var BLOCK_CATALOG = [
-    { type: 'richtext', category: 'content', label: 'Heading & Text', desc: 'Clean readable explanation or story section.' },
-    { type: 'video', category: 'content', label: 'YouTube / Vimeo Video', desc: 'Privacy-friendly embed with optional start/end timestamps.' },
-    { type: 'image', category: 'content', label: 'Image & Visual', desc: 'Upload photo or pick an official xPED illustration.' },
-    { type: 'audio', category: 'content', label: 'Audio Exercise', desc: 'Breathing, pacing, or spoken explanation player.' },
-    { type: 'callout', category: 'content', label: 'Key Takeaway', desc: 'Bio / Psycho / Social / Tip highlight card.' },
-    { type: 'story', category: 'content', label: 'Patient / Expert Story', desc: 'Authentic quote card with optional portrait.' },
-    { type: 'sources', category: 'content', label: 'Scientific Sources', desc: 'Collapsible academic references drawer.' },
-    { type: 'mcq', category: 'interactive', label: 'Multiple Choice / Poll', desc: 'Single or multi-select with optional peer stats & feedback.' },
-    { type: 'myth_fact', category: 'interactive', label: 'Myth vs. Fact', desc: 'Modern accessible Feit of Fabel reveal card.' },
-    { type: 'scale', category: 'interactive', label: 'Confidence Slider', desc: 'Mentimeter-style 0–10 belief or readiness scale.' },
-    { type: 'reflection', category: 'interactive', label: 'Open Reflection', desc: 'Written response that course authors can read.' },
-    { type: 'wordcloud', category: 'interactive', label: 'Word Cloud', desc: 'Quick 1–3 word associations with optional peer cloud.' },
-    { type: 'ranking', category: 'interactive', label: 'Priority Ranking', desc: 'Order personal values, activities, or coping tips.' },
-    { type: 'hotspot', category: 'interactive', label: 'Pin on Image', desc: 'Interactive diagram hotspots with text fallback.' },
-    { type: 'balance_scale', category: 'xped', label: 'Balance Scale (Waage)', desc: 'Modernized Draagkracht vs. Draaglast interactive scale.' },
-    { type: 'bps_triad', category: 'xped', label: 'Biopsychosocial Triad', desc: 'Interactive Bio · Psycho · Sociaal explorer.' },
-    { type: 'mini_plan', category: 'xped', label: 'Personal Mini-Plan', desc: 'Action chip selector compiled into printable summary.' },
-    { type: 'custom_visual', category: 'xped', label: 'Custom SVG / Animation Slot', desc: 'Reserve a stage for a coding agent SVG/animation or pick a built-in pain animation.' },
+    { type: 'richtext', category: 'explain', label: 'Heading & Text', desc: 'Clean readable explanation or story section.', aliases: ['tekst', 'alinea', 'kop', 'uitleg', 'paragraph', 'text', 'absatz', 'überschrift'] },
+    { type: 'video', category: 'explain', label: 'YouTube / Vimeo Video', desc: 'Privacy-friendly embed with optional start/end timestamps.', aliases: ['filmpje', 'youtube', 'vimeo', 'clip', 'uitlegvideo', 'erklärvideo'] },
+    { type: 'image', category: 'explain', label: 'Image & Visual', desc: 'Upload photo or pick an official xPED illustration.', aliases: ['afbeelding', 'foto', 'illustratie', 'plaatje', 'bild', 'grafik', 'picture'] },
+    { type: 'audio', category: 'explain', label: 'Audio Exercise', desc: 'Breathing, pacing, or spoken explanation player.', aliases: ['geluid', 'ademhaling', 'ontspanning', 'luisteren', 'podcast', 'atmung', 'hörbeitrag'] },
+    { type: 'callout', category: 'explain', label: 'Key Takeaway', desc: 'Bio / Psycho / Social / Tip highlight card.', aliases: ['tip', 'inzicht', 'kader', 'samenvatting', 'hinweis', 'merksatz', 'highlight'] },
+    { type: 'story', category: 'explain', label: 'Patient / Expert Story', desc: 'Authentic quote card with optional portrait.', aliases: ['verhaal', 'citaat', 'ervaring', 'patiënt', 'quote', 'case', 'geschichte', 'zitat'] },
+    { type: 'sources', category: 'explain', label: 'Scientific Sources', desc: 'Collapsible academic references drawer.', aliases: ['bronnen', 'bron', 'referentie', 'literatuur', 'doi', 'citation', 'references', 'quellen'] },
+    { type: 'mcq', category: 'ask', label: 'Multiple Choice / Poll', desc: 'Single or multi-select with optional peer stats & feedback.', aliases: ['meerkeuze', 'peiling', 'poll', 'quiz', 'vraag', 'umfrage', 'auswahlfrage'] },
+    { type: 'myth_fact', category: 'ask', label: 'Myth vs. Fact', desc: 'Modern accessible Feit of Fabel reveal card.', aliases: ['feit', 'fabel', 'stelling', 'waar', 'onwaar', 'mythos', 'fakt', 'statement'] },
+    { type: 'scale', category: 'ask', label: 'Confidence Slider', desc: 'Mentimeter-style 0–10 belief or readiness scale.', aliases: ['schaal', 'schuifbalk', 'slider', 'score', 'cijfer', 'skala', 'regler'] },
+    { type: 'reflection', category: 'ask', label: 'Open Reflection', desc: 'Written response that course authors can read.', aliases: ['reflectie', 'open vraag', 'schrijven', 'gedachten', 'reflexion', 'freitext'] },
+    { type: 'wordcloud', category: 'ask', label: 'Word Cloud', desc: 'Quick 1–3 word associations with optional peer cloud.', aliases: ['woordenwolk', 'associatie', 'kernwoorden', 'wortwolke', 'tags'] },
+    { type: 'ranking', category: 'ask', label: 'Priority Ranking', desc: 'Order personal values, activities, or coping tips.', aliases: ['rangschikken', 'volgorde', 'prioriteit', 'sortieren', 'rangfolge'] },
+    { type: 'hotspot', category: 'ask', label: 'Pin on Image', desc: 'Interactive diagram hotspots with text fallback.', aliases: ['hotspot', 'pin', 'aanwijzen', 'diagram', 'kaart', 'bildpunkte'] },
+    { type: 'balance_scale', category: 'pain_tools', label: 'Balance Scale (Waage)', desc: 'Modernized Draagkracht vs. Draaglast interactive scale.', aliases: ['weegschaal', 'draagkracht', 'draaglast', 'balans', 'waage', 'belastung', 'ressourcen'] },
+    { type: 'bps_triad', category: 'pain_tools', label: 'Biopsychosocial Triad', desc: 'Interactive Bio · Psycho · Sociaal explorer.', aliases: ['bps', 'biopsychosociaal', 'driehoek', 'pijlers', 'biopsychosozial'] },
+    { type: 'mini_plan', category: 'pain_tools', label: 'Personal Mini-Plan', desc: 'Action chip selector compiled into printable summary.', aliases: ['actieplan', 'doel', 'kleine stap', 'mini-plan', 'plan', 'ziel', 'schritte'] },
+    { type: 'custom_visual', category: 'advanced', label: 'Custom SVG / Animation Slot', desc: 'Reserve a stage for a coding agent SVG/animation or pick a built-in pain animation.', aliases: ['svg', 'animatie', 'custom', 'visualisatie', 'agent', 'animation', 'grafikslot'] },
   ];
+
+  var HOTSPOT_PIN_COLORS = [
+    { hex: '#0072CE', label: 'xPED Blue', text: '#FFFFFF' },
+    { hex: '#062940', label: 'Deep Navy', text: '#FFFFFF' },
+    { hex: '#009C67', label: 'Emerald Mint', text: '#FFFFFF' },
+    { hex: '#C98A00', label: 'Warm Amber', text: '#FFFFFF' },
+    { hex: '#D63B4F', label: 'Coral Red', text: '#FFFFFF' },
+    { hex: '#5C4CE6', label: 'Indigo', text: '#FFFFFF' },
+  ];
+
+  function pinTextColor(hex) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return '#ffffff';
+    var channels = hex.slice(1).match(/../g).map(function (v) {
+      var s = parseInt(v, 16) / 255;
+      return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    var luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    return luminance > 0.179 ? '#000000' : '#ffffff';
+  }
+
+  var SCALE_ANCHOR_PRESETS = [
+    {
+      id: 'agreement',
+      label: 'Agreement (0–10)',
+      min: 0,
+      max: 10,
+      minLabel: { nl: 'Helemaal oneens', en: 'Strongly disagree', de: 'Stimme gar nicht zu' },
+      maxLabel: { nl: 'Helemaal eens', en: 'Strongly agree', de: 'Stimme voll zu' },
+    },
+    {
+      id: 'confidence',
+      label: 'Confidence (0–10)',
+      min: 0,
+      max: 10,
+      minLabel: { nl: 'Geen vertrouwen', en: 'Not confident at all', de: 'Gar kein Vertrauen' },
+      maxLabel: { nl: 'Volledig vertrouwen', en: 'Completely confident', de: 'Volles Vertrauen' },
+    },
+    {
+      id: 'readiness',
+      label: 'Readiness to try (0–10)',
+      min: 0,
+      max: 10,
+      minLabel: { nl: 'Nog niet klaar', en: 'Not ready yet', de: 'Noch nicht bereit' },
+      maxLabel: { nl: 'Helemaal klaar om te starten', en: 'Ready to start', de: 'Bereit loszulegen' },
+    },
+    {
+      id: 'impact',
+      label: 'Daily impact (0–10)',
+      min: 0,
+      max: 10,
+      minLabel: { nl: 'Geen invloed', en: 'No impact', de: 'Kein Einfluss' },
+      maxLabel: { nl: 'Grote invloed', en: 'Major impact', de: 'Starker Einfluss' },
+    },
+  ];
+
+  var EXPEDITION_TEMPLATES = {
+    blank: {
+      key: 'blank',
+      label: 'Clean Blank Canvas (1 empty station)',
+      stations: 1,
+      steps: 1,
+      minutes: 5,
+      summary: 'Start from scratch with one neutral station and one blank step.',
+      outline: ['Station 1 · Blank starter step'],
+    },
+    'bps-skeleton': {
+      key: 'bps-skeleton',
+      label: 'Biopsychosocial 3-Station Skeleton (Bio · Psycho · Social)',
+      stations: 3,
+      steps: 7,
+      minutes: 15,
+      summary: 'Three pre-structured BPS stations with opening question, video, triad, balance scale, and mini-plan.',
+      outline: [
+        'Station 1 (Bio) · Opening question, video & reflection',
+        'Station 2 (Psycho) · BPS overview, slider & sources',
+        'Station 3 (Social) · Balance scale & mini-plan',
+      ],
+    },
+    showcase: {
+      key: 'showcase',
+      label: 'xPED Showcase Example (2 stations with sample blocks)',
+      stations: 2,
+      steps: 5,
+      minutes: 10,
+      summary: 'Ready-to-preview pilot with a filled Myth vs. Fact, explainer step, balance scale, and mini-plan.',
+      outline: [
+        'Station 1 · Myth vs. Fact, video & reflection',
+        'Station 2 · Balance scale & personal mini-plan',
+      ],
+    },
+  };
+
+  var FIELD_LABELS = {
+    heading: 'Heading',
+    body: 'Body text',
+    title: 'Title',
+    subtitle: 'Subtitle',
+    caption: 'Caption',
+    transcript: 'Transcript',
+    alt: 'Image description (alt text)',
+    sideHeading: 'Side panel heading',
+    sideBody: 'Side panel text',
+    description: 'Description',
+    speakerRole: 'Speaker role',
+    speakerName: 'Speaker name',
+    agentBrief: 'Designer brief',
+    quote: 'Quote',
+    question: 'Question',
+    explanation: 'Explanation',
+    statement: 'Statement',
+    sourceLabel: 'Source label',
+    minLabel: 'Low end label',
+    maxLabel: 'High end label',
+    feedback: 'Feedback',
+    prompt: 'Prompt',
+    placeholder: 'Input placeholder',
+    helperNote: 'Helper note',
+    instruction: 'Instruction',
+    intro: 'Introduction',
+    loadLabel: 'Load side label',
+    resourceLabel: 'Resources side label',
+    overloadTip: 'Overload guidance',
+    balancedTip: 'Balanced guidance',
+    bioTitle: 'Biological heading',
+    bioBody: 'Biological explanation',
+    psychoTitle: 'Psychological heading',
+    psychoBody: 'Psychological explanation',
+    socialTitle: 'Social heading',
+    socialBody: 'Social explanation',
+    options: 'Option',
+    items: 'Item',
+    pins: 'Pin',
+    factors: 'Factor',
+    suggestions: 'Suggestion',
+    label: 'Label',
+    detail: 'Detail',
+    citation: 'Reference',
+  };
+
+  function getBlockMeta(type) {
+    for (var i = 0; i < BLOCK_CATALOG.length; i += 1) {
+      if (BLOCK_CATALOG[i].type === type) return BLOCK_CATALOG[i];
+    }
+    return { type: type, category: 'explain', label: type || 'Block', desc: '', aliases: [] };
+  }
+
+  function normalizeCitationLink(raw) {
+    var text = String(raw || '').trim();
+    if (!text) return { url: '', label: '', host: '' };
+    var doiMatch = text.match(/^(?:doi:\s*)?(10\.\d{4,9}\/\S+)$/i);
+    if (doiMatch) {
+      var doi = doiMatch[1];
+      return { url: 'https://doi.org/' + doi, label: 'DOI: ' + doi, host: 'doi.org' };
+    }
+    try {
+      var parsed = new URL(text);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { url: '', label: '', host: '' };
+      var host = (parsed.hostname || '').replace(/^www\./, '');
+      var label = host === 'doi.org' ? ('DOI: ' + parsed.pathname.replace(/^\/+/, '')) : host;
+      return { url: text, label: label, host: host };
+    } catch (_e) {
+      return { url: '', label: '', host: '' };
+    }
+  }
+
+  function hasMeaningfulAnswer(val) {
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'number') return Number.isFinite(val);
+    if (typeof val === 'boolean') return true;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (Array.isArray(val)) return val.length > 0;
+    if (typeof val === 'object') {
+      if (Array.isArray(val.ids) || Array.isArray(val.custom)) {
+        return ((val.ids && val.ids.length) || 0) + ((val.custom && val.custom.length) || 0) > 0;
+      }
+      return Object.keys(val).length > 0;
+    }
+    return false;
+  }
+
+  function normalizeMiniPlanAnswer(raw, suggestions) {
+    var list = Array.isArray(suggestions) ? suggestions : [];
+    var validIds = new Set(list.map(function (item) { return item.id; }));
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return {
+        ids: Array.from(new Set(Array.isArray(raw.ids) ? raw.ids.filter(function (id) { return validIds.has(id); }) : [])),
+        custom: Array.from(new Set(Array.isArray(raw.custom) ? raw.custom.filter(function (item) { return typeof item === 'string' && item.trim(); }) : [])),
+      };
+    }
+    var ids = new Set();
+    var custom = new Set();
+    (Array.isArray(raw) ? raw : []).forEach(function (entry) {
+      var text = String(entry || '').trim();
+      if (!text) return;
+      if (validIds.has(text)) { ids.add(text); return; }
+      var matches = list.filter(function (item) {
+        return SUPPORTED_LANGS.some(function (code) { return (item.label?.[code] || '').trim() === text; });
+      });
+      if (matches.length === 1) ids.add(matches[0].id);
+      else custom.add(text);
+    });
+    return { ids: Array.from(ids), custom: Array.from(custom) };
+  }
+
+  function deriveStepContentState(step) {
+    if (!step) return 'empty';
+    var explicit = step.status || '';
+    var hasBlocks = Array.isArray(step.blocks) && step.blocks.length > 0;
+    if (!hasBlocks) return explicit === 'review' || explicit === 'ready' ? explicit : 'empty';
+    if (explicit === 'ready' || explicit === 'review' || explicit === 'draft') return explicit;
+    return 'draft';
+  }
 
   function uid(prefix) {
     return (prefix || 'el') + '_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -514,7 +886,7 @@
     } else if (type === 'video') {
       data = { title: loc('', '', ''), url: '', provider: '', videoId: '', embedUrl: '', startSeconds: null, endSeconds: null, caption: loc('', '', ''), transcript: loc('', '', ''), mediaOverrides: {} };
     } else if (type === 'image') {
-      data = { media: { kind: 'none', assetId: '', staticPath: '' }, layout: 'full', alt: loc('', '', ''), caption: loc('', '', ''), sideHeading: loc('', '', ''), sideBody: loc('', '', ''), mediaOverrides: {} };
+      data = { media: { kind: 'none', assetId: '', staticPath: '' }, layout: 'full', align: 'center', focalX: 50, focalY: 50, alt: loc('', '', ''), caption: loc('', '', ''), sideHeading: loc('', '', ''), sideBody: loc('', '', ''), mediaOverrides: {} };
     } else if (type === 'audio') {
       data = { title: loc('', '', ''), description: loc('', '', ''), media: { kind: 'none', assetId: '', staticPath: '' }, transcript: loc('', '', ''), mediaOverrides: {} };
     } else if (type === 'callout') {
@@ -522,11 +894,13 @@
     } else if (type === 'story') {
       data = { speakerName: '', speakerRole: loc('Ervaringsverhaal', 'Patient story', ''), quote: loc('', '', ''), media: { kind: 'xped', assetId: '', staticPath: '/static/images/xped/xped-inge.png' } };
     } else if (type === 'sources') {
-      data = { title: loc('Wetenschappelijke bronnen', 'Scientific sources', ''), items: [{ id: uid('src'), citation: loc('', '', ''), url: '' }] };
+      data = { title: loc('Bron', 'Source', 'Quelle'), items: [{ id: uid('src'), citation: loc('', '', ''), url: '' }] };
     } else if (type === 'mcq') {
       data = {
         question: loc('', '', ''),
         subtitle: loc('', '', ''),
+        graded: false,
+        checkMode: 'immediate',
         options: [
           { id: uid('opt'), label: loc('Optie 1', 'Option 1', ''), isCorrect: false, feedback: loc('', '', '') },
           { id: uid('opt'), label: loc('Optie 2', 'Option 2', ''), isCorrect: false, feedback: loc('', '', '') },
@@ -556,10 +930,10 @@
         instruction: loc('Klik op een punt in de afbeelding voor uitleg.', 'Tap a point on the image to explore.', ''),
         mode: 'explore',
         media: { kind: 'xped', assetId: '', staticPath: '/static/images/xped/xped-brein-mascotte-met-gloeilamp.png' },
-        alt: loc('Illustratie', 'Illustration', ''),
+        alt: Object.assign({}, XPED_ASSETS[6].alt),
         pins: [
-          { id: uid('opt'), label: loc('Punt 1', 'Point 1', ''), detail: loc('', '', ''), x: 35, y: 40 },
-          { id: uid('opt'), label: loc('Punt 2', 'Point 2', ''), detail: loc('', '', ''), x: 65, y: 55 },
+          { id: uid('opt'), label: loc('Punt 1', 'Point 1', ''), detail: loc('', '', ''), x: 35, y: 40, color: '#0072CE' },
+          { id: uid('opt'), label: loc('Punt 2', 'Point 2', ''), detail: loc('', '', ''), x: 65, y: 55, color: '#009C67' },
         ],
       };
     } else if (type === 'balance_scale') {
@@ -633,52 +1007,52 @@
       id: uid('mod'),
       title: loc('Station ' + num, 'Station ' + num, ''),
       subtitle: loc('', '', ''),
-      domain: ['bio', 'psycho', 'social'][index % 3] || 'general',
+      domain: 'general',
       estimatedMinutes: 5,
       status: 'empty',
       visibleToLearners: true,
       milestoneMessage: loc('', '', ''),
       steps: [],
     };
+    function draftedStep(titleNl, titleEn, blocks) {
+      var st = createStep(titleNl, titleEn);
+      st.blocks = blocks || [];
+      st.status = st.blocks.length ? 'draft' : 'empty';
+      return st;
+    }
     if (recipe === 'myth-buster') {
-      var mb1 = createStep('Feit of Fabel?', 'Myth or Fact?');
       var mbMyth = createBlock('myth_fact');
       var mbCallout = createBlock('callout');
       mbCallout.settings.revealAfterAnswer = true;
-      mb1.blocks.push(mbMyth, mbCallout);
-      var mb2 = createStep('Wat betekent dit voor jou?', 'What does this mean for you?');
-      mb2.blocks.push(createBlock('richtext'), createBlock('reflection'));
-      mod.steps = [mb1, mb2];
+      mod.steps = [
+        draftedStep('Feit of Fabel?', 'Myth or Fact?', [mbMyth, mbCallout]),
+        draftedStep('Wat betekent dit voor jou?', 'What does this mean for you?', [createBlock('richtext'), createBlock('reflection')]),
+      ];
       mod.status = 'draft';
     } else if (recipe === 'video-reflection') {
-      var vr1 = createStep('Korte uitlegvideo', 'Short explainer video');
-      vr1.blocks.push(createBlock('video'), createBlock('callout'));
-      var vr2 = createStep('Even stilstaan', 'Pause & reflect');
-      vr2.blocks.push(createBlock('reflection'));
-      mod.steps = [vr1, vr2];
+      mod.steps = [
+        draftedStep('Korte uitlegvideo', 'Short explainer video', [createBlock('video'), createBlock('callout')]),
+        draftedStep('Even stilstaan', 'Pause & reflect', [createBlock('reflection')]),
+      ];
       mod.status = 'draft';
     } else if (recipe === 'ask-teach-reflect') {
-      var s1 = createStep('1. Prikkelende vraag', '1. Opening question');
-      s1.blocks.push(createBlock('myth_fact'));
-      var s2 = createStep('2. Uitleg & video', '2. Explanation & video');
-      s2.blocks.push(createBlock('video'), createBlock('callout'));
-      var s3 = createStep('3. Korte reflectie', '3. Short reflection');
-      s3.blocks.push(createBlock('reflection'));
-      mod.steps = [s1, s2, s3];
+      mod.steps = [
+        draftedStep('Prikkelende vraag', 'Opening question', [createBlock('myth_fact')]),
+        draftedStep('Uitleg & video', 'Explanation & video', [createBlock('video'), createBlock('callout')]),
+        draftedStep('Korte reflectie', 'Short reflection', [createBlock('reflection')]),
+      ];
       mod.status = 'draft';
     } else if (recipe === 'pain-science') {
-      var ps1 = createStep('Biopsychosociaal overzicht', 'Biopsychosocial overview');
-      ps1.blocks.push(createBlock('bps_triad'));
-      var ps2 = createStep('Check-in & bronnen', 'Check-in & sources');
-      ps2.blocks.push(createBlock('scale'), createBlock('sources'));
-      mod.steps = [ps1, ps2];
+      mod.steps = [
+        draftedStep('Biopsychosociaal overzicht', 'Biopsychosocial overview', [createBlock('bps_triad')]),
+        draftedStep('Check-in & bronnen', 'Check-in & sources', [createBlock('scale'), createBlock('sources')]),
+      ];
       mod.status = 'draft';
     } else if (recipe === 'action-balance') {
-      var ab1 = createStep('Draagkracht & draaglast', 'Resources & load');
-      ab1.blocks.push(createBlock('balance_scale'));
-      var ab2 = createStep('Jouw mini-plan', 'Your mini-plan');
-      ab2.blocks.push(createBlock('mini_plan'));
-      mod.steps = [ab1, ab2];
+      mod.steps = [
+        draftedStep('Draagkracht & draaglast', 'Resources & load', [createBlock('balance_scale')]),
+        draftedStep('Jouw mini-plan', 'Your mini-plan', [createBlock('mini_plan')]),
+      ];
       mod.status = 'draft';
     } else {
       mod.steps = [createStep('Stap 1', 'Step 1')];
@@ -687,15 +1061,18 @@
   }
 
   function createExpeditionPreset(presetKey, title, defaultLang) {
-    var lang = defaultLang || 'nl';
+    var lang = SUPPORTED_LANGS.indexOf(defaultLang) >= 0 ? defaultLang : 'nl';
+    var cleanTitle = title || 'Untitled Expedition';
+    var startTitle = loc('', '', '');
+    startTitle[lang] = cleanTitle;
     var base = {
-      title: title || 'Untitled Expedition',
+      title: cleanTitle,
       defaultLanguage: lang,
       enabledLanguages: ['nl', 'en', 'de'],
       theme: { preset: 'xped-warm-sand', showRouteMap: true },
       startPage: {
         eyebrow: loc('XPEDITIE PIJN', 'XPEDITION PAIN', 'XPEDITION SCHMERZ'),
-        title: loc(title || 'xPEDitie Pijn', title || 'xPEDition Pain', ''),
+        title: startTitle,
         subtitle: loc(
           'Een rustige, interactieve ontdekkingsreis over hoe pijn werkt en wat jou kan helpen.',
           'A calm, interactive journey to understand how pain works and what can help you.',
@@ -727,6 +1104,7 @@
     } else if (presetKey === 'showcase') {
       var mod1 = createModule('ask-teach-reflect', 0);
       mod1.title = loc('Station 1: Feit of Fabel?', 'Station 1: Myth or Fact?', '');
+      mod1.domain = 'bio';
       mod1.steps[0].blocks[0].data.statement = loc(
         'Aanhoudende pijn betekent altijd dat er nog steeds nieuwe weefselschade ontstaat.',
         'Persistent pain always means new tissue damage is still happening.',
@@ -739,6 +1117,7 @@
       );
       var mod2 = createModule('action-balance', 1);
       mod2.title = loc('Station 2: Jouw balans & plan', 'Station 2: Your balance & plan', '');
+      mod2.domain = 'social';
       base.modules = [mod1, mod2];
     } else {
       base.modules = [createModule('blank', 0)];
@@ -749,7 +1128,7 @@
   function extractTranslationRows(exp, sourceLang, targetLang) {
     var src = sourceLang || 'nl';
     var tgt = targetLang || 'de';
-    var altLang = src === 'nl' ? 'en' : 'nl';
+    var altLang = SUPPORTED_LANGS.find(function (lang) { return lang !== src && lang !== tgt; });
     var rows = [];
     function pushField(key, location, locObj, blockId) {
       if (!locObj || typeof locObj !== 'object') return;
@@ -793,20 +1172,23 @@
         pushField(sKey + '.title', sLab + ' · Title', step.title, '');
         (step.blocks || []).forEach(function (blk, bIdx) {
           var bKey = sKey + '.blk.' + blk.id;
-          var bLab = sLab + ' · ' + blk.type + ' #' + (bIdx + 1);
+          var bMeta = getBlockMeta(blk.type);
+          var bLab = sLab + ' · ' + bMeta.label + ' #' + (bIdx + 1);
           var data = blk.data || {};
           Object.keys(data).forEach(function (k) {
             if (blk.type === 'reflection' && k === 'helperNote') return;
+            var fLab = FIELD_LABELS[k] || k.replace(/([a-z])([A-Z])/g, '$1 $2');
             var val = data[k];
             if (val && typeof val === 'object' && !Array.isArray(val) && ('nl' in val && 'en' in val && 'de' in val)) {
-              pushField(bKey + '.' + k, bLab + ' · ' + k, val, blk.id);
+              pushField(bKey + '.' + k, bLab + ' · ' + fLab, val, blk.id);
             } else if (Array.isArray(val)) {
               val.forEach(function (item, iIdx) {
                 if (!item || typeof item !== 'object' || !item.id) return;
                 Object.keys(item).forEach(function (sk) {
                   var sv = item[sk];
                   if (sv && typeof sv === 'object' && !Array.isArray(sv) && ('nl' in sv && 'en' in sv && 'de' in sv)) {
-                    pushField(bKey + '.' + k + '.' + item.id + '.' + sk, bLab + ' · ' + k + ' #' + (iIdx + 1) + ' · ' + sk, sv, blk.id);
+                    var sfLab = FIELD_LABELS[sk] || sk;
+                    pushField(bKey + '.' + k + '.' + item.id + '.' + sk, bLab + ' · ' + fLab + ' ' + (iIdx + 1) + ' · ' + sfLab, sv, blk.id);
                   }
                 });
               });
@@ -846,64 +1228,136 @@
 
   function analyzeStepReadability(step, lang, defaultLang) {
     var words = 0;
-    var longSentences = 0;
-    var denseBlocks = 0;
-    var missingAlt = 0;
-    var missingVideoSummary = 0;
-    var tips = [];
-    if (!step) return { words: 0, seconds: 0, level: 'good', tips: [] };
-    var allTexts = [getLocalized(step.title, lang, defaultLang)];
-    (step.blocks || []).forEach(function (blk) {
+    var optionalWords = 0;
+    var writingChecks = [];
+    var accessibilityChecks = [];
+    if (!step) {
+      return {
+        words: 0,
+        optionalWords: 0,
+        seconds: 0,
+        level: 'good',
+        writingChecks: [],
+        accessibilityChecks: [],
+        tips: [],
+      };
+    }
+
+    function countWords(txt) {
+      return String(txt || '').trim().split(/\s+/).filter(Boolean).length;
+    }
+
+    function inspectText(txt, blockId, fieldKey, blockLabel, isOptional) {
+      var clean = String(txt || '').trim();
+      if (!clean) return 0;
+      var w = countWords(clean);
+      if (isOptional) {
+        optionalWords += w;
+        return w;
+      }
+      words += w;
+      var longCount = 0;
+      clean.split(/[.!?]+/).forEach(function (s) {
+        if (countWords(s) > 22) longCount += 1;
+      });
+      if (longCount > 0) {
+        writingChecks.push({
+          kind: 'warn',
+          group: 'writing',
+          blockId: blockId || '',
+          fieldKey: fieldKey || '',
+          text: (blockLabel ? blockLabel + ': ' : '') + longCount + ' sentence' + (longCount > 1 ? 's exceed' : ' exceeds') + ' 22 words — consider shortening for easier reading.',
+        });
+      }
+      return w;
+    }
+
+    inspectText(getLocalized(step.title, lang, defaultLang), '', 'title', 'Step title', false);
+
+    (step.blocks || []).forEach(function (blk, idx) {
       var d = blk.data || {};
-      if (blk.type === 'image' && d.media && d.media.kind !== 'none') {
-        if (!getLocalized(d.alt, lang, defaultLang).trim()) missingAlt += 1;
+      var bLabel = getBlockMeta(blk.type).label + ' #' + (idx + 1);
+      if ((blk.type === 'image' || blk.type === 'hotspot') && d.media && d.media.kind !== 'none') {
+        if (!getLocalized(d.alt, lang, defaultLang).trim()) {
+          accessibilityChecks.push({
+            kind: 'info',
+            group: 'accessibility',
+            blockId: blk.id,
+            fieldKey: 'alt',
+            text: bLabel + ' needs an image description (alt text) for screen readers.',
+          });
+        }
       }
       if (blk.type === 'video' && d.url) {
         if (!getLocalized(d.transcript, lang, defaultLang).trim() && !getLocalized(d.caption, lang, defaultLang).trim()) {
-          missingVideoSummary += 1;
+          accessibilityChecks.push({
+            kind: 'info',
+            group: 'accessibility',
+            blockId: blk.id,
+            fieldKey: 'transcript',
+            text: bLabel + ' has no caption or transcript summary yet.',
+          });
+        }
+      }
+      if (blk.type === 'audio' && d.media && d.media.kind !== 'none') {
+        if (!getLocalized(d.transcript, lang, defaultLang).trim()) {
+          accessibilityChecks.push({
+            kind: 'info',
+            group: 'accessibility',
+            blockId: blk.id,
+            fieldKey: 'transcript',
+            text: bLabel + ' has no transcript for learners who cannot listen with sound.',
+          });
         }
       }
       var blockWords = 0;
       Object.keys(d).forEach(function (k) {
+        if (k === 'alt' || k === 'placeholder' || k === 'helperNote') return;
+        var isOptional = (blk.type === 'sources' && k === 'items')
+          || (k === 'transcript' && (blk.type === 'video' || blk.type === 'audio'));
         var v = d[k];
-        if (v && typeof v === 'object' && ('nl' in v || 'en' in v || 'de' in v)) {
-          var txt = getLocalized(v, lang, defaultLang).trim();
-          if (txt) {
-            allTexts.push(txt);
-            blockWords += txt.split(/\s+/).filter(Boolean).length;
-          }
+        if (v && typeof v === 'object' && !Array.isArray(v) && ('nl' in v || 'en' in v || 'de' in v)) {
+          blockWords += inspectText(getLocalized(v, lang, defaultLang), blk.id, k, bLabel, isOptional);
+        } else if (Array.isArray(v)) {
+          v.forEach(function (item) {
+            if (!item || typeof item !== 'object') return;
+            ['label', 'detail', 'feedback', 'citation'].forEach(function (sk) {
+              var sv = item[sk];
+              if (sv && typeof sv === 'object' && ('nl' in sv || 'en' in sv || 'de' in sv)) {
+                blockWords += inspectText(getLocalized(sv, lang, defaultLang), blk.id, k, bLabel, isOptional);
+              }
+            });
+          });
         }
       });
-      if (blk.type === 'richtext' && blockWords > 90) denseBlocks += 1;
+      if (blk.type === 'richtext' && blockWords > 90) {
+        writingChecks.push({
+          kind: 'warn',
+          group: 'writing',
+          blockId: blk.id,
+          fieldKey: 'body',
+          text: bLabel + ' has ' + blockWords + ' words (>90) — consider splitting into shorter paragraphs or bullets.',
+        });
+      }
     });
-    allTexts.forEach(function (txt) {
-      if (!txt) return;
-      var wList = txt.split(/\s+/).filter(Boolean);
-      words += wList.length;
-      txt.split(/[.!?]+/).forEach(function (s) {
-        var sw = s.trim().split(/\s+/).filter(Boolean).length;
-        if (sw > 22) longSentences += 1;
-      });
-    });
-    if (longSentences > 0) {
-      tips.push({ kind: 'warn', text: longSentences + ' sentence' + (longSentences > 1 ? 's exceed' : ' exceeds') + ' 22 words (B1 target: shorter sentences).' });
-    }
-    if (denseBlocks > 0) {
-      tips.push({ kind: 'warn', text: denseBlocks + ' text block' + (denseBlocks > 1 ? 's have' : ' has') + ' >90 words — consider splitting or adding bullet points.' });
-    }
-    if (missingAlt > 0) {
-      tips.push({ kind: 'info', text: missingAlt + ' image' + (missingAlt > 1 ? 's need' : ' needs') + ' alt text for screen readers.' });
-    }
-    if (missingVideoSummary > 0) {
-      tips.push({ kind: 'info', text: missingVideoSummary + ' video' + (missingVideoSummary > 1 ? 's have' : ' has') + ' no caption or transcript summary yet.' });
-    }
+
+    var tips = writingChecks.concat(accessibilityChecks);
     if (!tips.length) {
-      tips.push({ kind: 'ok', text: 'Great B1 readability — concise sentences and accessible media.' });
+      tips.push({
+        kind: 'ok',
+        group: 'writing',
+        blockId: '',
+        fieldKey: '',
+        text: 'Writing & accessibility checks look good — concise sentences and media descriptions are in place.',
+      });
     }
     return {
       words: words,
+      optionalWords: optionalWords,
       seconds: Math.max(5, Math.round((words / 150) * 60)),
-      level: (longSentences || denseBlocks) ? 'warn' : (missingAlt || missingVideoSummary ? 'info' : 'good'),
+      level: writingChecks.length ? 'warn' : (accessibilityChecks.length ? 'info' : 'good'),
+      writingChecks: writingChecks,
+      accessibilityChecks: accessibilityChecks,
       tips: tips,
     };
   }
@@ -931,7 +1385,7 @@
       var pressedOutside = false;
       dlg.addEventListener('pointerdown', function (e) { pressedOutside = outside(e, dlg); });
       dlg.addEventListener('pointerup', function (e) {
-        if (pressedOutside && outside(e, dlg)) dlg.close();
+        if (pressedOutside && outside(e, dlg) && dlg.getAttribute('closedby') === 'any') dlg.close();
         pressedOutside = false;
       });
     });
@@ -989,13 +1443,62 @@
     }
   }
 
+  // Merge independent edits by stable object ID. A collision needs the author's decision.
+  function mergeCourseEdits(base, local, latest) {
+    var conflicts = [];
+    function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+    function merge(before, ours, theirs, path) {
+      if (same(ours, before) || same(ours, theirs)) return theirs;
+      if (same(theirs, before)) return ours;
+      var values = [before, ours, theirs];
+      if (values.every(Array.isArray) && values.every(function (list) {
+        return list.every(function (entry) { return entry && typeof entry.id === 'string'; });
+      })) {
+        var lists = values.map(function (list) { return list.map(function (item) { return item.id; }); });
+        var ids = merge(lists[0], lists[1], lists[2], path + '.order');
+        var maps = values.map(function (list) { return new Map(list.map(function (item) { return [item.id, item]; })); });
+        // A deletion on one side and an edit on the other is a conflict too.
+        var allIds = new Set(lists.flat());
+        var items = new Map();
+        allIds.forEach(function (id) {
+          items.set(id, merge(maps[0].get(id), maps[1].get(id), maps[2].get(id), path + '.' + id));
+        });
+        return ids.map(function (id) { return items.get(id); });
+      }
+      if (values.every(function (v) { return v && typeof v === 'object' && !Array.isArray(v); })) {
+        var fields = [];
+        new Set(values.flatMap(Object.keys)).forEach(function (key) {
+          var value = merge(before[key], ours[key], theirs[key], path ? path + '.' + key : key);
+          if (value !== undefined) fields.push([key, value]);
+        });
+        return Object.fromEntries(fields);
+      }
+      conflicts.push(path);
+      return ours;
+    }
+    var expedition = merge(base, local, latest, '');
+    return { expedition: expedition, conflicts: conflicts };
+  }
+
   var api = {
+    mergeCourseEdits: mergeCourseEdits,
     SUPPORTED_LANGS: SUPPORTED_LANGS,
     LANG_LABELS: LANG_LABELS,
     DOMAIN_LABELS: DOMAIN_LABELS,
     DEFAULT_GLOSSARY: DEFAULT_GLOSSARY,
     XPED_ASSETS: XPED_ASSETS,
+    BLOCK_CATEGORIES: BLOCK_CATEGORIES,
     BLOCK_CATALOG: BLOCK_CATALOG,
+    HOTSPOT_PIN_COLORS: HOTSPOT_PIN_COLORS,
+    pinTextColor: pinTextColor,
+    SCALE_ANCHOR_PRESETS: SCALE_ANCHOR_PRESETS,
+    EXPEDITION_TEMPLATES: EXPEDITION_TEMPLATES,
+    FIELD_LABELS: FIELD_LABELS,
+    getBlockMeta: getBlockMeta,
+    normalizeCitationLink: normalizeCitationLink,
+    hasMeaningfulAnswer: hasMeaningfulAnswer,
+    normalizeMiniPlanAnswer: normalizeMiniPlanAnswer,
+    deriveStepContentState: deriveStepContentState,
     uid: uid,
     loc: loc,
     getLocalized: getLocalized,

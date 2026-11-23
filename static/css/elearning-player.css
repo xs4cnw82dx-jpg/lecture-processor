@@ -169,7 +169,7 @@ body.el-player-body[data-active-domain="social"] {
 .el-player-progress-bar::-webkit-progress-value { background: var(--xped-yellow); }
 .el-player-progress-bar::-moz-progress-bar { background: var(--xped-yellow); }
 .el-rating-label { margin: 14px 0 4px; font-weight: 700; }
-.el-reflection-answer { white-space: pre-wrap; }
+
 .el-pilot-submit { margin-top: 12px; }
 
 /* Main Stage — Open Full Width for Start Page, Focused 760px for Learning Steps */
@@ -356,21 +356,6 @@ body.el-player-body[data-active-domain="social"] {
   animation: xpedReveal 0.2s var(--xped-ease) both;
 }
 
-/* Balance Scale Snapshot in Personal Summary */
-.el-summary-balance-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 10px;
-}
-.el-summary-balance-col {
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid var(--xped-border);
-  font-size: 0.88rem;
-}
-.el-summary-balance-col strong { display: block; margin-bottom: 4px; color: var(--xped-navy); }
 .el-route-dialog-foot {
   margin-top: 18px;
   padding-top: 14px;
@@ -378,15 +363,6 @@ body.el-player-body[data-active-domain="social"] {
   display: flex;
   justify-content: flex-end;
 }
-
-/* Personal Expedition Summary */
-.el-summary-section {
-  margin-top: 18px;
-  padding: 20px 22px;
-  border-radius: var(--xped-radius-md);
-  background: var(--xped-canvas);
-}
-.el-summary-section h3 { font-size: 1rem; margin-bottom: 10px; }
 
 /* Pilot Feedback Card */
 .el-pilot-card {
@@ -454,7 +430,6 @@ html[data-reading-size="lg"] { font-size: 120%; }
   .el-player-brand img { width: clamp(90px, 30vw, 120px); height: 24px; }
   .el-player-nav { gap: 6px; }
   .el-player-nav .xped-btn { padding-inline: 12px; }
-  .el-summary-balance-grid { grid-template-columns: 1fr; }
   .el-player-controls { gap: 6px; }
   .el-player-controls .xped-btn-ghost { padding: 5px 10px; font-size: 0.84rem; }
 }

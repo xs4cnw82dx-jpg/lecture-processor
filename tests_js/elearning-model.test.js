@@ -89,3 +89,83 @@ test('v3 station recipes, B1 readability coach, glossary, and media translation 
   const rows = Model.extractTranslationRows(exp, 'nl', 'de');
   assert.ok(rows.some((r) => r.altSource && r.altLang === 'en'));
 });
+
+test('UX review model helpers: presets, DOI links, readable labels, nested checks, and answers', () => {
+  const nlExp = Model.createExpeditionPreset('blank', 'Alleen Nederlands', 'nl');
+  assert.equal(nlExp.startPage.title.nl, 'Alleen Nederlands');
+  assert.equal(nlExp.startPage.title.en, '');
+  assert.equal(nlExp.modules[0].domain, 'general');
+
+  const mod = Model.createModule('ask-teach-reflect', 0);
+  assert.equal(mod.steps[0].title.nl.startsWith('1.'), false);
+  assert.equal(mod.steps[0].status, 'draft');
+
+  const doi = Model.normalizeCitationLink('10.3174/ajnr.A4173');
+  assert.equal(doi.url, 'https://doi.org/10.3174/ajnr.A4173');
+  assert.equal(doi.host, 'doi.org');
+
+  assert.equal(Model.hasMeaningfulAnswer(0), true);
+  assert.equal(Model.hasMeaningfulAnswer(''), false);
+  assert.equal(Model.hasMeaningfulAnswer({ ids: [], custom: [] }), false);
+  assert.equal(Model.hasMeaningfulAnswer({ ids: ['s1'], custom: [] }), true);
+
+  const showcase = Model.createExpeditionPreset('showcase', 'Demo', 'nl');
+  const rows = Model.extractTranslationRows(showcase, 'nl', 'de');
+  assert.equal(rows.some((r) => r.location.includes('balance_scale')), false);
+  assert.equal(rows.some((r) => r.location.includes('overloadTip')), false);
+  assert.ok(rows.some((r) => r.location.includes('Overload guidance')));
+
+  const check = Model.analyzeStepReadability({
+    title: Model.loc('Stap', 'Step', ''),
+    blocks: [
+      {
+        id: 'blk_mcq',
+        type: 'mcq',
+        data: {
+          question: Model.loc('Kies er een', '', ''),
+          options: [
+            { id: 'o1', label: Model.loc('Een heel lange antwoordoptie die veel meer dan tweeentwintig woorden bevat zodat de schrijfhulp ook geneste antwoordopties controleert voor patienten met weinig energie vandaag', '', '') },
+          ],
+        },
+      },
+      {
+        id: 'blk_src',
+        type: 'sources',
+        data: {
+          items: [{ id: 's1', citation: Model.loc('Brinjikji W et al. Systematic literature review of imaging features of spinal degeneration in asymptomatic populations AJNR 2015', '', '') }],
+        },
+      },
+    ],
+  }, 'nl', 'nl');
+  assert.ok(check.writingChecks.some((c) => c.blockId === 'blk_mcq'));
+  assert.ok(check.optionalWords > 0);
+  assert.equal(check.tips.some((t) => /B1/.test(t.text)), false);
+});
+
+test('legacy plans keep ambiguous learner wording and discard missing suggestion IDs', () => {
+  const choices = [
+    { id: 'easy', label: Model.loc('Wandelen', 'Walk slowly', 'Langsam gehen') },
+    { id: 'fast', label: Model.loc('Wandelen', 'Walk quickly', 'Schnell gehen') },
+  ];
+  assert.deepEqual(Model.normalizeMiniPlanAnswer(['Wandelen', 'Walk quickly', 'Wandelen'], choices, 'de', 'nl'), {
+    ids: ['fast'], custom: ['Wandelen'],
+  });
+  assert.deepEqual(Model.normalizeMiniPlanAnswer({ ids: ['gone', 'fast', 'fast'], custom: ['Stretch'] }, choices, 'de', 'nl'), {
+    ids: ['fast'], custom: ['Stretch'],
+  });
+});
+
+test('an editing takeover merges separate translation changes by stable ID and detects edits to deleted blocks', () => {
+  const before = { revision: 1, blocks: [{ id: 'a', title: { nl: 'Bron', de: 'Quelle' } }, { id: 'b' }] };
+  const ours = structuredClone(before);
+  ours.blocks[0].title.nl = 'Nieuwe bron';
+  const latest = structuredClone(before);
+  latest.revision = 2;
+  latest.blocks.reverse();
+  latest.blocks[1].title.de = 'Neue Quelle';
+  const result = Model.mergeCourseEdits(before, ours, latest);
+  assert.deepEqual(result.conflicts, []);
+  assert.deepEqual(result.expedition, { revision: 2, blocks: [{ id: 'b' }, { id: 'a', title: { nl: 'Nieuwe bron', de: 'Neue Quelle' } }] });
+  latest.blocks.pop();
+  assert.deepEqual(Model.mergeCourseEdits(before, ours, latest).conflicts, ['blocks.a']);
+});

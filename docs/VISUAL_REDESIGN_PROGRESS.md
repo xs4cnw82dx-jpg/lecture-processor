@@ -176,3 +176,9 @@ The Studio sidebar now expands the group containing the current page on entry an
 ## Settings account shortcuts — 22 November
 
 Closing Export data or Delete account returns keyboard focus to the Settings button that opened the dialog. Opening either dialog from the account menu returns focus to the menu toggle. Isolated checks covered Escape, Cancel, a completed export, an export finishing after reopening the dialog, and an account change. The focus ring was inspected at 375px and 1280px in both themes. Live verification is pending.
+
+## Expedition authoring, learner activities and response reports — 23 November
+
+Authors can preview a block before inserting it on a phone, move it across steps, and return to the same fields after translating or previewing. The learner preview and public player share the completion view. Authors can inspect the chosen mini-plan, reflections and sample poll results without submitting learner data. Private courses display their sharing state in the editor and library. Response reports explain their denominators and export the selected cohort and language.
+
+Isolated Chromium checks covered library rows and menus at 320, 375, 390, 768 and 1440 pixels in both Studio themes. Authoring and learner checks exercised keyboard navigation, touch layouts, localized copy, font fallback and reduced motion. Concurrent editing, undo, interrupted saves, translation fallbacks and role-specific sharing controls have behavior regressions. Phone checks used browser emulation.

@@ -15,6 +15,9 @@
   var actions = document.getElementById('el-response-actions');
   var label = document.getElementById('el-resp-expedition');
   var retry = document.getElementById('el-resp-retry');
+  var exportFilteredBtn = document.getElementById('el-resp-export-csv');
+  var exportAllBtn = document.getElementById('el-resp-export-all-csv');
+  var hasLoadedOnce = false;
   var requestId = 0;
   var auth;
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
@@ -22,6 +25,30 @@
   cohortSelect.addEventListener('change', loadResponses);
   langSelect.addEventListener('change', loadResponses);
   retry.addEventListener('click', loadResponses);
+
+  function activityName(type, lang) {
+    var names = {
+      mcq: ['Meerkeuzevraag', 'Multiple choice', 'Multiple-Choice-Frage'],
+      myth_fact: ['Feit of fabel', 'Myth or fact', 'Mythos oder Fakt'],
+      scale: ['Schaalvraag', 'Rating scale', 'Skalenfrage'],
+      wordcloud: ['Woordwolk', 'Word cloud', 'Wortwolke'],
+      ranking: ['Rangschikking', 'Ranking', 'Rangfolge'],
+      reflection: ['Reflectie', 'Reflection', 'Reflexion'],
+      balance_scale: ['Draagkracht en draaglast', 'Balance scale', 'Belastung und Ressourcen'],
+      mini_plan: ['Persoonlijk miniplan', 'Personal mini-plan', 'Persönlicher Mini-Plan'],
+    };
+    return names[type] ? names[type][lang === 'nl' ? 0 : lang === 'de' ? 2 : 1] : Model.getBlockMeta(type).label;
+  }
+
+  function syncExportButtons() {
+    var hasFilter = !!(cohortSelect.value || langSelect.value);
+    if (exportFilteredBtn) {
+      exportFilteredBtn.textContent = hasFilter ? 'Export filtered CSV' : 'Export CSV';
+    }
+    if (exportAllBtn) {
+      exportAllBtn.hidden = !hasFilter;
+    }
+  }
 
   function responseBar(percent, correct) {
     var bar = document.createElement('progress');
@@ -35,8 +62,18 @@
   async function loadResponses() {
     var sequence = ++requestId;
     retry.hidden = true;
-    status.textContent = 'Loading responses…';
-    report.hidden = true;
+    syncExportButtons();
+    // UX-119: Keep existing report visible with subtle Updating state while switching filters
+    if (hasLoadedOnce && !report.hidden) {
+      var scope = [cohortSelect.value || 'all cohorts', langSelect.value.toUpperCase() || 'all languages'];
+      status.textContent = 'Updating ' + scope.join(' · ') + '. Previous results are shown below.';
+      report.setAttribute('aria-busy', 'true');
+      report.classList.add('el-resp-updating');
+    } else {
+      report.setAttribute('aria-busy', 'true');
+      status.textContent = 'Loading responses…';
+      report.hidden = true;
+    }
     try {
       var qs = new URLSearchParams();
       var cohort = cohortSelect.value;
@@ -56,8 +93,15 @@
         cohortSelect.add(new Option(cohort, cohort));
       }
       cohortSelect.value = cohort;
-      status.textContent = '';
+      syncExportButtons();
+      status.textContent = cohort || langSelect.value
+        ? 'Showing responses for ' + [cohort, langSelect.value.toUpperCase()].filter(Boolean).join(' · ')
+        : 'Showing all responses';
+      report.classList.remove('el-resp-updating');
+      report.setAttribute('aria-busy', 'false');
       report.hidden = false;
+      hasLoadedOnce = true;
+
       // KPIs
       var s = data.summary || {};
       kpisEl.textContent = '';
@@ -92,23 +136,28 @@
         funnelEl.appendChild(div);
       });
 
-      // Question charts
+      document.getElementById('el-resp-funnel-card').hidden = !funnelEl.childElementCount;
+
+      // Question charts (UX-116, UX-117, UX-120)
       blocksEl.textContent = '';
       var statsMap = data.blockStats || {};
-      (data.expedition.modules || []).forEach(function (mod) {
-        (mod.steps || []).forEach(function (step) {
+      (data.expedition.modules || []).forEach(function (mod, mIdx) {
+        (mod.steps || []).forEach(function (step, sIdx) {
           (step.blocks || []).forEach(function (blk) {
             var agg = statsMap[blk.id];
             if (!agg) return;
+            var name = activityName(blk.type, reportLang);
+            var position = 'Station ' + (mIdx + 1) + ' · ' + (reportLang === 'de' ? 'Schritt' : reportLang === 'nl' ? 'Stap' : 'Step') + ' ' + (sIdx + 1);
             var card = document.createElement('article');
             card.className = 'el-exp-card';
             var h = document.createElement('h2');
             h.setAttribute('translate', 'no');
-            h.textContent = Model.getLocalized(blk.data.question || blk.data.statement || blk.data.prompt || blk.data.title, reportLang, courseLang) || blk.type;
+            var authoredTitle = Model.getLocalized(blk.data.question || blk.data.statement || blk.data.prompt || blk.data.title, reportLang, courseLang);
+            h.textContent = authoredTitle || name + ' · ' + position;
             card.appendChild(h);
             var sub = document.createElement('p');
             sub.className = 'el-exp-meta';
-            sub.textContent = agg.count + ' responses · ' + blk.type;
+            sub.textContent = agg.count + (agg.count === 1 ? ' response' : ' responses') + (authoredTitle ? ' · ' + name + ' · ' + position : '');
             card.appendChild(sub);
             if (agg.average !== undefined && agg.average !== null) {
               var avg = document.createElement('strong');
@@ -133,14 +182,25 @@
               card.appendChild(balRow);
             }
             if (agg.counts) {
-              var totalVotes = Object.keys(agg.counts).reduce(function (acc, k) { return acc + (agg.counts[k] || 0); }, 0) || 1;
-              Object.keys(agg.counts).forEach(function (k) {
+              var isMulti = blk.type === 'mcq' && !!(blk.settings && blk.settings.allowMultiple);
+              var denom = isMulti
+                ? Math.max(1, agg.count || 1)
+                : (Object.keys(agg.counts).reduce(function (acc, k) { return acc + (agg.counts[k] || 0); }, 0) || 1);
+              if (isMulti) {
+                var mNote = document.createElement('p');
+                mNote.className = 'el-exp-meta';
+                mNote.textContent = 'Share of ' + agg.count + (agg.count === 1 ? ' respondent.' : ' respondents.') + ' Each could choose more than one option, so the total can exceed 100%.';
+                card.appendChild(mNote);
+              }
+              var choices = (blk.data.options || []).map(function (option) { return option.id; });
+              var keys = Array.from(new Set(choices.concat(Object.keys(agg.counts))));
+              keys.forEach(function (k) {
                 var cnt = agg.counts[k] || 0;
-                var pct = Math.round((cnt / totalVotes) * 100);
+                var pct = Math.min(100, Math.round((cnt / denom) * 100));
                 var row = document.createElement('div');
                 row.className = 'xped-bar-row';
                 var opt = (blk.data.options || []).find(function (o) { return o.id === k; });
-                var isRight = (blk.type === 'myth_fact' && k === (blk.data.correctAnswer || 'myth')) || !!(opt && opt.isCorrect);
+                var isRight = (blk.type === 'myth_fact' && k === (blk.data.correctAnswer || 'myth')) || !!(opt && opt.isCorrect && blk.data.graded !== false);
                 var name = opt ? Model.getLocalized(opt.label, reportLang, courseLang) : (k === 'myth' || k === 'fact' ? Model.ui(reportLang, k) : k);
                 var head = document.createElement('div');
                 head.className = 'el-resp-bar-head';
@@ -174,20 +234,48 @@
               card.appendChild(tags);
             }
             if (Array.isArray(agg.samples) && agg.samples.length) {
-              agg.samples.slice(0, 8).forEach(function (txt) {
-                var q = document.createElement('blockquote');
-                q.className = 'el-translate-source';
-                q.setAttribute('translate', 'no');
-                q.textContent = txt;
-                card.appendChild(q);
-              });
+              // UX-117: Explicit count + Show all toggle instead of silent slice(0, 8)
+              var samplesWrap = document.createElement('div');
+              var showLimit = 8;
+              var showingAll = false;
+              function drawSamples() {
+                samplesWrap.textContent = '';
+                var shown = showingAll ? agg.samples : agg.samples.slice(0, showLimit);
+                var cntMeta = document.createElement('p');
+                cntMeta.className = 'el-exp-meta';
+                var total = agg.sampleTotal === undefined ? agg.samples.length : agg.sampleTotal;
+                cntMeta.textContent = 'Showing ' + shown.length + ' of ' + total + ' reflection excerpts';
+                if (total > agg.samples.length) cntMeta.textContent += '. Export the CSV for all responses.';
+                samplesWrap.appendChild(cntMeta);
+                shown.forEach(function (txt) {
+                  var q = document.createElement('blockquote');
+                  q.className = 'el-translate-source';
+                  q.setAttribute('translate', 'no');
+                  q.textContent = txt;
+                  samplesWrap.appendChild(q);
+                });
+                if (agg.samples.length > showLimit) {
+                  var moreBtn = document.createElement('button');
+                  moreBtn.type = 'button';
+                  moreBtn.className = 'btn small';
+                  moreBtn.textContent = showingAll ? 'Show fewer' : ('Show ' + agg.samples.length + ' excerpts');
+                  moreBtn.addEventListener('click', function () {
+                    showingAll = !showingAll;
+                    drawSamples();
+                    samplesWrap.querySelector('button').focus();
+                  });
+                  samplesWrap.appendChild(moreBtn);
+                }
+              }
+              drawSamples();
+              card.appendChild(samplesWrap);
             }
             blocksEl.appendChild(card);
           });
         });
       });
 
-      // Slide-by-Slide Reviewer Comments
+      // Slide-by-Slide Reviewer Comments with deep links to Builder (UX-118)
       var commentsCard = document.getElementById('el-resp-comments-card');
       var commentsEl = document.getElementById('el-resp-comments');
       var scList = data.stepComments || [];
@@ -204,8 +292,24 @@
           var bodyP = document.createElement('div');
           bodyP.setAttribute('translate', 'no');
           bodyP.textContent = item.comment;
-          c.appendChild(m);
-          c.appendChild(bodyP);
+          c.append(m, bodyP);
+          var station = (data.expedition.modules || []).find(function (module) {
+            return (module.steps || []).some(function (step) { return step.id === item.stepId; });
+          });
+          if (station) {
+            var jump = document.createElement('a');
+            jump.className = 'el-action-link';
+            var qJump = new URLSearchParams({ step: item.stepId, from: 'responses' });
+            qJump.set('module', station.id);
+            jump.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/edit?' + qJump.toString();
+            jump.textContent = 'Open in builder →';
+            c.appendChild(jump);
+          } else {
+            var unavailable = document.createElement('span');
+            unavailable.className = 'el-exp-meta';
+            unavailable.textContent = 'Step no longer available';
+            c.appendChild(unavailable);
+          }
           commentsEl.appendChild(c);
         });
       }
@@ -227,25 +331,40 @@
       }
     } catch (err) {
       if (sequence !== requestId || err.code === 'auth/session-changed') return;
-      report.hidden = true;
-      status.textContent = err.message;
+      report.classList.remove('el-resp-updating');
+      report.setAttribute('aria-busy', 'false');
+      report.hidden = !hasLoadedOnce;
+      status.textContent = hasLoadedOnce ? err.message + ' Previous results are still shown.' : err.message;
       retry.hidden = false;
     }
   }
 
-  document.getElementById('el-resp-export-csv').addEventListener('click', async function () {
+  async function downloadCsv(filtered) {
     try {
-      var resp = await client.authFetch('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses/export.csv');
+      var qs = new URLSearchParams();
+      if (filtered) {
+        if (cohortSelect.value) qs.set('cohort', cohortSelect.value);
+        if (langSelect.value) qs.set('language', langSelect.value);
+      }
+      var url = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses/export.csv' + (qs.size ? '?' + qs : '');
+      var resp = await client.authFetch(url);
       if (!resp.ok) throw new Error('Could not export responses.');
-      await window.LectureProcessorDownload.downloadResponseBlob(resp, 'xped-responses-' + expeditionId + '.csv');
+      var suffix = filtered && qs.size ? ('-' + Array.from(qs.values()).join('-')) : '';
+      await window.LectureProcessorDownload.downloadResponseBlob(resp, 'xped-responses-' + expeditionId + suffix + '.csv');
     } catch (err) {
       if (err.code !== 'auth/session-changed') window.LectureProcessorUx.toast(err.message, { type: 'error' });
     }
-  });
+  }
+
+  if (exportFilteredBtn) exportFilteredBtn.addEventListener('click', function () { downloadCsv(true); });
+  if (exportAllBtn) exportAllBtn.addEventListener('click', function () { downloadCsv(false); });
 
   function accountChanged(user) {
     ++requestId;
+    hasLoadedOnce = false;
+    report.setAttribute('aria-busy', 'false');
     report.hidden = true;
+    report.classList.remove('el-resp-updating');
     actions.hidden = !user;
     retry.hidden = true;
     document.getElementById('el-signin').hidden = !!user;
@@ -253,6 +372,7 @@
     [kpisEl, funnelEl, blocksEl, feedbackEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
     cohortSelect.replaceChildren(new Option('All cohorts', ''));
     langSelect.value = '';
+    syncExportButtons();
     if (user) loadResponses();
     else status.textContent = 'Sign in to view responses.';
   }

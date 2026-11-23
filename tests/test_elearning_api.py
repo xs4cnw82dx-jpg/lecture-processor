@@ -1,6 +1,8 @@
 """Behavioral & security tests for xPEDitie Pijn E-Learning Studio, Translation Workflow, and Public Player."""
 from __future__ import annotations
 
+import csv
+import io
 import threading
 from copy import deepcopy
 
@@ -72,7 +74,7 @@ def auth_headers(user='owner', session='tab-1', **extra):
     return {'Authorization': 'Bearer ' + user, 'X-Elearning-Session': session, **extra}
 
 
-def _create_sample(client):
+def _create_sample(client, *, enable_public: bool = True):
     payload = {
         'title': 'xPEDitie Pijn Pilot',
         'defaultLanguage': 'nl',
@@ -130,7 +132,17 @@ def _create_sample(client):
     }
     resp = client.post('/api/elearning/expeditions', json=payload, headers=auth_headers('owner'))
     assert resp.status_code == 201, resp.json
-    return resp.json['expedition']
+    exp = resp.json['expedition']
+    assert exp['share']['enabled'] is False
+    if enable_public:
+        upd = client.post(
+            f"/api/elearning/expeditions/{exp['id']}/sharing",
+            json={'action': 'update_public', 'enabled': True},
+            headers=auth_headers('owner'),
+        )
+        assert upd.status_code == 200
+        exp['share'] = upd.json['share']
+    return exp
 
 
 def test_crud_coediting_lease_and_revision_conflict(setup):
@@ -916,3 +928,138 @@ def test_translation_attachment_between_inventory_and_cleanup_keeps_its_file(set
         assert client.delete(url + '/assets/clip_asset', headers=auth_headers(), json={
             'lease_token': lease, 'base_revision': revision}).status_code == 409
     assert db.get(key)['ready']
+
+
+def test_ux_review_backend_contracts(setup):
+    client, _ = setup
+    exp = _create_sample(client, enable_public=False)
+    eid = exp['id']
+    # UX-080: New expeditions start private by default
+    assert exp['share']['enabled'] is False
+    assert client.get('/api/elearning/public/' + exp['share']['token']).status_code == 410
+
+    # UX-002 / UX-010: Summary cards include coverMedia and languageCoverage
+    listed = client.get('/api/elearning/expeditions', headers=auth_headers('owner')).json['expeditions']
+    card = next(item for item in listed if item['id'] == eid)
+    assert 'coverMedia' in card
+    assert card['languageCoverage']['nl']['translated'] > 0
+    assert card['languageCoverage']['de']['translated'] == 0
+
+    # UX-089: Lease denial distinguishes same-account tab vs collaborator
+    l1 = client.post(f'/api/elearning/expeditions/{eid}/lease', json={'action': 'acquire'}, headers=auth_headers('owner', 'tab-a'))
+    assert l1.json['granted'] is True
+    l_same = client.post(f'/api/elearning/expeditions/{eid}/lease', json={'action': 'acquire'}, headers=auth_headers('owner', 'tab-b'))
+    assert l_same.json['granted'] is False and l_same.json['same_account'] is True
+
+    # UX-115: Filtered CSV export respects cohort and language query params
+    client.post(f'/api/elearning/expeditions/{eid}/sharing', json={'action': 'update_public', 'enabled': True}, headers=auth_headers('owner'))
+    pub_url = '/api/elearning/public/' + exp['share']['token'] + '/responses'
+    client.post(pub_url, json={'sessionId': 'sess_nl_alpha', 'cohort': 'alpha', 'language': 'nl', 'answers': {'blk_mf': 'myth'}})
+    client.post(pub_url, json={'sessionId': 'sess_de_beta', 'cohort': 'beta', 'language': 'de', 'answers': {'blk_mf': 'fact'}})
+    filtered = client.get(f'/api/elearning/expeditions/{eid}/responses/export.csv?cohort=alpha&language=nl', headers=auth_headers('owner'))
+    assert filtered.status_code == 200
+    assert 'alpha-nl.csv' in filtered.headers.get('Content-Disposition', '')
+    body_text = filtered.data.decode('utf-8-sig')
+    assert 'sess_nl_alpha' in body_text and 'sess_de_beta' not in body_text
+
+    # UX-040: Bare DOI normalized to https://doi.org/...
+    assert model.safe_external_url('10.3174/ajnr.A4173') == 'https://doi.org/10.3174/ajnr.A4173'
+    assert model.safe_external_url('doi:10.3174/ajnr.A4173') == 'https://doi.org/10.3174/ajnr.A4173'
+
+
+def test_import_preview_validates_the_real_model_without_creating_any_draft(setup):
+    client, db = setup
+    preview = '/api/elearning/import-preview'
+    payload = model.build_default_expedition('Schmerzen verstehen', 'de')
+    assert client.post(preview, json=payload).status_code == 401
+    response = client.post(preview, json=payload, headers=auth_headers())
+    assert response.status_code == 200
+    assert response.json == {'title': 'Schmerzen verstehen', 'stationCount': 1, 'stepCount': 1,
+                             'enabledLanguages': ['nl', 'en', 'de']}
+    bad = deepcopy(payload)
+    bad['modules'][0]['steps'][0]['blocks'] = [{'type': 'unknown'}]
+    for malformed in (bad, {'modules': [{}]}, {'unrelated': True},
+                      {**payload, 'modules': payload['modules'] * 2},
+                      {**payload, 'startPage': {'heroMedia': {'kind': 'asset', 'assetId': 'ast_private'}}}):
+        rejected = client.post(preview, json=malformed, headers=auth_headers())
+        assert rejected.status_code == 400
+        assert rejected.json['error']
+    assert db.data == {}
+
+
+def test_report_distinguishes_all_reflections_and_counts_people_who_made_a_choice(setup):
+    client, db = setup
+    exp = _create_sample(client)
+    module = exp['modules'][0]
+    module['steps'][0]['blocks'] = [
+        {'id': 'poll', 'type': 'mcq', 'settings': {'allowMultiple': True}, 'data': {
+            'options': [{'id': 'a', 'label': {'en': 'Walk'}}, {'id': 'b', 'label': {'en': 'Talk'}}],
+        }},
+        {'id': 'writing', 'type': 'reflection', 'settings': {}, 'data': {}},
+    ]
+    db.put('elearning_expeditions/' + exp['id'], exp)
+    for i in range(57):
+        answers = {'writing': f'Reflection {i}'}
+        if i < 3:
+            answers['poll'] = [['a', 'b'], ['b'], []][i]
+        db.put(f'elearning_responses/{i}', {'expedition_id': exp['id'], 'answers': answers})
+    result = client.get(f"/api/elearning/expeditions/{exp['id']}/responses", headers=auth_headers())
+    stats = result.json['blockStats']
+    assert stats['writing']['sampleTotal'] == 57
+    assert len(stats['writing']['samples']) == 50
+    assert stats['poll']['count'] == 2
+    assert stats['poll']['counts'] == {'a': 1, 'b': 2}
+
+
+def test_private_course_round_trip_retains_translated_figure_layout_and_station_domains(setup):
+    client, _ = setup
+    course = model.build_default_expedition('Neue Wege', 'de')
+    step = course['modules'][0]['steps'][0]
+    step['blocks'] = [{'id': 'blk_photo', 'type': 'image', 'data': {
+        'sideTextBelow': True, 'crop': True, 'sideBody': {'de': 'Schau genauer hin.', 'nl': 'Kijk goed.'},
+        'focalX': 72, 'focalY': 13,
+    }}]
+    for domain in (None, None, 'social'):
+        mod = deepcopy(course['modules'][0])
+        mod['id'] = model.new_id('mod')
+        mod['steps'] = []
+        mod['domain'] = domain
+        course['modules'].append(mod)
+    canonical = client.post('/api/elearning/expeditions', json=course, headers=auth_headers()).json['expedition']
+    assert canonical['startPage']['title'] == {'nl': '', 'en': '', 'de': 'Neue Wege'}
+    rows = model.extract_translation_rows(canonical, 'nl', 'en')
+    assert next(row for row in rows if row['key'] == 'startPage.title')['status'] == 'untranslated'
+    assert [m['domain'] for m in canonical['modules']] == ['general', 'general', 'general', 'social']
+    assert not canonical['share']['enabled']
+    public_url = '/api/elearning/public/' + canonical['share']['token']
+    assert client.get(public_url).status_code == 410
+    sharing = f"/api/elearning/expeditions/{canonical['id']}/sharing"
+    assert client.post(sharing, json={'action': 'update_public', 'enabled': True}, headers=auth_headers()).status_code == 200
+    public = client.get(public_url).json['expedition']
+    figure = public['modules'][0]['steps'][0]['blocks'][0]['data']
+    assert (figure['crop'], figure['sideTextBelow'], figure['focalX'], figure['focalY']) == (True, True, 72, 13)
+    assert figure['sideBody']['de'] == 'Schau genauer hin.'
+
+
+def test_report_and_download_apply_both_filters_and_agree_on_all_rows(setup):
+    client, _ = setup
+    exp = _create_sample(client)
+    for language in ('nl', 'de'):
+        for cohort in ('pilot-1', 'pilot-2'):
+            session = f'pilot_{language}_{cohort}'
+            saved = client.post(f"/api/elearning/public/{exp['share']['token']}/responses",
+                                json={'language': language, 'cohort': cohort, 'sessionId': session,
+                                      'answers': {'blk_mf': 'myth'}})
+            assert saved.status_code == 200
+    report_url = f"/api/elearning/expeditions/{exp['id']}/responses"
+    for filters, count in [('', 4), ('?language=de', 2), ('?cohort=pilot-2', 2), ('?cohort=pilot-2&language=de', 1)]:
+        report = client.get(report_url + filters, headers=auth_headers())
+        download = client.get(report_url + '/export.csv' + filters, headers=auth_headers())
+        rows = list(csv.DictReader(io.StringIO(download.data.decode('utf-8-sig'))))
+        assert report.json['summary']['totalSessions'] == len(rows) == count
+        for row in rows:
+            if 'language=de' in filters:
+                assert row['language'] == 'de'
+            if 'cohort=pilot-2' in filters:
+                assert row['cohort'] == 'pilot-2'
+    assert 'pilot-2-de.csv' in download.headers['Content-Disposition']

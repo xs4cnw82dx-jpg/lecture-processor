@@ -7,8 +7,15 @@
   var statusEl = document.getElementById('el-dash-status');
   var createDialog = document.getElementById('el-create-dialog');
   var titleInput = document.getElementById('el-new-title');
+  var templateSelect = document.getElementById('el-new-template');
+  var templatePreviewEl = document.getElementById('el-template-preview');
   var deleteDialog = document.getElementById('el-delete-dialog');
+  var importDialog = document.getElementById('el-import-dialog');
+  var searchInput = document.getElementById('el-dash-search');
   var pendingDeleteExp = null;
+  var pendingImportPayload = null;
+  var allExpeditions = [];
+  var justDuplicatedId = '';
   var actionsEl = document.getElementById('el-author-actions');
   var retry = document.getElementById('el-retry');
   var signIn = document.getElementById('el-signin');
@@ -16,9 +23,91 @@
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   var client = window.LectureProcessorAuth.createAuthClient(auth);
   var listRequest = 0;
+  var importAttempt = 0;
+  var coverCache = new Map();
+  var coverObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      coverObserver.unobserve(entry.target);
+      loadCover(entry.target);
+    });
+  });
+
+  async function loadCover(thumb) {
+    var url = thumb.dataset.cover;
+    if (!coverCache.has(url)) {
+      var session = client.captureSession();
+      var pending = client.authFetch(url).then(async function (response) {
+        if (!response.ok) throw new Error('Cover unavailable');
+        var blob = await response.blob();
+        session.assertCurrent();
+        return URL.createObjectURL(blob);
+      });
+      coverCache.set(url, pending);
+    }
+    var cover = coverCache.get(url);
+    try {
+      var objectUrl = await cover;
+      if (!thumb.isConnected || coverCache.get(url) !== cover) return;
+      var image = new Image();
+      image.alt = '';
+      image.src = objectUrl;
+      thumb.replaceChildren(image);
+    } catch (_) {
+      if (coverCache.get(url) === cover) coverCache.delete(url);
+    }
+  }
 
   function toast(message, type) {
     window.LectureProcessorUx.toast(message, { type: type });
+  }
+
+  function formatRelativeTime(epochSec) {
+    if (!epochSec) return { rel: '', exact: '' };
+    var d = new Date(epochSec * 1000);
+    var exact = d.toLocaleString(document.documentElement.lang || undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+    var diffSec = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
+    var rel;
+    if (diffSec < 60) rel = 'Updated just now';
+    else if (diffSec < 3600) rel = 'Updated ' + Math.floor(diffSec / 60) + 'm ago';
+    else if (diffSec < 86400) rel = 'Updated ' + Math.floor(diffSec / 3600) + 'h ago';
+    else if (diffSec < 86400 * 7) rel = 'Updated ' + Math.floor(diffSec / 86400) + 'd ago';
+    else rel = 'Updated ' + d.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' });
+    return { rel: rel, exact: exact };
+  }
+
+  function renderTemplatePreview() {
+    if (!templatePreviewEl || !templateSelect) return;
+    var tpl = (Model.EXPEDITION_TEMPLATES && Model.EXPEDITION_TEMPLATES[templateSelect.value]) || null;
+    templatePreviewEl.textContent = '';
+    if (!tpl) return;
+    var top = document.createElement('strong');
+    top.textContent = tpl.stations + (tpl.stations === 1 ? ' station' : ' stations') + ' · ' + tpl.steps + (tpl.steps === 1 ? ' step' : ' steps') + ' · ~' + tpl.minutes + ' min';
+    var sum = document.createElement('p');
+    sum.className = 'el-exp-meta';
+    sum.textContent = tpl.summary;
+    var ul = document.createElement('ul');
+    (tpl.outline || []).forEach(function (line) {
+      var li = document.createElement('li');
+      li.textContent = line;
+      ul.appendChild(li);
+    });
+    templatePreviewEl.append(top, sum, ul);
+  }
+  if (templateSelect) {
+    templateSelect.addEventListener('change', renderTemplatePreview);
+    renderTemplatePreview();
+  }
+
+  function openCreateDialog() {
+    document.getElementById('el-create-error').hidden = true;
+    titleInput.value = '';
+    document.getElementById('el-create-progress').textContent = '';
+    renderTemplatePreview();
+    createDialog.showModal();
+    titleInput.focus();
   }
 
   async function api(url, options) {
@@ -37,6 +126,13 @@
   }
 
   function renderExpeditions(items) {
+    var q = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    if (searchInput) searchInput.hidden = items.length < 2 && !q;
+    coverObserver.disconnect();
+    var visible = q
+      ? items.filter(function (exp) { return String(exp.title || '').toLowerCase().indexOf(q) >= 0; })
+      : items;
+
     grid.textContent = '';
     if (!items.length) {
       statusEl.textContent = '';
@@ -46,18 +142,73 @@
       var h2 = document.createElement('h2');
       h2.textContent = 'Create your first expedition';
       var p = document.createElement('p');
-      p.textContent = 'Use New expedition to start with a blank station or explore an interactive example.';
-      body.append(h2, p);
+      p.textContent = 'Start with a blank station, a three-station BPS skeleton, or explore an interactive example.';
+      // UX-001: Direct primary CTA inside empty state
+      var cta = document.createElement('button');
+      cta.type = 'button';
+      cta.className = 'btn primary';
+      cta.textContent = 'Create expedition';
+      cta.addEventListener('click', openCreateDialog);
+      body.append(h2, p, cta);
       empty.appendChild(body);
       grid.appendChild(empty);
       return;
     }
-    statusEl.textContent = items.length + (items.length === 1 ? ' expedition' : ' expeditions');
-    items.forEach(function (exp) {
+    if (!visible.length) {
+      statusEl.textContent = '0 matching expeditions';
+      var noMatch = document.createElement('div');
+      noMatch.className = 'el-dash-empty';
+      var nh = document.createElement('h2');
+      nh.textContent = 'No expeditions match "' + searchInput.value.trim() + '"';
+      var clr = document.createElement('button');
+      clr.type = 'button';
+      clr.className = 'btn small';
+      clr.textContent = 'Clear search';
+      clr.addEventListener('click', function () {
+        searchInput.value = '';
+        renderExpeditions(allExpeditions);
+        searchInput.focus();
+      });
+      noMatch.append(nh, clr);
+      grid.appendChild(noMatch);
+      return;
+    }
+    statusEl.textContent = q
+      ? ('Showing ' + visible.length + ' of ' + items.length + ' expeditions')
+      : (items.length + (items.length === 1 ? ' expedition' : ' expeditions'));
+
+    var focusDuplicateLink = null;
+    visible.forEach(function (exp) {
       var card = document.createElement('article');
-      card.className = 'el-exp-row';
+      card.className = 'el-exp-row' + (justDuplicatedId && exp.id === justDuplicatedId ? ' is-just-duplicated' : '');
       var editUrl = '/physio/elearning/' + encodeURIComponent(exp.id) + '/edit';
+
+      var mainWrap = document.createElement('div');
+      mainWrap.className = 'el-exp-row-main';
+
+      // UX-002: Reserved cover thumbnail slot per expedition row
+      var thumb = document.createElement('div');
+      thumb.className = 'el-exp-thumb';
+      thumb.setAttribute('aria-hidden', 'true');
+      var cm = exp.coverMedia;
+      if (cm && cm.kind === 'xped' && cm.staticPath) {
+        var tImg = document.createElement('img');
+        tImg.src = cm.staticPath;
+        tImg.alt = '';
+        tImg.loading = 'lazy';
+        tImg.className = 'is-xped-art';
+        thumb.appendChild(tImg);
+      } else if (Icons) {
+        thumb.appendChild(Icons.icon('compass', 22));
+      }
+      if (cm && cm.kind === 'asset' && cm.assetId && !exp.deletionPending) {
+        thumb.dataset.cover = '/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/assets/' + encodeURIComponent(cm.assetId);
+        coverObserver.observe(thumb);
+      }
+      mainWrap.appendChild(thumb);
+
       var detail = document.createElement('div');
+      detail.className = 'el-exp-row-copy';
       var top = document.createElement('div');
       top.className = 'el-exp-card-top';
       var h2 = document.createElement('h2');
@@ -68,24 +219,82 @@
       h2.appendChild(title);
       var badge = document.createElement('span');
       badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
-      badge.textContent = exp.deletionPending ? 'Removal pending' : (exp.shareEnabled ? 'Test link live' : 'Draft');
+      badge.textContent = exp.deletionPending ? 'Removal pending' : (exp.shareEnabled ? 'Test link live' : 'Private draft');
       top.append(h2, badge);
+
       var meta = document.createElement('p');
       meta.className = 'el-exp-meta';
       var role = exp.role === 'owner' ? 'Owner' : (exp.role === 'translate' ? 'Translator' : 'Co-Editor');
-      var languages = (exp.enabledLanguages || ['nl']).map(function (l) { return l.toUpperCase(); });
-      [role, exp.moduleCount + (exp.moduleCount === 1 ? ' station' : ' stations'),
-        exp.stepCount + (exp.stepCount === 1 ? ' step' : ' steps'), languages.join(' / ')].forEach(function (value, i) {
+      var metaParts = [
+        role,
+        exp.moduleCount + (exp.moduleCount === 1 ? ' station' : ' stations'),
+        exp.stepCount + (exp.stepCount === 1 ? ' step' : ' steps'),
+      ];
+      metaParts.forEach(function (value, i) {
         if (i) meta.append(' · ');
         var item = document.createElement('span');
         item.textContent = value;
         meta.appendChild(item);
       });
+      // UX-003: Relative recency with exact timestamp tooltip
+      var rec = formatRelativeTime(exp.updatedAt);
+      if (rec.rel) {
+        meta.append(' · ');
+        var tNode = document.createElement('time');
+        tNode.dateTime = new Date(exp.updatedAt * 1000).toISOString();
+        tNode.title = rec.exact;
+        tNode.tabIndex = 0;
+        tNode.setAttribute('aria-label', rec.rel + ', ' + rec.exact);
+        tNode.textContent = rec.rel;
+        meta.appendChild(tNode);
+      }
+
       detail.append(top, meta);
+
+      // UX-010: Per-locale translation coverage readiness badges
+      var cov = exp.languageCoverage || null;
+      var langs = exp.enabledLanguages || ['nl'];
+      var covRow = document.createElement('div');
+      covRow.className = 'el-lang-cov-row';
+      var coverageDetail = document.createElement('p');
+      coverageDetail.className = 'el-exp-meta el-coverage-detail';
+      coverageDetail.hidden = true;
+      coverageDetail.id = 'coverage-' + exp.id;
+      langs.forEach(function (code) {
+        var stat = cov && cov[code];
+        var pill = document.createElement(stat && stat.total > 0 ? 'button' : 'span');
+        if (stat && stat.total > 0 && Number.isFinite(Number(stat.translated))) {
+          var pct = Math.round((Number(stat.translated) / Number(stat.total)) * 100);
+          pill.type = 'button';
+          pill.setAttribute('aria-controls', coverageDetail.id);
+          pill.setAttribute('aria-expanded', 'false');
+          pill.addEventListener('click', function () {
+            var open = pill.getAttribute('aria-expanded') !== 'true';
+            covRow.querySelectorAll('button').forEach(function (other) { other.setAttribute('aria-expanded', 'false'); });
+            pill.setAttribute('aria-expanded', String(open));
+            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + ' of ' + stat.total + ' fields translated' + (stat.needsReview ? ' · ' + stat.needsReview + ' need review' : '');
+            coverageDetail.hidden = !open;
+          });
+          pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
+          pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? ' · review' : '');
+        } else {
+          pill.className = 'el-lang-cov';
+          pill.textContent = code.toUpperCase();
+        }
+        covRow.appendChild(pill);
+      });
+      detail.append(covRow, coverageDetail);
+      mainWrap.appendChild(detail);
+
       var actions = document.createElement('div');
       actions.className = 'el-exp-card-actions';
       var menuItems = [];
-      if (!exp.deletionPending) actions.appendChild(actionLink(exp.role === 'translate' ? 'Open Translator' : 'Open Builder', editUrl, true));
+      if (!exp.deletionPending) {
+        var isCopy = justDuplicatedId === exp.id;
+        var open = actionLink(isCopy ? 'Open copy' : exp.role === 'translate' ? 'Open Translator' : 'Open Builder', editUrl, true);
+        if (isCopy) focusDuplicateLink = open;
+        actions.appendChild(open);
+      }
       if (!exp.deletionPending && exp.role !== 'translate') {
         actions.appendChild(actionLink('Responses', '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
         if (exp.shareEnabled && exp.shareToken) {
@@ -93,14 +302,16 @@
         }
         menuItems.push({ label: 'Duplicate', icon: 'copy', onClick: async function () {
           try {
-            await api('/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/duplicate', { method: 'POST', body: '{}' });
-            toast('Expedition duplicated.', 'success');
-            loadList();
+            var dupRes = await api('/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/duplicate', { method: 'POST', body: '{}' });
+            justDuplicatedId = (dupRes && dupRes.expedition && dupRes.expedition.id) || '';
+            toast('Expedition duplicated. Highlighted in list.', 'success');
+            await loadList();
           } catch (err) { if (err.code !== 'auth/session-changed') toast(err.message, 'error'); }
         } });
       }
       if (exp.role !== 'translate') {
         if (exp.role === 'owner') {
+          if (menuItems.length) menuItems.push({ divider: true });
           menuItems.push({ label: 'Delete', icon: 'trash', danger: true, onClick: function () {
             pendingDeleteExp = exp;
             document.getElementById('el-delete-dialog-msg').textContent = exp.title;
@@ -109,12 +320,18 @@
             document.getElementById('el-delete-cancel').focus();
           } });
         }
-        var menu = Icons.createDropdown({ ariaLabel: 'More actions', leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
+        var menu = Icons.createDropdown({ ariaLabel: 'More actions for ' + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
         actions.appendChild(menu.el);
       }
-      card.append(detail, actions);
+      card.append(mainWrap, actions);
       grid.appendChild(card);
     });
+
+    // UX-005: Focus newly duplicated copy row
+    if (focusDuplicateLink) {
+      justDuplicatedId = '';
+      focusDuplicateLink.focus();
+    }
   }
 
   async function loadList() {
@@ -123,7 +340,8 @@
     try {
       var data = await api('/api/elearning/expeditions');
       if (request !== listRequest) return;
-      renderExpeditions(data.expeditions || []);
+      allExpeditions = data.expeditions || [];
+      renderExpeditions(allExpeditions);
     } catch (err) {
       if (request !== listRequest || err.code === 'auth/session-changed') return;
       retry.hidden = false;
@@ -131,11 +349,11 @@
     }
   }
 
-  document.getElementById('el-new-expedition-btn').addEventListener('click', function () {
-    document.getElementById('el-create-error').hidden = true;
-    titleInput.value = '';
-    createDialog.showModal();
-  });
+  if (searchInput) {
+    searchInput.addEventListener('input', function () { renderExpeditions(allExpeditions); });
+  }
+
+  document.getElementById('el-new-expedition-btn').addEventListener('click', openCreateDialog);
   document.getElementById('el-create-cancel').addEventListener('click', function () {
     if (Icons) Icons.closeDialogAnimated(createDialog);
     else createDialog.close();
@@ -166,6 +384,21 @@
   }
   if (Icons) Icons.wireAnimatedDialogs();
 
+  function lockDialog(dialog, saving) {
+    dialog.setAttribute('closedby', saving ? 'none' : 'any');
+    dialog.querySelector('button[aria-label="Close"]').disabled = saving;
+    dialog.querySelector('[id$="-cancel"]').disabled = saving;
+    dialog.toggleAttribute('data-saving', saving);
+  }
+  [createDialog, importDialog].forEach(function (dialog) {
+    dialog.addEventListener('cancel', function (event) {
+      if (dialog.hasAttribute('data-saving')) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  });
+
   function dialogError(name, err) {
     if (err.code === 'auth/session-changed') return;
     var error = document.getElementById('el-' + name + '-error');
@@ -175,37 +408,104 @@
 
   document.getElementById('el-create-form').addEventListener('submit', async function (event) {
     event.preventDefault();
+    var confirm = document.getElementById('el-create-confirm');
+    if (confirm.disabled) return;
     titleInput.value = titleInput.value.trim();
     if (!titleInput.reportValidity()) return;
     var lang = document.getElementById('el-new-lang').value;
     var preset = document.getElementById('el-new-template').value;
-    var confirm = document.getElementById('el-create-confirm');
+    var origText = confirm.textContent;
+    var progress = document.getElementById('el-create-progress');
+    progress.textContent = 'Creating expedition…';
     confirm.disabled = true;
+    lockDialog(createDialog, true);
+    confirm.textContent = 'Creating expedition…';
     var payload = Model.createExpeditionPreset(preset, titleInput.value, lang);
     try {
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(payload) });
       createDialog.close();
       window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
     } catch (err) {
+      if (err.code === 'auth/session-changed') return;
+      lockDialog(createDialog, false);
       dialogError('create', err);
-    } finally { confirm.disabled = false; }
+      progress.textContent = '';
+      confirm.textContent = origText;
+      confirm.disabled = false;
+    }
   });
 
   var importInput = document.getElementById('el-import-json-input');
   document.getElementById('el-import-json-btn').addEventListener('click', function () { importInput.click(); });
+  if (importDialog) {
+    document.getElementById('el-import-cancel').addEventListener('click', function () {
+      pendingImportPayload = null;
+      if (Icons) Icons.closeDialogAnimated(importDialog);
+      else importDialog.close();
+    });
+    document.getElementById('el-import-confirm').addEventListener('click', async function () {
+      if (!pendingImportPayload) return;
+      var btn = document.getElementById('el-import-confirm');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      lockDialog(importDialog, true);
+      btn.textContent = 'Importing…';
+      try {
+        var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(pendingImportPayload) });
+        pendingImportPayload = null;
+        importDialog.close();
+        toast('Imported expedition!', 'success');
+        window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
+      } catch (err) {
+        if (err.code === 'auth/session-changed') return;
+        lockDialog(importDialog, false);
+        dialogError('import', err);
+        btn.disabled = false;
+        btn.textContent = 'Import & Open Builder';
+      }
+    });
+    importDialog.addEventListener('close', function () {
+      ++importAttempt;
+      pendingImportPayload = null;
+      importDialog.returnValue = '';
+    });
+  }
   importInput.addEventListener('change', async function () {
     var file = importInput.files && importInput.files[0];
     if (!file) return;
     var session = client.captureSession();
+    var attempt = ++importAttempt;
+    var summary = document.getElementById('el-import-summary');
+    var confirm = document.getElementById('el-import-confirm');
+    pendingImportPayload = null;
+    confirm.disabled = true;
+    confirm.textContent = 'Import & Open Builder';
+    summary.textContent = 'Checking expedition…';
+    document.getElementById('el-import-error').hidden = true;
+    importDialog.showModal();
     try {
-      var text = await file.text();
+      var parsed = JSON.parse(await file.text());
       session.assertCurrent();
-      var parsed = JSON.parse(text);
-      var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(parsed) });
-      toast('Imported expedition!', 'success');
-      window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
+      if (attempt !== importAttempt) return;
+      var checked = await api('/api/elearning/import-preview', { method: 'POST', body: JSON.stringify(parsed) });
+      session.assertCurrent();
+      if (attempt !== importAttempt) return;
+      pendingImportPayload = parsed;
+      var title = document.createElement('strong');
+      title.textContent = checked.title;
+      title.setAttribute('translate', 'no');
+      var info = document.createElement('p');
+      info.className = 'el-exp-meta';
+      info.textContent = checked.stationCount + (checked.stationCount === 1 ? ' station' : ' stations') + ' · ' +
+        checked.stepCount + (checked.stepCount === 1 ? ' step' : ' steps') + ' · ' +
+        checked.enabledLanguages.join(', ').toUpperCase() + ' · Private draft';
+      summary.replaceChildren(title, info);
+      confirm.disabled = false;
     } catch (err) {
-      if (err.code !== 'auth/session-changed') toast('Could not import JSON: ' + err.message, 'error');
+      if (attempt === importAttempt && err.code !== 'auth/session-changed') {
+        summary.textContent = file.name;
+        dialogError('import', err instanceof SyntaxError ? new Error('This file is not valid JSON.') : err);
+      }
     } finally {
       importInput.value = '';
     }
@@ -217,6 +517,22 @@
 
   function accountChanged(user) {
     ++listRequest;
+    ++importAttempt;
+    pendingImportPayload = null;
+    lockDialog(createDialog, false);
+    lockDialog(importDialog, false);
+    if (importDialog.open) importDialog.close();
+    allExpeditions = [];
+    justDuplicatedId = '';
+    searchInput.value = '';
+    searchInput.hidden = true;
+    coverObserver.disconnect();
+    coverCache.forEach(function (pending) { pending.then(URL.revokeObjectURL).catch(function () {}); });
+    coverCache.clear();
+    document.getElementById('el-create-progress').textContent = '';
+    var createButton = document.getElementById('el-create-confirm');
+    createButton.disabled = false;
+    createButton.textContent = 'Create & Open Builder';
     pendingDeleteExp = null;
     if (deleteDialog.open) deleteDialog.close();
     if (createDialog.open) createDialog.close();
