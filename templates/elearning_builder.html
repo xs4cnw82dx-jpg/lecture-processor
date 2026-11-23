@@ -22,6 +22,7 @@
       <div class="el-title-wrap">
         <input type="text" class="el-title-input" id="el-exp-title" aria-label="Expedition title" maxlength="200">
         <span class="el-save-chip" id="el-save-state" role="status" aria-live="polite">Loading…</span>
+        <button type="button" class="el-btn el-btn-sm el-save-retry" id="el-save-retry" hidden>Retry save</button>
       </div>
     </div>
 
@@ -46,12 +47,19 @@
     </div>
   </header>
 
+  <div id="el-return-responses" class="el-return-bar" hidden>
+    <span>Opened from Responses review comments.</span>
+    <a id="el-return-responses-link" href="/physio/elearning" class="el-btn el-btn-sm">Back to Responses</a>
+  </div>
+
   <div id="el-lease-banner" class="el-translate-welcome" hidden>
     <div>
       <strong id="el-lease-message">Another collaborator is currently editing.</strong>
     </div>
     <button type="button" class="el-btn el-btn-sun el-btn-sm" id="el-takeover-btn">Take Over Editing</button>
   </div>
+
+  <div id="el-outline-live" class="sr-only" aria-live="polite"></div>
 
   <!-- Mode 1: Full-Viewport 3-Zone Mentimeter-Style Builder -->
   <main class="el-workspace" id="el-mode-edit" tabindex="-1" data-pane="canvas">
@@ -127,9 +135,11 @@
         <span class="el-tr-arrow-host" id="el-tr-arrow-host" aria-hidden="true"></span>
         <div id="el-tr-target-host"></div>
         <span class="el-status-inline is-live" id="el-tr-progress">0 / 0 translated</span>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-manage-langs" hidden>Course languages</button>
       </div>
       <div class="el-btn-row el-tr-actions">
         <div id="el-tr-filter-host"></div>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-alt-toggle" aria-pressed="false">3rd language ref</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-next-missing">Next missing</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-toggle-preview" aria-pressed="true">Live Preview</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-export-csv">Export CSV</button>
@@ -138,6 +148,7 @@
         <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-tr-save-btn">Save Now</button>
       </div>
     </div>
+    <p class="el-tr-shortcut-hint">Shortcut: press <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> in any translation field to jump to the next missing item.</p>
 
     <details class="el-tr-glossary" id="el-tr-glossary">
       <summary><span>Pain-Education Glossary</span><span class="xped-caption" id="el-tr-glossary-summary">Shared key terms</span></summary>
@@ -165,27 +176,41 @@
       <div class="el-btn-row el-preview-controls">
         <h2>Interactive Preview</h2>
         <div id="el-preview-lang-host"></div>
-        <div class="el-vp-switch" role="group" aria-label="Preview width">
+        <div class="el-vp-switch" role="group" aria-label="Preview starting point">
+          <button type="button" class="el-vp-btn is-active" id="el-pv-from-step" aria-pressed="true">Current step</button>
+          <button type="button" class="el-vp-btn" id="el-pv-from-start" aria-pressed="false">Start page</button>
+        </div>
+        <div class="el-vp-switch el-vp-width-switch" role="group" aria-label="Preview width">
           <button type="button" class="el-vp-btn is-active" id="el-pv-desktop" aria-pressed="true">Desktop</button>
           <button type="button" class="el-vp-btn" id="el-pv-mobile" aria-pressed="false">Mobile</button>
         </div>
+        <label class="el-field-check el-pv-peer-toggle">
+          <input type="checkbox" id="el-pv-sample-peers">
+          <span>Sample peer votes</span>
+        </label>
       </div>
       <button type="button" class="el-btn el-btn-sm" id="el-preview-reset">Reset preview</button>
     </div>
     <div class="el-canvas-frame xped-surface-scope" id="el-preview-container" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
   </section>
 
-  <!-- Categorized + Add Block Dialog with Search -->
-  <dialog class="el-dialog" id="el-block-picker-dialog" closedby="any" aria-labelledby="el-picker-title">
+  <!-- Categorized + Add Block Dialog with Search & Live Preview -->
+  <dialog class="el-dialog el-dialog-wide" id="el-block-picker-dialog" closedby="any" aria-labelledby="el-picker-title">
     <div class="el-dialog-header">
       <h2 id="el-picker-title">Add a Block</h2>
       <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
     </div>
     <div class="el-dialog-body">
       <div class="el-picker-search-wrap">
-        <input type="search" id="el-picker-search" class="xped-input" placeholder="Search blocks (e.g. YouTube, Myth, Scale, Image)…" aria-label="Search blocks">
+        <input type="search" id="el-picker-search" class="xped-input" autofocus placeholder="Search blocks (e.g. YouTube, stelling, bronnen, waage, slider)…" aria-label="Search blocks">
       </div>
-      <div id="el-picker-body"></div>
+      <div class="el-picker-split">
+        <div id="el-picker-body"></div>
+        <aside class="el-picker-preview-pane" aria-label="Block preview">
+          <div class="el-picker-preview-head">Learner preview</div>
+          <div id="el-picker-preview" class="xped-surface-scope" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+        </aside>
+      </div>
     </div>
   </dialog>
 
@@ -196,6 +221,10 @@
       <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
     </div>
     <div class="el-dialog-body">
+      <div class="el-field">
+        <label for="el-new-station-name">Station Name</label>
+        <input type="text" id="el-new-station-name" class="xped-input" maxlength="200" placeholder="Station 1">
+      </div>
       <div class="el-picker-grid el-recipe-grid">
         <button type="button" class="el-picker-card" data-recipe="blank" data-recipe-icon="plus">
           <span class="el-picker-ico"></span>
@@ -250,64 +279,114 @@
       <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
     </div>
     <div class="el-dialog-body">
-      <div class="el-insp-section-title">1. Public Learner &amp; Tester Link (No Login)</div>
-      <div class="el-share-box">
-        <div>
+      <div id="el-share-loading" class="el-share-loading" hidden>
+        <p class="xped-caption" id="el-share-loading-msg">Loading sharing settings…</p>
+        <button type="button" class="el-btn el-btn-sm" id="el-share-retry-btn" hidden>Retry</button>
+      </div>
+      <div id="el-share-content">
+        <div class="el-share-tabs" role="tablist" aria-label="Share audience">
+          <button type="button" role="tab" class="el-share-tab is-active" data-share-tab="learners" aria-selected="true">Learners</button>
+          <button type="button" role="tab" class="el-share-tab" data-share-tab="collaborators" aria-selected="false">Collaborators</button>
+          <button type="button" role="tab" class="el-share-tab" data-share-tab="translators" aria-selected="false">Translators</button>
+        </div>
+
+        <section class="el-share-panel" data-share-panel="learners">
+          <p class="xped-caption">Zero-login public link for patients, students, or pilot testers. Pause or reset anytime.</p>
           <label class="el-field-check">
             <input type="checkbox" id="el-share-enabled">
             <span>Public test link is active</span>
           </label>
-          <div class="el-field">
-            <label for="el-share-cohort">Optional Test Cohort Tag</label>
-            <input type="text" id="el-share-cohort" placeholder="pilot-1" maxlength="48">
-          </div>
-          <div class="el-field">
-            <label for="el-share-url">Shareable URL</label>
-            <input type="text" id="el-share-url" readonly>
-          </div>
-          <div class="el-btn-row">
-            <span class="el-copy-wrap">
-              <button type="button" class="el-btn el-btn-primary el-btn-sm el-copy-btn" command="--copy" commandfor="el-share-url" aria-label="Copy shareable learner link">Copy Link</button>
-              <span class="el-copy-tip" role="status"></span>
-            </span>
-            <a href="#" target="_blank" rel="noopener" class="el-btn el-btn-sm" id="el-share-open-link">Open Link</a>
-            <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">Reset Link</button>
-          </div>
-        </div>
-        <div class="el-qr-box">
-          <div id="el-share-qr"></div>
-          <button type="button" class="el-btn el-btn-sm" id="el-share-qr-download">Download QR</button>
-        </div>
-      </div>
 
-      <label class="el-field-check">
-        <input type="checkbox" id="el-share-peer-results">
-        <span>Show anonymized peer results on polls &amp; sliders</span>
-      </label>
-      <label class="el-field-check">
-        <input type="checkbox" id="el-share-pilot-feedback">
-        <span>Include short Pilot Usability Feedback card at the end</span>
-      </label>
-      <label class="el-field-check">
-        <input type="checkbox" id="el-share-step-comments">
-        <span>Enable Physio / PhD reviewer comments on each step</span>
-      </label>
+          <div class="el-share-inactive-card" id="el-share-inactive-card" hidden>
+            <strong>This expedition is currently private.</strong>
+            <p class="xped-caption">Learners and testers cannot open the link until you activate it.</p>
+            <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-share-activate-btn">Activate public link</button>
+          </div>
 
-      <div class="el-insp-section-title">2. Co-Editors (Thesis Partner) &amp; Translators</div>
-      <div class="el-share-inline-row">
-        <input type="email" aria-label="Collaborator email" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
-        <div id="el-member-role-host"></div>
-        <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-add-member-btn">Add</button>
-      </div>
-      <div id="el-members-list"></div>
+          <div class="el-share-box" id="el-share-active-box">
+            <div>
+              <div class="el-field">
+                <label for="el-share-cohort">Optional Test Cohort Tag</label>
+                <input type="text" id="el-share-cohort" placeholder="pilot-1" maxlength="48">
+              </div>
+              <div class="el-field">
+                <label for="el-share-url">Shareable URL</label>
+                <input type="text" id="el-share-url" readonly>
+              </div>
+              <div class="el-btn-row">
+                <span class="el-copy-wrap">
+                  <button type="button" class="el-btn el-btn-primary el-btn-sm el-copy-btn" command="--copy" commandfor="el-share-url" aria-label="Copy shareable learner link">Copy Link</button>
+                  <span class="el-copy-tip" role="status"></span>
+                </span>
+                <a href="#" target="_blank" rel="noopener" class="el-btn el-btn-sm" id="el-share-open-link">Open Link</a>
+                <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">Reset Link</button>
+              </div>
+            </div>
+            <div class="el-qr-box">
+              <div id="el-share-qr"></div>
+              <p class="el-qr-cohort-note" id="el-share-qr-cohort" hidden></p>
+              <button type="button" class="el-btn el-btn-sm" id="el-share-qr-download">Download QR</button>
+            </div>
+          </div>
 
-      <div class="el-insp-section-title">3. Direct Translator Link (No Account Needed)</div>
-      <div class="el-share-inline-row">
-        <input type="text" aria-label="Translator link label" id="el-grant-label" class="xped-input" placeholder="German Editor (DE)">
-        <div id="el-grant-lang-host"></div>
-        <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">Create Link</button>
+          <label class="el-field-check">
+            <input type="checkbox" id="el-share-peer-results">
+            <span>Show anonymized peer results on polls &amp; sliders</span>
+          </label>
+          <label class="el-field-check">
+            <input type="checkbox" id="el-share-pilot-feedback">
+            <span>Include short Pilot Usability Feedback card at the end</span>
+          </label>
+          <label class="el-field-check">
+            <input type="checkbox" id="el-share-step-comments">
+            <span>Enable Physio / PhD reviewer comments on each step</span>
+          </label>
+        </section>
+
+        <section class="el-share-panel" data-share-panel="collaborators" hidden>
+          <p class="xped-caption">Co-Editors can edit structure and content with their account. Translators can edit localized text only.</p>
+          <div class="el-share-inline-row">
+            <input type="email" aria-label="Collaborator email" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
+            <div id="el-member-role-host"></div>
+            <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-add-member-btn">Add</button>
+          </div>
+          <div id="el-members-list"></div>
+        </section>
+
+        <section class="el-share-panel" data-share-panel="translators" hidden>
+          <p class="xped-caption">Direct link for an external editor (no account needed). Locked to their assigned target language.</p>
+          <div class="el-share-inline-row">
+            <input type="text" aria-label="Translator link label" id="el-grant-label" class="xped-input" placeholder="German Editor (DE)">
+            <div id="el-grant-lang-host"></div>
+            <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">Create Link</button>
+          </div>
+          <div id="el-grants-list"></div>
+        </section>
       </div>
-      <div id="el-grants-list"></div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog" id="el-tr-preview-dialog" closedby="any" aria-labelledby="el-tr-sheet-title">
+    <div class="el-dialog-header">
+      <h2 id="el-tr-sheet-title">Live Slide Preview</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="xped-surface-scope" id="el-tr-sheet-stage" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog el-dialog-sm" id="el-confirm-dialog" aria-labelledby="el-confirm-title">
+    <div class="el-dialog-header">
+      <h2 id="el-confirm-title">Confirm action</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <p id="el-confirm-message" class="xped-caption"></p>
+      <div class="el-btn-row">
+        <button type="button" class="el-btn" id="el-confirm-cancel" autofocus>Cancel</button>
+        <button type="button" class="el-btn el-btn-danger" id="el-confirm-ok">Confirm</button>
+      </div>
     </div>
   </dialog>
 

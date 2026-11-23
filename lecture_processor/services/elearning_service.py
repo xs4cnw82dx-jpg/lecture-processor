@@ -186,6 +186,8 @@ def _summary_card(exp: dict, role: str) -> dict:
     modules = exp.get('modules') or []
     step_count = sum(len(m.get('steps') or []) for m in modules)
     share = exp.get('share') or {}
+    start_page = exp.get('startPage') or {}
+    cover_media = model.safe_media_ref(start_page.get('heroMedia'))
     return {
         'id': exp['id'],
         'title': exp.get('title', 'Untitled Expedition'),
@@ -198,6 +200,8 @@ def _summary_card(exp: dict, role: str) -> dict:
         'deletionPending': bool(exp.get('deleted')),
         'shareEnabled': bool(share.get('enabled') and not exp.get('deleted')),
         'shareToken': share.get('token', '') if role in ('owner', 'edit') else '',
+        'coverMedia': cover_media,
+        'languageCoverage': model.compute_language_coverage(exp),
         'updatedAt': exp.get('updated_at', 0),
         'createdAt': exp.get('created_at', 0),
     }
@@ -283,7 +287,7 @@ def create_expedition(runtime):
         'members': {},
         'member_emails': [],
         'share': {
-            'enabled': True,
+            'enabled': False,
             'token': share_token,
             'showPeerResults': True,
             'collectPilotFeedback': True,
@@ -338,6 +342,7 @@ def lease(runtime, expedition_id: str):
         if active and not is_mine and not body.get('takeover'):
             return {
                 'granted': False,
+                'same_account': cur_lease.get('user_id') == who['id'],
                 'editor': {
                     'name': cur_lease.get('name', 'Collaborator'),
                     'expires_at': cur_lease.get('expires_at', 0),
@@ -831,10 +836,21 @@ def _learner_answer(block, value):
             return value
         if isinstance(value, list) and kind != 'hotspot':
             return list(dict.fromkeys(v for v in value if isinstance(v, str) and v in ids))
-    if kind in ('wordcloud', 'mini_plan') and isinstance(value, list):
-        count = data.get('maxWords', 3) if kind == 'wordcloud' else data.get('maxSelect', 3)
-        width = 40 if kind == 'wordcloud' else 300
-        return [v[:width] for v in value[:count] if isinstance(v, str)]
+    if kind == 'wordcloud' and isinstance(value, list):
+        count = data.get('maxWords', 3)
+        return [v[:40] for v in value[:count] if isinstance(v, str)]
+    if kind == 'mini_plan':
+        max_select = data.get('maxSelect', 3)
+        valid_ids = {item['id'] for item in data.get('suggestions', []) if isinstance(item, dict) and item.get('id')}
+        if isinstance(value, dict):
+            raw_ids = value.get('ids') if isinstance(value.get('ids'), list) else []
+            clean_ids = list(dict.fromkeys(v for v in raw_ids if isinstance(v, str) and v in valid_ids))[:max_select]
+            remaining = max(0, max_select - len(clean_ids))
+            raw_custom = value.get('custom') if isinstance(value.get('custom'), list) else []
+            clean_custom = [v[:300] for v in raw_custom if isinstance(v, str) and v.strip()][:remaining]
+            return {'ids': clean_ids, 'custom': clean_custom}
+        if isinstance(value, list):
+            return [v[:300] for v in value[:max_select] if isinstance(v, str)]
     return None
 
 
@@ -1112,7 +1128,14 @@ def get_responses(runtime, expedition_id: str):
 
 def export_responses_csv(runtime, expedition_id: str):
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
-    rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
+    cohort_filter = str(request.args.get('cohort') or '').strip()
+    lang_filter = str(request.args.get('language') or '').strip().lower()
+    all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
+    rows = [
+        r for r in all_rows
+        if (not cohort_filter or r.get('cohort') == cohort_filter)
+        and (not lang_filter or r.get('language') == lang_filter)
+    ]
     block_ids = []
     for mod in exp.get('modules', []):
         for step in mod.get('steps', []):
@@ -1142,9 +1165,16 @@ def export_responses_csv(runtime, expedition_id: str):
             row_out.append(str(val))
         writer.writerow(sanitize_csv_row(row_out))
 
+    scope_parts = []
+    if cohort_filter and _COHORT_RE.fullmatch(cohort_filter):
+        scope_parts.append(cohort_filter)
+    if lang_filter in model.SUPPORTED_LANGUAGES:
+        scope_parts.append(lang_filter)
+    scope_suffix = '-' + '-'.join(scope_parts) if scope_parts else ''
+
     return send_file(
         io.BytesIO(buf.getvalue().encode('utf-8-sig')),
         mimetype='text/csv; charset=utf-8',
         as_attachment=True,
-        download_name=f'xped-responses-{expedition_id}.csv',
+        download_name=f'xped-responses-{expedition_id}{scope_suffix}.csv',
     )

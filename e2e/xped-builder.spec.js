@@ -74,6 +74,8 @@ test('phone editor switches between outline, editable canvas and inspector witho
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Editor tools' })).toBeFocused();
   await page.locator('[data-mode=preview]').click();
+  await expect(page.locator('#el-preview-container .xped-step-title')).toBeVisible();
+  await page.locator('#el-pv-from-start').click();
   await expect(page.locator('#el-preview-container .xped-hero-title')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
 });

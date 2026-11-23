@@ -89,3 +89,55 @@ test('v3 station recipes, B1 readability coach, glossary, and media translation 
   const rows = Model.extractTranslationRows(exp, 'nl', 'de');
   assert.ok(rows.some((r) => r.altSource && r.altLang === 'en'));
 });
+
+test('UX review model helpers: presets, DOI links, readable labels, nested checks, and answers', () => {
+  const nlExp = Model.createExpeditionPreset('blank', 'Alleen Nederlands', 'nl');
+  assert.equal(nlExp.startPage.title.nl, 'Alleen Nederlands');
+  assert.equal(nlExp.startPage.title.en, '');
+  assert.equal(nlExp.modules[0].domain, 'general');
+
+  const mod = Model.createModule('ask-teach-reflect', 0);
+  assert.equal(mod.steps[0].title.nl.startsWith('1.'), false);
+  assert.equal(mod.steps[0].status, 'draft');
+
+  const doi = Model.normalizeCitationLink('10.3174/ajnr.A4173');
+  assert.equal(doi.url, 'https://doi.org/10.3174/ajnr.A4173');
+  assert.equal(doi.host, 'doi.org');
+
+  assert.equal(Model.hasMeaningfulAnswer(0), true);
+  assert.equal(Model.hasMeaningfulAnswer(''), false);
+  assert.equal(Model.hasMeaningfulAnswer({ ids: [], custom: [] }), false);
+  assert.equal(Model.hasMeaningfulAnswer({ ids: ['s1'], custom: [] }), true);
+
+  const showcase = Model.createExpeditionPreset('showcase', 'Demo', 'nl');
+  const rows = Model.extractTranslationRows(showcase, 'nl', 'de');
+  assert.equal(rows.some((r) => r.location.includes('balance_scale')), false);
+  assert.equal(rows.some((r) => r.location.includes('overloadTip')), false);
+  assert.ok(rows.some((r) => r.location.includes('Overload guidance')));
+
+  const check = Model.analyzeStepReadability({
+    title: Model.loc('Stap', 'Step', ''),
+    blocks: [
+      {
+        id: 'blk_mcq',
+        type: 'mcq',
+        data: {
+          question: Model.loc('Kies er een', '', ''),
+          options: [
+            { id: 'o1', label: Model.loc('Een heel lange antwoordoptie die veel meer dan tweeentwintig woorden bevat zodat de schrijfhulp ook geneste antwoordopties controleert voor patienten met weinig energie vandaag', '', '') },
+          ],
+        },
+      },
+      {
+        id: 'blk_src',
+        type: 'sources',
+        data: {
+          items: [{ id: 's1', citation: Model.loc('Brinjikji W et al. Systematic literature review of imaging features of spinal degeneration in asymptomatic populations AJNR 2015', '', '') }],
+        },
+      },
+    ],
+  }, 'nl', 'nl');
+  assert.ok(check.writingChecks.some((c) => c.blockId === 'blk_mcq'));
+  assert.ok(check.optionalWords > 0);
+  assert.equal(check.tips.some((t) => /B1/.test(t.text)), false);
+});

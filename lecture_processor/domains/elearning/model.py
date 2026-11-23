@@ -52,6 +52,76 @@ _YT_ID_RE = re.compile(r'^[a-zA-Z0-9_-]{11}$')
 _VIMEO_ID_RE = re.compile(r'^\d{5,15}$')
 _SAFE_XPED_ASSET_RE = re.compile(r'^/static/images/xped/[a-zA-Z0-9_.-]+\.(?:png|svg|webp|jpg)$')
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+_HEX_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
+_DOI_RE = re.compile(r'^(?:doi:\s*)?(10\.\d{4,9}/\S+)$', re.IGNORECASE)
+VALID_IMAGE_ALIGNS = ('left', 'center', 'right')
+VALID_CHECK_MODES = ('immediate', 'submit')
+
+BLOCK_LOCATION_LABELS = {
+    'richtext': 'Text & Heading',
+    'video': 'Video',
+    'image': 'Image & Caption',
+    'audio': 'Audio Clip',
+    'callout': 'Callout Box',
+    'story': 'Patient / Case Story',
+    'sources': 'Sources & Citations',
+    'mcq': 'Multiple Choice',
+    'myth_fact': 'Myth vs. Fact',
+    'scale': 'Rating Slider',
+    'reflection': 'Open Reflection',
+    'wordcloud': 'Word Cloud',
+    'ranking': 'Priority Ranking',
+    'hotspot': 'Interactive Image Hotspots',
+    'balance_scale': 'Load vs. Resources Scale',
+    'bps_triad': 'Biopsychosocial Explorer',
+    'mini_plan': 'Personal Mini-Plan',
+    'custom_visual': 'Custom Visual / Animation',
+}
+
+FIELD_LOCATION_LABELS = {
+    'heading': 'Heading',
+    'body': 'Body text',
+    'title': 'Title',
+    'subtitle': 'Subtitle',
+    'caption': 'Caption',
+    'transcript': 'Transcript',
+    'alt': 'Image description (alt text)',
+    'sideHeading': 'Side panel heading',
+    'sideBody': 'Side panel text',
+    'description': 'Description',
+    'speakerRole': 'Speaker role',
+    'quote': 'Quote',
+    'question': 'Question',
+    'explanation': 'Explanation',
+    'statement': 'Statement',
+    'sourceLabel': 'Source label',
+    'minLabel': 'Low end label',
+    'maxLabel': 'High end label',
+    'feedback': 'Feedback',
+    'prompt': 'Prompt',
+    'placeholder': 'Input placeholder',
+    'helperNote': 'Helper note',
+    'instruction': 'Instruction',
+    'intro': 'Introduction',
+    'loadLabel': 'Load side label',
+    'resourceLabel': 'Resources side label',
+    'overloadTip': 'Overload guidance',
+    'balancedTip': 'Balanced guidance',
+    'bioTitle': 'Biological heading',
+    'bioBody': 'Biological explanation',
+    'psychoTitle': 'Psychological heading',
+    'psychoBody': 'Psychological explanation',
+    'socialTitle': 'Social heading',
+    'socialBody': 'Social explanation',
+    'options': 'Option',
+    'items': 'Item',
+    'pins': 'Pin',
+    'factors': 'Factor',
+    'suggestions': 'Suggestion',
+    'label': 'Label',
+    'detail': 'Detail',
+    'citation': 'Reference',
+}
 
 
 class ElearningError(Exception):
@@ -269,6 +339,9 @@ def safe_external_url(raw: object) -> str:
     url = safe_text(raw, 600).strip()
     if not url:
         return ''
+    doi_match = _DOI_RE.fullmatch(url)
+    if doi_match:
+        return 'https://doi.org/' + doi_match.group(1)
     parsed = urlparse(url)
     if parsed.scheme not in ('http', 'https') or not parsed.hostname:
         return ''
@@ -343,6 +416,10 @@ def _normalize_option_list(raw: object, default_lang: str, max_items: int = MAX_
                 item['x'], item['y'] = 50.0, 50.0
         if 'detail' in entry:
             item['detail'] = normalize_localized(entry.get('detail'), 1500, default_lang)
+        if 'color' in entry:
+            col = str(entry.get('color') or '').strip()
+            if _HEX_COLOR_RE.fullmatch(col):
+                item['color'] = col.upper()
         result.append(item)
     return result
 
@@ -398,9 +475,20 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
         layout = str(data.get('layout') or 'full').strip()
         if layout not in VALID_IMAGE_LAYOUTS:
             layout = 'full'
+        align = str(data.get('align') or 'center').strip()
+        if align not in VALID_IMAGE_ALIGNS:
+            align = 'center'
+        try:
+            focal_x = round(min(100.0, max(0.0, float(data.get('focalX', 50)))), 1)
+            focal_y = round(min(100.0, max(0.0, float(data.get('focalY', 50)))), 1)
+        except (TypeError, ValueError):
+            focal_x, focal_y = 50.0, 50.0
         norm_data = {
             'media': safe_media_ref(data.get('media')),
             'layout': layout,
+            'align': align,
+            'focalX': focal_x,
+            'focalY': focal_y,
             'alt': normalize_localized(data.get('alt'), 400, default_lang),
             'caption': normalize_localized(data.get('caption'), 600, default_lang),
             'sideHeading': normalize_localized(data.get('sideHeading'), 300, default_lang),
@@ -450,10 +538,18 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
             'items': items,
         }
     elif btype == 'mcq':
+        norm_options = _normalize_option_list(data.get('options'), default_lang, MAX_OPTIONS)
+        has_correct = any(bool(opt.get('isCorrect')) for opt in norm_options)
+        graded = bool(data['graded']) if 'graded' in data else has_correct
+        check_mode = str(data.get('checkMode') or '').strip()
+        if check_mode not in VALID_CHECK_MODES:
+            check_mode = 'submit' if (norm_settings['allowMultiple'] and graded) else 'immediate'
         norm_data = {
             'question': normalize_localized(data.get('question'), 600, default_lang),
             'subtitle': normalize_localized(data.get('subtitle'), 600, default_lang),
-            'options': _normalize_option_list(data.get('options'), default_lang, MAX_OPTIONS),
+            'options': norm_options,
+            'graded': graded,
+            'checkMode': check_mode,
             'explanation': normalize_localized(data.get('explanation'), 2000, default_lang),
         }
     elif btype == 'myth_fact':
@@ -740,36 +836,40 @@ def normalize_expedition_payload(raw: object) -> dict:
 def build_default_expedition(title: str = 'xPEDitie Pijn — Nieuw ontwerp', default_lang: str = 'nl') -> dict:
     """Create a clean, blank-first expedition with 1 starter station ready for content."""
     safe_title = safe_text(title, 200).strip() or 'xPEDitie Pijn — Nieuw ontwerp'
+    dlang = normalize_lang(default_lang, 'nl')
+    intro_by_lang = {
+        'nl': 'Welkom op jouw xPEDitie. Voeg hier een warme, heldere introductie toe zodra de inhoud klaar is.',
+        'en': 'Welcome to your expedition. Add a warm, clear introduction here once the content is ready.',
+        'de': 'Willkommen auf deiner Expedition. Füge hier eine klare Einführung hinzu, sobald der Inhalt steht.',
+    }
+    station_by_lang = {'nl': 'Station 1', 'en': 'Station 1', 'de': 'Station 1'}
+    step_by_lang = {'nl': 'Stap 1', 'en': 'Step 1', 'de': 'Schritt 1'}
     return normalize_expedition_payload({
         'title': safe_title,
-        'defaultLanguage': default_lang,
+        'defaultLanguage': dlang,
         'enabledLanguages': ['nl', 'en', 'de'],
         'theme': {'preset': 'xped-warm-sand', 'showRouteMap': True},
         'startPage': {
-            'eyebrow': {'nl': 'XPEDITIE PIJN', 'en': 'XPEDITION PAIN', 'de': 'XPEDITION SCHMERZ'},
-            'title': {'nl': safe_title, 'en': '', 'de': ''},
-            'subtitle': {
-                'nl': 'Welkom op jouw expeditie. Voeg hier een warme, heldere introductie toe zodra de inhoud klaar is.',
-                'en': '',
-                'de': '',
-            },
+            'eyebrow': {dlang: {'nl': 'XPEDITIE PIJN', 'en': 'XPEDITION PAIN', 'de': 'XPEDITION SCHMERZ'}[dlang]},
+            'title': {dlang: safe_title},
+            'subtitle': {dlang: intro_by_lang[dlang]},
             'heroMedia': {'kind': 'xped', 'staticPath': '/static/images/xped/xped-wandelaar-met-kaart.png'},
             'highlights': [],
-            'ctaLabel': {'nl': 'Start de expeditie', 'en': 'Start the expedition', 'de': 'Expedition starten'},
+            'ctaLabel': {dlang: {'nl': 'Start de xPEDitie', 'en': 'Start the expedition', 'de': 'Expedition starten'}[dlang]},
         },
         'modules': [
             {
                 'id': new_id('mod'),
-                'title': {'nl': 'Station 1', 'en': 'Station 1', 'de': ''},
-                'subtitle': {'nl': '', 'en': '', 'de': ''},
-                'domain': 'bio',
+                'title': {dlang: station_by_lang[dlang]},
+                'subtitle': {},
+                'domain': 'general',
                 'estimatedMinutes': 5,
                 'status': 'empty',
                 'visibleToLearners': True,
                 'steps': [
                     {
                         'id': new_id('stp'),
-                        'title': {'nl': 'Stap 1', 'en': 'Step 1', 'de': ''},
+                        'title': {dlang: step_by_lang[dlang]},
                         'layout': 'focused',
                         'status': 'empty',
                         'authorNotes': '',
@@ -803,22 +903,52 @@ def _walk_localized_fields(expedition: dict):
             yield (f'{s_prefix}.title', f'{s_label} · Title', step['title'])
             for b_idx, blk in enumerate(step.get('blocks', [])):
                 b_prefix = f"{s_prefix}.blk.{blk['id']}"
-                b_label = f"{s_label} · {blk['type']} #{b_idx + 1}"
+                b_name = BLOCK_LOCATION_LABELS.get(blk['type'], blk['type'])
+                b_label = f"{s_label} · {b_name} #{b_idx + 1}"
                 data = blk.get('data') or {}
                 for key, value in data.items():
+                    f_label = FIELD_LOCATION_LABELS.get(key, key)
                     if isinstance(value, dict) and all(lang in value for lang in SUPPORTED_LANGUAGES):
-                        yield (f'{b_prefix}.{key}', f'{b_label} · {key}', value)
+                        yield (f'{b_prefix}.{key}', f'{b_label} · {f_label}', value)
                     elif isinstance(value, list):
                         for item_idx, item in enumerate(value):
                             if not isinstance(item, dict) or not item.get('id'):
                                 continue
                             for subkey, subval in item.items():
                                 if isinstance(subval, dict) and all(lang in subval for lang in SUPPORTED_LANGUAGES):
+                                    sf_label = FIELD_LOCATION_LABELS.get(subkey, subkey)
                                     yield (
                                         f"{b_prefix}.{key}.{item['id']}.{subkey}",
-                                        f'{b_label} · {key} #{item_idx + 1} · {subkey}',
+                                        f'{b_label} · {f_label} #{item_idx + 1} · {sf_label}',
                                         subval,
                                     )
+
+
+def compute_language_coverage(expedition: dict) -> dict:
+    """Compute per-language translation counts across all non-empty translatable fields."""
+    default_lang = normalize_lang(expedition.get('defaultLanguage', 'nl'))
+    enabled = expedition.get('enabledLanguages') or [default_lang]
+    coverage = {lang: {'translated': 0, 'needsReview': 0, 'total': 0} for lang in enabled if lang in SUPPORTED_LANGUAGES}
+    if not coverage:
+        coverage[default_lang] = {'translated': 0, 'needsReview': 0, 'total': 0}
+    try:
+        fields = list(_walk_localized_fields(expedition))
+    except (KeyError, TypeError):
+        return coverage
+    for _, _, loc in fields:
+        if not isinstance(loc, dict):
+            continue
+        has_any = any(str(loc.get(l, '') or '').strip() for l in SUPPORTED_LANGUAGES)
+        if not has_any:
+            continue
+        review_map = loc.get('_review') if isinstance(loc.get('_review'), dict) else {}
+        for lang, stats in coverage.items():
+            stats['total'] += 1
+            if str(loc.get(lang, '') or '').strip():
+                stats['translated'] += 1
+                if review_map.get(lang):
+                    stats['needsReview'] += 1
+    return coverage
 
 
 def mark_translations_for_review(previous_exp: dict, next_exp: dict, edited_lang: str) -> dict:

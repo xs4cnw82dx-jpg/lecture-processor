@@ -72,7 +72,7 @@ def auth_headers(user='owner', session='tab-1', **extra):
     return {'Authorization': 'Bearer ' + user, 'X-Elearning-Session': session, **extra}
 
 
-def _create_sample(client):
+def _create_sample(client, *, enable_public: bool = True):
     payload = {
         'title': 'xPEDitie Pijn Pilot',
         'defaultLanguage': 'nl',
@@ -130,7 +130,17 @@ def _create_sample(client):
     }
     resp = client.post('/api/elearning/expeditions', json=payload, headers=auth_headers('owner'))
     assert resp.status_code == 201, resp.json
-    return resp.json['expedition']
+    exp = resp.json['expedition']
+    assert exp['share']['enabled'] is False
+    if enable_public:
+        upd = client.post(
+            f"/api/elearning/expeditions/{exp['id']}/sharing",
+            json={'action': 'update_public', 'enabled': True},
+            headers=auth_headers('owner'),
+        )
+        assert upd.status_code == 200
+        exp['share'] = upd.json['share']
+    return exp
 
 
 def test_crud_coediting_lease_and_revision_conflict(setup):
@@ -916,3 +926,40 @@ def test_translation_attachment_between_inventory_and_cleanup_keeps_its_file(set
         assert client.delete(url + '/assets/clip_asset', headers=auth_headers(), json={
             'lease_token': lease, 'base_revision': revision}).status_code == 409
     assert db.get(key)['ready']
+
+
+def test_ux_review_backend_contracts(setup):
+    client, _ = setup
+    exp = _create_sample(client, enable_public=False)
+    eid = exp['id']
+    # UX-080: New expeditions start private by default
+    assert exp['share']['enabled'] is False
+    assert client.get('/api/elearning/public/' + exp['share']['token']).status_code == 410
+
+    # UX-002 / UX-010: Summary cards include coverMedia and languageCoverage
+    listed = client.get('/api/elearning/expeditions', headers=auth_headers('owner')).json['expeditions']
+    card = next(item for item in listed if item['id'] == eid)
+    assert 'coverMedia' in card
+    assert card['languageCoverage']['nl']['translated'] > 0
+    assert card['languageCoverage']['de']['translated'] == 0
+
+    # UX-089: Lease denial distinguishes same-account tab vs collaborator
+    l1 = client.post(f'/api/elearning/expeditions/{eid}/lease', json={'action': 'acquire'}, headers=auth_headers('owner', 'tab-a'))
+    assert l1.json['granted'] is True
+    l_same = client.post(f'/api/elearning/expeditions/{eid}/lease', json={'action': 'acquire'}, headers=auth_headers('owner', 'tab-b'))
+    assert l_same.json['granted'] is False and l_same.json['same_account'] is True
+
+    # UX-115: Filtered CSV export respects cohort and language query params
+    client.post(f'/api/elearning/expeditions/{eid}/sharing', json={'action': 'update_public', 'enabled': True}, headers=auth_headers('owner'))
+    pub_url = '/api/elearning/public/' + exp['share']['token'] + '/responses'
+    client.post(pub_url, json={'sessionId': 'sess_nl_alpha', 'cohort': 'alpha', 'language': 'nl', 'answers': {'blk_mf': 'myth'}})
+    client.post(pub_url, json={'sessionId': 'sess_de_beta', 'cohort': 'beta', 'language': 'de', 'answers': {'blk_mf': 'fact'}})
+    filtered = client.get(f'/api/elearning/expeditions/{eid}/responses/export.csv?cohort=alpha&language=nl', headers=auth_headers('owner'))
+    assert filtered.status_code == 200
+    assert 'alpha-nl.csv' in filtered.headers.get('Content-Disposition', '')
+    body_text = filtered.data.decode('utf-8-sig')
+    assert 'sess_nl_alpha' in body_text and 'sess_de_beta' not in body_text
+
+    # UX-040: Bare DOI normalized to https://doi.org/...
+    assert model.safe_external_url('10.3174/ajnr.A4173') == 'https://doi.org/10.3174/ajnr.A4173'
+    assert model.safe_external_url('doi:10.3174/ajnr.A4173') == 'https://doi.org/10.3174/ajnr.A4173'

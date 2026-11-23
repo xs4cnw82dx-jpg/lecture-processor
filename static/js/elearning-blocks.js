@@ -8,10 +8,14 @@
     return node;
   }
 
-  function makeEditable(node, placeholder, editable, onCommit) {
+  function makeEditable(node, placeholder, editable, onCommit, onFocus) {
     if (!editable) return node;
     root.XpedElearningModel.bindEditableText(node, placeholder, true, onCommit);
     node.addEventListener('click', function (e) { e.stopPropagation(); });
+    if (typeof onFocus === 'function') {
+      node.addEventListener('focus', function () { onFocus(); });
+      node.addEventListener('pointerdown', function () { onFocus(); });
+    }
     return node;
   }
 
@@ -19,6 +23,8 @@
     var Icons = root.XpedElearningIcons;
     var dz = el('div', 'el-dropzone');
     dz.tabIndex = 0;
+    dz.setAttribute('role', 'button');
+    dz.setAttribute('aria-label', label + (sublabel ? ' — ' + sublabel : ''));
     if (Icons) dz.appendChild(Icons.icon('upload', 22));
     dz.appendChild(el('strong', '', label));
     dz.appendChild(el('span', '', sublabel));
@@ -28,9 +34,19 @@
     inp.hidden = true;
     dz.appendChild(inp);
 
+    function triggerChoose() {
+      if (typeof onFile === 'function') inp.click();
+    }
     dz.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (typeof onFile === 'function') inp.click();
+      triggerChoose();
+    });
+    dz.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerChoose();
+      }
     });
     inp.addEventListener('change', function () {
       if (inp.files && inp.files[0] && typeof onFile === 'function') onFile(inp.files[0]);
@@ -137,23 +153,46 @@
   function renderFormattedBody(text) {
     var box = el('div', 'xped-richtext-body');
     var lines = String(text || '').split('\n');
-    var ul = null;
+    var listEl = null;
+    var listKind = '';
     lines.forEach(function (raw) {
       var trimmed = raw.trim();
       if (!trimmed) {
-        ul = null;
+        listEl = null;
+        listKind = '';
         return;
       }
-      if (trimmed.indexOf('- ') === 0 || trimmed.indexOf('• ') === 0) {
-        if (!ul) {
-          ul = el('ul', 'xped-richtext-list');
-          box.appendChild(ul);
+      var h3m = trimmed.match(/^##\s+(.+)$/);
+      var h4m = trimmed.match(/^###\s+(.+)$/);
+      var ulm = trimmed.match(/^(?:[-•*])\s+(.+)$/);
+      var olm = trimmed.match(/^\d+[.)]\s+(.+)$/);
+      if (h4m || h3m) {
+        listEl = null;
+        listKind = '';
+        var hx = el(h4m ? 'h4' : 'h3', 'xped-richtext-subhead');
+        appendInlineTokens(hx, (h4m || h3m)[1]);
+        box.appendChild(hx);
+      } else if (ulm) {
+        if (!listEl || listKind !== 'ul') {
+          listEl = el('ul', 'xped-richtext-list');
+          listKind = 'ul';
+          box.appendChild(listEl);
         }
-        var li = document.createElement('li');
-        appendInlineTokens(li, trimmed.slice(2));
-        ul.appendChild(li);
+        var uli = document.createElement('li');
+        appendInlineTokens(uli, ulm[1]);
+        listEl.appendChild(uli);
+      } else if (olm) {
+        if (!listEl || listKind !== 'ol') {
+          listEl = el('ol', 'xped-richtext-list is-ordered');
+          listKind = 'ol';
+          box.appendChild(listEl);
+        }
+        var oli = document.createElement('li');
+        appendInlineTokens(oli, olm[1]);
+        listEl.appendChild(oli);
       } else {
-        ul = null;
+        listEl = null;
+        listKind = '';
         var p = document.createElement('p');
         appendInlineTokens(p, raw);
         box.appendChild(p);
@@ -173,6 +212,7 @@
     var answers = ctx.answers || {};
     var onAnswer = ctx.onAnswer || function () {};
     var onEdit = ctx.onEdit || function () {};
+    var onFocusBlock = typeof ctx.onFocusBlock === 'function' ? ctx.onFocusBlock : function () {};
     var onUploadFile = ctx.onUploadFile || null;
     var fetchAggregate = ctx.fetchAggregate || null;
     var assetUrl = ctx.assetUrl || function () { return ''; };
@@ -182,8 +222,15 @@
     var data = block.data || {};
     var revealAfter = !!(block.settings && block.settings.revealAfterAnswer);
 
+    function notifyFocus() {
+      if (editable && block && block.id) onFocusBlock(block.id);
+    }
+
     var wrap = el('div', 'xped-block xped-block-' + block.type);
     wrap.setAttribute('data-block-id', block.id || '');
+    if (editable) {
+      wrap.addEventListener('focusin', notifyFocus);
+    }
     if (highlightBlockId && highlightBlockId === block.id) {
       wrap.classList.add('is-tr-highlighted');
     }
@@ -205,43 +252,165 @@
       var b = Model.getLocalized(data.body, lang, defLang);
       if (h || editable) {
         var hEl = el('h3', 'xped-question-text', h);
-        makeEditable(hEl, 'Optional section heading…', editable, function (v) { onEdit(block, 'heading', v); });
+        makeEditable(hEl, 'Optional section heading…', editable, function (v) { onEdit(block, 'heading', v); }, notifyFocus);
         wrap.appendChild(hEl);
       }
       if (editable) {
         var fmtBar = el('div', 'el-fmt-bar');
+        fmtBar.setAttribute('role', 'toolbar');
+        fmtBar.setAttribute('aria-label', 'Text formatting');
+        var linkBox = el('div', 'el-fmt-link-popover');
+        linkBox.hidden = true;
         var rtTa = document.createElement('textarea');
         rtTa.className = 'xped-richtext-editor';
-        rtTa.rows = Math.max(3, Math.min(10, String(b || '').split('\n').length + 1));
+        rtTa.rows = Math.max(3, Math.min(12, String(b || '').split('\n').length + 1));
         rtTa.value = b || '';
-        rtTa.placeholder = 'Write calm, clear explanation text… (use Bold or Bullet buttons above)';
-        rtTa.addEventListener('click', function (e) { e.stopPropagation(); });
+        rtTa.placeholder = 'Write calm, clear explanation text…';
+        rtTa.addEventListener('click', function (e) { e.stopPropagation(); notifyFocus(); });
         rtTa.addEventListener('input', function () {
-          rtTa.rows = Math.max(3, Math.min(10, rtTa.value.split('\n').length + 1));
+          rtTa.rows = Math.max(3, Math.min(12, rtTa.value.split('\n').length + 1));
           onEdit(block, 'body', rtTa.value);
         });
 
-        function wrapSel(prefix, suffix, fallback) {
-          var s = rtTa.selectionStart || 0;
-          var e = rtTa.selectionEnd || 0;
-          var sel = rtTa.value.slice(s, e) || fallback;
-          rtTa.value = rtTa.value.slice(0, s) + prefix + sel + suffix + rtTa.value.slice(e);
+        function replaceRange(start, end, replacement, selStartOffset, selEndOffset) {
+          var before = rtTa.value.slice(0, start);
+          var after = rtTa.value.slice(end);
+          rtTa.value = before + replacement + after;
+          rtTa.rows = Math.max(3, Math.min(12, rtTa.value.split('\n').length + 1));
           rtTa.focus();
+          rtTa.setSelectionRange(start + selStartOffset, start + selEndOffset);
           onEdit(block, 'body', rtTa.value);
         }
+
+        function toggleBold() {
+          var s = rtTa.selectionStart || 0;
+          var e = rtTa.selectionEnd || 0;
+          var sel = rtTa.value.slice(s, e);
+          if (sel) {
+            if (sel.indexOf('**') === 0 && sel.lastIndexOf('**') === sel.length - 2 && sel.length >= 4) {
+              var unwrapped = sel.slice(2, -2);
+              replaceRange(s, e, unwrapped, 0, unwrapped.length);
+            } else {
+              replaceRange(s, e, '**' + sel + '**', 2, 2 + sel.length);
+            }
+          } else {
+            var phText = 'key point';
+            replaceRange(s, e, '**' + phText + '**', 2, 2 + phText.length);
+          }
+        }
+
+        function transformSelectedLines(mode) {
+          var val = rtTa.value;
+          var s = rtTa.selectionStart || 0;
+          var e = rtTa.selectionEnd || 0;
+          var lineStart = val.lastIndexOf('\n', Math.max(0, s - 1)) + 1;
+          var lineEndIdx = val.indexOf('\n', e);
+          var lineEnd = lineEndIdx < 0 ? val.length : lineEndIdx;
+          var blockText = val.slice(lineStart, lineEnd);
+          var lines = blockText.split('\n');
+          var allMatch = false;
+          if (mode === 'ul') allMatch = lines.every(function (l) { return !l.trim() || /^[-•*]\s+/.test(l); });
+          else if (mode === 'ol') allMatch = lines.every(function (l) { return !l.trim() || /^\d+[.)]\s+/.test(l); });
+          else if (mode === 'h3') allMatch = lines.every(function (l) { return !l.trim() || /^###\s+/.test(l); });
+
+          var numCounter = 1;
+          var nextLines = lines.map(function (l) {
+            var stripped = l.replace(/^(?:###?\s+|[-•*]\s+|\d+[.)]\s+)/, '');
+            if (mode === 'p' || allMatch) return stripped;
+            if (!stripped.trim()) {
+              if (mode === 'ul') return '- ';
+              if (mode === 'ol') return (numCounter++) + '. ';
+              if (mode === 'h3') return '### ';
+              return '';
+            }
+            if (mode === 'ul') return '- ' + stripped;
+            if (mode === 'ol') return (numCounter++) + '. ' + stripped;
+            if (mode === 'h3') return '### ' + stripped;
+            return stripped;
+          });
+          var joined = nextLines.join('\n');
+          replaceRange(lineStart, lineEnd, joined, 0, joined.length);
+        }
+
+        // Inline Link Editor (UX-028: never inserts example.org)
+        var linkRange = { s: 0, e: 0 };
+        var linkTextInp = el('input', 'xped-input el-fmt-link-inp');
+        linkTextInp.type = 'text';
+        linkTextInp.placeholder = 'Link text (e.g. Read guideline)';
+        linkTextInp.setAttribute('aria-label', 'Link text');
+        var linkUrlInp = el('input', 'xped-input el-fmt-link-inp');
+        linkUrlInp.type = 'url';
+        linkUrlInp.placeholder = 'https://… or DOI 10.xxxx/…';
+        linkUrlInp.setAttribute('aria-label', 'Link URL');
+        var linkErr = el('span', 'el-fmt-link-err');
+        var linkApply = el('button', 'el-btn el-btn-primary el-btn-sm', 'Insert link');
+        linkApply.type = 'button';
+        var linkCancel = el('button', 'el-btn el-btn-sm', 'Cancel');
+        linkCancel.type = 'button';
+
+        function closeLinkBox(restoreFocus) {
+          linkBox.hidden = true;
+          linkErr.textContent = '';
+          if (restoreFocus) {
+            rtTa.focus();
+            rtTa.setSelectionRange(linkRange.s, linkRange.e);
+          }
+        }
+        linkApply.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var norm = Model.normalizeCitationLink(linkUrlInp.value);
+          if (!norm.url) {
+            linkErr.textContent = 'Enter a valid https:// URL or DOI.';
+            linkUrlInp.focus();
+            return;
+          }
+          var label = linkTextInp.value.trim() || norm.label || norm.host;
+          var md = '[' + label + '](' + norm.url + ')';
+          linkBox.hidden = true;
+          linkErr.textContent = '';
+          replaceRange(linkRange.s, linkRange.e, md, 0, md.length);
+        });
+        linkCancel.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          closeLinkBox(true);
+        });
+        [linkTextInp, linkUrlInp].forEach(function (inpEl) {
+          inpEl.addEventListener('click', function (ev) { ev.stopPropagation(); });
+          inpEl.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter') { ev.preventDefault(); linkApply.click(); }
+            if (ev.key === 'Escape') { ev.preventDefault(); closeLinkBox(true); }
+          });
+        });
+        var linkRow = el('div', 'el-fmt-link-row');
+        linkRow.append(linkTextInp, linkUrlInp, linkApply, linkCancel);
+        linkBox.append(linkRow, linkErr);
+
         [
-          { ico: 'bold', title: 'Bold text', fn: function () { wrapSel('**', '**', 'belangrijk woord'); } },
-          { ico: 'list', title: 'Add bullet line', fn: function () { wrapSel('\n- ', '', 'Kernpunt'); } },
-          { ico: 'link', title: 'Add link', fn: function () { wrapSel('[', '](https://example.org)', 'Lees meer'); } },
+          { label: 'P', title: 'Paragraph (clear heading/list)', fn: function () { transformSelectedLines('p'); } },
+          { label: 'H', title: 'Subheading', fn: function () { transformSelectedLines('h3'); } },
+          { ico: 'bold', title: 'Bold text', fn: toggleBold },
+          { ico: 'list', title: 'Bullet list (toggle selected lines)', fn: function () { transformSelectedLines('ul'); } },
+          { label: '1.', title: 'Numbered list (toggle selected lines)', fn: function () { transformSelectedLines('ol'); } },
+          { ico: 'link', title: 'Insert link', fn: function () {
+            linkRange = { s: rtTa.selectionStart || 0, e: rtTa.selectionEnd || 0 };
+            linkTextInp.value = rtTa.value.slice(linkRange.s, linkRange.e).trim();
+            linkUrlInp.value = '';
+            linkErr.textContent = '';
+            linkBox.hidden = false;
+            (linkTextInp.value ? linkUrlInp : linkTextInp).focus();
+          } },
         ].forEach(function (tool) {
           var tb = el('button', 'el-fmt-btn');
           tb.type = 'button';
           tb.title = tool.title;
-          if (Icons) tb.appendChild(Icons.icon(tool.ico, 14));
-          tb.addEventListener('click', function (ev) { ev.stopPropagation(); tool.fn(); });
+          tb.setAttribute('aria-label', tool.title);
+          if (tool.ico && Icons) tb.appendChild(Icons.icon(tool.ico, 14));
+          else tb.textContent = tool.label;
+          tb.addEventListener('click', function (ev) { ev.stopPropagation(); notifyFocus(); tool.fn(); });
           fmtBar.appendChild(tb);
         });
         wrap.appendChild(fmtBar);
+        wrap.appendChild(linkBox);
         wrap.appendChild(rtTa);
       } else {
         wrap.appendChild(renderFormattedBody(b));
@@ -250,13 +419,17 @@
     }
 
     if (block.type === 'video') {
+      var embedSrc = Model.buildEmbedSrc(data, lang);
+      // UX-032: Omit empty optional video blocks in learner/preview mode
+      if (!editable && !embedSrc) {
+        return document.createDocumentFragment();
+      }
       var vt = Model.getLocalized(data.title, lang, defLang);
       if (vt || editable) {
         var vth = el('h3', 'xped-question-text', vt);
-        makeEditable(vth, 'Optional video title…', editable, function (v) { onEdit(block, 'title', v); });
+        makeEditable(vth, 'Optional video title…', editable, function (v) { onEdit(block, 'title', v); }, notifyFocus);
         wrap.appendChild(vth);
       }
-      var embedSrc = Model.buildEmbedSrc(data, lang);
       if (embedSrc) {
         var frame = el('div', 'xped-video-frame');
         var iframe = document.createElement('iframe');
@@ -272,40 +445,39 @@
         if (Icons) ph.appendChild(Icons.icon('video', 24));
         ph.appendChild(el('strong', '', 'Add a YouTube or Vimeo Video'));
         ph.appendChild(el('span', '', 'Paste any video link below (timestamps like ?t=1m20s are detected automatically).'));
-        if (editable) {
-          var vRow = el('div', 'el-video-inline-row');
-          var vInp = document.createElement('input');
-          vInp.type = 'url';
-          vInp.className = 'xped-input';
-          vInp.placeholder = 'https://www.youtube.com/watch?v=…';
-          vInp.addEventListener('click', function (e) { e.stopPropagation(); });
-          var vBtn = el('button', 'el-btn el-btn-primary el-btn-sm', 'Embed Video');
-          vBtn.type = 'button';
-          vBtn.addEventListener('click', function (e) {
-            e.stopPropagation();
+        var vRow = el('div', 'el-video-inline-row');
+        var vInp = document.createElement('input');
+        vInp.type = 'url';
+        vInp.className = 'xped-input';
+        vInp.placeholder = 'https://www.youtube.com/watch?v=…';
+        vInp.setAttribute('aria-label', 'Video URL');
+        vInp.addEventListener('click', function (e) { e.stopPropagation(); notifyFocus(); });
+        var vBtn = el('button', 'el-btn el-btn-primary el-btn-sm', 'Embed Video');
+        vBtn.type = 'button';
+        vBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (vInp.value.trim()) onEdit(block, 'videoUrl', vInp.value.trim());
+        });
+        vInp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
             if (vInp.value.trim()) onEdit(block, 'videoUrl', vInp.value.trim());
-          });
-          vInp.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              if (vInp.value.trim()) onEdit(block, 'videoUrl', vInp.value.trim());
-            }
-          });
-          vRow.appendChild(vInp);
-          vRow.appendChild(vBtn);
-          ph.appendChild(vRow);
-        }
+          }
+        });
+        vRow.appendChild(vInp);
+        vRow.appendChild(vBtn);
+        ph.appendChild(vRow);
         wrap.appendChild(ph);
       }
       var cap = Model.getLocalized(data.caption, lang, defLang);
       if (cap || editable) {
         var capEl = el('p', 'xped-caption', cap);
-        makeEditable(capEl, 'Optional caption…', editable, function (v) { onEdit(block, 'caption', v); });
+        makeEditable(capEl, 'Optional caption…', editable, function (v) { onEdit(block, 'caption', v); }, notifyFocus);
         wrap.appendChild(capEl);
       }
       var tr = Model.getLocalized(data.transcript, lang, defLang);
       if (tr) {
-        var det = el('details', 'xped-details');
+        var det = el('details', 'xped-details is-transcript');
         var sum = document.createElement('summary');
         sum.appendChild(el('span', '', Model.ui(lang, 'transcriptDefault')));
         if (Icons) {
@@ -322,7 +494,8 @@
 
     if (block.type === 'image') {
       var layout = data.layout || 'full';
-      var imgWrap = el('div', 'xped-image-block layout-' + layout);
+      var align = data.align || 'center';
+      var imgWrap = el('div', 'xped-image-block layout-' + layout + ' align-' + align);
       var url = Model.resolveMediaUrl(data.media, data.mediaOverrides, lang, assetUrl);
       var fig = el('figure', 'xped-image-figure');
       if (url) {
@@ -330,19 +503,26 @@
         setMediaSource(img, url);
         img.alt = Model.getLocalized(data.alt, lang, defLang) || '';
         img.loading = 'lazy';
+        if (Number.isFinite(data.focalX) || Number.isFinite(data.focalY)) {
+          var fx = Number.isFinite(data.focalX) ? data.focalX : 50;
+          var fy = Number.isFinite(data.focalY) ? data.focalY : 50;
+          img.style.objectPosition = fx + '% ' + fy + '%';
+        }
         fig.appendChild(img);
-      } else {
+      } else if (editable) {
         fig.appendChild(createDropzone(
           'Drop an image here or click to upload',
           'PNG, JPG or WebP — or pick an official xPED illustration on the right',
           'image/png,image/jpeg,image/webp',
-          editable && onUploadFile ? function (file) { onUploadFile(block, file); } : null
+          onUploadFile ? function (file) { onUploadFile(block, file); } : null
         ));
+      } else {
+        return document.createDocumentFragment();
       }
       var icap = Model.getLocalized(data.caption, lang, defLang);
       if (icap || editable) {
         var fcap = el('figcaption', 'xped-caption', icap);
-        makeEditable(fcap, 'Optional image caption…', editable, function (v) { onEdit(block, 'caption', v); });
+        makeEditable(fcap, 'Optional image caption…', editable, function (v) { onEdit(block, 'caption', v); }, notifyFocus);
         fig.appendChild(fcap);
       }
       imgWrap.appendChild(fig);
@@ -352,11 +532,11 @@
         var sb = Model.getLocalized(data.sideBody, lang, defLang);
         if (sh || editable) {
           var shEl = el('h3', 'xped-question-text', sh);
-          makeEditable(shEl, 'Heading…', editable, function (v) { onEdit(block, 'sideHeading', v); });
+          makeEditable(shEl, 'Heading…', editable, function (v) { onEdit(block, 'sideHeading', v); }, notifyFocus);
           side.appendChild(shEl);
         }
         var sbEl = el('p', 'xped-richtext-body', sb);
-        makeEditable(sbEl, 'Supporting explanation beside this visual…', editable, function (v) { onEdit(block, 'sideBody', v); });
+        makeEditable(sbEl, 'Supporting explanation beside this visual…', editable, function (v) { onEdit(block, 'sideBody', v); }, notifyFocus);
         side.appendChild(sbEl);
         imgWrap.appendChild(side);
       }
@@ -442,88 +622,149 @@
     }
 
     if (block.type === 'sources') {
-      var sdet = el('details', 'xped-details');
-      var ssum = document.createElement('summary');
-      ssum.appendChild(el('span', '', Model.getLocalized(data.title, lang, defLang) || Model.ui(lang, 'sourcesDefault')));
-      if (Icons) {
-        var sch = Icons.icon('chevronDown', 16);
-        sch.classList.add('xped-details-chev');
-        ssum.appendChild(sch);
+      var validSources = (data.items || []).filter(function (item) {
+        return editable || Model.getLocalized(item.citation, lang, defLang).trim() || String(item.url || '').trim();
+      });
+      if (!editable && !validSources.length) {
+        return document.createDocumentFragment();
       }
+      var shell = el('div', 'xped-sources-shell');
+      var sdet = el('details', 'xped-details xped-sources-box');
+      sdet._appDisclosure = true;
+      var ssum = document.createElement('summary');
+      ssum.className = 'xped-sources-summary';
+      var tri = el('span', 'xped-sources-tri');
+      tri.setAttribute('aria-hidden', 'true');
+      ssum.appendChild(tri);
+      ssum.appendChild(el('span', 'xped-sources-label', Model.getLocalized(data.title, lang, defLang) || Model.ui(lang, 'sourcesBar')));
       sdet.appendChild(ssum);
-      var sbody = el('div', 'xped-details-body');
+      var sbody = el('div', 'xped-details-body xped-sources-body');
       var ul = el('ul', 'xped-sources-list');
-      (data.items || []).forEach(function (item) {
+      validSources.forEach(function (item) {
         var li = el('li');
-        li.appendChild(document.createTextNode(Model.getLocalized(item.citation, lang, defLang) || 'Add scientific reference in Settings…'));
-        if (item.url) {
+        var citTxt = Model.getLocalized(item.citation, lang, defLang);
+        li.appendChild(document.createTextNode(citTxt || (editable ? 'Add scientific reference in Settings…' : '')));
+        var linkMeta = Model.normalizeCitationLink(item.url);
+        if (linkMeta.url) {
           li.appendChild(document.createTextNode(' '));
           var a = document.createElement('a');
-          a.href = item.url;
+          a.href = linkMeta.url;
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
-          a.textContent = 'Link';
+          a.className = 'xped-source-link';
+          a.textContent = linkMeta.host === 'doi.org'
+            ? linkMeta.label
+            : Model.ui(lang, 'openSource', { host: linkMeta.host });
           li.appendChild(a);
         }
         ul.appendChild(li);
       });
       sbody.appendChild(ul);
       sdet.appendChild(sbody);
-      wrap.appendChild(sdet);
+      shell.appendChild(sdet);
+      wrap.appendChild(shell);
       return wrap;
     }
 
     if (block.type === 'mcq') {
       var qh = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
-      makeEditable(qh, 'Click to write your question…', editable, function (v) { onEdit(block, 'question', v); });
+      qh.id = 'mcq-q-' + block.id;
+      makeEditable(qh, 'Click to write your question…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       wrap.appendChild(qh);
       var sub = Model.getLocalized(data.subtitle, lang, defLang);
       if (sub || editable) {
         var subEl = el('p', 'xped-caption', sub);
-        makeEditable(subEl, 'Optional helper subtitle…', editable, function (v) { onEdit(block, 'subtitle', v); });
+        makeEditable(subEl, 'Optional helper subtitle…', editable, function (v) { onEdit(block, 'subtitle', v); }, notifyFocus);
         wrap.appendChild(subEl);
       }
       var current = answers[block.id];
       var allowMulti = !!(block.settings && block.settings.allowMultiple);
-      var selectedList = Array.isArray(current) ? current : (current ? [current] : []);
+      var selectedList = Array.isArray(current) ? current.slice() : (current ? [current] : []);
+      var hasGradedKey = (data.graded !== false) && (data.options || []).some(function (o) { return !!o.isCorrect; });
+      var needsSubmit = interactive && allowMulti && hasGradedKey && data.checkMode !== 'immediate';
+      var isChecked = !needsSubmit ? selectedList.length > 0 : (Array.isArray(current) && current.length > 0);
       var grid = el('div', 'xped-options-grid');
+      grid.setAttribute('role', allowMulti ? 'group' : 'radiogroup');
+      grid.setAttribute('aria-labelledby', qh.id);
+      var checkRow = el('div', 'xped-mcq-check-row');
       var feedbackHost = el('div');
       var peerHost = el('div');
       var letters = 'ABCDEFGHIJKLMNOPQRST';
 
-      var hasGradedKey = (data.options || []).some(function (o) { return !!o.isCorrect; });
+      function evaluateMultiSet(sel) {
+        var correctIds = (data.options || []).filter(function (o) { return !!o.isCorrect; }).map(function (o) { return o.id; });
+        var selSet = {};
+        sel.forEach(function (id) { selSet[id] = true; });
+        var rightSelected = correctIds.filter(function (id) { return !!selSet[id]; }).length;
+        var wrongSelected = sel.filter(function (id) { return correctIds.indexOf(id) < 0; }).length;
+        if (rightSelected === correctIds.length && wrongSelected === 0 && correctIds.length > 0) return 'exact';
+        if (rightSelected > 0) return 'partial';
+        return 'wrong';
+      }
 
-      function applyMcqClasses(sel) {
-        var answered = sel.length > 0;
+      function applyMcqClasses(sel, revealed) {
+        var showGrade = revealed && sel.length > 0 && hasGradedKey;
         Array.prototype.forEach.call(grid.children, function (child, i) {
           var o = data.options[i];
           var s = sel.indexOf(o.id) >= 0;
           var cls = 'xped-option-btn';
-          if (answered && hasGradedKey) {
+          if (showGrade) {
             if (o.isCorrect) cls += ' is-correct';
             else if (s) cls += ' is-incorrect';
             else cls += ' is-muted';
+            if (s) cls += ' is-chosen';
           } else if (s) {
-            cls += ' is-selected';
+            cls += ' is-selected is-chosen';
           }
           child.className = cls;
+          child.setAttribute('aria-checked', s ? 'true' : 'false');
+          var badge = child.querySelector('.xped-option-state');
+          if (badge) {
+            badge.textContent = '';
+            if (showGrade && o.isCorrect) {
+              if (Icons) badge.appendChild(Icons.icon('check', 14));
+              else badge.textContent = '✓';
+            } else if (s) {
+              if (Icons) badge.appendChild(Icons.icon('check', 14));
+              else badge.textContent = '✓';
+            }
+          }
         });
       }
 
-      function showMcqFeedback(sel) {
+      function showMcqFeedback(sel, revealed) {
         feedbackHost.textContent = '';
-        if (!sel.length) return;
-        var chosenOpt = (data.options || []).find(function (o) { return o.id === sel[0]; });
-        var fbText = (chosenOpt && Model.getLocalized(chosenOpt.feedback, lang, defLang)) || Model.getLocalized(data.explanation, lang, defLang);
-        var isRight = hasGradedKey ? !!(chosenOpt && chosenOpt.isCorrect) : null;
-        if (fbText || hasGradedKey) {
-          var box = el('div', 'xped-feedback-box ' + (isRight === true ? 'is-correct' : (isRight === false ? 'is-gentle' : 'is-neutral')));
-          if (isRight === true) {
-            box.appendChild(el('strong', 'xped-feedback-lead', Model.ui(lang, 'rightLead')));
-          } else if (isRight === false) {
+        if (!sel.length || !revealed) return;
+        var fbTexts = [];
+        sel.forEach(function (sid) {
+          var opt = (data.options || []).find(function (o) { return o.id === sid; });
+          var txt = opt && Model.getLocalized(opt.feedback, lang, defLang);
+          if (txt && fbTexts.indexOf(txt) < 0) fbTexts.push(txt);
+        });
+        var expTxt = Model.getLocalized(data.explanation, lang, defLang);
+        if (!fbTexts.length && expTxt) fbTexts.push(expTxt);
+        var outcome = null;
+        if (hasGradedKey) {
+          if (allowMulti) {
+            outcome = evaluateMultiSet(sel);
+          } else {
+            var chosenOpt = (data.options || []).find(function (o) { return o.id === sel[0]; });
+            outcome = (chosenOpt && chosenOpt.isCorrect) ? 'exact' : 'wrong';
+          }
+        }
+        if (fbTexts.length || hasGradedKey) {
+          var boxCls = outcome === 'exact' ? 'is-correct' : (outcome === 'partial' || outcome === 'wrong' ? 'is-gentle' : 'is-neutral');
+          var box = el('div', 'xped-feedback-box ' + boxCls);
+          if (outcome === 'exact') {
+            box.appendChild(el('strong', 'xped-feedback-lead', allowMulti ? Model.ui(lang, 'allCorrect') : Model.ui(lang, 'rightLead')));
+          } else if (outcome === 'partial') {
+            box.appendChild(el('strong', 'xped-feedback-lead', Model.ui(lang, 'partialCorrect')));
+          } else if (outcome === 'wrong') {
             box.appendChild(el('strong', 'xped-feedback-lead', Model.ui(lang, 'wrongMythLead')));
           }
-          if (fbText) box.appendChild(el('p', 'xped-feedback-text', fbText));
+          fbTexts.forEach(function (txt) {
+            box.appendChild(el('p', 'xped-feedback-text', txt));
+          });
           feedbackHost.appendChild(box);
         }
         if (interactive && block.settings && block.settings.showPeerResults && fetchAggregate) {
@@ -534,30 +775,57 @@
         }
       }
 
+      var checkBtn = null;
+      if (needsSubmit) {
+        checkBtn = el('button', 'xped-btn xped-btn-primary', Model.ui(lang, 'checkAnswers'));
+        checkBtn.type = 'button';
+        checkBtn.disabled = selectedList.length === 0;
+        checkBtn.addEventListener('click', function () {
+          isChecked = true;
+          onAnswer(block.id, selectedList.slice());
+          applyMcqClasses(selectedList, true);
+          showMcqFeedback(selectedList, true);
+        });
+        checkRow.appendChild(checkBtn);
+      }
+
       (data.options || []).forEach(function (opt, idx) {
         var btn = el('button', 'xped-option-btn');
         btn.type = 'button';
+        btn.setAttribute('role', allowMulti ? 'checkbox' : 'radio');
+        btn.setAttribute('aria-checked', selectedList.indexOf(opt.id) >= 0 ? 'true' : 'false');
         btn.appendChild(el('span', 'xped-option-letter', letters[idx] || String(idx + 1)));
-        var lblSpan = el('span', '', Model.getLocalized(opt.label, lang, defLang));
+        var lblSpan = el('span', 'xped-option-label', Model.getLocalized(opt.label, lang, defLang));
         if (editable) {
-          makeEditable(lblSpan, 'Option ' + (idx + 1), true, function (v) { onEdit(block, 'option:' + opt.id, v); });
+          makeEditable(lblSpan, 'Option ' + (idx + 1), true, function (v) { onEdit(block, 'option:' + opt.id, v); }, notifyFocus);
         }
         btn.appendChild(lblSpan);
+        var stateMark = el('span', 'xped-option-state');
+        stateMark.setAttribute('aria-hidden', 'true');
+        btn.appendChild(stateMark);
         if (interactive) {
           btn.addEventListener('click', function () {
             var nextSel = allowMulti
               ? (selectedList.indexOf(opt.id) >= 0 ? selectedList.filter(function (x) { return x !== opt.id; }) : selectedList.concat([opt.id]))
               : [opt.id];
             selectedList = nextSel;
-            onAnswer(block.id, allowMulti ? nextSel : nextSel[0]);
-            applyMcqClasses(nextSel);
-            showMcqFeedback(nextSel);
+            if (needsSubmit) {
+              isChecked = false;
+              if (checkBtn) checkBtn.disabled = selectedList.length === 0;
+              applyMcqClasses(nextSel, false);
+              showMcqFeedback(nextSel, false);
+            } else {
+              onAnswer(block.id, allowMulti ? nextSel : nextSel[0]);
+              applyMcqClasses(nextSel, true);
+              showMcqFeedback(nextSel, true);
+            }
           });
         }
         grid.appendChild(btn);
       });
-      if (selectedList.length) applyMcqClasses(selectedList);
+      applyMcqClasses(selectedList, isChecked);
       wrap.appendChild(grid);
+      if (needsSubmit) wrap.appendChild(checkRow);
 
       if (editable) {
         var addOptBtn = el('button', 'el-quiet-add-step', '+ Add option');
@@ -571,18 +839,19 @@
 
       wrap.appendChild(feedbackHost);
       wrap.appendChild(peerHost);
-      if (selectedList.length) showMcqFeedback(selectedList);
+      if (selectedList.length && isChecked) showMcqFeedback(selectedList, true);
       return wrap;
     }
 
     if (block.type === 'myth_fact') {
       // ZERO redundant "FABEL / FEIT" eyebrow above the statement!
       var stEl = el('h3', 'xped-question-text', Model.getLocalized(data.statement, lang, defLang));
-      makeEditable(stEl, 'Click to write a common pain belief statement…', editable, function (v) { onEdit(block, 'statement', v); });
+      makeEditable(stEl, 'Click to write a common pain belief statement…', editable, function (v) { onEdit(block, 'statement', v); }, notifyFocus);
       wrap.appendChild(stEl);
 
       var picked = answers[block.id] || '';
       var row = el('div', 'xped-myth-row');
+      row.setAttribute('role', 'group');
       var fb = el('div');
 
       function applyMythClasses(choice) {
@@ -590,10 +859,18 @@
         Array.prototype.forEach.call(row.children, function (c, i) {
           var v = i === 0 ? 'myth' : 'fact';
           var cls = 'xped-option-btn xped-myth-btn';
+          var icoSlot = c.querySelector('.xped-myth-status-ico');
+          if (icoSlot) icoSlot.textContent = '';
+          c.setAttribute('aria-pressed', choice === v ? 'true' : 'false');
           if (choice) {
-            if (v === rightVal) cls += ' is-correct';
-            else if (choice === v) cls += ' is-incorrect';
-            else cls += ' is-muted';
+            if (v === rightVal) {
+              cls += ' is-correct';
+              if (icoSlot && Icons) icoSlot.appendChild(Icons.icon('checkCircle', 18));
+            } else if (choice === v) {
+              cls += ' is-incorrect';
+            } else {
+              cls += ' is-muted';
+            }
           }
           c.className = cls;
         });
@@ -614,29 +891,34 @@
           p.appendChild(el('strong', '', ansLabel + ': '));
         }
         p.appendChild(document.createTextNode(expText));
-        if (data.sourceUrl) {
+        var srcMeta = Model.normalizeCitationLink(data.sourceUrl);
+        if (srcMeta.url) {
           var a = document.createElement('a');
-          a.href = data.sourceUrl;
+          a.href = srcMeta.url;
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
-          a.textContent = ' ' + (Model.getLocalized(data.sourceLabel, lang, defLang) || 'Bron');
+          a.textContent = ' ' + (Model.getLocalized(data.sourceLabel, lang, defLang) || srcMeta.label || Model.ui(lang, 'sourcesBar'));
           p.appendChild(a);
         }
         box.appendChild(p);
         fb.appendChild(box);
       }
 
-      [{ val: 'myth', ico: 'xCircle' }, { val: 'fact', ico: 'checkCircle' }].forEach(function (cfg) {
+      // UX-105: Neutral before answering — zero pre-answer X/Check cues!
+      ['myth', 'fact'].forEach(function (val) {
         var btn = el('button', 'xped-option-btn xped-myth-btn');
         btn.type = 'button';
-        if (Icons) btn.appendChild(Icons.icon(cfg.ico, 19));
-        btn.appendChild(el('span', '', Model.ui(lang, cfg.val)));
+        btn.setAttribute('aria-pressed', picked === val ? 'true' : 'false');
+        var icoSlot = el('span', 'xped-myth-status-ico');
+        icoSlot.setAttribute('aria-hidden', 'true');
+        btn.appendChild(icoSlot);
+        btn.appendChild(el('span', '', Model.ui(lang, val)));
         if (interactive) {
           btn.addEventListener('click', function () {
-            picked = cfg.val;
-            onAnswer(block.id, cfg.val);
-            applyMythClasses(cfg.val);
-            drawMythFeedback(cfg.val);
+            picked = val;
+            onAnswer(block.id, val);
+            applyMythClasses(val);
+            drawMythFeedback(val);
           });
         }
         row.appendChild(btn);
@@ -650,42 +932,70 @@
 
     if (block.type === 'scale') {
       var sq = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
-      makeEditable(sq, 'Click to write your scale prompt…', editable, function (v) { onEdit(block, 'question', v); });
+      sq.id = 'scale-q-' + block.id;
+      makeEditable(sq, 'Click to write your scale prompt…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       wrap.appendChild(sq);
       var minV = Number.isFinite(data.min) ? data.min : 0;
       var maxV = Number.isFinite(data.max) ? data.max : 10;
-      var curVal = answers[block.id] !== undefined ? Number(answers[block.id]) : Math.round((minV + maxV) / 2);
-      var sw = el('div', 'xped-scale-wrap');
+      var midV = Math.round((minV + maxV) / 2);
+      var hasValue = answers[block.id] !== undefined && answers[block.id] !== null && answers[block.id] !== '';
+      var curVal = hasValue ? Number(answers[block.id]) : midV;
+      var sw = el('div', 'xped-scale-wrap' + (!hasValue && interactive ? ' is-untouched' : ''));
       var topRow = el('div', 'xped-step-kicker-row');
       topRow.appendChild(el('span', '', Model.ui(lang, 'yourAnswer')));
-      var pill = el('span', 'xped-scale-value-pill', String(curVal));
-      topRow.appendChild(pill);
+      var pillWrap = el('div', 'el-btn-row');
+      var pill = el('span', 'xped-scale-value-pill' + (!hasValue && interactive ? ' is-untouched' : ''), hasValue || !interactive ? String(curVal) : Model.ui(lang, 'notChosenYet'));
+      pillWrap.appendChild(pill);
+      var midBtn = null;
+      if (interactive && !hasValue) {
+        midBtn = el('button', 'xped-btn xped-btn-ghost xped-scale-mid-btn', Model.ui(lang, 'chooseMidpoint', { n: midV }));
+        midBtn.type = 'button';
+        pillWrap.appendChild(midBtn);
+      }
+      topRow.appendChild(pillWrap);
       sw.appendChild(topRow);
+
       var slider = document.createElement('input');
       slider.type = 'range';
       slider.className = 'xped-range';
       slider.min = String(minV);
       slider.max = String(maxV);
       slider.value = String(curVal);
+      slider.setAttribute('aria-labelledby', sq.id);
+      var lblsId = 'scale-end-' + block.id;
+      slider.setAttribute('aria-describedby', lblsId);
+      slider.setAttribute('aria-valuetext', hasValue ? String(curVal) : Model.ui(lang, 'notChosenYet'));
+
       var peerHostS = el('div');
+      function commitScaleVal(valNum, loadPeers) {
+        hasValue = true;
+        sw.classList.remove('is-untouched');
+        pill.classList.remove('is-untouched');
+        pill.textContent = String(valNum);
+        slider.value = String(valNum);
+        slider.setAttribute('aria-valuetext', String(valNum));
+        if (midBtn && midBtn.parentNode) midBtn.remove();
+        onAnswer(block.id, valNum);
+        if (loadPeers && block.settings && block.settings.showPeerResults && fetchAggregate) {
+          fetchAggregate(block.id).then(function (agg) {
+            peerHostS.textContent = '';
+            renderPeerBars(peerHostS, block, agg, lang, defLang);
+          });
+        }
+      }
       if (interactive) {
-        slider.addEventListener('input', function () {
-          pill.textContent = slider.value;
-          onAnswer(block.id, Number(slider.value));
-        });
-        slider.addEventListener('change', function () {
-          if (block.settings && block.settings.showPeerResults && fetchAggregate) {
-            fetchAggregate(block.id).then(function (agg) {
-              peerHostS.textContent = '';
-              renderPeerBars(peerHostS, block, agg, lang, defLang);
-            });
-          }
+        if (midBtn) midBtn.addEventListener('click', function () { commitScaleVal(midV, true); });
+        slider.addEventListener('input', function () { commitScaleVal(Number(slider.value), false); });
+        slider.addEventListener('change', function () { commitScaleVal(Number(slider.value), true); });
+        slider.addEventListener('pointerup', function () {
+          if (!hasValue) commitScaleVal(Number(slider.value), true);
         });
       }
       sw.appendChild(slider);
       var lbls = el('div', 'xped-scale-labels');
-      lbls.appendChild(el('span', '', Model.getLocalized(data.minLabel, lang, defLang)));
-      lbls.appendChild(el('span', '', Model.getLocalized(data.maxLabel, lang, defLang)));
+      lbls.id = lblsId;
+      lbls.appendChild(el('span', '', minV + ' · ' + Model.getLocalized(data.minLabel, lang, defLang)));
+      lbls.appendChild(el('span', '', maxV + ' · ' + Model.getLocalized(data.maxLabel, lang, defLang)));
       sw.appendChild(lbls);
       wrap.appendChild(sw);
       var sfb = Model.getLocalized(data.feedback, lang, defLang);
@@ -717,7 +1027,7 @@
 
     if (block.type === 'wordcloud') {
       var wq = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
-      makeEditable(wq, 'Click to write your word cloud question…', editable, function (v) { onEdit(block, 'question', v); });
+      makeEditable(wq, 'Click to write your word cloud question…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       wrap.appendChild(wq);
       var maxW = data.maxWords || 3;
       var words = Array.isArray(answers[block.id]) ? answers[block.id].slice() : [];
@@ -737,28 +1047,55 @@
       var addBtn = el('button', 'xped-btn xped-btn-secondary', Model.ui(lang, 'addWordBtn'));
       addBtn.type = 'button';
       addBtn.disabled = !interactive;
+      var countLine = el('p', 'xped-caption xped-limit-meta');
+      countLine.setAttribute('aria-live', 'polite');
       var tagsBox = el('div', 'xped-word-tags');
       var peerBoxW = el('div');
-      function drawTags() {
+
+      function updateWordCount(limitHit) {
+        if (limitHit) {
+          countLine.textContent = Model.ui(lang, 'wordsLimitReached', { max: maxW });
+          countLine.classList.add('is-warn');
+        } else {
+          countLine.textContent = Model.ui(lang, 'wordsRemaining', { n: words.length, max: maxW });
+          countLine.classList.remove('is-warn');
+        }
+      }
+
+      function drawTags(focusIndex) {
         tagsBox.textContent = '';
+        var rmButtons = [];
         words.forEach(function (w, idx) {
-          var chip = el('span', 'xped-word-chip', w);
+          var chip = el('span', 'xped-word-chip');
+          chip.appendChild(el('span', '', w));
           if (interactive) {
-            var rm = el('button', '', '×');
+            var rm = el('button', 'xped-word-rm', '×');
             rm.type = 'button';
+            rm.setAttribute('aria-label', Model.ui(lang, 'removeWord', { word: w }));
             rm.addEventListener('click', function () {
               words.splice(idx, 1);
               onAnswer(block.id, words.slice());
-              drawTags();
+              drawTags(Math.min(idx, words.length - 1));
             });
+            rmButtons.push(rm);
             chip.appendChild(rm);
           }
           tagsBox.appendChild(chip);
         });
+        updateWordCount(false);
+        if (typeof focusIndex === 'number') {
+          if (rmButtons[focusIndex]) rmButtons[focusIndex].focus();
+          else if (interactive) inp.focus();
+        }
       }
+
       function addWord() {
         var val = inp.value.trim();
-        if (!val || words.length >= maxW) return;
+        if (!val) return;
+        if (words.length >= maxW) {
+          updateWordCount(true);
+          return;
+        }
         words.push(val);
         inp.value = '';
         onAnswer(block.id, words.slice());
@@ -777,6 +1114,7 @@
       rowW.appendChild(inp);
       rowW.appendChild(addBtn);
       wrap.appendChild(rowW);
+      wrap.appendChild(countLine);
       wrap.appendChild(tagsBox);
       wrap.appendChild(peerBoxW);
       drawTags();
@@ -785,28 +1123,34 @@
 
     if (block.type === 'ranking') {
       var rq = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
-      makeEditable(rq, 'Click to write your ranking prompt…', editable, function (v) { onEdit(block, 'question', v); });
+      makeEditable(rq, 'Click to write your ranking prompt…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       wrap.appendChild(rq);
       var items = data.items || [];
       var order = Array.isArray(answers[block.id]) && answers[block.id].length === items.length
         ? answers[block.id].slice()
         : items.map(function (it) { return it.id; });
+      var liveRank = el('span', 'sr-only');
+      liveRank.setAttribute('aria-live', 'polite');
       var listEl = el('div', 'xped-options-grid');
-      function drawRank() {
+
+      function drawRank(focusTarget) {
         listEl.textContent = '';
         order.forEach(function (id, idx) {
           var item = items.find(function (it) { return it.id === id; });
           if (!item) return;
+          var itemLabel = Model.getLocalized(item.label, lang, defLang);
           var r = el('div', 'xped-rank-item');
           var left = el('div', 'el-btn-row');
           left.appendChild(el('span', 'xped-rank-pos', String(idx + 1)));
-          left.appendChild(el('span', '', Model.getLocalized(item.label, lang, defLang)));
+          left.appendChild(el('span', '', itemLabel));
           r.appendChild(left);
           if (interactive) {
             var acts = el('div', 'el-btn-row');
             var up = el('button', 'el-icon-btn');
             up.type = 'button';
-            up.setAttribute('aria-label', Model.ui(lang, 'up') + ' - ' + Model.getLocalized(item.label, lang, defLang));
+            up.setAttribute('aria-label', Model.ui(lang, 'up') + ' - ' + itemLabel);
+            up.setAttribute('data-rank-id', id);
+            up.setAttribute('data-rank-dir', 'up');
             up.disabled = idx === 0;
             if (Icons) up.appendChild(Icons.icon('chevronUp', 16));
             up.addEventListener('click', function () {
@@ -814,11 +1158,14 @@
               order[idx - 1] = order[idx];
               order[idx] = tmp;
               onAnswer(block.id, order.slice());
-              drawRank();
+              liveRank.textContent = Model.ui(lang, 'movedItem', { label: itemLabel, pos: idx, total: order.length });
+              drawRank({ id: id, dir: idx - 1 === 0 ? 'down' : 'up' });
             });
             var dn = el('button', 'el-icon-btn');
             dn.type = 'button';
-            dn.setAttribute('aria-label', Model.ui(lang, 'down') + ' - ' + Model.getLocalized(item.label, lang, defLang));
+            dn.setAttribute('aria-label', Model.ui(lang, 'down') + ' - ' + itemLabel);
+            dn.setAttribute('data-rank-id', id);
+            dn.setAttribute('data-rank-dir', 'down');
             dn.disabled = idx === order.length - 1;
             if (Icons) dn.appendChild(Icons.icon('chevronDown', 16));
             dn.addEventListener('click', function () {
@@ -826,7 +1173,8 @@
               order[idx + 1] = order[idx];
               order[idx] = tmp;
               onAnswer(block.id, order.slice());
-              drawRank();
+              liveRank.textContent = Model.ui(lang, 'movedItem', { label: itemLabel, pos: idx + 2, total: order.length });
+              drawRank({ id: id, dir: idx + 1 === order.length - 1 ? 'up' : 'down' });
             });
             acts.appendChild(up);
             acts.appendChild(dn);
@@ -834,43 +1182,63 @@
           }
           listEl.appendChild(r);
         });
+        if (focusTarget) {
+          var nextFocus = listEl.querySelector('button[data-rank-id="' + CSS.escape(focusTarget.id) + '"][data-rank-dir="' + focusTarget.dir + '"]');
+          if (nextFocus && !nextFocus.disabled) nextFocus.focus();
+        }
       }
       drawRank();
+      wrap.appendChild(liveRank);
       wrap.appendChild(listEl);
       return wrap;
     }
 
     if (block.type === 'hotspot') {
       var ht = el('h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
-      makeEditable(ht, 'Interactive visual title…', editable, function (v) { onEdit(block, 'title', v); });
+      makeEditable(ht, 'Interactive visual title…', editable, function (v) { onEdit(block, 'title', v); }, notifyFocus);
       wrap.appendChild(ht);
       var inst = Model.getLocalized(data.instruction, lang, defLang);
       if (inst || editable) {
-        wrap.appendChild(el('p', 'xped-caption', editable ? 'Tip: click directly anywhere on the image below to add a hotspot pin.' : inst));
+        wrap.appendChild(el('p', 'xped-caption', editable ? 'Tip: click the image to add a pin, or drag any pin to reposition it.' : inst));
       }
       var hUrl = Model.resolveMediaUrl(data.media, null, lang, assetUrl);
-      var pins = data.pins || [];
-      var activePinId = answers[block.id] || (pins[0] && pins[0].id) || '';
+      var rawPins = data.pins || [];
+      // UX-043: Omit blank/unlabelled pins in learner/preview mode
+      var pins = editable ? rawPins : rawPins.filter(function (p) {
+        return Model.getLocalized(p.label, lang, defLang).trim() || Model.getLocalized(p.detail, lang, defLang).trim();
+      });
+      // UX-044: Start unanswered hotspots in neutral state (restore saved choice on return)
+      var savedPinId = answers[block.id] || '';
+      var activePinId = pins.some(function (p) { return p.id === savedPinId; })
+        ? savedPinId
+        : (editable ? ((ctx.selectedPinId && pins.some(function (p) { return p.id === ctx.selectedPinId; }) ? ctx.selectedPinId : (pins[0] && pins[0].id)) || '') : '');
       var detailBox = el('div');
 
       function drawPinDetail(pid) {
         detailBox.textContent = '';
         var pin = pins.find(function (p) { return p.id === pid; });
-        if (!pin) return;
+        if (!pin) {
+          if (pins.length) {
+            detailBox.appendChild(el('p', 'xped-caption xped-hotspot-prompt', Model.ui(lang, 'hotspotUnselected')));
+          }
+          return;
+        }
         var box = el('div', 'xped-feedback-box is-neutral');
-        box.appendChild(el('strong', '', Model.getLocalized(pin.label, lang, defLang) + ': '));
-        box.appendChild(document.createTextNode(Model.getLocalized(pin.detail, lang, defLang) || 'Add explanation in Settings.'));
+        var lblTxt = Model.getLocalized(pin.label, lang, defLang);
+        if (lblTxt) box.appendChild(el('strong', '', lblTxt + ': '));
+        box.appendChild(document.createTextNode(Model.getLocalized(pin.detail, lang, defLang) || (editable ? 'Add explanation in Settings.' : '')));
         detailBox.appendChild(box);
       }
 
       function selectPin(pin) {
         activePinId = pin.id;
         if (interactive) onAnswer(block.id, pin.id);
+        if (editable) onEdit(block, 'selectPin', pin.id);
         wrap.querySelectorAll('.xped-hotspot-pin').forEach(function (point, index) {
-          point.classList.toggle('is-active', pins[index].id === pin.id);
+          point.classList.toggle('is-active', pins[index] && pins[index].id === pin.id);
         });
         fbBar.querySelectorAll('button').forEach(function (button, index) {
-          button.setAttribute('aria-pressed', String(pins[index].id === pin.id));
+          button.setAttribute('aria-pressed', String(pins[index] && pins[index].id === pin.id));
         });
         drawPinDetail(pin.id);
       }
@@ -881,13 +1249,16 @@
         setMediaSource(himg, hUrl);
         himg.alt = Model.getLocalized(data.alt, lang, defLang) || '';
         stage.appendChild(himg);
+        var draggedPin = false;
         if (editable) {
           stage.addEventListener('click', function (e) {
+            if (draggedPin) { draggedPin = false; return; }
             if (e.target.closest('.xped-hotspot-pin')) return;
             e.stopPropagation();
+            notifyFocus();
             var rect = stage.getBoundingClientRect();
-            var x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-            var y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+            var x = Math.max(2, Math.min(98, Math.round(((e.clientX - rect.left) / rect.width) * 100)));
+            var y = Math.max(2, Math.min(98, Math.round(((e.clientY - rect.top) / rect.height) * 100)));
             onEdit(block, 'addPin', { x: x, y: y });
           });
         }
@@ -906,15 +1277,54 @@
           point.classList.toggle('is-active', pin.id === activePinId);
           var circle = document.createElementNS(ns, 'circle');
           circle.setAttribute('r', '16');
+          if (pin.color) circle.style.setProperty('--pin-color', pin.color);
           var number = document.createElementNS(ns, 'text');
           number.setAttribute('text-anchor', 'middle');
           number.setAttribute('dy', '.35em');
           number.textContent = String(idx + 1);
           point.append(circle, number);
-          point.addEventListener('click', function (event) {
-            event.stopPropagation();
-            selectPin(pin);
-          });
+
+          if (editable) {
+            var dragging = false;
+            var moved = false;
+            var curX = pin.x ?? 50;
+            var curY = pin.y ?? 50;
+            circle.addEventListener('pointerdown', function (ev) {
+              ev.stopPropagation();
+              notifyFocus();
+              dragging = true;
+              moved = false;
+              if (circle.setPointerCapture) {
+                try { circle.setPointerCapture(ev.pointerId); } catch (_e) {}
+              }
+            });
+            circle.addEventListener('pointermove', function (ev) {
+              if (!dragging) return;
+              var rect = stage.getBoundingClientRect();
+              if (!rect.width || !rect.height) return;
+              curX = Math.max(2, Math.min(98, Math.round(((ev.clientX - rect.left) / rect.width) * 100)));
+              curY = Math.max(2, Math.min(98, Math.round(((ev.clientY - rect.top) / rect.height) * 100)));
+              point.setAttribute('x', curX + '%');
+              point.setAttribute('y', curY + '%');
+              moved = true;
+            });
+            circle.addEventListener('pointerup', function (ev) {
+              if (!dragging) return;
+              dragging = false;
+              ev.stopPropagation();
+              if (moved) {
+                draggedPin = true;
+                onEdit(block, 'movePin', { id: pin.id, x: curX, y: curY });
+              } else {
+                selectPin(pin);
+              }
+            });
+          } else {
+            point.addEventListener('click', function (event) {
+              event.stopPropagation();
+              selectPin(pin);
+            });
+          }
           overlay.appendChild(point);
         });
         stage.appendChild(overlay);
@@ -922,15 +1332,34 @@
       }
       var fbBar = el('div', 'xped-hotspot-fallback');
       pins.forEach(function (pin, idx) {
-        var chip = el('button', 'xped-btn xped-btn-secondary', (idx + 1) + '. ' + (Model.getLocalized(pin.label, lang, defLang) || ('Point ' + (idx + 1))));
+        var chip = el('button', 'xped-btn xped-btn-secondary');
         chip.type = 'button';
+        if (pin.color) {
+          var swatch = el('span', 'xped-pin-chip-dot');
+          swatch.style.backgroundColor = pin.color;
+          chip.appendChild(swatch);
+        }
+        chip.appendChild(document.createTextNode((idx + 1) + '. ' + (Model.getLocalized(pin.label, lang, defLang) || ('Point ' + (idx + 1)))));
         chip.setAttribute('aria-pressed', String(pin.id === activePinId));
-        chip.addEventListener('click', function () { selectPin(pin); });
+        chip.addEventListener('click', function (e) { e.stopPropagation(); selectPin(pin); });
+        if (editable) {
+          chip.addEventListener('keydown', function (e) {
+            var step = e.shiftKey ? 5 : 1;
+            var dx = e.key === 'ArrowRight' ? step : (e.key === 'ArrowLeft' ? -step : 0);
+            var dy = e.key === 'ArrowDown' ? step : (e.key === 'ArrowUp' ? -step : 0);
+            if (!dx && !dy) return;
+            e.preventDefault();
+            e.stopPropagation();
+            var nx = Math.max(2, Math.min(98, Math.round((pin.x ?? 50) + dx)));
+            var ny = Math.max(2, Math.min(98, Math.round((pin.y ?? 50) + dy)));
+            onEdit(block, 'movePin', { id: pin.id, x: nx, y: ny });
+          });
+        }
         fbBar.appendChild(chip);
       });
       wrap.appendChild(fbBar);
       wrap.appendChild(detailBox);
-      if (activePinId) drawPinDetail(activePinId);
+      drawPinDetail(activePinId);
       return wrap;
     }
 
@@ -1073,51 +1502,80 @@
 
     if (block.type === 'mini_plan') {
       var mpt = el('h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
-      makeEditable(mpt, 'Mini-plan heading…', editable, function (v) { onEdit(block, 'title', v); });
+      makeEditable(mpt, 'Mini-plan heading…', editable, function (v) { onEdit(block, 'title', v); }, notifyFocus);
       wrap.appendChild(mpt);
       var mintro = Model.getLocalized(data.intro, lang, defLang);
       if (mintro) wrap.appendChild(el('p', 'xped-caption', mintro));
       var maxSel = data.maxSelect || 3;
-      var chosen = Array.isArray(answers[block.id]) ? answers[block.id].slice() : [];
+      var planState = Model.normalizeMiniPlanAnswer(answers[block.id], data.suggestions, lang, defLang);
+      var planCount = el('p', 'xped-caption xped-limit-meta');
+      planCount.setAttribute('aria-live', 'polite');
       var chips = el('div', 'xped-plan-chips');
+
+      function totalSelected() {
+        return planState.ids.length + planState.custom.length;
+      }
+
+      function updatePlanMeta(limitHit) {
+        if (limitHit) {
+          planCount.textContent = Model.ui(lang, 'goalsLimitReached', { max: maxSel });
+          planCount.classList.add('is-warn');
+        } else {
+          planCount.textContent = Model.ui(lang, 'goalsSelectedCount', { n: totalSelected(), max: maxSel });
+          planCount.classList.remove('is-warn');
+        }
+      }
+
+      function commitPlan() {
+        onAnswer(block.id, { ids: planState.ids.slice(), custom: planState.custom.slice() });
+      }
+
       function drawChips() {
         chips.textContent = '';
         (data.suggestions || []).forEach(function (sug) {
           var txt = Model.getLocalized(sug.label, lang, defLang);
-          var isOn = chosen.indexOf(txt) >= 0;
+          var isOn = planState.ids.indexOf(sug.id) >= 0;
           var btn = el('button', 'xped-plan-chip' + (isOn ? ' is-selected' : ''));
           btn.type = 'button';
+          btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
           if (Icons) btn.appendChild(Icons.icon(isOn ? 'check' : 'plus', 14));
           btn.appendChild(document.createTextNode(txt));
           if (interactive) {
             btn.addEventListener('click', function () {
-              if (chosen.indexOf(txt) >= 0) chosen = chosen.filter(function (c) { return c !== txt; });
-              else if (chosen.length < maxSel) chosen.push(txt);
-              onAnswer(block.id, chosen.slice());
-              drawChips();
+              if (planState.ids.indexOf(sug.id) >= 0) {
+                planState.ids = planState.ids.filter(function (c) { return c !== sug.id; });
+                commitPlan();
+                drawChips();
+              } else if (totalSelected() < maxSel) {
+                planState.ids.push(sug.id);
+                commitPlan();
+                drawChips();
+              } else {
+                updatePlanMeta(true);
+              }
             });
           }
           chips.appendChild(btn);
         });
-        chosen.forEach(function (customItem) {
-          var isPreset = (data.suggestions || []).some(function (s) { return Model.getLocalized(s.label, lang, defLang) === customItem; });
-          if (isPreset) return;
+        planState.custom.forEach(function (customItem) {
           var cbtn = el('button', 'xped-plan-chip is-selected');
           cbtn.type = 'button';
+          cbtn.setAttribute('aria-pressed', 'true');
           if (Icons) cbtn.appendChild(Icons.icon('check', 14));
           cbtn.appendChild(document.createTextNode(customItem));
-          cbtn.type = 'button';
           if (interactive) {
             cbtn.addEventListener('click', function () {
-              chosen = chosen.filter(function (c) { return c !== customItem; });
-              onAnswer(block.id, chosen.slice());
+              planState.custom = planState.custom.filter(function (c) { return c !== customItem; });
+              commitPlan();
               drawChips();
             });
           }
           chips.appendChild(cbtn);
         });
+        updatePlanMeta(false);
       }
       drawChips();
+      wrap.appendChild(planCount);
       wrap.appendChild(chips);
       if (data.allowCustom && interactive) {
         var customRow = el('div', 'xped-input-actions');
@@ -1128,14 +1586,20 @@
         cinp.setAttribute('aria-label', cinp.placeholder);
         var cadd = el('button', 'xped-btn xped-btn-secondary', Model.ui(lang, 'addGoal'));
         cadd.type = 'button';
-        cadd.addEventListener('click', function () {
+        function addCustomGoal() {
           var v = cinp.value.trim();
-          if (!v || chosen.length >= maxSel) return;
-          chosen.push(v);
+          if (!v) return;
+          if (totalSelected() >= maxSel) {
+            updatePlanMeta(true);
+            return;
+          }
+          if (planState.custom.indexOf(v) < 0) planState.custom.push(v);
           cinp.value = '';
-          onAnswer(block.id, chosen.slice());
+          commitPlan();
           drawChips();
-        });
+        }
+        cadd.addEventListener('click', addCustomGoal);
+        cinp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addCustomGoal(); } });
         customRow.appendChild(cinp);
         customRow.appendChild(cadd);
         wrap.appendChild(customRow);
@@ -1204,30 +1668,60 @@
         tag.appendChild(document.createTextNode('Custom SVG / Animation Slot · #' + (data.slotId || block.id)));
         bpTop.appendChild(tag);
         if (editable) {
-          var cpBtn = el('button', 'el-btn el-btn-sm');
+          var cpWrap = el('span', 'el-copy-wrap');
+          var cpBtn = el('button', 'el-btn el-btn-sm el-copy-btn');
           cpBtn.type = 'button';
           if (Icons) cpBtn.appendChild(Icons.icon('copy', 13));
           cpBtn.appendChild(document.createTextNode('Copy Agent Brief'));
+          var cpStatus = el('span', 'el-copy-tip');
+          cpStatus.setAttribute('role', 'status');
+          var fallbackWrap = el('div', 'xped-bp-copy-fallback');
+          fallbackWrap.hidden = true;
           cpBtn.addEventListener('click', function (e) {
             e.stopPropagation();
             var promptText = 'Build an accessible, prefers-reduced-motion-safe SVG animation for xPEDitie Pijn slot #'
               + (data.slotId || block.id) + ' (height: ' + (data.height || 'medium') + ').\n'
               + 'Brand colors: Navy #062940, Blue #007ACC, Mint #1FE4A9, Yellow #FFD617, Warm Sand #F6F1E9.\n'
               + 'Brief: ' + (data.agentBrief || 'Calm pain education visual.');
+            function showFallback() {
+              cpBtn.removeAttribute('data-copied');
+              cpBtn.setAttribute('data-failed', '');
+              cpStatus.textContent = 'Clipboard blocked — copy manually below';
+              fallbackWrap.textContent = '';
+              var fbTa = el('textarea', 'xped-textarea');
+              fbTa.rows = 4;
+              fbTa.readOnly = true;
+              fbTa.value = promptText;
+              fbTa.setAttribute('aria-label', 'Agent brief text to copy');
+              fbTa.addEventListener('click', function (ev) { ev.stopPropagation(); fbTa.select(); });
+              var closeFb = el('button', 'el-btn el-btn-sm', 'Hide');
+              closeFb.type = 'button';
+              closeFb.addEventListener('click', function (ev) { ev.stopPropagation(); fallbackWrap.hidden = true; });
+              fallbackWrap.append(el('p', 'xped-caption', 'Select and press Cmd/Ctrl+C to copy this brief:'), fbTa, closeFb);
+              fallbackWrap.hidden = false;
+              fbTa.focus();
+              fbTa.select();
+            }
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(promptText).then(function () {
-                cpBtn.textContent = 'Brief Copied!';
+                fallbackWrap.hidden = true;
+                cpBtn.removeAttribute('data-failed');
+                cpBtn.setAttribute('data-copied', '');
+                cpStatus.textContent = 'Brief copied';
                 setTimeout(function () {
-                  cpBtn.textContent = '';
-                  if (Icons) cpBtn.appendChild(Icons.icon('copy', 13));
-                  cpBtn.appendChild(document.createTextNode('Copy Agent Brief'));
-                }, 1800);
-              }).catch(function () {});
+                  cpBtn.removeAttribute('data-copied');
+                  cpStatus.textContent = '';
+                }, 2200);
+              }).catch(showFallback);
+            } else {
+              showFallback();
             }
           });
-          bpTop.appendChild(cpBtn);
+          cpWrap.append(cpBtn, cpStatus);
+          bpTop.appendChild(cpWrap);
         }
         cvStage.appendChild(bpTop);
+        if (editable && fallbackWrap) cvStage.appendChild(fallbackWrap);
         var briefP = el('p', 'xped-bp-brief', data.agentBrief || 'Describe the SVG or animation you want a coding agent to create here later…');
         if (editable) {
           makeEditable(briefP, 'Describe the SVG or animation for a coding agent…', true, function (v) { onEdit(block, 'agentBrief', v); });

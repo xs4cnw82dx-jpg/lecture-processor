@@ -31,6 +31,7 @@
     responseQueue: Promise.resolve(),
     view: 'start',
     navDir: 'next',
+    navHistory: [],
     modIdx: 0,
     stepIdx: 0,
     lastModIdx: 0,
@@ -205,6 +206,16 @@
   function goBack() {
     var mods = (state.exp && state.exp.modules) || [];
     state.navDir = 'prev';
+    if (state.navHistory.length) {
+      var prevPos = state.navHistory.pop();
+      if (mods[prevPos.modIdx] && (mods[prevPos.modIdx].steps || [])[prevPos.stepIdx]) {
+        state.modIdx = prevPos.modIdx;
+        state.stepIdx = prevPos.stepIdx;
+        state.view = 'step';
+        showCurrentView();
+        return;
+      }
+    }
     if (state.stepIdx > 0) state.stepIdx -= 1;
     else if (state.modIdx > 0) {
       state.modIdx -= 1;
@@ -223,8 +234,10 @@
     state.navDir = 'next';
     var jumpIdx = evaluateBranching(mod, step);
     if (jumpIdx >= 0 && jumpIdx !== state.stepIdx) {
+      state.navHistory.push({ modIdx: state.modIdx, stepIdx: state.stepIdx });
       state.stepIdx = jumpIdx;
     } else if (!isLastStep) {
+      state.navHistory.push({ modIdx: state.modIdx, stepIdx: state.stepIdx });
       state.stepIdx += 1;
     } else {
       if (state.completedModuleIds.indexOf(mod.id) < 0) state.completedModuleIds.push(mod.id);
@@ -350,9 +363,12 @@
     card.appendChild(h1);
 
     var interactiveTypes = { mcq: 1, myth_fact: 1, scale: 1, reflection: 1, wordcloud: 1, ranking: 1, hotspot: 1, balance_scale: 1, mini_plan: 1 };
-    var stepHasAnswered = (step.blocks || []).some(function (b) {
-      return interactiveTypes[b.type] && state.answers[b.id] !== undefined && state.answers[b.id] !== '';
-    });
+    function hasAnyStepAnswer() {
+      return (step.blocks || []).some(function (b) {
+        return interactiveTypes[b.type] && Model.hasMeaningfulAnswer(state.answers[b.id]);
+      });
+    }
+    var stepHasAnswered = hasAnyStepAnswer();
 
     var stack = document.createElement('div');
     stack.className = 'xped-blocks-stack';
@@ -369,10 +385,11 @@
           if (sharesAnswer(blk)) state.peerDisclosureTypes[bid] = blk.type;
           else delete state.peerDisclosureTypes[bid];
           state.answers[bid] = val;
-          // Progressive Disclosure: gently unfold any waiting revealAfterAnswer blocks!
-          stack.querySelectorAll('.xped-reveal-locked').forEach(function (locked) {
-            locked.classList.remove('xped-reveal-locked');
-            locked.classList.add('xped-reveal-unlocked');
+          // Progressive Disclosure: unlock only when a meaningful answer exists (UX-077)
+          var nowAnswered = hasAnyStepAnswer();
+          stack.querySelectorAll('[data-reveal-after="1"]').forEach(function (node) {
+            node.classList.toggle('xped-reveal-locked', !nowAnswered);
+            node.classList.toggle('xped-reveal-unlocked', nowAnswered);
           });
           scheduleSync(false);
         },
@@ -652,8 +669,18 @@
           var ans = state.answers[b.id];
           if (b.type === 'reflection' && typeof ans === 'string' && ans.trim()) {
             reflections.push({ q: Model.getLocalized(b.data.prompt, lang, defLang), a: ans });
-          } else if (b.type === 'mini_plan' && Array.isArray(ans) && ans.length) {
-            plans = plans.concat(ans);
+          } else if (b.type === 'mini_plan' && Model.hasMeaningfulAnswer(ans)) {
+            var normPlan = Model.normalizeMiniPlanAnswer(ans, (b.data && b.data.suggestions) || [], lang, defLang);
+            normPlan.ids.forEach(function (sid) {
+              var sug = ((b.data && b.data.suggestions) || []).find(function (item) { return item.id === sid; });
+              if (sug) {
+                var lbl = Model.getLocalized(sug.label, lang, defLang);
+                if (lbl) plans.push(lbl);
+              }
+            });
+            normPlan.custom.forEach(function (txt) {
+              if (txt) plans.push(txt);
+            });
           } else if (b.type === 'balance_scale' && ans && typeof ans === 'object') {
             var loadT = 0;
             var resT = 0;

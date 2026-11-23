@@ -30,7 +30,10 @@
         </div>
       </header>
 
-      <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">Loading your expeditions…</div>
+      <div class="el-dash-search-row">
+        <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">Loading your expeditions…</div>
+        <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="Search expeditions…" aria-label="Search expeditions" hidden>
+      </div>
       <a class="btn" id="el-signin" href="/lecture-notes?auth=signin" data-sign-in-return hidden>Sign in</a>
       <button type="button" class="btn small" id="el-retry" hidden>Try again</button>
       <section class="el-exp-list" id="el-dash-grid" aria-label="Expeditions"></section>
@@ -65,12 +68,28 @@
           <option value="showcase">Interactive example</option>
         </select>
       </div>
+      <div class="el-template-preview" id="el-template-preview" aria-live="polite"></div>
       <div class="el-dash-actions">
         <p class="field-error" id="el-create-error" role="alert" hidden></p>
         <button type="button" class="btn" id="el-create-cancel">Cancel</button>
         <button type="submit" class="btn primary" id="el-create-confirm">Create &amp; Open Builder</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog class="el-dialog" id="el-import-dialog" closedby="any" aria-labelledby="el-import-dialog-title">
+    <div class="el-dialog-header">
+      <h2 id="el-import-dialog-title">Import Expedition Preview</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div id="el-import-summary" class="el-template-preview"></div>
+      <div class="el-dash-actions">
+        <p class="field-error" id="el-import-error" role="alert" hidden></p>
+        <button type="button" class="btn" id="el-import-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="el-import-confirm">Import &amp; Open Builder</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog class="el-dialog" id="el-delete-dialog" closedby="any" aria-labelledby="el-delete-dialog-title">
