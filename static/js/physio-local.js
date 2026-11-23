@@ -1,3 +1,4 @@
+/* global require */
 (function () {
   'use strict';
 
@@ -17,11 +18,10 @@
   };
   var icons = { condition: 'A', test: 'T', structure: '⌁', intervention: 'I', measure: 'M', source: 'B', region: 'R', 'clinical-pathway': 'W' };
 
-  function escapeHtml(value) {
-    return String(value == null ? '' : value).replace(/[&<>'"]/g, function (char) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char];
-    });
-  }
+  // In the browser html-utils.js loads first; the Node unit tests load this file as a module.
+  var escapeHtml = (typeof window !== 'undefined' && window.LectureProcessorHtml
+    ? window.LectureProcessorHtml
+    : require('./html-utils.js')).escapeHtml;
 
   function slugLabel(value) {
     return String(value || '').replace(/[-_]/g, ' ').replace(/\b\w/g, function (letter) { return letter.toUpperCase(); });

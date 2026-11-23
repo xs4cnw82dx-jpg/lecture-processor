@@ -2864,9 +2864,7 @@ function updateShareActionAvailability() {
 
 /* ── Fullscreen Pack Builder ── */
 var htmlUtils = window.LectureProcessorHtml || {};
-var escapeHtml = htmlUtils.escapeHtml || function (v) {
-  return String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-};
+var escapeHtml = htmlUtils.escapeHtml;
 var sanitizeHtmlFragment = htmlUtils.sanitizeHtmlFragment || function (rawHtml) {
   var htmlText = String(rawHtml || '');
   if (window.DOMPurify && typeof window.DOMPurify.sanitize === 'function') {

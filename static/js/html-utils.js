@@ -33,10 +33,13 @@
     element.textContent = html;
   }
 
-  global.LectureProcessorHtml = {
+  var api = {
     escapeHtml: escapeHtml,
     sanitizeHtmlFragment: sanitizeHtmlFragment,
     setSafeInnerHtml: setSafeInnerHtml,
     setSanitizedHtml: setSanitizedHtml
   };
-})(window);
+  global.LectureProcessorHtml = api;
+  // Node unit tests load page scripts (e.g. physio-local.js) that require this file.
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof window !== 'undefined' ? window : globalThis);

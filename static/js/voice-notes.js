@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  var escapeHtml = window.LectureProcessorHtml.escapeHtml;
 
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
@@ -1036,12 +1037,6 @@
         });
       }
       els.noteList.appendChild(item);
-    });
-  }
-
-  function escapeHtml(text) {
-    return String(text || '').replace(/[&<>"']/g, function (ch) {
-      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
     });
   }
 

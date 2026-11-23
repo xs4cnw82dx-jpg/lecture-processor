@@ -1,4 +1,5 @@
 (function () {
+  var escapeHtml = window.LectureProcessorHtml.escapeHtml;
   const config = window.SharedStudyConfig || {};
   const markdownUtils = window.LectureProcessorMarkdown || {};
   const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
@@ -27,15 +28,6 @@
   const folderFlashcardsListEl = document.getElementById('shared-folder-flashcards-list');
   const folderQuestionsListEl = document.getElementById('shared-folder-questions-list');
   let folderPackLoadSeq = 0;
-
-  function escapeHtml(value) {
-    return String(value || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
 
   function bindKeyboardActivation(element, callback) {
     if (!element || typeof callback !== 'function') return;
