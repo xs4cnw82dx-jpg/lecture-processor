@@ -55,6 +55,9 @@ function contrastRatio(foreground, background) {
   return (Math.max(...values) + .05) / (Math.min(...values) + .05);
 }
 
+// The Study page loads these sheets in this order (templates/_study_stylesheets.html).
+const STUDY_SHEETS = ['study-library', 'study-learn', 'study-builder', 'study-coding', 'study'];
+
 // Render the actual styles with small component examples so every page-specific
 // focus rule is exercised without depending on unrelated page API contracts.
 async function renderStyles(page, styles, markup, theme = 'light') {
@@ -136,7 +139,7 @@ for (const theme of ['light', 'dark']) {
 const focusExamples = [
   { sheet: 'shared-ui', markup: '<button data-focus>Button</button><input data-focus class="app-toggle" type="checkbox"><div class="app-select-upgraded"><button data-focus class="app-select-button">Select</button><button data-focus class="app-select-item">Option</button></div><details class="app-disclosure"><summary data-focus>Details</summary></details>' },
   { sheet: 'app-shell', markup: '<div class="shell-modal-field"><input data-focus aria-label="Name"></div>' },
-  { sheet: 'study', markup: '<button data-focus class="folder-collapse-btn">Folder</button><button data-focus class="pack-row-open">Pack</button><button data-focus class="peek-row">Card</button><button data-focus class="lesson-card">Lesson</button>' },
+  { sheet: 'study', sheets: STUDY_SHEETS, markup: '<button data-focus class="folder-collapse-btn">Folder</button><button data-focus class="pack-row-open">Pack</button><button data-focus class="peek-row">Card</button><button data-focus class="lesson-card">Lesson</button>' },
   { sheet: 'study-plan', markup: '<div class="study-plan-page"><button data-focus class="btn">Continue</button><button data-focus class="calendar-provider">Calendar</button><div class="plan-field"><input data-focus aria-label="Date"></div></div>' },
   { sheet: 'reader', markup: '<div class="reader-page"><button data-focus>Read</button></div>' },
   { sheet: 'dashboard', markup: '<button data-focus class="hero-btn">Open</button><button data-focus class="dashboard-text-action">Details</button>' },
@@ -153,7 +156,7 @@ const focusExamples = [
 for (const theme of ['light', 'dark']) {
   test(`page focus indicators are opaque two-pixel outlines in ${theme}`, async ({ page }) => {
     for (const example of focusExamples) {
-      await renderStyles(page, [example.sheet], example.markup, theme);
+      await renderStyles(page, example.sheets || [example.sheet], example.markup, theme);
       await page.keyboard.press('Tab');
       for (const control of await page.locator('[data-focus]').all()) {
         await control.focus();
@@ -236,7 +239,7 @@ for (const theme of ['light', 'dark']) {
 
 for (const sheet of ['study']) {
   test(`${sheet} date picker today ring stays visible in dark mode`, async ({ page }) => {
-    await renderStyles(page, [sheet], '<button class="flatpickr-day today">14</button>', 'dark');
+    await renderStyles(page, sheet === 'study' ? STUDY_SHEETS : [sheet], '<button class="flatpickr-day today">14</button>', 'dark');
     const shadow = await page.locator('.flatpickr-day').evaluate(element => getComputedStyle(element).boxShadow);
     expect(shadow).toContain('rgb(155, 188, 255)');
   });
