@@ -296,7 +296,7 @@ test('keyboard upload and retry feedback stay with the selected figure', async (
 });
 test('a selected mobile pin retains its identity through coordinate, color, ordering and undo', async ({page}) => {
   const hotspot=make('hotspot');const pin=hotspot.data.pins[1];pin.detail=local('Finished explanation');
-  const fixture=await author(page,[hotspot]); await inspect(page,hotspot);
+  const fixture=await author(page,[hotspot]);
   const chip=inCanvas(page,hotspot).locator('[data-pin-id="'+pin.id+'"]');
   await chip.click(); await chip.press('ArrowRight'); await expect(chip).toBeFocused();
   await page.setViewportSize({width:390,height:844});

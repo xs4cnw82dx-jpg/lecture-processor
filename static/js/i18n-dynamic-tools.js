@@ -944,6 +944,7 @@
   "Opened from Responses review comments.": "Geopend vanuit review-opmerkingen bij Reacties.",
   "Back to Responses": "Terug naar Reacties",
   "Course languages": "Cursustalen",
+  "Inspector sections": "Onderdelen van het eigenschappenpaneel",
   "Shortcut: press": "Sneltoets: druk op",
   "Ctrl": "Ctrl",
   "Cmd": "Cmd",

@@ -554,8 +554,7 @@ test.describe('figure organization on a touch display', () => {
     await page.getByRole('button', { name: 'Move block to another step…' }).tap();
     await page.getByRole('menuitem', { name: /Explanation & video/ }).tap();
     const position = page.getByLabel('Insert position');
-    await position.focus();
-    await position.press('Home');
+    await position.selectOption('0');
     await page.getByRole('button', { name: 'Move block here' }).tap();
     await expect.poll(() => lastSave(fixture)?.modules[0].steps[1].blocks[0].id).toBe(photo.id);
     await page.locator('button[data-pane=canvas]').focus();
