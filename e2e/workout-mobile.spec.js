@@ -7,6 +7,7 @@ function workoutTemplateForBrowser() {
   // Expand the shared head so the page gets theme.css (colour and layer tokens) as in production.
   const preferencesHead = fs.readFileSync(path.resolve('templates/_preferences_head.html'), 'utf8').replace(/\{#[\s\S]*?#\}/g, '');
   return fs.readFileSync(path.resolve('templates/workout.html'), 'utf8')
+    .replace("{% include '_firebase_scripts.html' %}", fs.readFileSync('templates/_firebase_scripts.html', 'utf8').replace(/\{#[\s\S]*?#\}/g, ''))
     .replace(/\{% include '_preferences_head.html' %\}/g, preferencesHead)
     .split('\n')
     .filter((line) => !line.includes('firebasejs') && !line.includes("js/firebase-bootstrap.js") && !line.includes("js/auth-utils.js"))

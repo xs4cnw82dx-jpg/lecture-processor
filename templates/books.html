@@ -39,9 +39,7 @@
   <div id="book-toast" class="book-toast" role="status" aria-live="polite" hidden></div>
   <dialog id="book-dialog" class="book-dialog"><form method="dialog" class="book-dialog-close"><button aria-label="Close dialog" class="icon-btn">×</button></form><div id="dialog-content"></div></dialog>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp" multiple hidden><input type="file" id="backup-input" accept=".zip,application/zip" hidden>
-  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js" integrity="sha384-O5/wNvM7EhstFPbW8EjQ4+EVxt5ssTrrsD5QQXo1WNSnqT8YZTNTNeWqlIn6TZuJ" crossorigin="anonymous"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js" integrity="sha384-L2TNKoX7aOgI1Y2tPR6ASBqaTfYTi4YkaNvJB7j88BVTCgE17WojiXpA4whvkpcN" crossorigin="anonymous"></script>
-  <script src="{{ url_for('static', filename='js/firebase-bootstrap.js') }}"></script>
+  {% include '_firebase_scripts.html' %}
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>

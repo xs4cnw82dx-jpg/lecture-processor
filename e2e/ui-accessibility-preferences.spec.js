@@ -96,6 +96,7 @@ for (const reduced of [true, false]) {
       window.LectureProcessorAuth = { createAuthClient: () => ({}) };
     });
     const html = readFileSync(path.resolve('templates/workout.html'), 'utf8')
+      .replace("{% include '_firebase_scripts.html' %}", readFileSync(path.resolve('templates/_firebase_scripts.html'), 'utf8').replace(/\{#[\s\S]*?#\}/g, ''))
       .split('\n').filter(line => !line.includes('firebasejs') && !line.includes('js/firebase-bootstrap.js') && !line.includes('js/auth-utils.js')).join('\n')
       .replace(/\{\{\s*url_for\('static', filename=(?:workout(?:_utils)?_js_asset or )?'([^']+)'\)\s*\}\}/g, '/static/$1');
     await page.route('**/admin/workout', route => route.fulfill({ contentType: 'text/html', body: html }));

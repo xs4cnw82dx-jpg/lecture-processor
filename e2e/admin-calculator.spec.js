@@ -36,6 +36,7 @@ async function openCalculator(page, futureRates = false) {
   // The server's admin session guard is covered by Python tests. Render the
   // real admin template with stub auth to isolate browser pricing behavior.
   const html = fs.readFileSync('templates/admin.html', 'utf8')
+    .replace("{% include '_firebase_scripts.html' %}", fs.readFileSync('templates/_firebase_scripts.html', 'utf8').replace(/\{#[\s\S]*?#\}/g, ''))
     .replace(/\{\{ url_for\('static', filename='([^']+)'\) \}\}/g, (_match, filename) => `/static/${filename}`)
     .replace("{{ url_for('static', filename=admin_js_asset or 'js/admin.js') }}", '/static/js/admin.min.js');
   await page.route('**/admin?*', route => route.fulfill({ contentType: 'text/html', body: html }));
