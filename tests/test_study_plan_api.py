@@ -589,4 +589,5 @@ def test_bootstrap_session_ranges_match_their_own_dates(client, study_plan_runti
     assert [item['date'] for item in payload['sessions']] == [week_start.isoformat(), today.isoformat(),
                                                                (today + timedelta(days=10)).isoformat()]
     narrow = client.get(f'/api/study-plan?from={today.isoformat()}&to={today.isoformat()}', headers=_headers()).get_json()
-    assert [item['date'] for item in narrow['sessions']] == [today.isoformat()]
+    # On a Monday the week starts today, so two of the sessions share today's date.
+    assert [item['date'] for item in narrow['sessions']] == [day.isoformat() for day in days if day == today]
