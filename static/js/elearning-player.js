@@ -8,7 +8,8 @@
 
   var shareToken = document.body.dataset.shareToken || '';
   var params = new URLSearchParams(window.location.search);
-  var cohort = params.get('cohort') || 'default';
+  var cohort = (params.get('cohort') || '').trim() || 'default';
+  if (!/^[a-zA-Z0-9_.-]{1,48}$/.test(cohort)) cohort = 'default';
   var queryLang = params.get('lang') || '';
 
   var mainEl = document.getElementById('el-player-main');
@@ -23,12 +24,17 @@
   var comfortTrigger = document.getElementById('el-comfort-trigger');
 
   var storageKey = 'xped_el_progress_' + shareToken;
+  var consentKey = storageKey + '_consent';
   var state = {
     exp: null,
     lang: 'nl',
     hasSavedLanguage: false,
     canSaveLocally: true,
     responseQueue: Promise.resolve(),
+    consent: null,
+    consentStored: false,
+    sharedAnswers: Object.create(null),
+    sharedVisits: [],
     view: 'start',
     navDir: 'next',
     navHistory: [],
@@ -79,7 +85,16 @@
       var raw = localStorage.getItem(storageKey);
       if (!raw) return;
       var saved = JSON.parse(raw);
-      if (saved.sessionId) state.sessionId = saved.sessionId;
+      try { state.consent = JSON.parse(localStorage.getItem(consentKey)); }
+      catch (_err) { state.consent = null; }
+      if (state.consent && state.consent.cohort === cohort && state.consent.sessionId === saved.sessionId) {
+        state.sessionId = saved.sessionId;
+        state.consentStored = true;
+        state.sharedAnswers = Object.assign(Object.create(null), saved.sharedAnswers);
+        state.sharedVisits = Array.isArray(saved.sharedVisits) ? saved.sharedVisits : [];
+      } else {
+        state.consent = null;
+      }
       if (saved.answers && typeof saved.answers === 'object') state.answers = Object.assign(Object.create(null), saved.answers);
       if (saved.peerDisclosureTypes && typeof saved.peerDisclosureTypes === 'object') {
         state.peerDisclosureTypes = Object.assign(Object.create(null), saved.peerDisclosureTypes);
@@ -103,6 +118,8 @@
     try {
       localStorage.setItem(storageKey, JSON.stringify({
         sessionId: state.sessionId,
+        sharedAnswers: state.sharedAnswers,
+        sharedVisits: state.sharedVisits,
         answers: state.answers,
         peerDisclosureTypes: state.peerDisclosureTypes,
         pilotSent: state.pilotSent,
@@ -121,24 +138,75 @@
     }
   }
 
+  function isSharing() {
+    var options = state.exp && state.exp.shareOptions;
+    return !!(options && options.collectResponses && state.consent && state.consent.choice === 'share'
+      && state.consent.cohort === cohort && state.consent.version === options.collectionVersion && state.consent.sessionId === state.sessionId);
+  }
+
+  function resetSharing() {
+    clearTimeout(state.syncTimer);
+    state.consent = null;
+    state.consentStored = false;
+    state.sessionId = 'lrn_' + crypto.randomUUID();
+    state.sharedAnswers = Object.create(null);
+    state.sharedVisits = [];
+    state.peerDisclosureTypes = Object.create(null);
+    state.stepComments = [];
+    state.pilotSent = false;
+  }
+
+  function setConsent(choice) {
+    resetSharing();
+    if (choice) state.consent = { choice: choice, cohort: cohort, version: state.exp.shareOptions.collectionVersion, sessionId: state.sessionId };
+    try {
+      if (state.consent) localStorage.setItem(consentKey, JSON.stringify(state.consent));
+      else localStorage.removeItem(consentKey);
+      state.consentStored = !!state.consent;
+    } catch (_err) { state.canSaveLocally = false; }
+    saveLocalProgress();
+  }
+
+  function grantIsCurrent(grant) {
+    if (!isSharing() || state.view === 'consent' || grant !== state.consent) return false;
+    if (!state.consentStored) return true;
+    try { return localStorage.getItem(consentKey) === JSON.stringify(grant); }
+    catch (_err) { return false; }
+  }
+
   function sendResponse(completed, pilotFeedback) {
+    if (!isSharing()) return Promise.resolve({ ok: false });
+    var grant = state.consent;
     var body = JSON.stringify({
       sessionId: state.sessionId,
+      consent: true,
+      collectionVersion: grant.version,
       cohort: cohort,
       language: state.lang,
-      answers: state.answers,
+      answers: state.sharedAnswers,
       peerDisclosureTypes: state.peerDisclosureTypes,
-      visitedStepIds: state.visitedStepIds,
+      visitedStepIds: state.sharedVisits,
       completed: completed || state.view === 'summary',
       pilotFeedback: pilotFeedback,
       stepComments: state.stepComments.length ? state.stepComments : undefined,
     });
-    var request = state.responseQueue.then(function () {
-      return fetch('/api/elearning/public/' + encodeURIComponent(shareToken) + '/responses', {
+    var request = state.responseQueue.then(async function () {
+      if (!grantIsCurrent(grant)) return { ok: false };
+      var response = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken) + '/responses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: body,
       });
+      if ((response.status === 403 || response.status === 409) && grantIsCurrent(grant)) {
+        // A course owner changed the pilot settings while this learner had the course open.
+        setConsent(null);
+        state.exp.shareOptions = { collectResponses: false };
+        try {
+          var current = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
+          if (current.ok) state.exp.shareOptions = (await current.json()).expedition.shareOptions;
+        } finally { render(); }
+      }
+      return response;
     });
     state.responseQueue = request.catch(function () {});
     return request;
@@ -147,7 +215,7 @@
   function scheduleSync(completed) {
     saveLocalProgress();
     clearTimeout(state.syncTimer);
-    state.syncTimer = setTimeout(function () { sendResponse(completed); }, 350);
+    if (isSharing()) state.syncTimer = setTimeout(function () { sendResponse(completed); }, 350);
   }
 
   async function fetchAggregate(blockId) {
@@ -251,8 +319,13 @@
     showCurrentView();
   }
 
+  function canShareBlock(id) {
+    // Editing an older private answer may retain text or selections from before consent.
+    return isSharing() && (!Object.hasOwn(state.answers, id) || Object.hasOwn(state.sharedAnswers, id));
+  }
+
   function sharesAnswer(block) {
-    return state.exp.shareOptions && state.exp.shareOptions.showPeerResults && block.settings && block.settings.showPeerResults
+    return canShareBlock(block.id) && state.exp.shareOptions.showPeerResults && block.settings && block.settings.showPeerResults
       && (!Object.hasOwn(state.answers, block.id) || state.peerDisclosureTypes[block.id] === block.type);
   }
 
@@ -262,13 +335,37 @@
     var heading = document.createElement(expanded ? 'strong' : 'summary');
     heading.textContent = Model.ui(state.lang, 'answerPrivacy');
     var body = document.createElement('p');
-    var messages = ['authorAccess', state.canSaveLocally ? 'deviceResume' : 'storageUnavailable'];
+    var messages = [state.canSaveLocally ? 'deviceResume' : 'storageUnavailable'];
+    if (isSharing()) messages.unshift('authorAccess');
     var shared = blocks.filter(sharesAnswer);
     if (shared.some(function (block) { return block.type !== 'wordcloud'; })) messages.push('sharedResults');
     if (shared.some(function (block) { return block.type === 'wordcloud'; })) messages.push('sharedWords');
     body.textContent = messages.map(function (key) { return Model.ui(state.lang, key); }).join(' ');
     notice.append(heading, body);
+    if (expanded && state.exp.shareOptions && state.exp.shareOptions.collectResponses && state.consent) {
+      var edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'xped-btn xped-btn-secondary';
+      edit.textContent = Model.ui(state.lang, 'changeConsent');
+      edit.addEventListener('click', function () {
+        state.view = 'consent';
+        state.modIdx = state.lastModIdx;
+        state.stepIdx = state.lastStepIdx;
+        showCurrentView();
+      });
+      notice.appendChild(edit);
+    }
     return notice;
+  }
+
+  function renderConsent() {
+    mainEl.classList.add('is-step-view');
+    document.body.removeAttribute('data-active-domain');
+    RouteMap.renderConsent(mainEl, state.lang, state.exp.modules, { ...state.exp.shareOptions, cohort: cohort, changing: isSharing() }, function (choice) {
+      if (!state.consent || state.consent.choice !== choice) setConsent(choice);
+      state.view = 'step';
+      showCurrentView();
+    });
   }
 
   function renderStartPage() {
@@ -327,10 +424,11 @@
     state.lastStepIdx = state.stepIdx;
     if (state.visitedStepIds.indexOf(step.id) < 0) {
       state.visitedStepIds.push(step.id);
-      scheduleSync(false);
-    } else {
-      saveLocalProgress();
     }
+    if (isSharing() && !state.sharedVisits.includes(step.id)) {
+      state.sharedVisits.push(step.id);
+      scheduleSync(false);
+    } else saveLocalProgress();
 
     mainEl.textContent = '';
     var card = document.createElement('article');
@@ -384,10 +482,12 @@
         interactive: true,
         stepHasAnswered: stepHasAnswered,
         answers: state.answers,
+        collectResponses: canShareBlock(blk.id),
         sharedAnswer: sharesAnswer(blk),
         onAnswer: function (bid, val) {
           if (sharesAnswer(blk)) state.peerDisclosureTypes[bid] = blk.type;
           else delete state.peerDisclosureTypes[bid];
+          if (canShareBlock(bid)) state.sharedAnswers[bid] = val;
           state.answers[bid] = val;
           // Progressive Disclosure: unlock only when a meaningful answer exists (UX-077)
           var nowAnswered = hasAnyStepAnswer();
@@ -397,7 +497,7 @@
           });
           scheduleSync(false);
         },
-        fetchAggregate: (exp.shareOptions && exp.shareOptions.showPeerResults) ? fetchAggregate : null,
+        fetchAggregate: isSharing() && exp.shareOptions.showPeerResults ? fetchAggregate : null,
         assetUrl: assetUrl,
       }));
     });
@@ -429,7 +529,7 @@
     card.appendChild(nav);
     mainEl.appendChild(card);
 
-    if (exp.shareOptions && exp.shareOptions.allowStepComments) {
+    if (isSharing() && exp.shareOptions.allowStepComments) {
       var revWrap = document.createElement('div');
       revWrap.className = 'el-review-wrap el-no-print';
       var revBtn = document.createElement('button');
@@ -658,21 +758,15 @@
     actions.className = 'el-player-nav el-no-print';
     var homeB = document.createElement('button');
     homeB.type = 'button';
-    homeB.className = 'xped-btn xped-btn-secondary';
+    homeB.className = 'xped-btn xped-btn-sun';
     homeB.textContent = Model.ui(lang, 'restart');
     homeB.addEventListener('click', function () { state.view = 'start'; showCurrentView(); });
-    var printB = document.createElement('button');
-    printB.type = 'button';
-    printB.className = 'xped-btn xped-btn-sun';
-    printB.appendChild(Icons.icon('print', 17));
-    printB.appendChild(document.createTextNode(Model.ui(lang, 'printSummary')));
-    printB.addEventListener('click', function () { window.print(); });
+    actions.classList.add('el-summary-finish');
     actions.appendChild(homeB);
-    actions.appendChild(printB);
     card.appendChild(actions);
     mainEl.appendChild(card);
 
-    if (exp.shareOptions && exp.shareOptions.collectPilotFeedback !== false) {
+    if (isSharing() && exp.shareOptions.collectPilotFeedback) {
       var pilot = document.createElement('section');
       pilot.className = 'el-pilot-card';
       var ph2 = document.createElement('h2');
@@ -784,16 +878,18 @@
 
   function render() {
     if (!state.exp) return;
+    if (state.view !== 'start' && state.exp.shareOptions && state.exp.shareOptions.collectResponses && !state.consent) state.view = 'consent';
     document.documentElement.lang = state.lang;
     courseLabelEl.textContent = Model.getLocalized(state.exp.startPage && state.exp.startPage.title, state.lang, state.exp.defaultLanguage) || state.exp.title;
     mapBtn.textContent = '';
     mapBtn.appendChild(Icons.icon('map', 16));
     mapBtn.appendChild(document.createTextNode(Model.ui(state.lang, 'routeButton')));
-    mapBtn.hidden = !state.exp.modules.length || (state.view === 'start' && !state.visitedStepIds.length);
+    mapBtn.hidden = state.view === 'consent' || !state.exp.modules.length || (state.view === 'start' && !state.visitedStepIds.length);
     updateComfortLabels();
     applyThemePref();
     courseLabelEl.hidden = state.view === 'start';
     if (state.view === 'start') renderStartPage();
+    else if (state.view === 'consent') renderConsent();
     else if (state.view === 'step') renderStep();
     else if (state.view === 'milestone') renderMilestone();
     else renderSummary();
@@ -832,8 +928,7 @@
       resetB.appendChild(Icons.icon('refresh', 15));
       resetB.appendChild(document.createTextNode(Model.ui(state.lang, 'replayFresh')));
       resetB.addEventListener('click', function () {
-        clearTimeout(state.syncTimer);
-        state.sessionId = 'lrn_' + crypto.randomUUID();
+        setConsent(null);
         state.answers = Object.create(null);
         state.peerDisclosureTypes = Object.create(null);
         state.stepComments = [];
@@ -928,6 +1023,9 @@
         return;
       }
       state.exp = data.expedition;
+      var options = state.exp.shareOptions || {};
+      if (!state.consent || !options.collectResponses || state.consent.version !== options.collectionVersion ||
+          !['private', 'share'].includes(state.consent.choice)) resetSharing();
       document.body.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
       var enabled = state.exp.enabledLanguages || ['nl'];
       var navLangs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'nl'];
@@ -954,6 +1052,20 @@
       mainEl.appendChild(fail);
     }
   }
+
+  window.addEventListener('storage', function (event) {
+    if (!state.exp || (event.key !== null && event.key !== consentKey)) return;
+    if (event.newValue === JSON.stringify(state.consent)) return;
+    resetSharing();
+    var updated;
+    try { updated = JSON.parse(event.newValue); } catch (_err) { updated = null; }
+    if (updated && updated.cohort === cohort && updated.choice === 'private' && updated.version === (state.exp.shareOptions || {}).collectionVersion) {
+      state.consent = updated;
+      state.sessionId = updated.sessionId;
+      state.consentStored = true;
+    }
+    if (state.view !== 'start') showCurrentView();
+  });
 
   init();
 })();

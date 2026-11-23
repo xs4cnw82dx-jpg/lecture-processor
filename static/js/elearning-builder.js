@@ -64,7 +64,6 @@
     previewFrom: 'step',
     previewSamplePeers: false,
     collapsedModules: {},
-    b1CoachOpen: false,
     sessionId: 'ses_' + Math.random().toString(36).slice(2, 12),
     leaseToken: '',
     grantAccessToken: '',
@@ -136,43 +135,6 @@
     nextMissInit.appendChild(document.createTextNode('Next missing '));
     nextMissInit.appendChild(Icons.icon('arrowRight', 14));
   }
-
-  var memberRoleValue = 'edit';
-  var memberRoleDD = Icons.createDropdown({
-    ariaLabel: 'Collaborator role',
-    items: [
-      { value: 'edit', label: 'Co-Editor' },
-      { value: 'translate', label: 'Translator' },
-    ],
-    value: memberRoleValue,
-    onChange: function (val) {
-      memberRoleValue = val;
-      memberRoleDD.setItems([
-        { value: 'edit', label: 'Co-Editor' },
-        { value: 'translate', label: 'Translator' },
-      ], val);
-    },
-  });
-  var memberRoleHost = document.getElementById('el-member-role-host');
-  if (memberRoleHost) memberRoleHost.appendChild(memberRoleDD.el);
-
-  var grantLangValue = 'de';
-  var GRANT_LANG_ITEMS = [
-    { value: 'de', label: 'DE · Deutsch' },
-    { value: 'en', label: 'EN · English' },
-    { value: 'nl', label: 'NL · Nederlands' },
-  ];
-  var grantLangDD = Icons.createDropdown({
-    ariaLabel: 'Target translation language',
-    items: GRANT_LANG_ITEMS,
-    value: grantLangValue,
-    onChange: function (val) {
-      grantLangValue = val;
-      grantLangDD.setItems(GRANT_LANG_ITEMS, val);
-    },
-  });
-  var grantLangHost = document.getElementById('el-grant-lang-host');
-  if (grantLangHost) grantLangHost.appendChild(grantLangDD.el);
 
   var LANG_OPTIONS = [
     { value: 'nl', label: 'Nederlands (NL)', shortLabel: 'NL' },
@@ -1088,12 +1050,11 @@
     if (focusSelector) restoreOutlineFocus(focusSelector);
   }
 
-  /* ---- Live Reading Time & Writing / Accessibility Checks (UX-109..111, S-02) ---- */
+  /* ---- Live reading estimate ---- */
   function updateReadabilityCue() {
     var pair = currentModuleAndStep();
     if (!pair.step) return;
     var report = Model.analyzeStepReadability(pair.step, state.editLang, state.exp.defaultLanguage);
-    var coachPanel = document.getElementById('el-b1-coach-panel');
     readabilityBarEl.textContent = '';
 
     var left = document.createElement('span');
@@ -1101,80 +1062,6 @@
     var optTxt = report.optionalWords ? (' (+' + report.optionalWords + ' optional in sources/transcripts)') : '';
     left.textContent = report.words + ' words · ~' + readEst + optTxt;
     readabilityBarEl.appendChild(left);
-
-    var issueCount = (report.writingChecks || []).length + (report.accessibilityChecks || []).length;
-    var toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'el-b1-toggle is-' + report.level;
-    toggle.setAttribute('aria-expanded', String(!!state.b1CoachOpen));
-    toggle.setAttribute('aria-controls', 'el-b1-coach-panel');
-    toggle.appendChild(Icons.icon(report.level === 'good' ? 'checkCircle' : 'alertCircle', 13));
-    toggle.appendChild(document.createTextNode(
-      issueCount === 0
-        ? 'Writing & Accessibility: Good'
-        : ('Writing & Accessibility Checks (' + issueCount + ')')
-    ));
-    toggle.addEventListener('click', function () {
-      state.b1CoachOpen = !state.b1CoachOpen;
-      toggle.setAttribute('aria-expanded', String(state.b1CoachOpen));
-      if (coachPanel) coachPanel.hidden = !state.b1CoachOpen;
-    });
-    readabilityBarEl.appendChild(toggle);
-
-    if (coachPanel) {
-      coachPanel.textContent = '';
-      function appendCheckSection(heading, items) {
-        if (!items.length) return;
-        var gh = document.createElement('div');
-        gh.className = 'el-b1-group-head';
-        gh.textContent = heading;
-        coachPanel.appendChild(gh);
-        items.forEach(function (tip) {
-          var btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'el-b1-tip-btn el-b1-tip is-' + tip.kind;
-          btn.appendChild(Icons.icon(tip.kind === 'ok' ? 'check' : (tip.kind === 'warn' ? 'alertCircle' : 'info'), 14));
-          var sp = document.createElement('span');
-          sp.textContent = tip.text;
-          btn.appendChild(sp);
-          btn.addEventListener('click', function () {
-            if (tip.blockId) {
-              state.selectedBlockId = tip.blockId;
-              state.inspectorTab = 'block';
-              renderCanvas();
-              renderInspector();
-              var blkNode = canvasCardEl.querySelector('[data-block-id="' + CSS.escape(tip.blockId) + '"]');
-              if (blkNode) blkNode.scrollIntoView({ behavior: ux.prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' });
-              if (tip.fieldKey === 'alt' || tip.fieldKey === 'transcript') {
-                if (window.matchMedia('(max-width: 920px)').matches) selectPane('inspector');
-                var targetField = inspectorBodyEl.querySelector('[data-field-key="' + CSS.escape(tip.fieldKey) + '"]');
-                if (targetField) targetField.focus();
-              } else if (blkNode) {
-                var ed = blkNode.querySelector('textarea, [contenteditable]');
-                if (ed) ed.focus();
-              }
-            } else {
-              var stTitleNode = canvasCardEl.querySelector('.xped-step-title');
-              if (stTitleNode) stTitleNode.focus();
-            }
-          });
-          coachPanel.appendChild(btn);
-        });
-      }
-      if (!issueCount) {
-        var okRow = document.createElement('div');
-        okRow.className = 'el-b1-tip is-ok';
-        okRow.appendChild(Icons.icon('check', 14));
-        var okSp = document.createElement('span');
-        okSp.textContent = report.tips[0].text;
-        okRow.appendChild(okSp);
-        coachPanel.appendChild(okRow);
-      } else {
-        appendCheckSection('Writing clarity', report.writingChecks || []);
-        appendCheckSection('Accessibility', report.accessibilityChecks || []);
-      }
-      coachPanel.hidden = !state.b1CoachOpen;
-    }
   }
 
   /* ---- Center Live Stage (Direct-On-Canvas Editing!) ---- */
@@ -1240,11 +1127,21 @@
       }
       return;
     }
-    var nestedField = field.match(/^(citation|pinLabel|pinDetail):(.+)$/);
+    if (field.startsWith('style:')) {
+      var styleKey = field.slice(6);
+      mutate(function () {
+        blk.settings.textStyles = Object.assign({}, blk.settings.textStyles, { [styleKey]: val });
+      }, { label: 'change text style' });
+      canvasCardEl.querySelector('[data-block-id="' + CSS.escape(blk.id) + '"] [data-format-field="' + CSS.escape(styleKey) + '"]')?.focus();
+      return;
+    }
+    var nestedField = field.match(/^(citation|factorLabel|pinLabel|pinDetail):(.+)$/);
     if (nestedField) {
       var isCitation = nestedField[1] === 'citation';
-      var item = (isCitation ? blk.data.items : blk.data.pins).find(function (entry) { return entry.id === nestedField[2]; });
-      var key = isCitation ? 'citation' : (nestedField[1] === 'pinLabel' ? 'label' : 'detail');
+      var isFactor = nestedField[1] === 'factorLabel';
+      var items = isCitation ? blk.data.items : (isFactor ? blk.data.factors : blk.data.pins);
+      var item = items.find(function (entry) { return entry.id === nestedField[2]; });
+      var key = isCitation ? 'citation' : (isFactor || nestedField[1] === 'pinLabel' ? 'label' : 'detail');
       if (item) {
         mutate(function () { item[key] = Model.setLocalized(item[key], lang, val); }, { recordUndo: false, rerender: false });
         renderInspector();
@@ -1402,6 +1299,7 @@
   function syncBlockSelectionInDom(pair, nextBlockId) {
     if (state.selectedBlockId === nextBlockId && state.inspectorTab === 'block') return;
     state.selectedBlockId = nextBlockId;
+    rememberEditingPosition();
     state.inspectorTab = 'block';
     canvasCardEl.querySelectorAll('.el-canvas-block-wrap').forEach(function (node) {
       var isSel = node.dataset.wrapBlockId === nextBlockId;
@@ -1435,6 +1333,7 @@
   }
 
   function renderCanvas() {
+    rememberEditingPosition();
     var lang = state.editLang;
     var defLang = state.exp.defaultLanguage || 'nl';
     canvasCardEl.lang = lang;
@@ -1511,7 +1410,17 @@
     var ddot = document.createElement('span');
     ddot.className = 'xped-domain-dot domain-' + (pair.mod.domain || 'general');
     crumb.appendChild(ddot);
-    crumb.appendChild(document.createTextNode(Model.getLocalized(pair.mod.title, lang, defLang) || ('Station ' + (modIndex + 1))));
+    var stationName = document.createElement('span');
+    stationName.textContent = Model.getLocalized(pair.mod.title, lang, defLang);
+    stationName.setAttribute('aria-label', 'Station name');
+    Model.bindEditableText(stationName, 'Station ' + (modIndex + 1), canEditStructure(), function (value) {
+      mutate(function () { pair.mod.title = Model.setLocalized(pair.mod.title, lang, value); }, { recordUndo: false, rerender: false });
+      var inspectorName = inspectorBodyEl.querySelector('[data-field-key=stationName]');
+      if (inspectorName) inspectorName.value = value;
+      renderOutline();
+    });
+    if (canEditStructure()) stationName.setAttribute('role', 'textbox');
+    crumb.appendChild(stationName);
     kicker.appendChild(crumb);
     card.appendChild(kicker);
 
@@ -1821,8 +1730,12 @@
         btn.setAttribute('aria-pressed', String(currentRef?.staticPath === asset.path));
         var sp = document.createElement('span');
         sp.textContent = asset.label;
-        btn.appendChild(img);
-        btn.appendChild(sp);
+        var desc = document.createElement('small');
+        desc.id = Model.uid('scene');
+        desc.textContent = Model.getLocalized(asset.alt, state.editLang, state.exp.defaultLanguage);
+        btn.setAttribute('aria-label', asset.label);
+        btn.setAttribute('aria-describedby', desc.id);
+        btn.append(img, sp, desc);
         btn.addEventListener('click', function () {
           chooseMedia({ kind: 'xped', assetId: '', staticPath: asset.path }, asset);
         });
@@ -2007,6 +1920,18 @@
         mutate(function () { sp.highlights.push({ id: Model.uid('hl'), text: Model.loc('Nieuw voordeel', 'New highlight', '') }); }, { label: 'add highlight' });
       });
       inspectorBodyEl.appendChild(addHl);
+      var completion = document.createElement('details');
+      completion.className = 'el-completion-settings';
+      var legend = document.createElement('summary');
+      legend.textContent = 'Completion page';
+      completion.appendChild(legend);
+      [['summaryTitle', 'Summary title'], ['summaryIntro', 'Introduction'], ['summaryPlanHeading', 'Mini-plan heading'],
+        ['summaryClosing', 'Closing text']].forEach(function (item) {
+        completion.appendChild(fieldText(item[1] + ' (' + lang.toUpperCase() + ')', sp[item[0]]?.[lang], function (v) {
+          mutate(function () { sp[item[0]] = Model.setLocalized(sp[item[0]], lang, v); }, { recordUndo: false });
+        }));
+      });
+      inspectorBodyEl.appendChild(completion);
       return;
     }
 
@@ -2023,7 +1948,7 @@
 
       inspectorBodyEl.appendChild(fieldText('Station Name (' + lang.toUpperCase() + ')', mod.title[lang], function (v) {
         mutate(function () { mod.title = Model.setLocalized(mod.title, lang, v); }, { recordUndo: false });
-      }));
+      }, false, 'stationName'));
       inspectorBodyEl.appendChild(fieldSelect('Biopsychosocial Color Theme', mod.domain || 'general', [
         ['general', 'General (Neutral Navy)'],
         ['bio', 'Biologisch (Mint)'],
@@ -2369,7 +2294,7 @@
         var previous = Model.XPED_ASSETS.find(function (a) { return a.path === d.media?.staticPath; });
         var alt = Object.assign({}, d.alt);
         Model.SUPPORTED_LANGS.forEach(function (code) {
-          if (!alt[code] || alt[code] === previous?.alt?.[code]) alt[code] = asset?.alt?.[code] || '';
+          if (!alt[code] || (alt[code] === previous?.alt?.[code] || alt[code] === previous?.previousAlt?.[code])) alt[code] = asset?.alt?.[code] || '';
         });
         d.media = ref;
         d.alt = alt;
@@ -2560,6 +2485,42 @@
       ], function (v) { mutate(function () { d.tone = v; }, { label: 'change callout color' }); }));
     } else if (blk.type === 'story') {
       inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) { mutate(function () { d.media = ref; }, { label: 'update portrait' }); }, false));
+      if (d.media && d.media.kind !== 'none') {
+        var frame = document.createElement('fieldset');
+        frame.className = 'el-portrait-controls';
+        var portraitLegend = document.createElement('legend');
+        portraitLegend.textContent = 'Portrait framing';
+        frame.appendChild(portraitLegend);
+        [['portraitZoom', 'Zoom', 50, 250, 100], ['portraitX', 'Horizontal position', -75, 75, 0],
+          ['portraitY', 'Vertical position', -75, 75, 0]].forEach(function (setting) {
+          var [key, name, min, max, fallback] = setting;
+          var label = document.createElement('label');
+          var range = document.createElement('input');
+          var value = document.createElement('output');
+          range.type = 'range';
+          range.id = Model.uid('portrait');
+          label.htmlFor = range.id;
+          label.textContent = name;
+          range.min = min;
+          range.max = max;
+          range.value = d[key] ?? fallback;
+          value.value = range.value + '%';
+          range.addEventListener('input', function () {
+            value.value = range.value + '%';
+            mutate(function () { d[key] = Number(range.value); }, { rerender: false, recordUndo: false });
+          });
+          frame.append(label, value, range);
+        });
+        var reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'el-btn el-btn-sm';
+        reset.textContent = 'Reset framing';
+        reset.onclick = function () {
+          mutate(function () { d.portraitZoom = 100; d.portraitX = 0; d.portraitY = 0; }, {label: 'reset portrait framing'});
+        };
+        frame.appendChild(reset);
+        inspectorBodyEl.appendChild(frame);
+      }
     } else if (blk.type === 'sources') {
       // UX-041 & UX-042: Multiline auto-growing citation + DOI normalization preview + undoable Remove
       locField('Drawer Heading (e.g. Bron)', 'title', false);
@@ -2908,26 +2869,80 @@
       }));
     } else if (blk.type === 'custom_visual') {
       inspectorBodyEl.appendChild(fieldSelect('Visual Mode', d.preset || 'placeholder', [
+        ['percentage', 'Percentage chart'],
         ['placeholder', 'Coding Agent Blueprint Slot'],
         ['alarm-dial', 'Built-in: Pain Alarm Volume Dial'],
         ['breathing-circle', 'Built-in: Calm Guided Breathing'],
         ['custom-svg', 'Pasted Custom SVG Artwork'],
       ], function (v) { mutate(function () { d.preset = v; }, { label: 'change visual preset' }); }));
-      inspectorBodyEl.appendChild(fieldSelect('Stage Height', d.height || 'medium', [
-        ['compact', 'Compact (180px)'],
-        ['medium', 'Medium (260px)'],
-        ['tall', 'Tall (360px)'],
-      ], function (v) { mutate(function () { d.height = v; }, { label: 'change visual height' }); }));
-      inspectorBodyEl.appendChild(fieldText('Slot ID (reference for coding agent)', d.slotId || '', function (v) {
-        mutate(function () { d.slotId = v; }, { recordUndo: false });
-      }));
-      inspectorBodyEl.appendChild(fieldText('Coding Agent Design Brief', d.agentBrief || '', function (v) {
-        mutate(function () { d.agentBrief = v; }, { recordUndo: false });
-      }, true));
-      if (d.preset === 'custom-svg') {
-        inspectorBodyEl.appendChild(fieldText('Sanitized SVG Markup (<svg>…</svg>)', d.svgMarkup || '', function (v) {
-          mutate(function () { d.svgMarkup = v; }, { recordUndo: false });
+      if (d.preset === 'percentage') {
+        var percent = fieldText('Percentage (0–100)', String(d.percentage ?? 50), function () {
+          if (number.value && number.validity.valid) {
+            mutate(function () { d.percentage = number.valueAsNumber; }, { recordUndo: false });
+          }
+        });
+        var number = percent.querySelector('input');
+        number.type = 'number';
+        number.min = '0';
+        number.max = '100';
+        number.step = 'any';
+        inspectorBodyEl.appendChild(percent);
+        locField('Chart label', 'title');
+        locField('Caption', 'caption', true);
+        locField('Source citation', 'citation');
+        inspectorBodyEl.appendChild(fieldText('Source URL or DOI', d.sourceUrl, function (v) {
+          mutate(function () { d.sourceUrl = v; }, { recordUndo: false });
+        }));
+      } else {
+        inspectorBodyEl.appendChild(fieldSelect('Stage Height', d.height || 'medium', [
+          ['compact', 'Compact (180px)'],
+          ['medium', 'Medium (260px)'],
+          ['tall', 'Tall (360px)'],
+        ], function (v) { mutate(function () { d.height = v; }, { label: 'change visual height' }); }));
+        inspectorBodyEl.appendChild(fieldText('Slot ID (reference for coding agent)', d.slotId || '', function (v) {
+          mutate(function () { d.slotId = v; }, { recordUndo: false });
+        }));
+        inspectorBodyEl.appendChild(fieldText('Coding Agent Design Brief', d.agentBrief || '', function (v) {
+          mutate(function () { d.agentBrief = v; }, { recordUndo: false });
         }, true));
+        if (d.preset === 'custom-svg') {
+          var phone = document.createElement('details');
+          phone.className = 'el-svg-phone-preview';
+          var toggle = document.createElement('summary');
+          toggle.textContent = 'Phone preview';
+          var art = document.createElement('img');
+          art.alt = Model.getLocalized(d.alt, lang, defLang);
+          function refreshArt(value) {
+            art.hidden = !value;
+            if (value) art.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(value);
+            else art.removeAttribute('src');
+          }
+          refreshArt(d.svgMarkup);
+          var zoom = document.createElement('button');
+          zoom.type = 'button';
+          zoom.className = 'el-btn el-btn-sm';
+          zoom.textContent = 'Enlarge phone preview';
+          zoom.addEventListener('click', function () {
+            var dialog = document.createElement('dialog');
+            dialog.className = 'el-dialog el-svg-enlarged';
+            dialog.setAttribute('aria-label', toggle.textContent);
+            var done = document.createElement('button');
+            done.type = 'button';
+            done.className = 'el-btn';
+            done.textContent = 'Close';
+            done.addEventListener('click', function () { dialog.close(); });
+            dialog.append(art.cloneNode(true), done);
+            document.body.appendChild(dialog);
+            dialog.addEventListener('close', function () { dialog.remove(); zoom.focus(); }, { once: true });
+            dialog.showModal();
+          });
+          phone.append(toggle, art, zoom);
+          inspectorBodyEl.appendChild(fieldText('Sanitized SVG Markup (<svg>…</svg>)', d.svgMarkup || '', function (v) {
+            refreshArt(v);
+            mutate(function () { d.svgMarkup = v; }, { recordUndo: false });
+          }, true));
+          inspectorBodyEl.appendChild(phone);
+        }
       }
       locField('Accessible Alt Description', 'alt', false);
     }
@@ -3641,6 +3656,15 @@
       return;
     }
 
+    var share = state.exp.share || {};
+    if (state.previewPos.view === 'step' && share.collectResponses && !state.previewPos.consent) {
+      RouteMap.renderConsent(previewContainerEl, pLang, visibleMods, share, function (choice) {
+        state.previewPos.consent = choice;
+        renderPreviewMode();
+      });
+      return;
+    }
+
     // UX-070: Real completion summary view at the end of Preview
     if (state.previewPos.view === 'summary') {
       var sumCard = RouteMap.renderSummaryCard(state.exp, state.previewPos.answers, pLang);
@@ -3649,7 +3673,7 @@
       sNav.className = 'el-player-nav';
       var sStart = document.createElement('button');
       sStart.type = 'button';
-      sStart.className = 'xped-btn xped-btn-secondary';
+      sStart.className = 'xped-btn xped-btn-sun';
       sStart.textContent = Model.ui(pLang, 'restart');
       sStart.addEventListener('click', function () {
         state.previewPos.view = 'start';
@@ -3657,13 +3681,13 @@
       });
       var sReplay = document.createElement('button');
       sReplay.type = 'button';
-      sReplay.className = 'xped-btn xped-btn-sun';
+      sReplay.className = 'xped-btn xped-btn-secondary';
       sReplay.textContent = Model.ui(pLang, 'replayFresh');
       sReplay.addEventListener('click', function () {
         state.previewPos = { view: 'start', modIdx: 0, stepIdx: 0, navDir: 'next', navHistory: [], answers: {}, completedIds: [] };
         renderPreviewMode();
       });
-      sNav.append(sStart, sReplay);
+      sNav.append(sReplay, sStart);
       sumCard.appendChild(sNav);
       previewContainerEl.appendChild(sumCard);
       return;
@@ -3742,6 +3766,8 @@
         interactive: true,
         stepHasAnswered: stepHasAnswered,
         answers: state.previewPos.answers,
+        collectResponses: state.previewPos.consent === 'share',
+        sharedAnswer: state.previewPos.consent === 'share' && share.showPeerResults && blk.settings && blk.settings.showPeerResults,
         fetchAggregate: state.previewSamplePeers ? function () { return mockPreviewAggregate(blk); } : null,
         onAnswer: function (bid, val) {
           state.previewPos.answers[bid] = val;
@@ -3844,14 +3870,26 @@
     label: 'Guided breathing', desc: 'A gently expanding circle for a paced breathing exercise.',
     aliases: ['breathing visual', 'ademcirkel', 'ademhaling', 'atemübung', 'atemkreis'] };
 
+  var percentageChart = { type: 'custom_visual', preset: 'percentage', category: 'explain',
+    label: 'Percentage chart', desc: 'Show a percentage with a bar, a caption and its source.',
+    aliases: ['percentage', 'procent', 'prozent', 'balk', 'grafiek', 'chart', 'grafik'] };
+
   function createPickerBlock(item) {
     var block = Model.createBlock(item.type);
     if (item.preset) block.data.preset = item.preset;
+    if (item.preset === 'percentage') {
+      block.data.percentage = 50;
+      block.data.title = Model.loc('Onderzoeksresultaat', 'Study result', 'Studienergebnis');
+      block.data.citation = Model.loc('', '', '');
+      block.data.alt = Model.loc('', '', '');
+      block.data.agentBrief = '';
+      block.data.slotId = '';
+    }
     return block;
   }
 
   function renderPickerPreview(item) {
-    pickerItem = item;
+    pickerItem = Object.assign({}, item);
     var blockType = item.type;
     var add = document.getElementById('el-picker-insert');
     add.disabled = false;
@@ -3864,6 +3902,17 @@
     if (!previewEl) return;
     previewEl.textContent = '';
     var sample = createPickerBlock(item);
+    var customOption = document.getElementById('el-picker-custom-option');
+    customOption.hidden = blockType !== 'mini_plan';
+    if (blockType === 'mini_plan') {
+      var option = customOption.querySelector('input');
+      option.checked = sample.data.allowCustom;
+      option.onchange = function () {
+        pickerItem.allowCustom = option.checked;
+        var inputRow = previewEl.querySelector('.xped-input-actions');
+        if (inputRow) inputRow.hidden = !option.checked;
+      };
+    }
     if (blockType === 'richtext') {
       sample.data.heading = Model.loc('Wat gebeurt er in het zenuwstelsel?', 'What happens in the nervous system?', '');
       sample.data.body = Model.loc('Pijn is een **beschermingssignaal** dat je lichaam waarschuwt.', 'Pain is a **protective signal** from your nervous system.', '');
@@ -3928,7 +3977,7 @@
     var anyRendered = false;
     var firstItem = null;
     (Model.BLOCK_CATEGORIES || []).forEach(function (cat) {
-      var items = Model.BLOCK_CATALOG.concat(breathingActivity).filter(function (b) {
+      var items = Model.BLOCK_CATALOG.concat(breathingActivity, percentageChart).filter(function (b) {
         if (b.category !== cat.key) return false;
         if (!q) return true;
         var hay = (b.label + ' ' + b.desc + ' ' + b.type + ' ' + ((b.aliases || []).join(' '))).toLowerCase();
@@ -3978,6 +4027,7 @@
     if (firstItem) renderPickerPreview(firstItem);
     else {
       pickerItem = null;
+      document.getElementById('el-picker-custom-option').hidden = true;
       document.getElementById('el-picker-insert').disabled = true;
       document.getElementById('el-picker-preview').textContent = '';
       document.getElementById('el-picker-preview-heading').textContent = 'No matching block';
@@ -4000,6 +4050,7 @@
     if (!pickerItem || !pair.step) return;
     var item = pickerItem;
     var nb = createPickerBlock(item);
+    if (item.type === 'mini_plan') nb.data.allowCustom = item.allowCustom !== false;
     await Icons.closeDialogAnimated(blockPickerDialog);
     state.focusBlockAfterRender = nb.id;
     mutate(function () {
@@ -4056,7 +4107,7 @@
 
   function updateShareUrlAndQr() {
     var share = (state.shareData && state.shareData.share) || {};
-    var cohort = document.getElementById('el-share-cohort').value.trim();
+    var cohort = share.collectResponses ? document.getElementById('el-share-cohort').value.trim() : '';
     var url = window.location.origin + '/elearning/p/' + encodeURIComponent(share.token || '');
     if (cohort) url += '?cohort=' + encodeURIComponent(cohort);
     document.getElementById('el-share-url').value = url;
@@ -4332,15 +4383,36 @@
     }
   });
 
-  function downloadCurrentDraft() {
-    if (!state.exp) return;
-    var blob = new Blob([JSON.stringify(state.exp, null, 2)], { type: 'application/json' });
+  function downloadCourseJson(course, suffix) {
+    var blob = new Blob([JSON.stringify(course, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = (state.exp.title || 'xped-expedition').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
+    a.download = (state.exp.title || 'xped-expedition').toLowerCase().replace(/[^a-z0-9]+/g, '-') + suffix + '.json';
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-        }
+  }
+
+  function downloadCurrentDraft() {
+    if (state.exp) downloadCourseJson(state.exp, '');
+  }
+
+  async function downloadCourseContent() {
+    try {
+      if (hasPendingTranslations() && !(await saveTranslationsNow())) return;
+      await queueStructureSave();
+      if (saveVersion !== savedVersion || hasPendingTranslations()) {
+        showToast('Save your latest edits before exporting course content.', 'error');
+        return;
+      }
+      var result = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/content-export');
+      if (result.excludedUploads && !(await showConfirmDialog(
+        'Export without uploaded files?',
+        'The file includes course text and library illustrations. Reattach your uploaded images and audio after importing.',
+        'Export course content'
+      ))) return;
+      downloadCourseJson(result.course, '-content');
+    } catch (err) { showToast(err.message, 'error'); }
+  }
 
   function refreshMoreMenu() {
     var mediaActions = state.mode === 'edit' && state.leaseToken ? [
@@ -4352,6 +4424,11 @@
         label: 'Responses & Analytics',
         icon: 'chart',
         onClick: function () { window.location.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/responses'; },
+      },
+      {
+        label: 'Export course content',
+        icon: 'upload',
+        onClick: downloadCourseContent,
       },
       {
         label: 'Export JSON Backup',
@@ -4629,6 +4706,7 @@
   // UX-082: Serialize share toggle writes and roll back checkbox state on error
   var shareFields = {
     enabled: 'el-share-enabled',
+    collectResponses: 'el-share-collect-responses',
     showPeerResults: 'el-share-peer-results',
     collectPilotFeedback: 'el-share-pilot-feedback',
     allowStepComments: 'el-share-step-comments',
@@ -4638,9 +4716,10 @@
 
   function applyConfirmedShare(share) {
     Object.keys(shareFields).forEach(function (key) {
-      var defaultOn = key === 'showPeerResults' || key === 'collectPilotFeedback';
-      document.getElementById(shareFields[key]).checked = share[key] == null ? defaultOn : !!share[key];
+      document.getElementById(shareFields[key]).checked = !!share[key];
     });
+    document.getElementById('el-share-cohort-field').hidden = !share.collectResponses;
+    document.getElementById('el-share-pilot-options').hidden = !share.collectResponses;
     syncShareActiveVisibility(!!share.enabled);
     updateShareUrlAndQr();
   }
@@ -4787,7 +4866,7 @@
   });
   document.getElementById('el-add-member-btn').addEventListener('click', async function () {
     var email = document.getElementById('el-member-email').value.trim();
-    var role = memberRoleValue || 'edit';
+    var role = document.getElementById('el-member-role').value;
     if (!email) return;
     try {
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
@@ -4800,8 +4879,8 @@
     } catch (err) { showToast(err.message, 'error'); }
   });
   document.getElementById('el-create-grant-btn').addEventListener('click', async function () {
-    var label = document.getElementById('el-grant-label').value.trim() || (grantLangValue.toUpperCase() + ' translator');
-    var lang = grantLangValue || 'de';
+    var lang = document.getElementById('el-grant-lang').value;
+    var label = document.getElementById('el-grant-label').value.trim() || (lang.toUpperCase() + ' translator');
     try {
       await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
         method: 'POST',
@@ -4918,6 +4997,30 @@
     document.querySelector('.el-topbar').after(panel);
   }
 
+  function rememberEditingPosition() {
+    if (!activeUser || !state.exp || !canEditStructure()) return;
+    var entry = { account: activeUser.uid, expedition: expeditionId, session: state.sessionId,
+      target: state.selectedTarget, block: state.selectedBlockId };
+    var previous = history.state?.xpedEditor;
+    if (previous?.session === entry.session && previous.block === entry.block
+        && previous.target?.type === entry.target.type && previous.target.stepId === entry.target.stepId
+        && previous.target.moduleId === entry.target.moduleId) return;
+    try { history.replaceState(Object.assign({}, history.state, { xpedEditor: entry }), ''); } catch (_err) { /* optional on restricted browsers */ }
+  }
+
+  function restoreEditingPosition() {
+    var entry = history.state?.xpedEditor;
+    var navigation = performance.getEntriesByType('navigation')[0];
+    if (!entry || !activeUser || !navigation || navigation.type !== 'reload'
+        || entry.account !== activeUser.uid || entry.expedition !== expeditionId) return;
+    state.sessionId = entry.session;
+    if (!entry.target || deepStepId) return;
+    state.selectedTarget = entry.target;
+    var step = currentModuleAndStep().step;
+    if (!step) { state.selectedTarget = {type: 'startPage'}; return; }
+    state.selectedBlockId = step.blocks.some(function (b) { return b.id === entry.block; }) ? entry.block : '';
+  }
+
   async function loadExpedition() {
     try {
       if (grantToken && !state.grantAccessToken) {
@@ -4950,6 +5053,7 @@
           retBar.hidden = false;
         }
       }
+      restoreEditingPosition();
       if (deepStepId) {
         var matchedMod = (state.exp.modules || []).find(function (m) {
           return (!deepModuleId || m.id === deepModuleId) && (m.steps || []).some(function (s) { return s.id === deepStepId; });
@@ -4968,6 +5072,7 @@
       setSaveStatus('Saved', true, false);
       if (canEditStructure()) await acquireLease(false);
       setMode(state.mode);
+      if (canEditStructure() && urlParams.get('panel') === 'sharing') openShareDialog();
     } catch (err) {
       showUnavailable(err.message);
     }

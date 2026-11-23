@@ -97,6 +97,12 @@ def _request_identity(runtime):
     return user
 
 
+def _verified_member_email(user):
+    if not user or user.get('email_verified') is not True:
+        return ''
+    return str(user.get('email') or '').strip().lower()
+
+
 def _role_rank(role: str) -> int:
     return {'owner': 3, 'edit': 2, 'translate': 1}.get(role, 0)
 
@@ -109,7 +115,7 @@ def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
 
     user = identity(runtime, required=False)
     uid = user['uid'] if user else ''
-    email = str((user or {}).get('email', '') or '').strip().lower()
+    email = _verified_member_email(user)
     role = ''
     grant_lang = ''
     who = {
@@ -170,6 +176,9 @@ def _public_studio_view(exp: dict, role: str, grant_lang: str = '') -> dict:
             view.pop(key, None)
     if role == 'translate':
         view.pop('share', None)
+    elif 'share' in view:
+        share = view['share'] or {}
+        view['share'] = {**share, 'collectResponses': model.collects_responses(share)}
     lease = exp.get('lease') or {}
     view['editor'] = (
         {'name': lease.get('name', ''), 'expires_at': lease.get('expires_at', 0), 'user_id': lease.get('user_id', '')}
@@ -200,6 +209,7 @@ def _summary_card(exp: dict, role: str) -> dict:
         'revision': exp.get('revision', 1),
         'role': role,
         'deletionPending': bool(exp.get('deleted')),
+        'collectResponses': model.collects_responses(share),
         'shareEnabled': bool(share.get('enabled') and not exp.get('deleted')),
         'shareToken': share.get('token', '') if role in ('owner', 'edit') else '',
         'coverMedia': cover_media,
@@ -230,7 +240,7 @@ def _assert_lease(exp: dict, who: dict, body: dict) -> None:
 def list_expeditions(runtime):
     user = identity(runtime, required=True)
     db = _store(runtime)
-    email = str(user.get('email', '') or '').strip().lower()
+    email = _verified_member_email(user)
     owned = db.list('elearning_expeditions', 'owner_uid', user['uid'])
     shared = db.list('elearning_expeditions', 'member_emails', email, 'array_contains') if email else []
     combined = {}
@@ -245,7 +255,7 @@ def list_expeditions(runtime):
             continue
         combined[eid] = _summary_card(exp, role)
     items = sorted(combined.values(), key=lambda x: x.get('updatedAt', 0), reverse=True)
-    return jsonify(expeditions=items, storageAvailable=book_storage.configured())
+    return jsonify(expeditions=items, storageAvailable=book_storage.configured(), studioAdmin=_is_studio_admin(runtime, user))
 
 
 def _insert_expedition(db, doc):
@@ -318,8 +328,9 @@ def create_expedition(runtime):
         'share': {
             'enabled': False,
             'token': share_token,
-            'showPeerResults': True,
-            'collectPilotFeedback': True,
+            'collectResponses': False,
+            'showPeerResults': False,
+            'collectPilotFeedback': False,
             'pausedMessage': 'Deze testmodule is tijdelijk gepauzeerd.',
         },
         'revision': 1,
@@ -447,8 +458,9 @@ def duplicate_expedition(runtime, expedition_id: str):
         'share': {
             'enabled': False,
             'token': share_token,
-            'showPeerResults': True,
-            'collectPilotFeedback': True,
+            'collectResponses': False,
+            'showPeerResults': False,
+            'collectPilotFeedback': False,
             'pausedMessage': 'Deze testmodule is tijdelijk gepauzeerd.',
         },
         'revision': 1,
@@ -492,8 +504,67 @@ def duplicate_expedition(runtime, expedition_id: str):
     return jsonify(expedition=_public_studio_view(doc, 'owner')), 201
 
 
-def sharing(runtime, expedition_id: str):
-    required = 'owner' if request.method == 'POST' else 'edit'
+def _is_studio_admin(runtime, user):
+    if not runtime.is_admin_user(user):
+        return False
+    if runtime.XPED_STUDIO_ADMIN_UID:
+        return user['uid'] == runtime.XPED_STUDIO_ADMIN_UID
+    if runtime.ADMIN_UIDS:
+        return runtime.ADMIN_UIDS == {user['uid']}
+    email = _verified_member_email(user)
+    return bool(email and runtime.ADMIN_EMAILS == {email})
+
+
+def _require_studio_admin(runtime):
+    user = identity(runtime, required=True)
+    if not _is_studio_admin(runtime, user):
+        raise model.ElearningError('Studio admin access is required.', 403)
+    return user
+
+
+def studio_statistics(runtime):
+    user = _require_studio_admin(runtime)
+    db = _store(runtime)
+    courses = db.list('elearning_expeditions', 'owner_uid', user['uid'], limit=None,
+                      fields=['title', 'deleted', 'copying'])
+    rows = []
+    for course in courses:
+        if course.get('deleted') or course.get('copying'):
+            continue
+        eid = course['_id']
+        responses = db.list('elearning_responses', 'expedition_id', eid, limit=None, fields=['completed'])
+        rows.append({'id': eid, 'title': course['title'], 'sessions': len(responses),
+                     'completed': sum(1 for response in responses if response.get('completed'))})
+    return jsonify(courses=sorted(rows, key=lambda row: row['title'].casefold()),
+                   sessions=sum(row['sessions'] for row in rows), completed=sum(row['completed'] for row in rows))
+
+
+def export_course_content(runtime, expedition_id: str):
+    _, course, _, _, _ = access(runtime, expedition_id, required='edit')
+    # The authoring schema is the allowlist, including hidden draft stations and translations.
+    titles = dict(course.get('localizedTitle') or {})
+    titles[course.get('defaultLanguage', 'nl')] = course['title']
+    content = model.validate_authored_expedition({**course, 'title': titles})
+    excluded_uploads = len(model.media_ids(content))
+    for ref in model.media_refs(content):
+        if isinstance(ref, dict) and ref.get('kind') == 'asset':
+            ref.update(model.safe_media_ref(None))
+    for module in content['modules']:
+        for step in module['steps']:
+            step.pop('authorNotes', None)
+            for block in step['blocks']:
+                if block['type'] == 'custom_visual':
+                    block['data'].pop('agentBrief', None)
+                    block['data'].pop('slotId', None)
+    # A localized title is accepted by the import API. Avoid dropping translated course titles.
+    content['title'] = content.pop('localizedTitle')
+    return jsonify(course=content, excludedUploads=excluded_uploads)
+
+
+def sharing(runtime, expedition_id: str, *, admin=False):
+    if admin:
+        _require_studio_admin(runtime)
+    required = 'owner' if admin or request.method == 'POST' else 'edit'
     db, exp, role, _, _ = access(runtime, expedition_id, required=required)
     if request.method != 'POST':
         grants = [
@@ -510,7 +581,9 @@ def sharing(runtime, expedition_id: str):
             if not g.get('revoked')
         ]
         members = [{'email': em, 'role': r} for em, r in sorted((exp.get('members') or {}).items())]
-        return jsonify(share=exp.get('share') or {}, members=members if role == 'owner' else [], grants=grants if role == 'owner' else [])
+        share = dict(exp.get('share') or {})
+        share['collectResponses'] = model.collects_responses(share)
+        return jsonify(share=share, members=members if role == 'owner' else [], grants=grants if role == 'owner' else [])
 
     body = payload()
     action = str(body.get('action') or 'update_public').strip()
@@ -519,6 +592,12 @@ def sharing(runtime, expedition_id: str):
         _, exp, _, _, _ = access(runtime, expedition_id, 'owner', unit=unit)
         if action == 'update_public':
             share = dict(exp.get('share') or {})
+            previous = model.response_collection_options(share)
+            share['collectResponses'] = previous['collectResponses']
+            if 'collectResponses' in body:
+                if type(body['collectResponses']) is not bool:
+                    raise model.ElearningError('Choose a response collection setting.', 400)
+                share['collectResponses'] = body['collectResponses']
             if 'enabled' in body:
                 share['enabled'] = bool(body['enabled'])
             if 'showPeerResults' in body:
@@ -527,6 +606,8 @@ def sharing(runtime, expedition_id: str):
                 share['collectPilotFeedback'] = bool(body['collectPilotFeedback'])
             if 'allowStepComments' in body:
                 share['allowStepComments'] = bool(body['allowStepComments'])
+            if model.response_collection_options(share) != previous:
+                share['collectionVersion'] = secrets.token_urlsafe(12)
             if 'pausedMessage' in body:
                 share['pausedMessage'] = model.safe_text(body['pausedMessage'], 400)
             if body.get('rotateToken'):
@@ -876,9 +957,15 @@ def _learner_answer(block, value):
             clean_ids = list(dict.fromkeys(v for v in raw_ids if isinstance(v, str) and v in valid_ids))[:max_select]
             remaining = max(0, max_select - len(clean_ids))
             raw_custom = value.get('custom') if isinstance(value.get('custom'), list) else []
-            clean_custom = [v[:300] for v in raw_custom if isinstance(v, str) and v.strip()][:remaining]
+            clean_custom = ([v[:300] for v in raw_custom if isinstance(v, str) and v.strip()][:remaining]
+                            if data.get('allowCustom', True) else [])
             return {'ids': clean_ids, 'custom': clean_custom}
         if isinstance(value, list):
+            if not data.get('allowCustom', True):
+                # Older clients sent the chosen labels as strings.
+                labels = {label for item in data.get('suggestions', [])
+                          for lang, label in item.get('label', {}).items() if lang in ('nl', 'de', 'en') and label}
+                value = [v for v in value if isinstance(v, str) and (v in valid_ids or v in labels)]
             return [v[:300] for v in value[:max_select] if isinstance(v, str)]
     return None
 
@@ -895,13 +982,18 @@ def public_submit_response(runtime, share_token: str):
     session_id = str(body.get('sessionId') or '').strip()
     if not _SESSION_ID_RE.fullmatch(session_id):
         raise model.ElearningError('Invalid learner session id.', 400)
-    cohort = str(body.get('cohort') or 'default').strip()
+    cohort = str(body.get('cohort') or '').strip() or 'default'
     if not _COHORT_RE.fullmatch(cohort):
         cohort = 'default'
     ts = now()
 
     def save(tx):
         _, exp = _resolve_public_expedition(runtime, share_token, unit=tx)
+        options = model.response_collection_options(exp.get('share') or {})
+        if not options['collectResponses'] or body.get('consent') is not True:
+            raise model.ElearningError('Sharing requires the learner’s permission on an active pilot.', 403)
+        if body.get('collectionVersion') != options['collectionVersion']:
+            raise model.ElearningError('The response collection settings have changed.', 409)
         course = model.sanitize_public_expedition(exp)
         lang = model.normalize_lang(body.get('language'), course['defaultLanguage'])
         steps = {step['id']: (module, step) for module in course['modules'] for step in module['steps']}
@@ -909,6 +1001,8 @@ def public_submit_response(runtime, share_token: str):
         doc_id = f"{exp['id']}__{session_id}"
         path = 'elearning_responses/' + doc_id
         old = tx.get(path) or {}
+        if old and (old.get('cohort') or 'default') != cohort:
+            raise model.ElearningError('Start a new response session for this pilot group.', 409)
         answers = dict(old.get('answers') or {})
         peer_answers = dict(old.get('peerAnswers') or {})
         disclosed = body.get('peerDisclosureTypes')
@@ -937,7 +1031,6 @@ def public_submit_response(runtime, share_token: str):
         visited = list(old.get('visitedStepIds') or [])
         if isinstance(body.get('visitedStepIds'), list):
             visited.extend(s for s in body['visitedStepIds'] if isinstance(s, str) and s in steps)
-        options = course['shareOptions']
         feedback = old.get('pilotFeedback')
         pilot = body.get('pilotFeedback')
         if options['collectPilotFeedback'] and isinstance(pilot, dict):
@@ -960,6 +1053,7 @@ def public_submit_response(runtime, share_token: str):
                                  'createdAt': item['createdAt'] if type(item.get('createdAt')) is int else int(ts)})
         tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], 'session_id': session_id,
                       'cohort': cohort, 'language': lang, 'answers': answers, 'peerAnswers': peer_answers,
+                      'consentVersion': options['collectionVersion'], 'consented_at': old.get('consented_at', ts),
                       'visitedStepIds': list(dict.fromkeys(visited)), 'completed': bool(body.get('completed') or old.get('completed')),
                       'pilotFeedback': feedback, 'stepComments': comments, 'started_at': old.get('started_at', ts), 'updated_at': ts})
 
@@ -1031,7 +1125,7 @@ def _aggregate_block(block: dict, values: list) -> dict:
 
 def public_get_aggregates(runtime, share_token: str, block_id: str):
     db, exp = _resolve_public_expedition(runtime, share_token)
-    if not (exp.get('share') or {}).get('showPeerResults', True):
+    if not model.response_collection_options(exp.get('share') or {})['showPeerResults']:
         raise model.ElearningError('Peer results are disabled for this expedition.', 403)
     bid = model.identifier(block_id, 'block id')
     target_block = None

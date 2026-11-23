@@ -1,6 +1,6 @@
 # Environment reference
 
-The web app, deployment command and local companion read 142 named settings. The table lists application defaults. Deployment overrides are in [render.yaml](../render.yaml).
+The web app, deployment command and local companion read 143 named settings. The table lists application defaults. Deployment overrides are in [render.yaml](../render.yaml).
 
 Regenerate with `python scripts/generate_environment_reference.py`. The generator reads checked-in source without loading application configuration.
 
@@ -150,3 +150,4 @@ Boolean flags accept `1`, `true`, `yes` and `on`, ignoring case and surrounding 
 | `VIDEO_IMPORT_RATE_LIMIT_WINDOW_SECONDS` | `600 (minimum 30, maximum 86400)` | [core.py](../lecture_processor/runtime/core.py) |
 | `WEB_CONCURRENCY` | `1` | [Dockerfile](../Dockerfile) |
 | `WEB_THREADS` | `4` | [Dockerfile](../Dockerfile) |
+| `XPED_STUDIO_ADMIN_UID` | Firebase UID of the single Studio administrator. Must also be an app admin. Defaults to the sole admin UID, or the sole verified admin email if no admin UIDs are configured. | [core.py](../lecture_processor/runtime/core.py) |

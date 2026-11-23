@@ -47,23 +47,34 @@
     return svg;
   }
 
-  // Create only integer percentage rules on the course's first-party stylesheet.
-  var focalRules = new WeakMap();
-  function setImageFocal(img, x, y) {
+  // Reuse bounded numeric rules on the course stylesheet for image positioning.
+  var imageRules = new WeakMap();
+  function imageProperty(image, property, value, unit) {
     var sheet = document.querySelector('link[href*="/css/xped-theme.css"]')?.sheet;
     if (!sheet) return;
-    var rules = focalRules.get(sheet) || new Set();
-    focalRules.set(sheet, rules);
-    [x, y].forEach(function (value, i) {
-      var axis = i ? 'y' : 'x';
-      var percent = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 50;
-      var name = 'xped-focal-' + axis + '-' + percent;
-      if (!rules.has(name)) {
-        sheet.insertRule('.' + name + '{--xped-focal-' + axis + ':' + percent + '%}', sheet.cssRules.length);
-        rules.add(name);
-      }
-      img.classList.add(name);
-    });
+    var rules = imageRules.get(sheet) || new Set();
+    imageRules.set(sheet, rules);
+    var name = property + '-' + value;
+    if (!rules.has(name)) {
+      sheet.insertRule('.' + name + '{--' + property + ':' + value + unit + '}', sheet.cssRules.length);
+      rules.add(name);
+    }
+    image.classList.add(name);
+  }
+
+  function integer(value, min, max, fallback) {
+    return Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
+  }
+
+  function setImageFocal(image, x, y) {
+    imageProperty(image, 'xped-focal-x', integer(x, 0, 100, 50), '%');
+    imageProperty(image, 'xped-focal-y', integer(y, 0, 100, 50), '%');
+  }
+
+  function framePortrait(image, data) {
+    imageProperty(image, 'portrait-zoom', integer(data.portraitZoom, 50, 250, 100), '%');
+    imageProperty(image, 'portrait-x', integer(data.portraitX, -75, 75, 0), '%');
+    imageProperty(image, 'portrait-y', integer(data.portraitY, -75, 75, 0), '%');
   }
 
   function makeEditable(node, placeholder, editable, onCommit, onFocus) {
@@ -252,6 +263,34 @@
     return box;
   }
 
+  // The editor and the learner share the same portable Markdown subset.
+  function richTextMarkdown(editor) {
+    function serialize(node) {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent.replace(/\u00a0/g, ' ');
+      var text = Array.from(node.childNodes, serialize).join('');
+      switch (node.nodeName) {
+        case 'BR': return '\n';
+        case 'STRONG': case 'B': return text ? '**' + text + '**' : '';
+        case 'A': return '[' + text + '](' + node.getAttribute('href') + ')';
+        case 'H2': return '## ' + text.trimEnd() + '\n';
+        case 'H3': return '### ' + text.trimEnd() + '\n';
+        case 'OL': case 'UL':
+          return Array.from(node.children, function (li, index) {
+            return (node.nodeName === 'OL' ? (index + 1) + '. ' : '- ') + serialize(li).trimEnd() + '\n';
+          }).join('');
+        case 'DIV': case 'P': return text.replace(/\n$/, '') + '\n';
+        default: return text;
+      }
+    }
+    // Chromium may produce a plain text node followed by one or more divs.
+    var result = '';
+    Array.from(editor.childNodes).forEach(function (child) {
+      if (/^(DIV|P|H2|H3|OL|UL)$/.test(child.nodeName) && result && !result.endsWith('\n')) result += '\n';
+      result += serialize(child);
+    });
+    return result.trimEnd();
+  }
+
   function renderBlock(block, ctx) {
     var Model = root.XpedElearningModel;
     var Icons = root.XpedElearningIcons;
@@ -284,6 +323,44 @@
     function field(node, localized) {
       if (ctx.onLocalizedField) ctx.onLocalizedField(node, localized);
       return node;
+    }
+    // Each editable copy field uses its chosen semantic element in all three views.
+    var styleToolbar;
+    function styledField(key, defaultTag, className, text) {
+      var style = block.settings?.textStyles?.[key];
+      var tag = ['p', 'h2', 'h3'].includes(style) ? style : defaultTag;
+      var node = el(tag, className, text);
+      if (style === tag) node.dataset.textStyle = tag;
+      if (!editable) return node;
+      node.dataset.formatField = key;
+      node.addEventListener('focus', function () {
+        styleToolbar?.remove();
+        styleToolbar = el('div', 'el-fmt-bar el-field-style');
+        styleToolbar.setAttribute('role', 'group');
+        styleToolbar.setAttribute('aria-label', root.LectureI18n?.t('Text style') || 'Text style');
+        [['p', 'Paragraph'], ['h2', 'Heading 2'], ['h3', 'Heading 3']].forEach(function (option) {
+          var button = el('button', 'el-fmt-btn', option[0].toUpperCase());
+          button.type = 'button';
+          button.title = root.LectureI18n?.t(option[1]) || option[1];
+          button.setAttribute('aria-label', button.title);
+          button.setAttribute('aria-pressed', String(option[0] === tag));
+          button.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+          button.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            onEdit(block, 'style:' + key, option[0]);
+          });
+          styleToolbar.appendChild(button);
+        });
+        node.after(styleToolbar);
+      });
+      return node;
+    }
+    function appendCopy(parent, key, className, placeholder) {
+      var value = Model.getLocalized(data[key], lang, defLang);
+      if (!editable && !value) return;
+      var node = styledField(key, 'p', className, value);
+      field(node, data[key]);
+      parent.appendChild(makeEditable(node, placeholder, editable, function (v) { onEdit(block, key, v); }, notifyFocus));
     }
     var revealAfter = !!(block.settings && block.settings.revealAfterAnswer);
 
@@ -332,7 +409,7 @@
       var h = Model.getLocalized(data.heading, lang, defLang);
       var b = Model.getLocalized(data.body, lang, defLang);
       if (h || editable) {
-        var hEl = el('h2', 'xped-question-text', h);
+        var hEl = styledField('heading', 'h2', 'xped-question-text', h);
         field(hEl, data.heading);
         makeEditable(hEl, 'Optional section heading…', editable, function (v) { onEdit(block, 'heading', v); }, notifyFocus);
         wrap.appendChild(hEl);
@@ -343,86 +420,56 @@
         fmtBar.setAttribute('aria-label', 'Text formatting');
         var linkBox = el('div', 'el-fmt-link-popover');
         linkBox.hidden = true;
-        var rtTa = document.createElement('textarea');
-        rtTa.className = 'xped-richtext-editor';
-        rtTa.rows = Math.max(3, Math.min(12, String(b || '').split('\n').length + 1));
-        rtTa.value = b || '';
-        rtTa.setAttribute('aria-label', 'Paragraph text');
-        rtTa.placeholder = 'Write calm, clear explanation text…';
-        rtTa.addEventListener('click', function (e) { e.stopPropagation(); notifyFocus(); });
-        rtTa.addEventListener('input', function () {
-          rtTa.rows = Math.max(3, Math.min(12, rtTa.value.split('\n').length + 1));
-          onEdit(block, 'body', rtTa.value);
-        });
-
-        function replaceRange(start, end, replacement, selStartOffset, selEndOffset) {
-          rtTa.focus();
-          rtTa.setSelectionRange(start, end);
-          // Using the editing command keeps the replacement in the native textarea undo stack.
-          if (!document.execCommand('insertText', false, replacement)) rtTa.setRangeText(replacement, start, end);
-          rtTa.rows = Math.max(3, Math.min(12, rtTa.value.split('\n').length + 1));
-          rtTa.focus();
-          rtTa.setSelectionRange(start + selStartOffset, start + selEndOffset);
-          onEdit(block, 'body', rtTa.value);
-        }
-
-        function toggleBold() {
-          var s = rtTa.selectionStart || 0;
-          var e = rtTa.selectionEnd || 0;
-          var sel = rtTa.value.slice(s, e);
-          if (sel) {
-            if (rtTa.value.slice(Math.max(0, s - 2), s) === '**' && rtTa.value.slice(e, e + 2) === '**') {
-              replaceRange(s - 2, e + 2, sel, 0, sel.length);
-            } else if (sel.indexOf('**') === 0 && sel.lastIndexOf('**') === sel.length - 2 && sel.length >= 4) {
-              var unwrapped = sel.slice(2, -2);
-              replaceRange(s, e, unwrapped, 0, unwrapped.length);
-            } else {
-              replaceRange(s, e, '**' + sel + '**', 2, 2 + sel.length);
-            }
-          } else {
-            var phText = 'key point';
-            replaceRange(s, e, '**' + phText + '**', 2, 2 + phText.length);
+        var editor = renderFormattedBody(b);
+        editor.classList.add('xped-richtext-editor');
+        editor.contentEditable = 'true';
+        editor.spellcheck = true;
+        editor.setAttribute('role', 'textbox');
+        editor.setAttribute('aria-label', 'Paragraph text');
+        editor.setAttribute('aria-multiline', 'true');
+        editor.setAttribute('data-placeholder', 'Write a paragraph…');
+        var selectionRange;
+        function rememberSelection() {
+          var selection = window.getSelection();
+          if (selection.rangeCount && editor.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+            selectionRange = selection.getRangeAt(0).cloneRange();
           }
         }
-
-        function transformSelectedLines(mode) {
-          var val = rtTa.value;
-          var s = rtTa.selectionStart || 0;
-          var e = rtTa.selectionEnd || 0;
-          var lineStart = val.lastIndexOf('\n', Math.max(0, s - 1)) + 1;
-          var lineEndIdx = val.indexOf('\n', e > s && val[e - 1] === '\n' ? e - 1 : e);
-          var lineEnd = lineEndIdx < 0 ? val.length : lineEndIdx;
-          var blockText = val.slice(lineStart, lineEnd);
-          var lines = blockText.split('\n');
-          var allMatch = false;
-          if (mode === 'ul') allMatch = lines.every(function (l) { return !l.trim() || /^[-•*]\s+/.test(l); });
-          else if (mode === 'ol') allMatch = lines.every(function (l) { return !l.trim() || /^\d+[.)]\s+/.test(l); });
-          else if (mode === 'h2') allMatch = lines.every(function (l) { return !l.trim() || /^##\s+/.test(l); });
-          else if (mode === 'h3') allMatch = lines.every(function (l) { return !l.trim() || /^###\s+/.test(l); });
-
-          var numCounter = 1;
-          var nextLines = lines.map(function (l) {
-            var stripped = l.replace(/^(?:###?\s+|[-•*]\s+|\d+[.)]\s+)/, '');
-            if (mode === 'p' || allMatch) return stripped;
-            if (!stripped.trim()) {
-              if (mode === 'ul') return '- ';
-              if (mode === 'ol') return (numCounter++) + '. ';
-              if (mode === 'h2') return '## ';
-              if (mode === 'h3') return '### ';
-              return '';
-            }
-            if (mode === 'ul') return '- ' + stripped;
-            if (mode === 'ol') return (numCounter++) + '. ' + stripped;
-            if (mode === 'h2') return '## ' + stripped;
-            if (mode === 'h3') return '### ' + stripped;
-            return stripped;
-          });
-          var joined = nextLines.join('\n');
-          replaceRange(lineStart, lineEnd, joined, 0, joined.length);
+        function restoreSelection() {
+          editor.focus();
+          var selection = window.getSelection();
+          if (!selectionRange || !editor.contains(selectionRange.commonAncestorContainer)) {
+            selectionRange = document.createRange();
+            selectionRange.selectNodeContents(editor);
+            selectionRange.collapse(false);
+          }
+          selection.removeAllRanges();
+          selection.addRange(selectionRange);
         }
+        function persistBody() {
+          onEdit(block, 'body', richTextMarkdown(editor));
+          rememberSelection();
+        }
+        function format(command, value) {
+          restoreSelection();
+          if (command === 'formatBlock' && value === 'p') {
+            if (document.queryCommandState('insertUnorderedList')) document.execCommand('insertUnorderedList');
+            if (document.queryCommandState('insertOrderedList')) document.execCommand('insertOrderedList');
+          }
+          document.execCommand(command, false, value);
+          rememberSelection();
+        }
+        editor.addEventListener('input', persistBody);
+        editor.addEventListener('focusout', rememberSelection);
+        editor.addEventListener('pointerup', rememberSelection);
+        editor.addEventListener('keyup', rememberSelection);
+        editor.addEventListener('click', function (ev) { ev.stopPropagation(); notifyFocus(); });
+        editor.addEventListener('paste', function (ev) {
+          ev.preventDefault();
+          document.execCommand('insertText', false, ev.clipboardData.getData('text/plain'));
+        });
+        editor.addEventListener('drop', function (ev) { ev.preventDefault(); });
 
-        // Inline Link Editor (UX-028: never inserts example.org)
-        var linkRange = { s: 0, e: 0 };
         var linkTextInp = el('input', 'xped-input el-fmt-link-inp');
         linkTextInp.type = 'text';
         linkTextInp.placeholder = 'Link text (e.g. Read guideline)';
@@ -441,10 +488,7 @@
         function closeLinkBox(restoreFocus) {
           linkBox.hidden = true;
           linkErr.textContent = '';
-          if (restoreFocus) {
-            rtTa.focus();
-            rtTa.setSelectionRange(linkRange.s, linkRange.e);
-          }
+          if (restoreFocus) restoreSelection();
         }
         linkApply.addEventListener('click', function (ev) {
           ev.stopPropagation();
@@ -455,10 +499,14 @@
             return;
           }
           var label = linkTextInp.value.trim() || norm.label || norm.host;
-          var md = '[' + label + '](' + norm.url + ')';
-          linkBox.hidden = true;
-          linkErr.textContent = '';
-          replaceRange(linkRange.s, linkRange.e, md, 0, md.length);
+          var link = document.createElement('a');
+          link.href = norm.url;
+          link.textContent = label;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          closeLinkBox(true);
+          // DOM-built markup keeps the label literal and this insertion undoable.
+          document.execCommand('insertHTML', false, link.outerHTML);
         });
         linkCancel.addEventListener('click', function (ev) {
           ev.stopPropagation();
@@ -476,15 +524,15 @@
         linkBox.append(linkRow, linkErr);
 
         [
-          { label: 'P', title: 'Paragraph (clear heading/list)', fn: function () { transformSelectedLines('p'); } },
-          { label: 'H2', title: 'Section heading', fn: function () { transformSelectedLines('h2'); } },
-          { label: 'H3', title: 'Subheading', fn: function () { transformSelectedLines('h3'); } },
-          { ico: 'bold', title: 'Bold text', fn: toggleBold },
-          { ico: 'list', title: 'Bullet list (toggle selected lines)', fn: function () { transformSelectedLines('ul'); } },
-          { label: '1.', title: 'Numbered list (toggle selected lines)', fn: function () { transformSelectedLines('ol'); } },
+          { label: 'P', title: 'Paragraph (clear heading/list)', fn: function () { format('formatBlock', 'p'); } },
+          { label: 'H2', title: 'Section heading', fn: function () { format('formatBlock', 'h2'); } },
+          { label: 'H3', title: 'Subheading', fn: function () { format('formatBlock', 'h3'); } },
+          { ico: 'bold', title: 'Bold text', fn: function () { format('bold'); } },
+          { ico: 'list', title: 'Bullet list (toggle selected lines)', fn: function () { format('insertUnorderedList'); } },
+          { label: '1.', title: 'Numbered list (toggle selected lines)', fn: function () { format('insertOrderedList'); } },
           { ico: 'link', title: 'Insert link', fn: function () {
-            linkRange = { s: rtTa.selectionStart || 0, e: rtTa.selectionEnd || 0 };
-            linkTextInp.value = rtTa.value.slice(linkRange.s, linkRange.e).trim();
+            restoreSelection();
+            linkTextInp.value = window.getSelection().toString().trim();
             linkUrlInp.value = '';
             linkErr.textContent = '';
             linkBox.hidden = false;
@@ -497,30 +545,13 @@
           tb.setAttribute('aria-label', tool.title);
           if (tool.ico && Icons) tb.appendChild(Icons.icon(tool.ico, 14));
           else tb.textContent = tool.label;
+          tb.addEventListener('mousedown', function (ev) { rememberSelection(); ev.preventDefault(); });
           tb.addEventListener('click', function (ev) { ev.stopPropagation(); notifyFocus(); tool.fn(); });
           fmtBar.appendChild(tb);
         });
         wrap.appendChild(fmtBar);
         wrap.appendChild(linkBox);
-        wrap.appendChild(rtTa);
-        var formatted = el('div', 'xped-richtext-sample');
-        formatted.hidden = true;
-        var sample = el('button', 'el-fmt-btn el-fmt-read', 'Read');
-        sample.type = 'button';
-        sample.setAttribute('aria-label', 'Preview formatted text');
-        sample.setAttribute('aria-pressed', 'false');
-        sample.addEventListener('click', function () {
-          formatted.hidden = !formatted.hidden;
-          rtTa.hidden = !formatted.hidden;
-          sample.setAttribute('aria-pressed', String(!formatted.hidden));
-          sample.textContent = formatted.hidden ? 'Read' : 'Edit';
-          sample.setAttribute('aria-label', formatted.hidden ? 'Preview formatted text' : 'Edit paragraph text');
-          formatted.replaceChildren(renderFormattedBody(rtTa.value));
-          Array.from(fmtBar.children).forEach(function (tool) { if (tool !== sample) tool.disabled = !formatted.hidden; });
-          if (formatted.hidden) rtTa.focus();
-        });
-        fmtBar.appendChild(sample);
-        wrap.appendChild(formatted);
+        wrap.appendChild(editor);
       } else {
         wrap.appendChild(field(renderFormattedBody(b), data.body));
       }
@@ -535,7 +566,7 @@
       }
       var vt = Model.getLocalized(data.title, lang, defLang);
       if (vt || editable) {
-        var vth = el('h3', 'xped-question-text', vt);
+        var vth = styledField('title', 'h3', 'xped-question-text', vt);
         field(vth, data.title);
         makeEditable(vth, 'Optional video title…', editable, function (v) { onEdit(block, 'title', v); }, notifyFocus);
         wrap.appendChild(vth);
@@ -581,7 +612,7 @@
       }
       var cap = Model.getLocalized(data.caption, lang, defLang);
       if (cap || editable) {
-        var capEl = el('p', 'xped-caption', cap);
+        var capEl = styledField('caption', 'p', 'xped-caption', cap);
         field(capEl, data.caption);
         makeEditable(capEl, 'Optional caption…', editable, function (v) { onEdit(block, 'caption', v); }, notifyFocus);
         wrap.appendChild(capEl);
@@ -617,9 +648,8 @@
       }
       var icap = Model.getLocalized(data.caption, lang, defLang);
       if (icap || editable) {
-        var fcap = el('figcaption', 'xped-caption', icap);
-        field(fcap, data.caption);
-        makeEditable(fcap, 'Optional image caption…', editable, function (v) { onEdit(block, 'caption', v); }, notifyFocus);
+        var fcap = el('figcaption');
+        appendCopy(fcap, 'caption', 'xped-caption', 'Optional image caption…');
         fig.appendChild(fcap);
       }
       imgWrap.appendChild(fig);
@@ -628,12 +658,12 @@
         var sh = Model.getLocalized(data.sideHeading, lang, defLang);
         var sb = Model.getLocalized(data.sideBody, lang, defLang);
         if (sh || editable) {
-          var shEl = el('h3', 'xped-question-text', sh);
+          var shEl = styledField('sideHeading', 'h3', 'xped-question-text', sh);
           field(shEl, data.sideHeading);
           makeEditable(shEl, 'Heading…', editable, function (v) { onEdit(block, 'sideHeading', v); }, notifyFocus);
           side.appendChild(shEl);
         }
-        var sbEl = el('p', 'xped-richtext-body', sb);
+        var sbEl = styledField('sideBody', 'p', 'xped-richtext-body', sb);
         field(sbEl, data.sideBody);
         makeEditable(sbEl, 'Supporting explanation beside this visual…', editable, function (v) { onEdit(block, 'sideBody', v); }, notifyFocus);
         side.appendChild(sbEl);
@@ -647,13 +677,13 @@
       var aUrl = Model.resolveMediaUrl(data.media, data.mediaOverrides, lang, assetUrl);
       if (!editable && !aUrl && !Model.getLocalized(data.transcript, lang, defLang)) return document.createDocumentFragment();
       var card = el('div', 'xped-audio-card');
-      var at = el('h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
+      var at = styledField('title', 'h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
       field(at, data.title);
       makeEditable(at, 'Audio exercise title…', editable, function (v) { onEdit(block, 'title', v); });
       if (editable || at.textContent.trim()) card.appendChild(at);
       var desc = Model.getLocalized(data.description, lang, defLang);
       if (desc || editable) {
-        var ad = el('p', 'xped-caption', desc);
+        var ad = styledField('description', 'p', 'xped-caption', desc);
         field(ad, data.description);
         makeEditable(ad, 'Short instruction for the learner…', editable, function (v) { onEdit(block, 'description', v); });
         card.appendChild(ad);
@@ -682,10 +712,10 @@
       if (Icons) iconBox.appendChild(Icons.icon(data.tone === 'bio' ? 'spark' : 'book', 17));
       box.appendChild(iconBox);
       var contentCol = el('div');
-      var ct = el('h3', 'xped-callout-title', Model.getLocalized(data.title, lang, defLang));
+      var ct = styledField('title', 'h3', 'xped-callout-title', Model.getLocalized(data.title, lang, defLang));
       field(ct, data.title);
       makeEditable(ct, 'Key takeaway title…', editable, function (v) { onEdit(block, 'title', v); });
-      var cb = el('p', '', Model.getLocalized(data.body, lang, defLang));
+      var cb = styledField('body', 'p', '', Model.getLocalized(data.body, lang, defLang));
       field(cb, data.body);
       makeEditable(cb, 'Write a concise takeaway message…', editable, function (v) { onEdit(block, 'body', v); });
       if (editable || ct.textContent.trim()) contentCol.appendChild(ct);
@@ -699,16 +729,17 @@
       var sc = el('div', 'xped-story-card');
       var sUrl = Model.resolveMediaUrl(data.media, null, lang, assetUrl);
       if (sUrl) {
+        var portrait = el('span', 'xped-story-avatar');
         var av = document.createElement('img');
-        av.className = 'xped-story-avatar';
+        framePortrait(av, data);
         setMediaSource(av, sUrl);
         av.alt = data.speakerName || 'Speaker';
-        sc.appendChild(av);
+        portrait.appendChild(av);
+        sc.appendChild(portrait);
       }
       var bodyCol = el('div');
-      var bq = el('blockquote', 'xped-story-quote', Model.getLocalized(data.quote, lang, defLang));
-      field(bq, data.quote);
-      makeEditable(bq, 'Click to write a real patient or clinician quote…', editable, function (v) { onEdit(block, 'quote', v); });
+      var bq = el('blockquote', 'xped-story-quote');
+      appendCopy(bq, 'quote', '', 'Write a patient or clinician quote…');
       bodyCol.appendChild(bq);
       var meta = el('div', 'xped-story-meta');
       var spName = el('strong', '', data.speakerName || (editable ? '' : 'Naam'));
@@ -771,19 +802,42 @@
       });
       sbody.appendChild(ul);
       sdet.appendChild(sbody);
+      var sourceAnimation;
+      var expanding;
+      ssum.addEventListener('click', function (event) {
+        event.preventDefault();
+        expanding = sourceAnimation ? !expanding : !sdet.open;
+        var from = sdet.getBoundingClientRect().height;
+        if (sourceAnimation) sourceAnimation.cancel();
+        if (!sdet.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          sourceAnimation = null;
+          sdet.open = expanding;
+          return;
+        }
+        sdet.open = true;
+        var to = expanding ? sdet.getBoundingClientRect().height : ssum.getBoundingClientRect().height;
+        var animation = sdet.animate([{height: from + 'px'}, {height: to + 'px'}],
+          {duration: 200, easing: 'ease-out'});
+        sourceAnimation = animation;
+        animation.onfinish = function () {
+          if (sourceAnimation !== animation) return;
+          sdet.open = expanding;
+          sourceAnimation = null;
+        };
+      });
       shell.appendChild(sdet);
       wrap.appendChild(shell);
       return wrap;
     }
 
     if (block.type === 'mcq') {
-      var qh = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
+      var qh = styledField('question', 'h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
       field(qh, data.question);
       makeEditable(qh, 'Click to write your question…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       if (editable || qh.textContent.trim()) wrap.appendChild(qh);
       var sub = Model.getLocalized(data.subtitle, lang, defLang);
       if (sub || editable) {
-        var subEl = el('p', 'xped-caption', sub);
+        var subEl = styledField('subtitle', 'p', 'xped-caption', sub);
         field(subEl, data.subtitle);
         makeEditable(subEl, 'Optional helper subtitle…', editable, function (v) { onEdit(block, 'subtitle', v); }, notifyFocus);
         wrap.appendChild(subEl);
@@ -837,13 +891,15 @@
           if (badge) {
             badge.textContent = '';
             if (s) {
-              if (Icons) badge.appendChild(Icons.icon('check', 14));
-              else badge.textContent = '✓';
+              var incorrect = showGrade && !o.isCorrect;
+              if (Icons) badge.appendChild(Icons.icon(incorrect ? 'x' : 'check', 16));
+              else badge.textContent = incorrect ? '×' : '✓';
             }
             if (showGrade && o.isCorrect) {
               child.appendChild(el('span', 'xped-option-key', Model.ui(lang, 'correctChoice')));
+            } else if (showGrade && s) {
+              child.appendChild(el('span', 'xped-option-key sr-only', Model.ui(lang, 'incorrectChoice')));
             }
-
           }
         });
       }
@@ -974,7 +1030,7 @@
 
     if (block.type === 'myth_fact') {
       // ZERO redundant "FABEL / FEIT" eyebrow above the statement!
-      var stEl = el('h3', 'xped-question-text', Model.getLocalized(data.statement, lang, defLang));
+      var stEl = styledField('statement', 'h3', 'xped-question-text', Model.getLocalized(data.statement, lang, defLang));
       field(stEl, data.statement);
       makeEditable(stEl, 'Click to write a common pain belief statement…', editable, function (v) { onEdit(block, 'statement', v); }, notifyFocus);
       if (editable || stEl.textContent.trim()) wrap.appendChild(stEl);
@@ -999,6 +1055,7 @@
               if (icoSlot && Icons) icoSlot.appendChild(Icons.icon('checkCircle', 18));
             } else if (choice === v) {
               cls += ' is-incorrect';
+              if (icoSlot && Icons) icoSlot.appendChild(Icons.icon('x', 18));
             } else {
               cls += ' is-muted';
             }
@@ -1063,7 +1120,7 @@
     }
 
     if (block.type === 'scale') {
-      var sq = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
+      var sq = styledField('question', 'h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
       field(sq, data.question);
       makeEditable(sq, 'Click to write your scale prompt…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       if (editable || sq.textContent.trim()) wrap.appendChild(sq);
@@ -1137,18 +1194,20 @@
     }
 
     if (block.type === 'reflection') {
-      var rp = el('h3', 'xped-question-text', Model.getLocalized(data.prompt, lang, defLang));
+      var rp = styledField('prompt', 'h3', 'xped-question-text', Model.getLocalized(data.prompt, lang, defLang));
       field(rp, data.prompt);
       makeEditable(rp, 'Click to write your reflection prompt…', editable, function (v) { onEdit(block, 'prompt', v); });
       if (editable || rp.textContent.trim()) wrap.appendChild(rp);
-      var reflectionNote = el('p', 'xped-caption', Model.ui(lang, 'reflectionAccess'));
-      reflectionNote.id = 'reflection-access-' + instanceId;
-      wrap.appendChild(reflectionNote);
       var ta = document.createElement('textarea');
       ta.className = 'xped-textarea';
       ta.rows = 4;
       labelControl(ta, rp);
-      ta.setAttribute('aria-describedby', reflectionNote.id);
+      if (ctx.collectResponses) {
+        var reflectionNote = el('p', 'xped-caption', Model.ui(lang, 'reflectionAccess'));
+        reflectionNote.id = 'reflection-access-' + instanceId;
+        wrap.appendChild(reflectionNote);
+        ta.setAttribute('aria-describedby', reflectionNote.id);
+      }
       field(ta, data.placeholder);
       ta.placeholder = Model.getLocalized(data.placeholder, lang, defLang);
       ta.value = String(answers[block.id] || '');
@@ -1159,7 +1218,7 @@
     }
 
     if (block.type === 'wordcloud') {
-      var wq = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
+      var wq = styledField('question', 'h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
       field(wq, data.question);
       makeEditable(wq, 'Click to write your word cloud question…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       if (editable || wq.textContent.trim()) wrap.appendChild(wq);
@@ -1257,7 +1316,7 @@
     }
 
     if (block.type === 'ranking') {
-      var rq = el('h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
+      var rq = styledField('question', 'h3', 'xped-question-text', Model.getLocalized(data.question, lang, defLang));
       field(rq, data.question);
       makeEditable(rq, 'Click to write your ranking prompt…', editable, function (v) { onEdit(block, 'question', v); }, notifyFocus);
       if (editable || rq.textContent.trim()) wrap.appendChild(rq);
@@ -1330,7 +1389,7 @@
     }
 
     if (block.type === 'hotspot') {
-      var ht = el('h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
+      var ht = styledField('title', 'h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
       field(ht, data.title);
       makeEditable(ht, 'Interactive visual title…', editable, function (v) { onEdit(block, 'title', v); }, notifyFocus);
       if (editable || ht.textContent.trim()) wrap.appendChild(ht);
@@ -1506,14 +1565,14 @@
       // Avoid unnatural title doubling if Step Title already names the scale
       var bTitle = Model.getLocalized(data.title, lang, defLang);
       if ((bTitle && bTitle.toLowerCase() !== stepTitleLower && !stepTitleLower.includes('weegschaal') && !stepTitleLower.includes('balance') && !stepTitleLower.includes('waage')) || editable) {
-        var bth = el('h3', 'xped-question-text', bTitle);
+        var bth = styledField('title', 'h3', 'xped-question-text', bTitle);
         field(bth, data.title);
         makeEditable(bth, 'Optional balance scale subtitle…', editable, function (v) { onEdit(block, 'title', v); });
         wrap.appendChild(bth);
       }
       var bintro = Model.getLocalized(data.intro, lang, defLang);
       if (bintro || editable) {
-        var bi = el('p', 'xped-caption', bintro);
+        var bi = styledField('intro', 'p', 'xped-caption', bintro);
         field(bi, data.intro);
         makeEditable(bi, 'Short friendly instruction…', editable, function (v) { onEdit(block, 'intro', v); });
         wrap.appendChild(bi);
@@ -1553,37 +1612,48 @@
         if (interactive && !interacted) svgNode.classList.add('is-cue-sway');
         svgSlot.appendChild(svgNode);
         tipWrap.textContent = '';
+        var tipKey = loadT > resT ? 'overloadTip' : 'balancedTip';
         var tipText = loadT > resT
           ? Model.getLocalized(data.overloadTip, lang, defLang)
           : Model.getLocalized(data.balancedTip, lang, defLang);
-        if (tipText) tipWrap.appendChild(field(el('div', 'xped-feedback-box ' + (loadT > resT ? 'is-gentle' : 'is-correct'), tipText), loadT > resT ? data.overloadTip : data.balancedTip));
+        if (tipText || editable) {
+          var tip = field(el('div', 'xped-feedback-box ' + (loadT > resT ? 'is-gentle' : 'is-correct'), tipText), data[tipKey]);
+          tipWrap.appendChild(makeEditable(tip, 'Balance feedback', editable, function (v) { onEdit(block, tipKey, v); }));
+        }
+      }
+
+      function balanceColumn(category, key) {
+        var column = el('div', 'xped-balance-col is-' + category);
+        var title = field(el('div', 'xped-balance-col-head', Model.getLocalized(data[key], lang, defLang) || Model.ui(lang, category)), data[key]);
+        column.appendChild(makeEditable(title, 'Column title', editable, function (v) { onEdit(block, key, v); }));
+        return column;
       }
 
       var cols = el('div', 'xped-balance-cols');
-      var loadCol = el('div', 'xped-balance-col is-load');
-      loadCol.appendChild(field(el('div', 'xped-balance-col-head', Model.getLocalized(data.loadLabel, lang, defLang) || Model.ui(lang, 'load')), data.loadLabel));
-      var resCol = el('div', 'xped-balance-col is-resource');
-      resCol.appendChild(field(el('div', 'xped-balance-col-head', Model.getLocalized(data.resourceLabel, lang, defLang) || Model.ui(lang, 'resource')), data.resourceLabel));
+      var loadCol = balanceColumn('load', 'loadLabel');
+      var resCol = balanceColumn('resource', 'resourceLabel');
 
       factors.forEach(function (f) {
         var fWrap = el('div', 'xped-balance-factor');
         var flab = document.createElement('label');
         var vSpan = el('span', '', String(vals[f.id]) + '/3');
-        flab.appendChild(field(el('span', '', Model.getLocalized(f.label, lang, defLang)), f.label));
+        var factorName = field(el('span', '', Model.getLocalized(f.label, lang, defLang)), f.label);
+        flab.appendChild(makeEditable(factorName, 'Factor name', editable, function (v) { onEdit(block, 'factorLabel:' + f.id, v); }));
         flab.appendChild(vSpan);
         var rng = document.createElement('input');
         rng.type = 'range';
+        flab.htmlFor = rng.id = 'factor-' + instanceId + '-' + f.id;
         rng.className = 'xped-range ' + (f.category === 'resource' ? 'is-resource' : 'is-load');
         rng.min = '0';
         rng.max = '3';
         rng.value = String(vals[f.id]);
-        rng.disabled = !interactive;
-        if (interactive) {
+        rng.disabled = !interactive && !editable;
+        if (interactive || editable) {
           rng.addEventListener('input', function () {
             interacted = true;
             vals[f.id] = Number(rng.value);
             vSpan.textContent = rng.value + '/3';
-            onAnswer(block.id, Object.assign({}, vals));
+            if (interactive) onAnswer(block.id, Object.assign({}, vals));
             updateBalanceVisual();
           });
         }
@@ -1603,12 +1673,11 @@
     }
 
     if (block.type === 'bps_triad') {
-      var bpt = el('h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
+      var bpt = styledField('title', 'h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
       field(bpt, data.title);
       makeEditable(bpt, 'Biopsychosocial heading…', editable, function (v) { onEdit(block, 'title', v); });
       if (editable || bpt.textContent.trim()) wrap.appendChild(bpt);
-      var tintro = Model.getLocalized(data.intro, lang, defLang);
-      if (tintro) wrap.appendChild(field(el('p', 'xped-caption', tintro), data.intro));
+      appendCopy(wrap, 'intro', 'xped-caption', 'Short friendly instruction…');
       var tabs = el('div', 'xped-bps-tabs');
       tabs.setAttribute('role', 'tablist');
       var panel = el('div', 'xped-bps-panel');
@@ -1644,12 +1713,11 @@
     }
 
     if (block.type === 'mini_plan') {
-      var mpt = el('h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
+      var mpt = styledField('title', 'h3', 'xped-question-text', Model.getLocalized(data.title, lang, defLang));
       field(mpt, data.title);
       makeEditable(mpt, 'Mini-plan heading…', editable, function (v) { onEdit(block, 'title', v); }, notifyFocus);
       if (editable || mpt.textContent.trim()) wrap.appendChild(mpt);
-      var mintro = Model.getLocalized(data.intro, lang, defLang);
-      if (mintro) wrap.appendChild(field(el('p', 'xped-caption', mintro), data.intro));
+      appendCopy(wrap, 'intro', 'xped-caption', 'Short friendly instruction…');
       var maxSel = data.maxSelect || 3;
       var planState = Model.normalizeMiniPlanAnswer(answers[block.id], data.suggestions, lang, defLang);
       var planCount = el('p', 'xped-caption xped-limit-meta');
@@ -1721,7 +1789,7 @@
       drawChips();
       wrap.appendChild(planCount);
       wrap.appendChild(chips);
-      if (data.allowCustom && interactive) {
+      if (data.allowCustom !== false) {
         var customRow = el('div', 'xped-input-actions');
         var cinp = document.createElement('input');
         cinp.type = 'text';
@@ -1730,6 +1798,7 @@
         cinp.setAttribute('aria-label', cinp.placeholder);
         var cadd = el('button', 'xped-btn xped-btn-secondary', Model.ui(lang, 'addGoal'));
         cadd.type = 'button';
+        cinp.disabled = cadd.disabled = !interactive;
         function addCustomGoal() {
           var v = cinp.value.trim();
           if (!v) return;
@@ -1753,13 +1822,13 @@
 
     if (block.type === 'custom_visual') {
       // Placeholder briefs belong to the authoring canvas.
-      if (!editable && !['alarm-dial', 'breathing-circle'].includes(data.preset)
+      if (!editable && !['alarm-dial', 'breathing-circle', 'percentage'].includes(data.preset)
           && !(data.preset === 'custom-svg' && data.svgMarkup)) {
         return document.createDocumentFragment();
       }
       var cvt = Model.getLocalized(data.title, lang, defLang);
       if (cvt || editable) {
-        var cvh = el('h3', 'xped-question-text', cvt);
+        var cvh = styledField('title', 'h3', 'xped-question-text', cvt);
         field(cvh, data.title);
         makeEditable(cvh, 'Visual / animation title…', editable, function (v) { onEdit(block, 'title', v); });
         wrap.appendChild(cvh);
@@ -1769,7 +1838,16 @@
       var heightCls = 'height-' + (data.height || 'medium');
       var cvStage = el('div', 'xped-visual-stage ' + heightCls);
 
-      if (preset === 'alarm-dial') {
+      if (preset === 'percentage') {
+        var value = Math.min(100, Math.max(0, Number(data.percentage ?? 50)));
+        cvStage.className = 'xped-chart';
+        var label = el('strong', 'xped-chart-number', new Intl.NumberFormat(lang, { style: 'percent', maximumFractionDigits: 2 }).format(value / 100));
+        var bar = el('progress', 'xped-summary-bar');
+        bar.max = 100;
+        bar.value = value;
+        bar.setAttribute('aria-label', Model.getLocalized(data.alt, lang, defLang) || cvt);
+        cvStage.append(label, bar);
+      } else if (preset === 'alarm-dial') {
         var nsA = 'http://www.w3.org/2000/svg';
         var sA = function (tag, attrs) {
           var n = document.createElementNS(nsA, tag);
@@ -1881,10 +1959,19 @@
       wrap.appendChild(cvStage);
       var cvCap = Model.getLocalized(data.caption, lang, defLang);
       if (cvCap || editable) {
-        var cvCapEl = el('p', 'xped-caption', cvCap);
+        var cvCapEl = styledField('caption', 'p', 'xped-caption', cvCap);
         field(cvCapEl, data.caption);
         makeEditable(cvCapEl, 'Optional visual caption…', editable, function (v) { onEdit(block, 'caption', v); });
         wrap.appendChild(cvCapEl);
+      }
+      if (preset === 'percentage') {
+        var citationText = Model.getLocalized(data.citation, lang, defLang);
+        var source = Model.normalizeCitationLink(data.sourceUrl);
+        if (citationText || source.url) {
+          var credit = el(source.url ? 'a' : 'p', 'xped-caption', citationText || source.label);
+          if (source.url) { credit.href = source.url; credit.target = '_blank'; credit.rel = 'noopener noreferrer'; }
+          wrap.appendChild(credit);
+        }
       }
       return wrap;
     }

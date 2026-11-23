@@ -79,6 +79,7 @@ BLOCK_LOCATION_LABELS = {
 }
 
 FIELD_LOCATION_LABELS = {
+    'summaryTitle': 'Title', 'summaryIntro': 'Introduction', 'summaryPlanHeading': 'Mini-plan heading', 'summaryClosing': 'Closing text',
     'heading': 'Heading',
     'body': 'Body text',
     'title': 'Title',
@@ -444,6 +445,15 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
         'revealAfterAnswer': bool(settings.get('revealAfterAnswer', False)),
     }
 
+    text_styles = settings.get('textStyles')
+    if isinstance(text_styles, dict):
+        supported_fields = ('title', 'heading', 'body', 'description', 'sideHeading', 'sideBody',
+                            'question', 'subtitle', 'statement', 'prompt', 'intro', 'caption', 'quote')
+        styles = {key: text_styles[key] for key in supported_fields
+                  if text_styles.get(key) in ('p', 'h2', 'h3')}
+        if styles:
+            norm_settings['textStyles'] = styles
+
     norm_data: dict = {}
     if btype == 'richtext':
         norm_data = {
@@ -521,6 +531,13 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
             'quote': normalize_localized(data.get('quote'), 2500, default_lang),
             'media': safe_media_ref(data.get('media')),
         }
+        for key, minimum, maximum, default in (
+            ('portraitZoom', 50, 250, 100), ('portraitX', -75, 75, 0), ('portraitY', -75, 75, 0)
+        ):
+            try:
+                norm_data[key] = max(minimum, min(maximum, int(data.get(key, default))))
+            except (TypeError, ValueError, OverflowError):
+                norm_data[key] = default
     elif btype == 'sources':
         raw_items = data.get('items') if isinstance(data.get('items'), list) else []
         items = []
@@ -648,7 +665,7 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
         if height_mode not in ('compact', 'medium', 'tall'):
             height_mode = 'medium'
         preset_anim = str(data.get('preset') or 'placeholder').strip()
-        if preset_anim not in ('placeholder', 'alarm-dial', 'breathing-circle', 'custom-svg'):
+        if preset_anim not in ('placeholder', 'alarm-dial', 'breathing-circle', 'custom-svg', 'percentage'):
             preset_anim = 'placeholder'
         norm_data = {
             'title': normalize_localized(data.get('title'), 300, default_lang),
@@ -660,6 +677,14 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
             'preset': preset_anim,
             'svgMarkup': sanitize_svg_markup(data.get('svgMarkup', '')),
         }
+        if preset_anim == 'percentage':
+            try:
+                percentage = float(data.get('percentage', 50))
+            except (TypeError, ValueError, OverflowError):
+                percentage = 50
+            norm_data['percentage'] = round(min(100, max(0, percentage)), 2)
+            norm_data['citation'] = normalize_localized(data.get('citation'), 600, default_lang)
+            norm_data['sourceUrl'] = safe_external_url(data.get('sourceUrl', ''))
 
     return {'id': bid, 'type': btype, 'data': norm_data, 'settings': norm_settings}
 
@@ -795,6 +820,10 @@ def normalize_expedition_payload(raw: object) -> dict:
         'ctaLabel': normalize_localized(raw_start.get('ctaLabel'), 120, default_lang),
     }
 
+    for key in ('summaryTitle', 'summaryIntro', 'summaryPlanHeading', 'summaryClosing'):
+        if key in raw_start:
+            start_page[key] = normalize_localized(raw_start[key], 1000, default_lang)
+
     raw_modules = raw.get('modules') if isinstance(raw.get('modules'), list) else []
     if len(raw_modules) > MAX_MODULES:
         raise ElearningError(f'An expedition can contain at most {MAX_MODULES} modules.', 400)
@@ -890,6 +919,9 @@ def _walk_localized_fields(expedition: dict):
     yield ('startPage.title', 'Start Page · Title', expedition['startPage']['title'])
     yield ('startPage.subtitle', 'Start Page · Subtitle', expedition['startPage']['subtitle'])
     yield ('startPage.ctaLabel', 'Start Page · Button', expedition['startPage']['ctaLabel'])
+    for key in ('summaryTitle', 'summaryIntro', 'summaryPlanHeading', 'summaryClosing'):
+        if key in expedition['startPage']:
+            yield (f'startPage.{key}', f'Completion · {FIELD_LOCATION_LABELS.get(key, key)}', expedition['startPage'][key])
     for idx, hl in enumerate(expedition['startPage'].get('highlights', [])):
         yield (f"startPage.highlights.{hl['id']}", f'Start Page · Highlight {idx + 1}', hl['text'])
 
@@ -1113,6 +1145,24 @@ def csv_to_translation_updates(csv_text: str, target_lang: str) -> dict[str, str
     return updates
 
 
+def collects_responses(share: dict) -> bool:
+    if 'collectResponses' in share:
+        return share['collectResponses'] is True
+    # Older links with pilot, peer or reviewer features enabled remain pilot links.
+    return any(share.get(key) is True for key in ('showPeerResults', 'collectPilotFeedback', 'allowStepComments'))
+
+
+def response_collection_options(share: dict) -> dict:
+    enabled = collects_responses(share)
+    return {
+        'collectResponses': enabled,
+        'collectionVersion': share.get('collectionVersion') or '1',
+        'showPeerResults': enabled and bool(share.get('showPeerResults')),
+        'collectPilotFeedback': enabled and bool(share.get('collectPilotFeedback')),
+        'allowStepComments': enabled and bool(share.get('allowStepComments')),
+    }
+
+
 def sanitize_public_expedition(expedition: dict) -> dict:
     """Strip internal metadata, author notes, and hidden modules before serving to learners."""
     clean_modules = []
@@ -1155,11 +1205,7 @@ def sanitize_public_expedition(expedition: dict) -> dict:
         'theme': deepcopy(expedition.get('theme', {'preset': 'xped-warm-sand', 'showRouteMap': True})),
         'startPage': deepcopy(expedition.get('startPage', {})),
         'modules': clean_modules,
-        'shareOptions': {
-            'showPeerResults': bool(share.get('showPeerResults', True)),
-            'collectPilotFeedback': bool(share.get('collectPilotFeedback', True)),
-            'allowStepComments': bool(share.get('allowStepComments', False)),
-        },
+        'shareOptions': response_collection_options(share),
     }
 
 

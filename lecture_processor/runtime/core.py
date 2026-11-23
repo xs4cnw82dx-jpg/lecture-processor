@@ -223,6 +223,8 @@ ADMIN_EMAILS = set(env_list('ADMIN_EMAILS', lowercase=True))
 
 ADMIN_UIDS = set(env_list('ADMIN_UIDS'))
 
+XPED_STUDIO_ADMIN_UID = env_value('XPED_STUDIO_ADMIN_UID', '').strip()
+
 ADMIN_SESSION_COOKIE_NAME = 'lp_admin_session'
 
 ADMIN_SESSION_DURATION_SECONDS = safe_int_env('ADMIN_SESSION_DURATION_SECONDS', 8 * 60 * 60, minimum=5 * 60, maximum=30 * 24 * 60 * 60)

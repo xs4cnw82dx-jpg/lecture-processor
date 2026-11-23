@@ -105,12 +105,12 @@
       <div class="el-stage-footer" id="el-stage-footer" hidden>
         <div class="el-readability-wrap">
           <div class="el-readability-bar" id="el-readability-bar"></div>
-          <div class="el-b1-coach-panel" id="el-b1-coach-panel" hidden></div>
         </div>
         <details class="el-notes-drawer" id="el-notes-drawer">
-          <summary><span id="el-notes-icon"></span><span>Thesis &amp; Partner Notes (hidden from learners)</span></summary>
+          <summary><span id="el-notes-icon"></span><span>Partner notes</span></summary>
           <div class="el-notes-drawer-body">
-            <textarea id="el-author-notes" class="xped-textarea" rows="3" placeholder="Leave notes for your thesis partner or German editor…"></textarea>
+            <label for="el-author-notes">Editors and translators can read these notes.</label>
+            <textarea id="el-author-notes" class="xped-textarea" rows="3" placeholder="Leave a note for your co-editors…"></textarea>
           </div>
         </details>
       </div>
@@ -224,6 +224,9 @@
           <div class="el-picker-preview-head">Learner preview</div>
           <h3 id="el-picker-preview-heading"></h3>
           <div id="el-picker-preview" class="xped-surface-scope" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+          <label class="el-field-check" id="el-picker-custom-option" hidden>
+            <input type="checkbox"> <span>Allow learners to add their own steps</span>
+          </label>
           <button type="button" class="el-btn el-btn-primary" id="el-picker-insert">Add block</button>
         </aside>
       </div>
@@ -316,13 +319,13 @@
 
           <div class="el-share-inactive-card" id="el-share-inactive-card" hidden>
             <strong>This expedition is currently private.</strong>
-            <p class="xped-caption">Enable the learner link to invite testers.</p>
+            <p class="xped-caption">Enable the learner link to invite learners.</p>
           </div>
 
           <div class="el-share-box" id="el-share-active-box">
             <div>
-              <div class="el-field">
-                <label for="el-share-cohort">Optional Test Cohort Tag</label>
+              <div class="el-field" id="el-share-cohort-field" hidden>
+                <label for="el-share-cohort">Optional pilot group</label>
                 <input type="text" id="el-share-cohort" placeholder="pilot-1" maxlength="48">
               </div>
               <div class="el-field">
@@ -346,24 +349,34 @@
           </div>
 
           <label class="el-field-check">
-            <input type="checkbox" id="el-share-peer-results">
-            <span>Show anonymized peer results on polls &amp; sliders</span>
+            <input type="checkbox" id="el-share-collect-responses" aria-describedby="el-share-collection-info" aria-controls="el-share-pilot-options">
+            <span>Collect responses for a pilot</span>
           </label>
-          <label class="el-field-check">
-            <input type="checkbox" id="el-share-pilot-feedback">
-            <span>Include short Pilot Usability Feedback card at the end</span>
-          </label>
-          <label class="el-field-check">
-            <input type="checkbox" id="el-share-step-comments">
-            <span>Enable Physio / PhD reviewer comments on each step</span>
-          </label>
+          <p id="el-share-collection-info" class="xped-caption">For self-study, leave this off. In a pilot, learners choose whether to share before the first question.</p>
+          <div id="el-share-pilot-options" hidden>
+            <label class="el-field-check">
+              <input type="checkbox" id="el-share-peer-results">
+              <span>Show anonymized peer results on polls &amp; sliders</span>
+            </label>
+            <label class="el-field-check">
+              <input type="checkbox" id="el-share-pilot-feedback">
+              <span>Include short Pilot Usability Feedback card at the end</span>
+            </label>
+            <label class="el-field-check">
+              <input type="checkbox" id="el-share-step-comments">
+              <span>Enable Physio / PhD reviewer comments on each step</span>
+            </label>
+          </div>
         </section>
 
         <section class="el-share-panel" id="el-panel-collaborators" role="tabpanel" aria-labelledby="el-tab-collaborators" data-share-panel="collaborators" hidden>
           <p class="xped-caption">Co-Editors can edit structure and content with their account. Translators can edit localized text only.</p>
           <div class="el-share-inline-row">
             <input type="email" aria-label="Collaborator email" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
-            <div id="el-member-role-host"></div>
+            <select class="xped-input" id="el-member-role" aria-label="Collaborator role">
+              <option value="edit">Co-Editor</option>
+              <option value="translate">Translator</option>
+            </select>
             <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-add-member-btn">Add</button>
           </div>
           <div id="el-members-list"></div>
@@ -373,7 +386,9 @@
           <p class="xped-caption">Direct link for an external editor (no account needed). Locked to their assigned target language.</p>
           <div class="el-share-inline-row">
             <input type="text" aria-label="Translator link label" id="el-grant-label" class="xped-input" placeholder="Recipient name">
-            <div id="el-grant-lang-host"></div>
+            <select class="xped-input" id="el-grant-lang" aria-label="Target translation language">
+              <option value="de">DE · Deutsch</option><option value="en">EN · English</option><option value="nl">NL · Nederlands</option>
+            </select>
             <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">Create Link</button>
           </div>
           <div id="el-grants-list"></div>

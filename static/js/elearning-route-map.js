@@ -13,6 +13,73 @@
     return node;
   }
 
+  function renderConsent(container, lang, modules, options, onChoose) {
+    var Model = root.XpedElearningModel;
+    var form = document.createElement('form');
+    form.className = 'xped-card el-consent-card';
+    var title = document.createElement('h1');
+    title.className = 'xped-step-title';
+    title.textContent = Model.ui(lang, 'consentTitle');
+    var intro = document.createElement('p');
+    intro.textContent = Model.ui(lang, 'consentIntro');
+    if (options.cohort && options.cohort !== 'default') intro.textContent += ' ' + Model.ui(lang, 'consentCohort', { group: options.cohort });
+    if (options.changing) intro.textContent += ' ' + Model.ui(lang, 'consentChangeNote');
+    var choices = document.createElement('fieldset');
+    var question = document.createElement('legend');
+    question.textContent = Model.ui(lang, 'consentQuestion');
+    choices.appendChild(question);
+    var next = document.createElement('button');
+    next.type = 'submit';
+    next.className = 'xped-btn xped-btn-sun';
+    next.textContent = Model.ui(lang, 'next');
+    next.disabled = true;
+    var details = [];
+    var description = Model.ui(lang, 'authorAccess');
+    if (options.showPeerResults) {
+      var shared = modules.flatMap(function (module) {
+        return module.steps.flatMap(function (step) { return step.blocks; });
+      }).filter(function (block) { return block.settings && block.settings.showPeerResults; });
+      if (shared.some(function (block) { return block.type !== 'wordcloud'; })) details.push(Model.ui(lang, 'sharedResults'));
+      if (shared.some(function (block) { return block.type === 'wordcloud'; })) details.push(Model.ui(lang, 'sharedWords'));
+    }
+    if (options.allowStepComments || options.collectPilotFeedback) details.push(Model.ui(lang, 'consentFeedback'));
+    [['share', 'consentShare', description], ['private', 'consentPrivate', Model.ui(lang, 'consentPrivateNote')]].forEach(function (item) {
+      var label = document.createElement('label');
+      var input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'sharing';
+      input.value = item[0];
+      input.required = true;
+      var words = document.createElement('span');
+      var heading = document.createElement('strong');
+      heading.textContent = Model.ui(lang, item[1]);
+      var detail = document.createElement('span');
+      detail.textContent = item[2];
+      words.append(heading, detail);
+      label.append(input, words);
+      choices.appendChild(label);
+      input.addEventListener('change', function () { next.disabled = false; });
+    });
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var choice = new FormData(form).get('sharing');
+      if (choice !== 'private' && choice !== 'share') return;
+      onChoose(choice);
+    });
+    form.append(title, intro, choices);
+    if (details.length) {
+      var disclosure = document.createElement('details');
+      var summary = document.createElement('summary');
+      summary.textContent = Model.ui(lang, 'consentDetails');
+      var note = document.createElement('p');
+      note.textContent = details.join(' ');
+      disclosure.append(summary, note);
+      form.appendChild(disclosure);
+    }
+    form.appendChild(next);
+    container.replaceChildren(form);
+  }
+
   function renderStartPage(container, options) {
     var Model = root.XpedElearningModel;
     var Icons = root.XpedElearningIcons;
@@ -328,24 +395,31 @@
     var Model = root.XpedElearningModel;
     var defLang = exp.defaultLanguage || 'nl';
     var card = document.createElement('article');
-    card.className = 'xped-card';
+    card.className = 'xped-card xped-completion-card';
+    var start = exp.startPage || {};
+    function summaryText(key, fallback) {
+      return Model.getLocalized(start[key], lang, defLang) || (fallback ? Model.ui(lang, fallback) : '');
+    }
     var h1 = document.createElement('h1');
     h1.className = 'xped-step-title';
-    h1.textContent = Model.ui(lang, 'summaryTitle');
+    h1.textContent = summaryText('summaryTitle', 'summaryTitle');
     var sub = document.createElement('p');
     sub.className = 'xped-caption';
-    sub.textContent = Model.ui(lang, 'summarySubtitle');
-    card.appendChild(h1);
-    card.appendChild(sub);
+    var courseName = document.createElement('p');
+    courseName.className = 'xped-print-course';
+    courseName.textContent = Model.getLocalized(exp.localizedTitle, lang, defLang) || exp.title || '';
+    card.append(courseName, h1, sub);
 
     var reflections = [];
     var plans = [];
     var balances = [];
     var insights = [];
     (exp.modules || []).forEach(function (m) {
+      if (m.visibleToLearners === false) return;
       (m.steps || []).forEach(function (s) {
         (s.blocks || []).forEach(function (b) {
           var ans = answers[b.id];
+          if (b.type !== 'myth_fact' && b.settings && b.settings.saveToSummary === false) return;
           if (b.type === 'reflection' && typeof ans === 'string' && ans.trim()) {
             reflections.push({ q: Model.getLocalized(b.data.prompt, lang, defLang), a: ans });
           } else if (b.type === 'mini_plan' && Model.hasMeaningfulAnswer(ans)) {
@@ -361,6 +435,7 @@
               if (txt) plans.push(txt);
             });
           } else if (b.type === 'balance_scale' && ans && typeof ans === 'object') {
+            if (!(b.data.factors || []).some(function (f) { return Number.isFinite(ans[f.id]); })) return;
             var loadT = 0;
             var resT = 0;
             var loadNames = [];
@@ -376,7 +451,9 @@
                 if (v >= 2 && lbl) loadNames.push(lbl + ' (' + v + '/3)');
               }
             });
-            balances.push({ loadT: loadT, resT: resT, loadNames: loadNames, resNames: resNames });
+            var resources = b.data.factors.filter(function (f) { return f.category === 'resource'; }).length;
+            balances.push({ loadT: loadT, resT: resT, loadNames: loadNames, resNames: resNames,
+              loadMax: 3 * (b.data.factors.length - resources), resMax: 3 * resources });
           } else if (b.type === 'myth_fact' && ans) {
             var expTxt = Model.getLocalized(b.data.explanation, lang, defLang);
             if (expTxt) insights.push(expTxt);
@@ -394,20 +471,22 @@
       balances.forEach(function (bal) {
         var bGrid = document.createElement('div');
         bGrid.className = 'el-summary-balance-grid';
-        var lc = document.createElement('div');
-        lc.className = 'el-summary-balance-col';
-        var lTitle = document.createElement('strong');
-        lTitle.textContent = Model.ui(lang, 'load') + ': ' + bal.loadT;
-        lc.appendChild(lTitle);
-        lc.appendChild(document.createTextNode(bal.loadNames.join(', ') || '—'));
-        var rc = document.createElement('div');
-        rc.className = 'el-summary-balance-col';
-        var rTitle = document.createElement('strong');
-        rTitle.textContent = Model.ui(lang, 'resource') + ': ' + bal.resT;
-        rc.appendChild(rTitle);
-        rc.appendChild(document.createTextNode(bal.resNames.join(', ') || '—'));
-        bGrid.appendChild(lc);
-        bGrid.appendChild(rc);
+        function balanceColumn(key, total, maximum, names) {
+          if (!maximum) return;
+          var column = document.createElement('div');
+          column.className = 'el-summary-balance-col';
+          var heading = document.createElement('strong');
+          heading.textContent = Model.ui(lang, key) + ' · ' + total + '/' + maximum;
+          var bar = document.createElement('progress');
+          bar.className = 'xped-summary-bar is-' + key;
+          bar.max = maximum;
+          bar.value = total;
+          bar.setAttribute('aria-label', Model.ui(lang, key));
+          column.append(heading, bar, document.createTextNode(names.join(', ')));
+          bGrid.appendChild(column);
+        }
+        balanceColumn('load', bal.loadT, bal.loadMax, bal.loadNames);
+        balanceColumn('resource', bal.resT, bal.resMax, bal.resNames);
         bSec.appendChild(bGrid);
       });
       card.appendChild(bSec);
@@ -417,7 +496,7 @@
       var pSec = document.createElement('div');
       pSec.className = 'el-summary-section';
       var ph = document.createElement('h2');
-      ph.textContent = Model.ui(lang, 'myMiniPlan');
+      ph.textContent = summaryText('summaryPlanHeading', 'myMiniPlan');
       pSec.appendChild(ph);
       var ul = document.createElement('ul');
       ul.className = 'xped-sources-list';
@@ -465,10 +544,58 @@
       card.appendChild(rSec);
     }
 
+    var hasAnswers = !!(plans.length || reflections.length || balances.length || insights.length);
+    sub.textContent = summaryText('summaryIntro', hasAnswers ? 'summarySubtitle' : 'summaryEmpty');
+    var closing = summaryText('summaryClosing');
+    if (closing) {
+      var note = document.createElement('p');
+      note.textContent = closing;
+      card.appendChild(note);
+    }
+    if (hasAnswers) {
+      var exportRow = document.createElement('div');
+      exportRow.className = 'xped-summary-export el-no-print';
+      var status = document.createElement('span');
+      status.setAttribute('role', 'status');
+      var manual = document.createElement('textarea');
+      manual.className = 'xped-textarea';
+      manual.hidden = true;
+      manual.readOnly = true;
+      manual.setAttribute('aria-label', Model.ui(lang, 'copySummary'));
+      var copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'xped-btn xped-btn-secondary';
+      copy.textContent = Model.ui(lang, 'copySummary');
+      copy.addEventListener('click', async function () {
+        var parts = Array.from(card.children).filter(function (part) {
+          return !part.matches('.xped-summary-export, .el-player-nav');
+        });
+        var text = parts.map(function (part) { return part.innerText.trim(); }).join('\n\n');
+        try {
+          await navigator.clipboard.writeText(text);
+          manual.hidden = true;
+          status.textContent = Model.ui(lang, 'summaryCopied');
+        } catch (_err) {
+          manual.value = text;
+          manual.hidden = false;
+          status.textContent = Model.ui(lang, 'summaryCopyManual');
+          manual.focus();
+          manual.select();
+        }
+      });
+      var print = document.createElement('button');
+      print.type = 'button';
+      print.className = 'xped-btn xped-btn-secondary';
+      print.textContent = Model.ui(lang, 'printSummary');
+      print.addEventListener('click', function () { window.print(); });
+      exportRow.append(copy, print, status, manual);
+      card.appendChild(exportRow);
+    }
     return card;
   }
 
   root.XpedElearningRouteMap = {
+    renderConsent: renderConsent,
     renderSummaryCard: renderSummaryCard,
     renderRouteMap: renderRouteMap,
     renderStartPage: renderStartPage,

@@ -15,6 +15,7 @@ ENV_READERS = {
 # Settings with contextual defaults or constraints that cannot be read off one call.
 NOTES = {
     'APP_ENV': 'Runtime environment override.',
+    'XPED_STUDIO_ADMIN_UID': 'Firebase UID of the single Studio administrator. Must also be an app admin. Defaults to the sole admin UID, or the sole verified admin email if no admin UIDs are configured.',
     'BOOK_CHATGPT_URL': 'Defaults to `https://chatgpt.com/`.',
     'BOOK_IMAGE_MAX_MB': '10 MiB, capped at 10.',
     'BOOK_STUDIO_ENABLED': 'Enabled unless set to 0.',

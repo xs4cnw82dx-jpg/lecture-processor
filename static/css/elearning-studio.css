@@ -590,7 +590,7 @@ button.el-dropzone {
   transform: scale(1);
 }
 
-/* Stage Footer: Reading Time / B1 Cue + Partner Notes */
+/* Stage footer */
 .el-stage-footer {
   width: 100%;
   max-width: 820px;
@@ -1087,37 +1087,6 @@ button.el-dropzone {
   flex-wrap: wrap;
   gap: 8px;
 }
-.el-b1-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--xped-border);
-  background: var(--xped-surface);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-family: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--xped-navy);
-  cursor: pointer;
-}
-.el-b1-toggle.is-good { color: var(--xped-mint); border-color: rgba(13, 148, 108, 0.35); }
-.el-b1-toggle.is-warn { color: #9a5b13; border-color: rgba(217, 130, 59, 0.45); background: #fdf4eb; }
-.el-b1-coach-panel {
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: var(--xped-surface);
-  border: 1px solid var(--xped-border);
-  display: grid;
-  gap: 6px;
-  font-size: 0.84rem;
-  animation: xpedReveal 0.18s var(--xped-ease) both;
-}
-.el-b1-tip { display: flex; align-items: flex-start; gap: 8px; color: var(--xped-ink); }
-.el-b1-tip.is-ok { color: var(--xped-mint); }
-.el-b1-tip.is-warn { color: #9a5b13; }
-.el-b1-tip.is-info { color: var(--xped-blue); }
-
 /* Visual Block Picker with Search & Icon Badges */
 .el-picker-search-wrap { margin-bottom: 14px; }
 .el-picker-card {
@@ -1276,7 +1245,9 @@ button.el-dropzone {
 .el-rail-move-btn:hover:not([disabled]) { background: rgba(6, 41, 64, 0.08); color: var(--xped-navy); }
 .el-rail-move-btn[disabled] { opacity: 0.25; cursor: not-allowed; }
 
-/* Share Dialog Clean Single-Row Input + Custom Dropdown + Button */
+.el-share-panel > .xped-caption + .el-share-inline-row { margin-block-start: .7rem; }
+#el-member-role, #el-grant-lang { min-inline-size: 9rem; width: auto; }
+
 .el-share-inline-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -1474,31 +1445,6 @@ button.el-dropzone {
 }
 .el-palette-specimen-card strong { display: block; font-size: 0.85rem; color: var(--xped-navy); }
 .el-palette-specimen-card span { font-size: 0.76rem; color: var(--xped-ink-muted); }
-
-/* Writing & Accessibility Checks Clickable Findings */
-.el-b1-group-head {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--xped-ink-muted);
-  margin-top: 4px;
-}
-.el-b1-tip-btn {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  text-align: left;
-  font-family: inherit;
-  font-size: 0.83rem;
-  cursor: pointer;
-}
-.el-b1-tip-btn:hover { background: var(--xped-canvas); }
 
 /* 2-Column Visual Block Picker Dialog (UX-101) */
 dialog.el-dialog-wide { max-width: min(920px, calc(100vw - 32px)); }
@@ -1805,4 +1751,11 @@ dialog.el-dialog-sm { max-width: min(440px, calc(100vw - 32px)); }
   .el-title-wrap:not(.is-writing-title) .el-save-chip { width: fit-content; }
   .el-title-wrap #el-share-visibility { padding-inline-start: 4px; }
   .el-title-wrap.is-writing-title #el-share-visibility { display: none; }
+}
+
+
+#el-share-collection-info { margin-block: -.2rem .75rem; }
+#el-share-pilot-options {
+  padding-inline-start: .9rem;
+  border-inline-start: 2px solid var(--xped-border);
 }

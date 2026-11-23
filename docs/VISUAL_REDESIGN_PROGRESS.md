@@ -182,3 +182,9 @@ Closing Export data or Delete account returns keyboard focus to the Settings but
 Authors can preview a block before inserting it on a phone, move it across steps, and return to the same fields after translating or previewing. The learner preview and public player share the completion view. Authors can inspect the chosen mini-plan, reflections and sample poll results without submitting learner data. Private courses display their sharing state in the editor and library. Response reports explain their denominators and export the selected cohort and language.
 
 Isolated Chromium checks covered library rows and menus at 320, 375, 390, 768 and 1440 pixels in both Studio themes. Authoring and learner checks exercised keyboard navigation, touch layouts, localized copy, font fallback and reduced motion. Concurrent editing, undo, interrupted saves, translation fallbacks and role-specific sharing controls have behavior regressions. Phone checks used browser emulation.
+
+## November 23 · xPEDitie Pijn Studio and learner feedback
+
+The learner can choose private participation before the first pilot activity. The completion page shows saved work and provides copy and print actions. Authors can edit text on the canvas, frame story illustrations, adjust activity headings, and preview course results at phone width. Studio administration groups per-course access, sharing and participation totals.
+
+Isolated browser verification covered answering a question incorrectly, collapsing a reference, finishing with a mini-plan, copying the result and printing a one-page PDF. Desktop and phone captures were inspected for the consent page, course editor, notes, sharing controls and administration. Signed-in production verification follows deployment.

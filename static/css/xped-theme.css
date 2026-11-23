@@ -339,7 +339,7 @@
 .xped-domain-dot.domain-bio { background: var(--xped-mint-bright); }
 .xped-domain-dot.domain-psycho { background: var(--xped-blue); }
 .xped-domain-dot.domain-social { background: var(--xped-yellow); }
-.xped-domain-dot.domain-general { background: var(--xped-navy); }
+.xped-domain-dot.domain-general { background: #275984; }
 
 /* ==========================================================================
    Clean Editorial xPED Start Page Hero (Deep Navy → Seamless Journey Flow)
@@ -768,10 +768,19 @@ button.el-dropzone { width: 100%; font: inherit; }
   width: 68px;
   height: 68px;
   border-radius: 50%;
-  object-fit: cover;
+  display: block;
+  overflow: hidden;
   border: 2.5px solid var(--xped-yellow);
   background: #ffffff;
 }
+.xped-story-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: translate(var(--portrait-x, 0%), var(--portrait-y, 0%)) scale(var(--portrait-zoom, 100%));
+}
+.xped-story-quote > :first-child, .xped-image-figure figcaption > p { margin: 0; }
 .xped-story-quote {
   margin: 0 0 10px;
   font-size: 1.04rem;
@@ -835,6 +844,8 @@ button.el-dropzone { width: 100%; font: inherit; }
   background: #ffffff;
   border: 2px solid var(--xped-navy);
 }
+/* The source panel animates its outer height once in both Studio and player. */
+.xped-sources-box::details-content { transition: none; }
 .xped-sources-box {
   border: 0;
   border-radius: 8px;
@@ -1040,7 +1051,7 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
 /* Rich-text formatted output & lightweight inline formatting bar */
 .xped-richtext-body p { margin: 0 0 10px; }
 .xped-richtext-body p:last-child { margin-bottom: 0; }
-.xped-richtext-list { margin: 6px 0 10px; padding-left: 20px; display: grid; gap: 5px; }
+.xped-richtext-body :is(ul, ol) { margin: 6px 0 10px; padding-left: 20px; display: grid; gap: 5px; }
 .el-fmt-bar {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1076,8 +1087,9 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
   line-height: 1.62;
   color: var(--xped-ink);
   background: #ffffff;
-  resize: vertical;
+  min-height: 5.75rem;
 }
+.xped-richtext-editor:empty::before { content: attr(data-placeholder); color: var(--xped-ink-muted); pointer-events: none; }
 .xped-richtext-editor:focus { outline: none; border-color: var(--xped-blue); }
 
 /* Translate Studio Live Block Highlight */
@@ -1182,8 +1194,8 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
   min-width: 52px;
   padding: 4px 14px;
   border-radius: var(--xped-radius-pill);
-  background: var(--xped-navy);
-  color: var(--xped-yellow);
+  background: #3279a8;
+  color: #fff;
   font-family: var(--xped-font-display);
   font-size: 1.15rem;
 }
@@ -1215,6 +1227,13 @@ details.xped-sources-box > summary.xped-sources-summary:focus-visible {
   outline: none;
   border-color: var(--xped-blue);
   box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.15);
+}
+/* A single inset outline remains visible with keyboard and forced colors. */
+.xped-surface-scope .xped-textarea:focus,
+.el-player-body .xped-textarea:focus {
+  outline: 2px solid var(--xped-blue) !important;
+  outline-offset: -2px !important;
+  box-shadow: none;
 }
 .xped-word-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .xped-word-chip {
@@ -1716,6 +1735,7 @@ dialog.el-dialog[open]:where(:not([data-closing]))::backdrop {
   flex-shrink: 0;
   color: inherit;
 }
+.xped-option-state:empty { display: none; }
 .xped-option-btn.is-selected .xped-option-state {
   background: rgba(255, 255, 255, 0.18);
   color: var(--xped-yellow);
@@ -1727,6 +1747,10 @@ dialog.el-dialog[open]:where(:not([data-closing]))::backdrop {
 .xped-mcq-check-row { margin-top: 12px; display: flex; justify-content: flex-start; }
 .xped-myth-status-ico { display: inline-flex; align-items: center; }
 .xped-myth-status-ico:empty { display: none; }
+.xped-block [data-text-style="p"] { font: inherit; color: var(--xped-ink); }
+.xped-block [data-text-style="h2"] { font-size: 1.4rem; font-weight: 700; line-height: 1.28; }
+.xped-block [data-text-style="h3"] { font-size: 1.12rem; font-weight: 700; line-height: 1.35; }
+.xped-richtext-body :is(h2, h3),
 .xped-richtext-subhead {
   font-family: var(--xped-font-body);
   font-weight: 700;
@@ -1734,7 +1758,8 @@ dialog.el-dialog[open]:where(:not([data-closing]))::backdrop {
   font-size: 1.06rem;
   margin: 14px 0 6px;
 }
-.xped-richtext-body .xped-richtext-subhead:first-child { margin-top: 0; }
+.xped-richtext-body h2 { font-size: 1.28rem; }
+.xped-richtext-body :is(h2, h3):first-child { margin-top: 0; }
 .el-fmt-btn {
   min-width: 28px;
   padding: 0 6px;
@@ -1817,4 +1842,79 @@ dialog.el-dialog[open]:where(:not([data-closing]))::backdrop {
 
 @media (max-width: 600px) {
   .el-summary-balance-grid { grid-template-columns: 1fr; }
+}
+
+.el-consent-card {
+  max-width: 46rem;
+  margin-inline: auto;
+}
+.el-consent-card > p {
+  margin: .6rem 0 1.75rem;
+  color: var(--xped-ink-muted);
+}
+.el-consent-card fieldset {
+  display: grid;
+  gap: .65rem;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+  border: 0;
+}
+.el-consent-card legend {
+  margin-block-end: .75rem;
+  font-weight: 700;
+}
+.el-consent-card label {
+  display: flex;
+  align-items: flex-start;
+  gap: .85rem;
+  padding: .9rem 1.05rem;
+  border: 1px solid var(--xped-border-strong);
+  border-radius: var(--xped-radius-md);
+  cursor: pointer;
+}
+.el-consent-card label:has(:checked) {
+  border-color: var(--xped-blue);
+  box-shadow: inset 0 0 0 1px var(--xped-blue);
+}
+.el-consent-card label input {
+  flex: none;
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  margin: .22rem 0 0;
+  accent-color: var(--xped-blue);
+}
+.el-consent-card label strong, .el-consent-card label span span {
+  display: block;
+}
+.el-consent-card label span span {
+  margin-block-start: .18rem;
+  color: var(--xped-ink-muted);
+  font-size: .94em;
+}
+.el-consent-card > button { display: flex; margin: 1.5rem 0 0 auto; }
+.el-consent-card > button:disabled { opacity: .55; }
+
+.el-consent-card details { margin: .75rem 0 0; color: var(--xped-ink-muted); }
+.el-consent-card details summary { cursor: pointer; font-size: .92em; }
+.el-consent-card details p { margin: .35rem 0 0; }
+
+.xped-summary-export { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin-top: 1.25rem; }
+.xped-summary-export .xped-btn { font-size: .9rem; }
+.el-player-nav.el-summary-finish { justify-content: flex-end; }
+.xped-chart { padding: 1rem 1.25rem; border-radius: var(--xped-radius-md); background: var(--xped-canvas); }
+.xped-chart-number { color: var(--xped-navy); font: 700 1.85rem/1.3 var(--xped-font-display); }
+.xped-summary-bar { display: block; width: 100%; height: .65rem; margin: .5rem 0; accent-color: var(--xped-blue); }
+.xped-summary-bar.is-load { accent-color: var(--xped-coral); }
+.xped-summary-bar.is-resource { accent-color: var(--xped-mint); }
+.xped-visual-stage.height-compact:has(.xped-custom-svg-art) { min-height: 0; padding: .5rem; }
+.xped-print-course { display: none; }
+@page xped-summary { margin: 17mm 18mm; }
+@media print {
+  .el-player-body:has(.xped-completion-card), .el-studio-body:has(#el-mode-preview:not([hidden]) .xped-completion-card) { page: xped-summary; }
+  .xped-print-course { display: block; margin: 0 0 .6rem; font-weight: 700; color: var(--xped-ink-muted); }
+  .xped-completion-card .el-no-print, .xped-completion-card .el-player-nav { display: none !important; }
+  .xped-completion-card { box-shadow: none; border: 0; }
+  .el-summary-section { break-inside: avoid; }
+  .xped-summary-bar { print-color-adjust: exact; }
 }

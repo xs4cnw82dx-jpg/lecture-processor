@@ -82,7 +82,7 @@ test('filtering preserves collapsed groups and next missing reveals the next unf
 test('two queued changes roll back to the last confirmed sharing state and scopes remain separate', async ({page,context})=>{
   await context.grantPermissions(['clipboard-read','clipboard-write']);
   const fixture = await editorFixture(page);
-  const share = {enabled:false,token:'local-only'};
+  const share = {enabled:false,collectResponses:true,token:'local-only'};
   fixture.exp.share = {...share};
   const grants = ['Anna','Anne'].map((label,i)=>({id:'g'+i,label,targetLanguage:'de',urlPath:'/elearning/translate/local-'+i}));
   let release, writes=0;
@@ -365,4 +365,40 @@ test('formatted fallback copy links to its own translation when another block us
   await field.fill('Mein eigener Text');
   await expect(page.locator('#el-undo-btn')).toBeHidden();
   await expect(page.locator('#el-redo-btn')).toBeHidden();
+});
+
+test('owners can turn a learner link into an opt-in pilot and preview both choices', async ({ page }) => {
+  const fixture = await editorFixture(page);
+  const share = { enabled: true, collectResponses: false, token: 'local-only' };
+  fixture.exp.share = share;
+  const reflection = model.createBlock('reflection');
+  reflection.data.prompt = { en: 'Your reflection' };
+  const step = fixture.exp.modules[0].steps[0];
+  step.blocks = [reflection];
+  const posts = [];
+  page.on('request', req => { if (req.url().includes('/public/') && req.method() === 'POST') posts.push(req.url()); });
+  await page.route(sharing, route => {
+    if (route.request().method() === 'POST') share.collectResponses = route.request().postDataJSON().collectResponses;
+    return route.fulfill({ json: { share, grants: [], members: [] } });
+  });
+  await page.goto(editor + '?step=' + step.id);
+  await page.locator('#el-share-btn').click();
+  const collection = page.getByRole('checkbox', { name: 'Collect responses for a pilot' });
+  await expect(collection).not.toBeChecked();
+  await expect(page.locator('#el-share-cohort')).toBeHidden();
+  await expect(page.locator('#el-share-peer-results')).toBeHidden();
+  await collection.check();
+  await expect(page.locator('#el-share-peer-results')).toBeVisible();
+  await expect(page.locator('#el-share-enabled')).toBeChecked();
+  await page.locator('#el-share-dialog').getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  const pane = page.locator('#el-preview-container');
+  for (const [choice, shares] of [['consentPrivate', false], ['consentShare', true]]) {
+    await expect(pane.getByRole('textbox')).toHaveCount(0);
+    await pane.getByRole('radio', { name: new RegExp(model.ui('en', choice)) }).check();
+    await pane.getByRole('button', { name: model.ui('en', 'next'), exact: true }).click();
+    await expect(pane.getByRole('textbox', { name: 'Your reflection' })).toHaveAccessibleDescription(shares ? model.ui('en', 'reflectionAccess') : '');
+    await page.locator('#el-pv-from-step').click();
+  }
+  expect(posts).toEqual([]);
 });

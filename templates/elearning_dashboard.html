@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-admin.css') }}">
 </head>
 <body class="el-library-body">
   {% set shell_title = 'xPEDitie Pijn Studio' %}
@@ -24,6 +25,7 @@
           <img src="{{ url_for('static', filename='images/xped/xped-jan.png') }}" width="175" height="112" alt="">
         </div>
         <div class="el-dash-actions" id="el-author-actions" hidden>
+          <button type="button" class="btn" id="el-admin-btn" hidden>Admin</button>
           <button type="button" class="btn" id="el-import-json-btn">Import JSON</button>
           <input type="file" id="el-import-json-input" accept="application/json" hidden>
           <button type="button" class="btn primary" id="el-new-expedition-btn">New expedition</button>
@@ -42,6 +44,7 @@
   </div>
   </div>
 
+  {% include '_elearning_admin.html' %}
   <dialog class="el-dialog" id="el-create-dialog" closedby="any" aria-labelledby="el-create-dialog-title">
     <div class="el-dialog-header">
       <h2 id="el-create-dialog-title">Create New Expedition</h2>
@@ -120,6 +123,7 @@
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
 </body>
 </html>
