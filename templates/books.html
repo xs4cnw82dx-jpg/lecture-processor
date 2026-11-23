@@ -51,6 +51,6 @@
   <script src="{{ url_for('static', filename='js/book-storage.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-cloud-sync.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-zip.min.js') }}"></script>
-  <script src="{{ url_for('static', filename=book_js_asset or 'js/book-studio.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename=book_js_asset or 'js/book-studio.js') }}"></script>
 </body>
 </html>

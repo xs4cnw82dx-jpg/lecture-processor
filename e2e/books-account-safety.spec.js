@@ -1,5 +1,4 @@
 const { test, expect } = require("@playwright/test");
-const fs = require("node:fs");
 const M = require("../static/js/book-model.js");
 
 async function setup(page, { missingAsset = false } = {}) {
@@ -21,9 +20,6 @@ async function setup(page, { missingAsset = false } = {}) {
       window.changeBookTestAccount=async(uid)=>{auth.currentUser=makeUser(uid);sessionStorage.setItem('book-audit-user',uid||'');await callback(auth.currentUser);};
       window.LectureProcessorBootstrap={getAuth:()=>auth};
     })();`,
-  }));
-  await page.route(/\/static\/js\/book-studio(?:\.min)?\.js(?:\?.*)?$/, (route) => route.fulfill({
-    contentType: "text/javascript", body: fs.readFileSync("static/js/book-studio.js", "utf8"),
   }));
   await page.route("**/api/books**", async (route) => {
     const request = route.request(), path = new URL(request.url()).pathname;

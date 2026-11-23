@@ -1,8 +1,6 @@
 const { test, expect } = require('@playwright/test');
-const fs = require('node:fs');
 const M = require('../static/js/book-model.js');
 
-// Use the production bundle; only identity and server responses are isolated.
 test('a signed-out reader opens a shared book through its name dialog', async ({ page }) => {
   const source = M.book('story');
   const book = { ...source, id: 'shared-story', local: false, role: 'view', owner_uid: 'author', revision: 1, page_ids: source.pages.map((p) => p.id), deleted_page_ids: [], editor: null };
@@ -12,9 +10,6 @@ test('a signed-out reader opens a shared book through its name dialog', async ({
   await page.route('**/static/js/firebase-bootstrap.js*', (route) => route.fulfill({
     contentType: 'text/javascript',
     body: `const auth={currentUser:null,onAuthStateChanged(fn){queueMicrotask(()=>fn(null));}}; window.LectureProcessorBootstrap={getAuth:()=>auth};`,
-  }));
-  await page.route(/\/static\/js\/book-studio(?:\.min)?\.js(?:\?.*)?$/, (route) => route.fulfill({
-    contentType: 'text/javascript', body: fs.readFileSync('static/js/book-studio.min.js', 'utf8'),
   }));
   await page.route('**/api/books/share-session', async (route) => {
     exchanges++;

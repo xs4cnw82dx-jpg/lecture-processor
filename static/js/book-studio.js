@@ -1,55 +1,77 @@
-(function () {
-  "use strict";
-  const M = window.BookModel,
-    P = window.BookPathEditor,
-    D = window.BookStorage,
-    $ = (id) => document.getElementById(id),
-    esc = M.esc;
+import { M, P, D, $, esc, field, selectField, toggle, icon } from "./book-studio-ui.js";
+import { createBookInspector } from "./book-studio-inspector.js";
+import { createBookPointerTools } from "./book-studio-pointer.js";
+import { createBookIO } from "./book-studio-io.js";
+import { bindBookEvents } from "./book-studio-events.js";
+
+function startBookStudio() {
   const auth = window.LectureProcessorBootstrap.getAuth();
-  let user = null,
-    b = null,
-    active = "",
-    selected = [],
-    furnitureSelection = "",
-    activePathPoint = -1,
-    turn = 0,
-    tool = "select",
-    zoom = 1,
-    fit = "book",
-    reading = false,
-    guides = true,
-    snap = true,
-    rulers = false;
+  // Each page owns one editor session. Only its feature instances share this state.
+  const state = {
+    user: null,
+    session: sessionStorage.getItem("book-tab-session") || M.id(),
+    accountGeneration: 0,
+    startupState: "loading",
+    collection: "mine",
+    opening: false,
+
+    book: null,
+    active: "",
+    selected: [],
+    furnitureSelection: "",
+    activePathPoint: -1,
+    selectionRange: null,
+    inlineEdit: null,
+    editBatch: null,
+    undoStack: [],
+    redoStack: [],
+
+    tool: "select",
+    brushColor: "#263343",
+    brushWidth: 0.8,
+    zoom: 1,
+    fit: "book",
+    reading: false,
+    guides: true,
+    snap: true,
+    rulers: false,
+    grid: false,
+    thirds: false,
+    inspectorOpen: true,
+    inspectorTab: "settings",
+    themeChoice: 0,
+    xpedVariant: "corner",
+    xpedMode: "light",
+
+    dirty: false,
+    saving: null,
+    saveTimer: undefined,
+    localWrites: 0,
+    localSaveError: "",
+    saveError: "",
+    savedPages: {},
+
+    leaseToken: "",
+    accessToken: "",
+    lastRefresh: 0,
+    cloudPromotion: null,
+    cloudPhase: "",
+    cloudBlocked: false,
+
+    imageTarget: "",
+    replacement: "",
+    uploads: 0,
+  };
+  let turn = 0;
   let localBooks = [],
     cloudBooks = [],
-    collection = "mine",
-    dirty = false,
     changeCount = 0,
-    saving = null,
-    localWrites = 0,
-    saveTimer,
-    pagesTimer,
-    leaseToken = "",
-    undoStack = [],
-    redoStack = [];
-  let imageTarget = "",
-    replacement = "",
-    selectionRange = null,
-    opening = false;
+    pagesTimer;
   const renderedAssets = {},
     fontCache = {},
     coverCache = {};
-  let session = sessionStorage.getItem("book-tab-session") || M.id(),
-    saveError = "",
-    uploads = 0,
-    lastRefresh = 0;
-  let savedPages = {};
-  let startupState = "loading",
-    startupError = null,
+  let startupError = null,
     startupTask = null;
-  let cloudPromotion = null,
-    cloudPhase = "",
-    cloudBlocked = false;
   const instance = M.id(),
     tabChannel =
       typeof BroadcastChannel !== "undefined"
@@ -57,25 +79,22 @@
         : null;
   if (tabChannel)
     tabChannel.onmessage = ({ data }) => {
-      if (data.session !== session || data.instance === instance) return;
+      if (data.session !== state.session || data.instance === instance) return;
       if (data.type === "probe")
-        tabChannel.postMessage({ type: "occupied", session, instance });
+        tabChannel.postMessage({ type: "occupied", session: state.session, instance });
       else if (data.type === "occupied") {
-        session = M.id();
-        sessionStorage.setItem("book-tab-session", session);
+        state.session = M.id();
+        sessionStorage.setItem("book-tab-session", state.session);
       }
     };
-  if (tabChannel) tabChannel.postMessage({ type: "probe", session, instance });
-  sessionStorage.setItem("book-tab-session", session);
-  let accessToken = "",
-    accountGeneration = 0,
-    localSaveError = "";
-  const storageScope = () => user?.uid || "guest:" + session;
+  if (tabChannel) tabChannel.postMessage({ type: "probe", session: state.session, instance });
+  sessionStorage.setItem("book-tab-session", state.session);
+  const storageScope = () => state.user?.uid || "guest:" + state.session;
   const accountChangedError = () => Object.assign(new Error("Your account changed. Open the book again in the right account."), { code: "account" });
   function assertAccount(generation) {
-    if (generation !== accountGeneration) throw accountChangedError();
+    if (generation !== state.accountGeneration) throw accountChangedError();
   }
-  function scopeDraft(book, uid = user?.uid) {
+  function scopeDraft(book, uid = state.user?.uid) {
     if (uid && !D.accountUid(book)) book.cacheAccountUid = uid;
     return book;
   }
@@ -83,40 +102,40 @@
     key: ({ book }) => D.accountUid(book) + ":" + book.id,
     snapshot: ({ book, count }) => ({ book: M.clone(book), count }),
     write: ({ book }) => D.putBook(book),
-    onState: ({ busy }) => { localWrites = Number(busy); updateStatus(); },
+    onState: ({ busy }) => { state.localWrites = Number(busy); updateStatus(); },
     onSaved: ({ book, count }) => {
-      if (b?.id !== book.id || D.accountUid(b) !== D.accountUid(book)) return;
-      localSaveError = "";
-      if (b.local && changeCount === count) dirty = false;
+      if (state.book?.id !== book.id || D.accountUid(state.book) !== D.accountUid(book)) return;
+      state.localSaveError = "";
+      if (state.book.local && changeCount === count) state.dirty = false;
     },
     onError: (error) => {
-      localSaveError = error.message;
-      if (b) notify(error.message, true);
+      state.localSaveError = error.message;
+      if (state.book) notify(error.message, true);
     },
   });
-  function queueLocalSave(book = b, count = changeCount) {
+  function queueLocalSave(book = state.book, count = changeCount) {
     if (book) localSaves.enqueue({ book, count });
   }
   function clearWorkspace() {
     finishText();
-    clearTimeout(saveTimer);
+    clearTimeout(state.saveTimer);
     clearTimeout(pagesTimer);
     cancelAnimationFrame(stageFrame);
     stageFrame = 0;
     window.BookColorPicker?.close();
     closeDialog();
-    b = null;
-    leaseToken = accessToken = active = "";
-    cloudPhase = "";
-    cloudBlocked = false;
-    selected = [];
-    undoStack = [];
-    redoStack = [];
-    savedPages = {};
-    selectionRange = null;
-    furnitureSelection = "";
-    dirty = false;
-    saveError = localSaveError = "";
+    state.book = null;
+    state.leaseToken = state.accessToken = state.active = "";
+    state.cloudPhase = "";
+    state.cloudBlocked = false;
+    state.selected = [];
+    state.undoStack = [];
+    state.redoStack = [];
+    state.savedPages = {};
+    state.selectionRange = null;
+    state.furnitureSelection = "";
+    state.dirty = false;
+    state.saveError = state.localSaveError = "";
     localBooks = [];
     cloudBooks = [];
     Object.values(renderedAssets).forEach((asset) => URL.revokeObjectURL(asset.src));
@@ -130,9 +149,9 @@
     ["edit-turn", "finish-turn", "reading", "share", "export", "retry-cloud-save"].forEach((id) => { $(id).hidden = true; });
   }
   async function retirePrivateBook(error) {
-    const previous = b;
+    const previous = state.book;
     let recovery;
-    if (previous && (dirty || previous.pending)) {
+    if (previous && (state.dirty || previous.pending)) {
       // Recovery remains tied to the viewer who made these edits, including
       // collaborators whose uid differs from the book owner's uid.
       previous.cacheAccountUid ||= storageScope();
@@ -173,79 +192,22 @@
     }
   };
   const page = () =>
-    (b && b.pages.find((p) => p.id === active)) || (b && b.pages[0]);
-  const item = () => page() && page().items.find((o) => o.id === selected[0]);
-  const editable = () => !!b && (b.local || !!leaseToken) && !b.deleted && cloudPhase !== "finishing" && !cloudBlocked;
+    (state.book && state.book.pages.find((p) => p.id === state.active)) || (state.book && state.book.pages[0]);
+  const item = () => page() && page().items.find((o) => o.id === state.selected[0]);
+  const editable = () => !!state.book && (state.book.local || !!state.leaseToken) && !state.book.deleted && state.cloudPhase !== "finishing" && !state.cloudBlocked;
   const metadata = () => ({
-    title: b.title,
-    folder: b.folder,
-    tags: b.tags,
-    favorite: b.favorite,
-    palette: b.palette,
-    styles: b.styles,
-    illustration: b.illustration,
-    theme: b.theme || null,
-    pageNumbers: M.pageNumberOptions(b.pageNumbers),
+    title: state.book.title,
+    folder: state.book.folder,
+    tags: state.book.tags,
+    favorite: state.book.favorite,
+    palette: state.book.palette,
+    styles: state.book.styles,
+    illustration: state.book.illustration,
+    theme: state.book.theme || null,
+    pageNumbers: M.pageNumberOptions(state.book.pageNumbers),
   });
-  const field = (label, name, value, type = "text", extra = "") =>
-    `<label class="book-field"><span>${esc(label)}</span><input type="${type}" data-field="${name}" value="${esc(value)}" data-last-value="${esc(value)}" ${extra}></label>`;
-  const selectField = (label, name, value, options) =>
-    `<label class="book-field"><span>${esc(label)}</span><select data-app-select ${name === "style.font" ? "data-app-select-search" : ""} data-field="${name}">${options
-      .map((o) => {
-        const v = Array.isArray(o) ? o[0] : o,
-          l = Array.isArray(o) ? o[1] : o;
-        return `<option value="${esc(v)}"${String(v) === String(value) ? " selected" : ""}>${esc(l)}</option>`;
-      })
-      .join("")}</select></label>`;
-  const toggle = (label, name, value) =>
-    `<label class="book-switch"><span>${esc(label)}</span><input type="checkbox" class="app-toggle" role="switch" data-field="${name}"${value ? " checked" : ""}></label>`;
-  const icons = {
-    line: '<path d="M3 18 9 8l6 8 6-12"/>',
-    select: '<path d="m5 3 14 9-7 1-3 7Z"/>',
-    text: '<path d="M4 5h16M12 5v15M8 20h8"/>',
-    image:
-      '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',
-    shape: '<rect x="3" y="5" width="18" height="14" rx="5"/>',
-    pen: '<path d="m4 16-1 5 5-1L21 7l-5-5Z M14 4l6 6"/>',
-    more: '<path d="M12 4v16M4 12h16"/>',
-    undo: '<path d="m8 4-5 5 5 5M3 9h11a6 6 0 0 1 0 12"/>',
-    redo: '<path d="m16 4 5 5-5 5M21 9H10a6 6 0 0 0 0 12"/>',
-    settings:
-      '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/>',
-    up: '<path d="m6 14 6-6 6 6M12 8v12"/>',
-    down: '<path d="m6 10 6 6 6-6M12 4v12"/>',
-    lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/>',
-    unlock:
-      '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0M12 14v3"/>',
-    eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
-    hidden:
-      '<path d="m3 3 18 18M10 5c7-1 12 7 12 7a20 20 0 0 1-4 4M6 6a20 20 0 0 0-4 6s3 7 10 7a12 12 0 0 0 5-1"/>',
-    copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',
-    trash: '<path d="M3 6h18M8 6V3h8v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
-    arrow: '<path d="M3 12h18m-6-6 6 6-6 6"/>',
-    table:
-      '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M11 3v18"/>',
-    flow: '<rect x="5" y="2" width="14" height="6" rx="2"/><rect x="5" y="16" width="14" height="6" rx="2"/><path d="M12 8v8m-3-3 3 3 3-3"/>',
-    close: '<path d="m6 6 12 12M6 18 18 6"/>',
-    history: '<path d="M3 4v6h6M3 10a9 9 0 1 1 1 8M12 7v5l4 2"/>',
-    rotate: '<path d="M20 4v6h-6M20 10a8 8 0 1 0 0 7"/>',
-  };
-  const icon = (name) =>
-    `<svg class="book-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icons[name] || icons.shape}</svg>`;
-  const iconButton = (name, label, attrs = "") =>
-    `<button class="icon-btn" aria-label="${esc(label)}" title="${esc(label)}" ${attrs}>${icon(name)}</button>`;
-  let inlineEdit = null,
-    stageFrame = 0,
-    editBatch = null,
-    grid = false,
-    thirds = false,
-    inspectorOpen = true;
-  let inspectorTab = "settings";
-  let cachedVersions = [],
-    themeChoice = 0;
-  let xpedVariant = "corner", xpedMode = "light";
-  const panelDetails = new Set();
-  const liveColorValues = new WeakMap();
+  let stageFrame = 0;
+  let cachedVersions = [];
   const themes = [
     {
       name: "Moonlit story",
@@ -280,12 +242,12 @@
     const prefs = JSON.parse(
       localStorage.getItem("book-view-preferences") || "{}",
     );
-    guides = prefs.guides ?? true;
-    snap = prefs.snap ?? true;
-    rulers = !!prefs.rulers;
-    grid = !!prefs.grid;
-    thirds = !!prefs.thirds;
-    inspectorOpen = prefs.inspectorOpen !== false;
+    state.guides = prefs.guides ?? true;
+    state.snap = prefs.snap ?? true;
+    state.rulers = !!prefs.rulers;
+    state.grid = !!prefs.grid;
+    state.thirds = !!prefs.thirds;
+    state.inspectorOpen = prefs.inspectorOpen !== false;
   } catch (_) {
     /* A browser may block device preferences. Editing still works. */
   }
@@ -293,40 +255,26 @@
     try {
       localStorage.setItem(
         "book-view-preferences",
-        JSON.stringify({ guides, snap, rulers, grid, thirds, inspectorOpen }),
+        JSON.stringify({ guides: state.guides, snap: state.snap, rulers: state.rulers, grid: state.grid, thirds: state.thirds, inspectorOpen: state.inspectorOpen }),
       );
     } catch (_) {
       /* Optional preference storage. */
     }
   }
-  function setInspector(
-    open,
-    mobile = $("inspector").classList.contains("mobile-open"),
-  ) {
-    inspectorOpen = open;
-    $("workspace").classList.toggle("inspector-closed", !open);
-    $("inspector").classList.toggle("mobile-open", open && mobile);
-    $("page-settings").setAttribute(
-      "aria-expanded",
-      String(open && (innerWidth > 780 || mobile)),
-    );
-    saveView();
-    requestAnimationFrame(fitStage);
-  }
   function clearSelection() {
     finishText();
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
-    selectionRange = null;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
+    state.selectionRange = null;
     renderSelection();
-    renderInspector();
+    inspector.renderInspector();
   }
   function editCheckpoint(key) {
     if (!editable() || item()?.locked) return false;
-    if (editBatch === key) return true;
+    if (state.editBatch === key) return true;
     if (!checkpoint()) return false;
-    editBatch = key;
+    state.editBatch = key;
     return true;
   }
   function decorateTools() {
@@ -348,7 +296,7 @@
       el.innerHTML = icon(name) + (label ? `<span>${esc(label)}</span>` : "");
       if (!el.title) el.title = el.getAttribute("aria-label") || label;
     });
-    setInspector(inspectorOpen);
+    inspector.setInspector(state.inspectorOpen);
   }
   function rulerMarkup() {
     const ticks = (extent, vertical) =>
@@ -362,14 +310,14 @@
     return `<svg class="book-ruler-x" viewBox="0 0 ${M.W} 8" preserveAspectRatio="none" aria-hidden="true">${ticks(M.W, false)}</svg><svg class="book-ruler-y" viewBox="0 0 10 ${M.H}" preserveAspectRatio="none" aria-hidden="true">${ticks(M.H, true)}</svg>`;
   }
   function editorGuides(pid) {
-    if (reading || (!grid && !thirds)) return "";
-    return `<svg class="book-grid-overlay" viewBox="0 0 ${M.W} ${M.H}" aria-hidden="true">${grid ? `<defs><pattern id="layout-${pid}" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M5 0H0V5" fill="none" stroke="#7282ac" stroke-width=".15" opacity=".35"/></pattern></defs><rect width="${M.W}" height="${M.H}" fill="url(#layout-${pid})"/>` : ""}${thirds ? [1 / 3, 0.5, 2 / 3].map((f) => `<path d="M${M.W * f} 0V${M.H} M0 ${M.H * f}H${M.W}" stroke="#8b77bd" stroke-width=".25" stroke-dasharray="1 2" opacity=".6"/>`).join("") : ""}</svg>`;
+    if (state.reading || (!state.grid && !state.thirds)) return "";
+    return `<svg class="book-grid-overlay" viewBox="0 0 ${M.W} ${M.H}" aria-hidden="true">${state.grid ? `<defs><pattern id="layout-${pid}" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M5 0H0V5" fill="none" stroke="#7282ac" stroke-width=".15" opacity=".35"/></pattern></defs><rect width="${M.W}" height="${M.H}" fill="url(#layout-${pid})"/>` : ""}${state.thirds ? [1 / 3, 0.5, 2 / 3].map((f) => `<path d="M${M.W * f} 0V${M.H} M0 ${M.H * f}H${M.W}" stroke="#8b77bd" stroke-width=".25" stroke-dasharray="1 2" opacity=".6"/>`).join("") : ""}</svg>`;
   }
   function feedback(lines = [], box = null) {
     document
       .querySelectorAll(".book-drag-guides,.book-drag-hud")
       .forEach((n) => n.remove());
-    const sheet = $("book-spread").querySelector(`[data-page-id="${active}"]`);
+    const sheet = $("book-spread").querySelector(`[data-page-id="${state.active}"]`);
     if (!sheet) return;
     if (lines.length)
       sheet.insertAdjacentHTML(
@@ -386,19 +334,19 @@
     const bar = $("selection-toolbar"),
       o = item();
     if (!bar) return;
-    bar.hidden = (!o && !furnitureSelection) || reading || !editable();
-    if (!bar.hidden && furnitureSelection) {
-      bar.innerHTML = `<span>${furnitureSelection === "logo" ? "xPED logo" : "Page number"}</span><button data-command="furniture-settings" class="secondary-btn">${icon("settings")} Position & style</button><button data-command="reset-furniture" class="secondary-btn">Reset position</button>`;
+    bar.hidden = (!o && !state.furnitureSelection) || state.reading || !editable();
+    if (!bar.hidden && state.furnitureSelection) {
+      bar.innerHTML = `<span>${state.furnitureSelection === "logo" ? "xPED logo" : "Page number"}</span><button data-command="furniture-settings" class="secondary-btn">${icon("settings")} Position & style</button><button data-command="reset-furniture" class="secondary-btn">Reset position</button>`;
       return;
     }
     if (bar.hidden) return;
-    bar.innerHTML = `<span>${selected.length > 1 ? selected.length + " selected" : esc(o.name)}</span><button data-command="object-settings" class="secondary-btn" aria-label="Object settings">${icon("settings")} Settings</button>${o.locked ? `<button data-lock="${o.id}" class="secondary-btn">${icon("unlock")} Unlock</button>` : `${o.type === "text" ? '<button data-command="edit-on-page" class="secondary-btn">' + icon("text") + " Edit text</button>" : ""}<button data-command="duplicate-object" class="icon-btn" title="Duplicate (⌘/Ctrl D)" aria-label="Duplicate selection">${icon("copy")}</button><button data-command="delete-object" class="icon-btn book-danger" title="Delete" aria-label="Delete selection">${icon("trash")}</button>${selected.length > 1 ? '<button data-command="group-objects" class="secondary-btn">' + (o.group ? "Ungroup" : "Group") + "</button>" : ""}`}`;
+    bar.innerHTML = `<span>${state.selected.length > 1 ? state.selected.length + " selected" : esc(o.name)}</span><button data-command="object-settings" class="secondary-btn" aria-label="Object settings">${icon("settings")} Settings</button>${o.locked ? `<button data-lock="${o.id}" class="secondary-btn">${icon("unlock")} Unlock</button>` : `${o.type === "text" ? '<button data-command="edit-on-page" class="secondary-btn">' + icon("text") + " Edit text</button>" : ""}<button data-command="duplicate-object" class="icon-btn" title="Duplicate (⌘/Ctrl D)" aria-label="Duplicate selection">${icon("copy")}</button><button data-command="delete-object" class="icon-btn book-danger" title="Delete" aria-label="Delete selection">${icon("trash")}</button>${state.selected.length > 1 ? '<button data-command="group-objects" class="secondary-btn">' + (o.group ? "Ungroup" : "Group") + "</button>" : ""}`}`;
   }
   function startText() {
     const o = item();
-    if (!o || o.type !== "text" || o.locked || !editable() || inlineEdit)
+    if (!o || o.type !== "text" || o.locked || !editable() || state.inlineEdit)
       return;
-    const sheet = $("book-spread").querySelector(`[data-page-id="${active}"]`);
+    const sheet = $("book-spread").querySelector(`[data-page-id="${state.active}"]`);
     if (!sheet) return;
     const editor = document.createElement("textarea");
     editor.id = "canvas-text-editor";
@@ -408,20 +356,20 @@
     editor.spellcheck = true;
     editor.value = o.runs?.length ? o.runs.map((r) => r.text).join("") : o.text;
     positionTextEditor(o, sheet);
-    inlineEdit = { id: o.id, page: active, editor };
+    state.inlineEdit = { id: o.id, page: state.active, editor };
     sheet.append(editor);
     editor.focus();
     editor.select();
     editor.addEventListener("input", () => {
       if (!editCheckpoint("inline-" + o.id)) return;
       M.replaceText(o, editor.value);
-      selectionRange = null;
+      state.selectionRange = null;
       changed(false);
       if ($("object-text")) $("object-text").value = editor.value;
       schedulePages();
     });
     const range = () => {
-      selectionRange = {
+      state.selectionRange = {
         start: editor.selectionStart,
         end: editor.selectionEnd,
       };
@@ -437,10 +385,10 @@
         e.preventDefault();
         e.stopPropagation();
         finishText();
-        selectionRange = null;
+        state.selectionRange = null;
         renderStage();
-        renderInspector();
-        $("book-spread").querySelector(`[data-page-id="${active}"]`)?.focus();
+        inspector.renderInspector();
+        $("book-spread").querySelector(`[data-page-id="${state.active}"]`)?.focus();
       }
     });
   }
@@ -464,27 +412,27 @@
     });
   }
   function finishText() {
-    if (!inlineEdit) return;
-    inlineEdit.editor.remove();
-    inlineEdit = null;
-    editBatch = null;
+    if (!state.inlineEdit) return;
+    state.inlineEdit.editor.remove();
+    state.inlineEdit = null;
+    state.editBatch = null;
     cancelAnimationFrame(stageFrame);
     stageFrame = requestAnimationFrame(() => {
       stageFrame = 0;
-      if (!inlineEdit && b) renderStage();
+      if (!state.inlineEdit && state.book) renderStage();
     });
   }
   function selectedItems() {
-    return page().items.filter((o) => selected.includes(o.id) && !o.locked);
+    return page().items.filter((o) => state.selected.includes(o.id) && !o.locked);
   }
   function pageBlocks() {
     const blocks = [],
       seen = new Set();
-    b.pages.slice(1, -1).forEach((p) => {
+    state.book.pages.slice(1, -1).forEach((p) => {
       if (seen.has(p.id)) return;
       const link = p.items.find((o) => o.spanId);
       const block = link
-        ? b.pages
+        ? state.book.pages
             .slice(1, -1)
             .filter((q) => q.items.some((o) => o.spanId === link.spanId))
         : [p];
@@ -495,51 +443,51 @@
   }
   function canMovePage(direction) {
     const blocks = pageBlocks(),
-      at = blocks.findIndex((group) => group.some((p) => p.id === active));
+      at = blocks.findIndex((group) => group.some((p) => p.id === state.active));
     return at >= 0 && at + direction >= 0 && at + direction < blocks.length;
   }
   function movePage(direction) {
     if (!canMovePage(direction) || !checkpoint()) return;
     const blocks = pageBlocks(),
-      at = blocks.findIndex((group) => group.some((p) => p.id === active));
+      at = blocks.findIndex((group) => group.some((p) => p.id === state.active));
     [blocks[at], blocks[at + direction]] = [blocks[at + direction], blocks[at]];
-    b.pages = [b.pages[0], ...blocks.flat(), b.pages.at(-1)];
+    state.book.pages = [state.book.pages[0], ...blocks.flat(), state.book.pages.at(-1)];
     keepSpreadsTogether();
     changed();
   }
   function themeDialog() {
-    const isXped = themeChoice === "xped";
+    const isXped = state.themeChoice === "xped";
     const xpedOptions = isXped
-      ? `<section class="book-xped-options" aria-label="xPED design options"><div class="book-theme-setting"><div><h3>Inside pages</h3><p class="book-muted">Alternating signature corners, on light or dark paper.</p></div><div class="book-segmented" role="group" aria-label="Inside page appearance"><button data-xped-mode="light" aria-pressed="${xpedMode === "light"}">Light pages</button><button data-xped-mode="dark" aria-pressed="${xpedMode === "dark"}">Dark pages</button></div></div><h3>Choose a cover pair</h3><div class="book-cover-grid">${M.xped.variants.map((v) => `<button class="book-cover-choice" data-xped-variant="${v.id}" aria-pressed="${xpedVariant === v.id}"><span class="book-cover-pair"><span>${M.svg(M.coverPreview(v.id, xpedMode, "front"))}<small>Front</small></span><span>${M.svg(M.coverPreview(v.id, xpedMode, "back"))}<small>Back</small></span></span><strong>${esc(v.name)}</strong><span>${esc(v.description)}</span></button>`).join("")}</div><p class="book-muted">Your words and illustrations stay in place. Theme artwork can be hidden on any page.</p></section>` : "";
+      ? `<section class="book-xped-options" aria-label="xPED design options"><div class="book-theme-setting"><div><h3>Inside pages</h3><p class="book-muted">Alternating signature corners, on light or dark paper.</p></div><div class="book-segmented" role="group" aria-label="Inside page appearance"><button data-xped-mode="light" aria-pressed="${state.xpedMode === "light"}">Light pages</button><button data-xped-mode="dark" aria-pressed="${state.xpedMode === "dark"}">Dark pages</button></div></div><h3>Choose a cover pair</h3><div class="book-cover-grid">${M.xped.variants.map((v) => `<button class="book-cover-choice" data-xped-variant="${v.id}" aria-pressed="${state.xpedVariant === v.id}"><span class="book-cover-pair"><span>${M.svg(M.coverPreview(v.id, state.xpedMode, "front"))}<small>Front</small></span><span>${M.svg(M.coverPreview(v.id, state.xpedMode, "back"))}<small>Back</small></span></span><strong>${esc(v.name)}</strong><span>${esc(v.description)}</span></button>`).join("")}</div><p class="book-muted">Your words and illustrations stay in place. Theme artwork can be hidden on any page.</p></section>` : "";
     dialog(
       "Book themes",
-      `<p class="book-muted">A coordinated palette, paper and text styles for the whole book. Existing custom colors stay as you chose them.</p><div class="book-theme-grid">${themes.map((t, i) => `<button class="book-theme" data-theme="${i}" aria-pressed="${i === themeChoice}"><svg viewBox="0 0 160 105" aria-hidden="true"><rect width="160" height="105" rx="8" fill="${t.paper}"/><circle cx="126" cy="30" r="17" fill="${t.palette[2]}"/><path d="M0 80Q50 35 95 83T160 70V105H0Z" fill="${t.palette[1]}"/><text x="12" y="37" font-family="${t.font}" font-size="16" fill="${t.palette[3]}">A little story</text><path d="M13 51h68M13 60h55" stroke="${t.palette[0]}" stroke-width="2"/></svg><strong>${t.name}</strong><span>${t.font} + ${t.body}</span></button>`).join("")}<button class="book-theme book-theme-xped" data-theme="xped" aria-pressed="${isXped}"><span class="book-xped-swatch" aria-hidden="true"><span></span><span></span><span></span></span><strong>xPED</strong><span>Four cover designs · light or dark pages</span></button></div>${xpedOptions}<div class="book-theme-apply"><button id="apply-theme" class="primary-btn">Apply ${isXped ? "xPED" : themes[themeChoice].name}</button><span class="book-muted">You can undo this change.</span></div>`,
+      `<p class="book-muted">A coordinated palette, paper and text styles for the whole book. Existing custom colors stay as you chose them.</p><div class="book-theme-grid">${themes.map((t, i) => `<button class="book-theme" data-theme="${i}" aria-pressed="${i === state.themeChoice}"><svg viewBox="0 0 160 105" aria-hidden="true"><rect width="160" height="105" rx="8" fill="${t.paper}"/><circle cx="126" cy="30" r="17" fill="${t.palette[2]}"/><path d="M0 80Q50 35 95 83T160 70V105H0Z" fill="${t.palette[1]}"/><text x="12" y="37" font-family="${t.font}" font-size="16" fill="${t.palette[3]}">A little story</text><path d="M13 51h68M13 60h55" stroke="${t.palette[0]}" stroke-width="2"/></svg><strong>${t.name}</strong><span>${t.font} + ${t.body}</span></button>`).join("")}<button class="book-theme book-theme-xped" data-theme="xped" aria-pressed="${isXped}"><span class="book-xped-swatch" aria-hidden="true"><span></span><span></span><span></span></span><strong>xPED</strong><span>Four cover designs · light or dark pages</span></button></div>${xpedOptions}<div class="book-theme-apply"><button id="apply-theme" class="primary-btn">Apply ${isXped ? "xPED" : themes[state.themeChoice].name}</button><span class="book-muted">You can undo this change.</span></div>`,
     );
   }
   function applyTheme() {
     if (!checkpoint()) return;
-    if (themeChoice === "xped") {
-      M.applyXpedTheme(b, xpedVariant, xpedMode);
+    if (state.themeChoice === "xped") {
+      M.applyXpedTheme(state.book, state.xpedVariant, state.xpedMode);
       changed();
       closeDialog();
       notify("xPED applied to your book.");
       return;
     }
-    const t = themes[themeChoice],
-      old = b.palette.slice(),
-      oldBodyFont = b.styles.body.font;
-    b.theme = null;
-    b.palette = t.palette.slice();
+    const t = themes[state.themeChoice],
+      old = state.book.palette.slice(),
+      oldBodyFont = state.book.styles.body.font;
+    state.book.theme = null;
+    state.book.palette = t.palette.slice();
     ["heading", "body", "caption"].forEach((k) => {
-      b.styles[k].font = k === "heading" ? t.font : t.body;
-      b.styles[k].color = t.palette[3];
+      state.book.styles[k].font = k === "heading" ? t.font : t.body;
+      state.book.styles[k].color = t.palette[3];
     });
-    b.pages.forEach((p) => {
+    state.book.pages.forEach((p) => {
       p.background = t.paper;
       p.decoration = null;
       p.items.forEach((o) => {
         if (o.styleName) {
-          o.style = { ...o.style, ...b.styles[o.styleName] };
+          o.style = { ...o.style, ...state.book.styles[o.styleName] };
           o.runs = [];
         }
         if (o.type === "table" && o.tableStyle !== "custom") {
@@ -605,7 +553,6 @@
       `<input id="shortcut-search" type="search" aria-label="Search shortcuts" placeholder="Find a shortcut…"><div class="book-shortcut-list">${rows.map((r) => `<div class="book-shortcut" data-search="${esc(r.join(" ").toLowerCase())}"><span>${r[0]}</span><kbd>${r[1]}</kbd><p>${r[2]}</p></div>`).join("")}</div>`,
     );
   }
-
   function notify(message, error = false) {
     const node = $("book-toast");
     const ux = window.LectureProcessorUx;
@@ -620,15 +567,15 @@
     $("save-state").textContent = message;
   }
   async function api(url, options = {}, blob = false, accountUid = "") {
-    const headers = { "X-Book-Session": session, ...options.headers };
-    const requestUser = user, generation = accountGeneration;
+    const headers = { "X-Book-Session": state.session, ...options.headers };
+    const requestUser = state.user, generation = state.accountGeneration;
     if (accountUid && requestUser?.uid !== accountUid)
       throw new Error("Sign in with the same account to continue saving this draft.");
     if (requestUser) headers.Authorization = "Bearer " + (await requestUser.getIdToken());
     assertAccount(generation);
-    if (accountUid && user?.uid !== accountUid)
+    if (accountUid && state.user?.uid !== accountUid)
       throw new Error("Cloud saving paused because your account changed.");
-    if (accessToken && !accountUid) headers["X-Book-Access"] = accessToken;
+    if (state.accessToken && !accountUid) headers["X-Book-Access"] = state.accessToken;
     if (options.body && !(options.body instanceof FormData))
       headers["Content-Type"] = "application/json";
     const r = await fetch(url, { ...options, headers });
@@ -643,11 +590,11 @@
       assertAccount(generation);
       const e = new Error(p.error || "Please try again.");
       e.status = r.status;
-      const path = url.split("?")[0], current = b;
+      const path = url.split("?")[0], current = state.book;
       if ([401, 403, 404].includes(r.status) && current && !current.local) {
         const bookPath = "/api/books/" + current.id;
         if (path === bookPath || path === bookPath + "/revision") {
-          accountGeneration++;
+          state.accountGeneration++;
           await retirePrivateBook(e);
         } else if (path.startsWith(bookPath + "/") && r.status !== 404) {
           // Losing an editing capability does not necessarily revoke viewing.
@@ -662,12 +609,12 @@
     return result;
   }
   async function loadLibrary() {
-    const generation = accountGeneration, uid = user?.uid;
+    const generation = state.accountGeneration, uid = state.user?.uid;
     const stored = await D.listBooks(storageScope());
     assertAccount(generation);
     localBooks = stored;
     cloudBooks = [];
-    if (user) {
+    if (state.user) {
       try {
         const result = await api("/api/books");
         assertAccount(generation);
@@ -686,9 +633,9 @@
     await loadCovers();
   }
   async function loadCovers() {
-    const generation = accountGeneration;
+    const generation = state.accountGeneration;
     for (const entry of cloudBooks.filter((x) => !x.deleted).slice(0, 30)) {
-      if (b) return;
+      if (state.book) return;
       try {
         const cached = localBooks.find(
           (x) =>
@@ -722,27 +669,27 @@
         }
         renderLibrary();
       } catch (_) {
-        if (generation !== accountGeneration) return;
+        if (generation !== state.accountGeneration) return;
         /* The bookshelf remains usable if a cover cannot load. */
       }
     }
   }
   function renderLibrary() {
-    if (b || startupError) return;
+    if (state.book || startupError) return;
     let list =
-      collection === "shared"
+      state.collection === "shared"
         ? cloudBooks.filter((x) => x.role !== "owner" && !x.deleted)
-        : collection === "local"
+        : state.collection === "local"
           ? localBooks.filter((x) => x.local && !x.deleted)
-          : collection === "trash"
+          : state.collection === "trash"
             ? [
                 ...localBooks.filter((x) => x.local && x.deleted),
                 ...cloudBooks.filter((x) => x.deleted),
               ]
-            : user
+            : state.user
               ? [
                   ...cloudBooks.filter((x) => x.role === "owner" && !x.deleted),
-                  ...localBooks.filter((x) => x.local && !x.deleted && x.cloudAccountUid === user.uid),
+                  ...localBooks.filter((x) => x.local && !x.deleted && x.cloudAccountUid === state.user.uid),
                 ]
               : localBooks.filter((x) => x.local && !x.deleted);
     const query = $("book-search").value.toLowerCase();
@@ -768,10 +715,10 @@
             const cached = localBooks.find((l) => l.id === x.id),
               cover =
                 coverCache[x.id] || (cached && cached.pages && cached.pages[0]);
-            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.local && user?.uid && x.cloudAccountUid === user.uid ? "Waiting to save to your account" : x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { month: "short", day: "numeric" })}</p></article>`;
+            return `<article class="book-card"><button class="book-cover-button" data-open="${esc(x.id)}" aria-label="Open ${esc(x.title)}"><span class="book-mini-cover">${cover ? M.svg(cover, renderedAssets) : M.svg({ ...M.page("front"), items: [M.object("text", { text: x.title, y: 38, w: 108, h: 90, style: { ...M.baseStyle, font: "Fraunces", size: 28 } })] })}</span></button><div class="book-card-title"><h3>${x.favorite ? "★ " : ""}${esc(x.title)}</h3><button class="icon-btn" data-book-options="${esc(x.id)}" aria-label="Options for ${esc(x.title)}">•••</button></div><p>${esc(x.local && state.user?.uid && x.cloudAccountUid === state.user.uid ? "Waiting to save to your account" : x.folder || (x.local ? "On this device" : "Saved to cloud"))} · ${new Date(x.updated_at * 1000).toLocaleDateString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), { month: "short", day: "numeric" })}</p></article>`;
           })
           .join("")
-      : `<div class="book-empty"><h2>${query ? "No books found" : collection === "trash" ? "Nothing in the trash" : collection === "shared" ? "A place for shared stories" : "Your next idea starts here"}</h2><p>${query ? "Try another title, folder or tag." : collection === "shared" ? "Books shared with your email address will appear here." : collection === "trash" ? "Deleted books can be restored here." : "Start with a blank page or choose a little inspiration."}</p>${!query && ["mine", "local"].includes(collection) ? '<button class="primary-btn" data-new>＋ Create a book</button>' : ""}</div>`;
+      : `<div class="book-empty"><h2>${query ? "No books found" : state.collection === "trash" ? "Nothing in the trash" : state.collection === "shared" ? "A place for shared stories" : "Your next idea starts here"}</h2><p>${query ? "Try another title, folder or tag." : state.collection === "shared" ? "Books shared with your email address will appear here." : state.collection === "trash" ? "Deleted books can be restored here." : "Start with a blank page or choose a little inspiration."}</p>${!query && ["mine", "local"].includes(state.collection) ? '<button class="primary-btn" data-new>＋ Create a book</button>' : ""}</div>`;
   }
   function dialog(title, html, userTitle = false) {
     finishText();
@@ -801,66 +748,66 @@
     );
   }
   async function create(template) {
-    const generation = accountGeneration, next = scopeDraft(M.book(template));
+    const generation = state.accountGeneration, next = scopeDraft(M.book(template));
     await D.putBook(next);
     assertAccount(generation);
     closeDialog();
     await openBook(next.id);
   }
   function currentSpreads() {
-    return M.spreads(b.pages, fit === "page" || window.innerWidth <= 780);
+    return M.spreads(state.book.pages, state.fit === "page" || window.innerWidth <= 780);
   }
   function syncTurn() {
     const spreads = currentSpreads(),
-      index = spreads.findIndex((s) => s.includes(active));
+      index = spreads.findIndex((s) => s.includes(state.active));
     turn = Math.max(0, index);
     return spreads;
   }
   async function openBook(id) {
-    if (opening) return;
-    const generation = accountGeneration;
+    if (state.opening) return;
+    const generation = state.accountGeneration;
     let switched = false;
-    opening = true;
+    state.opening = true;
     $("book-loading").hidden = false;
     $("library").hidden = true;
     status("Opening book…");
     try {
-      if (b) await persist();
-      if (cloudPromotion) await cloudPromotion.catch(() => {});
+      if (state.book) await persist();
+      if (state.cloudPromotion) await state.cloudPromotion.catch(() => {});
       assertAccount(generation);
-      if (b && !b.local && leaseToken) await release();
+      if (state.book && !state.book.local && state.leaseToken) await release();
       assertAccount(generation);
       const cached = await D.getBook(id, storageScope());
       assertAccount(generation);
       clearWorkspace();
       switched = true;
-      b = cached;
-      if (!b && id.startsWith("local-")) {
+      state.book = cached;
+      if (!state.book && id.startsWith("local-")) {
         const operation = await D.getSync(id);
         assertAccount(generation);
-        if (operation?.complete && operation.uid === user?.uid) {
+        if (operation?.complete && operation.uid === state.user?.uid) {
           id = operation.remoteId;
           const promoted = await D.getBook(id, storageScope());
           assertAccount(generation);
-          b = promoted;
+          state.book = promoted;
         }
       }
-      leaseToken = "";
-      selected = [];
-      furnitureSelection = "";
-      activePathPoint = -1;
-      undoStack = [];
-      redoStack = [];
-      dirty = false;
+      state.leaseToken = "";
+      state.selected = [];
+      state.furnitureSelection = "";
+      state.activePathPoint = -1;
+      state.undoStack = [];
+      state.redoStack = [];
+      state.dirty = false;
       changeCount = 0;
-      cloudPhase = "";
-      cloudBlocked = false;
-      accessToken = sessionStorage.getItem("book-access-" + id) || "";
+      state.cloudPhase = "";
+      state.cloudBlocked = false;
+      state.accessToken = sessionStorage.getItem("book-access-" + id) || "";
       if (!id.startsWith("local-")) {
-        const local = b;
+        const local = state.book;
         const result = await api("/api/books/" + id);
         assertAccount(generation);
-        b = {
+        state.book = {
           ...result.book,
           pages: result.book.page_ids
             .map((pid) => result.pages.find((p) => p.id === pid))
@@ -888,66 +835,66 @@
           );
         }
       }
-      if (!b)
+      if (!state.book)
         throw new Error("This book is no longer available on this device.");
-      active = b.pages[0].id;
+      state.active = state.book.pages[0].id;
       turn = 0;
-      zoom = 1;
-      reading = false;
+      state.zoom = 1;
+      state.reading = false;
       document.body.classList.remove("book-reading");
       $("library").hidden = true;
       $("workspace").hidden = false;
       $("title-wrap").hidden = false;
       ["reading", "share", "export"].forEach((i) => ($(i).hidden = false));
-      $("book-title").value = b.title;
+      $("book-title").value = state.book.title;
       history.replaceState({}, "", "/books/" + id);
-      savedPages = Object.fromEntries(
-        b.pages
-          .concat(b.deletedPages || [])
+      state.savedPages = Object.fromEntries(
+        state.book.pages
+          .concat(state.book.deletedPages || [])
           .map((p) => [p.id, JSON.stringify(p)]),
       );
-      saveError = "";
+      state.saveError = "";
       await loadAssets();
       assertAccount(generation);
       renderAll();
-      if (!b.local && !b.deleted && (b.role === "owner" || b.role === "edit")) {
+      if (!state.book.local && !state.book.deleted && (state.book.role === "owner" || state.book.role === "edit")) {
         const resume = sessionStorage.getItem("book-lease-" + id);
         try {
           await acquire(false, resume);
         } catch (error) {
-          if (generation !== accountGeneration) throw error;
+          if (generation !== state.accountGeneration) throw error;
           notify(
             "Opened for viewing. You can start editing when the book is available.",
           );
         }
       }
-      if (!b.local) await D.putBook(b);
+      if (!state.book.local) await D.putBook(state.book);
       assertAccount(generation);
       updateStatus();
     } catch (error) {
-      if (generation === accountGeneration && (switched || !b)) {
+      if (generation === state.accountGeneration && (switched || !state.book)) {
         clearWorkspace();
         showStartupError(error);
       }
       throw error;
     } finally {
-      opening = false;
-      if (generation === accountGeneration) {
+      state.opening = false;
+      if (generation === state.accountGeneration) {
         $("book-loading").hidden = true;
-        if (b) updateStatus();
+        if (state.book) updateStatus();
         else $("library").hidden = false;
       }
     }
-    if (b?.local && user && !b.id.startsWith("local-recovery-"))
-      ensureCloudBook().catch(() => {});
+    if (state.book?.local && state.user && !state.book.id.startsWith("local-recovery-"))
+      io.ensureCloudBook().catch(() => {});
   }
   async function loadAssets(original = false) {
-    const current = b, generation = accountGeneration;
+    const current = state.book, generation = state.accountGeneration;
     if (!current) return;
     for (const a of current.assets) {
       const stored = await D.getAsset(a.id);
       assertAccount(generation);
-      if (b !== current) return;
+      if (state.book !== current) return;
       let blob = stored && stored.blob;
       if (!blob && !current.local && a.ready) {
         try {
@@ -963,7 +910,7 @@
           await D.putAsset({ ...a, blob });
           assertAccount(generation);
         } catch (e) {
-          if (b !== current || e.code === "account") throw e;
+          if (state.book !== current || e.code === "account") throw e;
           notify(e.message, true);
           continue;
         }
@@ -978,27 +925,27 @@
     }
   }
   async function acquire(takeover = false, resume = "") {
-    const current = b;
+    const current = state.book;
     if (!current || current.local) return;
-    const result = await api("/api/books/" + b.id + "/lease", {
+    const result = await api("/api/books/" + state.book.id + "/lease", {
       method: "POST",
       body: JSON.stringify({
         action: "acquire",
         takeover,
-        lease_token: resume || leaseToken,
+        lease_token: resume || state.leaseToken,
       }),
     });
-    if (b !== current) return;
-    leaseToken = result.lease_token;
-    sessionStorage.setItem("book-lease-" + b.id, leaseToken);
-    const remote = await api("/api/books/" + b.id + "/revision");
-    if (b !== current) return;
-    if (remote.book.revision !== b.revision) {
-      if (dirty) {
+    if (state.book !== current) return;
+    state.leaseToken = result.lease_token;
+    sessionStorage.setItem("book-lease-" + state.book.id, state.leaseToken);
+    const remote = await api("/api/books/" + state.book.id + "/revision");
+    if (state.book !== current) return;
+    if (remote.book.revision !== state.book.revision) {
+      if (state.dirty) {
         await D.putBook({
-          ...M.clone(b),
+          ...M.clone(state.book),
           id: "local-recovery-" + M.id(),
-          title: b.title + " (recovered draft)",
+          title: state.book.title + " (recovered draft)",
           local: true,
           pending: false,
           role: "owner",
@@ -1008,74 +955,74 @@
           "A newer version is open. Your unsaved changes are in a recovered draft.",
         );
       }
-      dirty = false;
+      state.dirty = false;
       await reloadRemote();
     }
     updateStatus();
-    renderInspector();
+    inspector.renderInspector();
   }
   async function release() {
-    if (!b || b.local || !leaseToken) return;
-    const current = b;
+    if (!state.book || state.book.local || !state.leaseToken) return;
+    const current = state.book;
     await persist();
-    if (b !== current) return;
-    await api("/api/books/" + b.id + "/lease", {
+    if (state.book !== current) return;
+    await api("/api/books/" + state.book.id + "/lease", {
       method: "POST",
-      body: JSON.stringify({ action: "release", lease_token: leaseToken }),
+      body: JSON.stringify({ action: "release", lease_token: state.leaseToken }),
     });
-    if (b !== current) return;
-    leaseToken = "";
-    sessionStorage.removeItem("book-lease-" + b.id);
+    if (state.book !== current) return;
+    state.leaseToken = "";
+    sessionStorage.removeItem("book-lease-" + state.book.id);
     updateStatus();
-    renderInspector();
+    inspector.renderInspector();
   }
   function updateStatus() {
-    if (!b) return;
-    document.title = b.title + " · Book Studio";
+    if (!state.book) return;
+    document.title = state.book.title + " · Book Studio";
     const can = editable();
     if ($("retry-cloud-save")) {
-      $("retry-cloud-save").hidden = !saveError || !user || (!b.local && !b.pending);
-      $("retry-cloud-save").disabled = !!cloudPromotion || (b.cloudAccountUid && b.cloudAccountUid !== user?.uid);
-      $("retry-cloud-save").title = saveError || "Retry saving to your account";
+      $("retry-cloud-save").hidden = !state.saveError || !state.user || (!state.book.local && !state.book.pending);
+      $("retry-cloud-save").disabled = !!state.cloudPromotion || (state.book.cloudAccountUid && state.book.cloudAccountUid !== state.user?.uid);
+      $("retry-cloud-save").title = state.saveError || "Retry saving to your account";
     }
     $("book-title").disabled = !can;
     $("edit-turn").hidden =
-      b.local || can || !["owner", "edit"].includes(b.role) || b.deleted;
-    $("finish-turn").hidden = b.local || !can;
-    $("share").disabled = b.deleted;
-    $("export").disabled = !b.local && !["owner", "edit"].includes(b.role);
-    $("editor-status").textContent = b.local
+      state.book.local || can || !["owner", "edit"].includes(state.book.role) || state.book.deleted;
+    $("finish-turn").hidden = state.book.local || !can;
+    $("share").disabled = state.book.deleted;
+    $("export").disabled = !state.book.local && !["owner", "edit"].includes(state.book.role);
+    $("editor-status").textContent = state.book.local
       ? ""
       : can
         ? "Your editing turn"
-        : b.editor
-          ? b.editor.name + " is editing"
+        : state.book.editor
+          ? state.book.editor.name + " is editing"
           : "Viewing";
     $("edit-turn").textContent =
-      b.editor && b.role === "owner" ? "Start / take over" : "Start editing";
+      state.book.editor && state.book.role === "owner" ? "Start / take over" : "Start editing";
     status(
-      opening
+      state.opening
         ? "Opening book…"
-        : cloudPromotion || cloudPhase === "saving" || cloudPhase === "finishing"
+        : state.cloudPromotion || state.cloudPhase === "saving" || state.cloudPhase === "finishing"
           ? "Saving to your account…"
-        : localSaveError
+        : state.localSaveError
           ? "Needs attention · Changes not saved on this device"
-        : saveError
-          ? b.local && b.cloudAccountUid
+        : state.saveError
+          ? state.book.local && state.book.cloudAccountUid
             ? navigator.onLine ? "Couldn’t save to cloud · Draft safe on this device" : "Offline · Saved on this device"
             : "Needs attention"
-          : saving || localWrites
+          : state.saving || state.localWrites
             ? "Saving…"
-            : dirty
+            : state.dirty
               ? "Saving…"
-              : b.local
+              : state.book.local
                 ? "Saved on this device"
                 : "Saved to cloud",
     );
-    if (lastRefresh && !can)
+    if (state.lastRefresh && !can)
       $("editor-status").textContent +=
         " · Updated " +
-        new Date(lastRefresh).toLocaleTimeString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), {
+        new Date(state.lastRefresh).toLocaleTimeString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB'), {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
@@ -1085,39 +1032,39 @@
         "[data-add],#text-presets,#add-image,#add-page,#add-page-side,[data-tool]:not([data-tool=select])",
       )
       .forEach((el) => (el.disabled = !can));
-    $("undo").disabled = !can || !undoStack.length;
-    $("redo").disabled = !can || !redoStack.length;
-    $("history").disabled = !b.local && !["owner", "edit"].includes(b.role);
+    $("undo").disabled = !can || !state.undoStack.length;
+    $("redo").disabled = !can || !state.redoStack.length;
+    $("history").disabled = !state.book.local && !["owner", "edit"].includes(state.book.role);
     $("history").title = $("history").disabled
       ? "Version history is available to book editors"
       : "Preview and restore saved versions";
   }
   function checkpoint() {
     if (!editable()) return false;
-    editBatch = null;
-    undoStack.push(
+    state.editBatch = null;
+    state.undoStack.push(
       M.clone({
-        pages: b.pages,
-        deletedPages: b.deletedPages,
+        pages: state.book.pages,
+        deletedPages: state.book.deletedPages,
         ...metadata(),
-        activePage: active,
+        activePage: state.active,
       }),
     );
-    if (undoStack.length > 60) undoStack.shift();
-    redoStack = [];
+    if (state.undoStack.length > 60) state.undoStack.shift();
+    state.redoStack = [];
     return true;
   }
   function changed(render = true) {
-    if (!b) return;
+    if (!state.book) return;
     syncLinkedItems();
-    b.updated_at = Date.now() / 1000;
-    dirty = true;
-    b.pending = !b.local;
+    state.book.updated_at = Date.now() / 1000;
+    state.dirty = true;
+    state.book.pending = !state.book.local;
     changeCount++;
     queueLocalSave();
-    clearTimeout(saveTimer);
-    if (!b.local)
-      saveTimer = setTimeout(
+    clearTimeout(state.saveTimer);
+    if (!state.book.local)
+      state.saveTimer = setTimeout(
         () => persist().catch((e) => notify(e.message, true)),
         5000,
       );
@@ -1125,96 +1072,96 @@
     else updateStatus();
   }
   async function persist() {
-    if (!b) return;
-    if (b.local && cloudBlocked) return;
-    clearTimeout(saveTimer);
-    const current = b, generation = accountGeneration;
+    if (!state.book) return;
+    if (state.book.local && state.cloudBlocked) return;
+    clearTimeout(state.saveTimer);
+    const current = state.book, generation = state.accountGeneration;
     queueLocalSave(current);
     await localSaves.flush();
     assertAccount(generation);
-    if (b !== current) return;
-    if (saving) {
-      await saving;
-      if (b === current && dirty && leaseToken) return persist();
+    if (state.book !== current) return;
+    if (state.saving) {
+      await state.saving;
+      if (state.book === current && state.dirty && state.leaseToken) return persist();
       return;
     }
-    if (cloudPromotion) return;
+    if (state.cloudPromotion) return;
     if (current.local) {
       updateStatus();
       return;
     }
-    if (!dirty || !leaseToken || uploads || current.assets.some((a) => a.local))
+    if (!state.dirty || !state.leaseToken || state.uploads || current.assets.some((a) => a.local))
       return;
     const count = changeCount,
       sent = M.clone({
         pages: current.pages
           .concat(current.deletedPages || [])
-          .filter((p) => savedPages[p.id] !== JSON.stringify(p)),
+          .filter((p) => state.savedPages[p.id] !== JSON.stringify(p)),
         page_ids: current.pages.map((p) => p.id),
         deleted_page_ids: (current.deletedPages || []).map((p) => p.id),
         metadata: metadata(),
         base_revision: current.revision,
-        lease_token: leaseToken,
+        lease_token: state.leaseToken,
       });
     status("Saving…");
-    saving = (async () => {
+    state.saving = (async () => {
       try {
         const result = await api("/api/books/" + current.id, {
           method: "PUT",
           body: JSON.stringify(sent),
         });
-        if (b !== current) return;
+        if (state.book !== current) return;
         current.revision = result.revision;
-        sent.pages.forEach((p) => (savedPages[p.id] = JSON.stringify(p)));
-        saveError = "";
+        sent.pages.forEach((p) => (state.savedPages[p.id] = JSON.stringify(p)));
+        state.saveError = "";
         if (changeCount === count) {
-          dirty = false;
+          state.dirty = false;
           current.pending = false;
         }
         queueLocalSave(current);
         await localSaves.flush();
         updateStatus();
       } catch (e) {
-        if (b !== current || generation !== accountGeneration) throw e;
+        if (state.book !== current || generation !== state.accountGeneration) throw e;
         if (e.status === 409 || e.status === 403) {
-          leaseToken = "";
+          state.leaseToken = "";
           sessionStorage.removeItem("book-lease-" + current.id);
         }
-        saveError = e.message;
+        state.saveError = e.message;
         updateStatus();
         throw e;
       } finally {
-        saving = null;
+        state.saving = null;
         updateStatus();
       }
     })();
-    return saving;
+    return state.saving;
   }
   function renderAll() {
-    if (!b) return;
+    if (!state.book) return;
     finishText();
-    if (document.activeElement !== $("book-title")) $("book-title").value = b.title;
+    if (document.activeElement !== $("book-title")) $("book-title").value = state.book.title;
     renderPages();
     renderStage();
-    renderInspector();
+    inspector.renderInspector();
     updateStatus();
   }
   function renderPages() {
     clearTimeout(pagesTimer);
-    if (!b) return;
+    if (!state.book) return;
     const spreads = syncTurn(), visible = spreads[turn] || [], list = $("page-list");
     const existing = new Map([...list.children].map((node) => [node.dataset.page, node]));
-    b.pages.forEach((p, i) => {
+    state.book.pages.forEach((p, i) => {
       const node = existing.get(p.id) || document.createElement("button");
       existing.delete(p.id);
       node.className = "book-thumb";
       node.dataset.page = p.id;
       node.draggable = editable() && p.role === "page";
-      node.setAttribute("aria-current", String(p.id === active));
+      node.setAttribute("aria-current", String(p.id === state.active));
       node.dataset.visible = String(visible.includes(p.id));
       node.title = p.title;
       node.setAttribute("aria-label", p.role === "page" ? "Page " + i + ": " + p.title : p.title);
-      const options = M.pageRenderOptions(p, b.pages, b.pageNumbers);
+      const options = M.pageRenderOptions(p, state.book.pages, state.book.pageNumbers);
       const assets = p.items.filter((o) => o.assetId).map((o) => renderedAssets[o.assetId]?.src || "");
       const key = JSON.stringify([p, options, assets]);
       if (node.bookPreviewKey !== key) {
@@ -1224,9 +1171,9 @@
       if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
     });
     existing.forEach((node) => node.remove());
-    if (list.dataset.active !== active) {
-      list.dataset.active = active;
-      const thumb = list.querySelector(`[data-page="${active}"]`);
+    if (list.dataset.active !== state.active) {
+      list.dataset.active = state.active;
+      const thumb = list.querySelector(`[data-page="${state.active}"]`);
       if (thumb && list.clientHeight) {
         const box = thumb.getBoundingClientRect(), bounds = list.getBoundingClientRect();
         if (box.top < bounds.top) list.scrollTop -= bounds.top - box.top;
@@ -1268,29 +1215,29 @@
     layoutRules.delete(selector);
   }
   function fitStage() {
-    if (!b || !$("book-spread").children.length) return;
+    if (!state.book || !$("book-spread").children.length) return;
     const count = $("book-spread").children.length,
       rect = $("book-viewport").getBoundingClientRect();
     const height =
       Math.max(
         120,
         Math.min(rect.height - 58, ((rect.width - 64) / count / M.W) * M.H),
-      ) * zoom;
+      ) * state.zoom;
     layoutRule(".book-sheet", {
       width: (height / M.H) * M.W + "px",
       height: height + "px",
     });
-    $("zoom-value").textContent = Math.round(zoom * 100) + "%";
-    $("zoom-in").disabled = zoom >= 2.5;
-    $("zoom-out").disabled = zoom <= 0.4;
-    if (inlineEdit) {
-      const sheet = inlineEdit.editor.closest(".book-sheet"), o = item();
+    $("zoom-value").textContent = Math.round(state.zoom * 100) + "%";
+    $("zoom-in").disabled = state.zoom >= 2.5;
+    $("zoom-out").disabled = state.zoom <= 0.4;
+    if (state.inlineEdit) {
+      const sheet = state.inlineEdit.editor.closest(".book-sheet"), o = item();
       if (sheet && o) positionTextEditor(o, sheet);
     }
     renderSelection();
   }
   function renderStage(direction = 0) {
-    if (inlineEdit) finishText();
+    if (state.inlineEdit) finishText();
     cancelAnimationFrame(stageFrame);
     stageFrame = 0;
     const spreads = syncTurn(),
@@ -1301,8 +1248,8 @@
       (direction > 0 ? " book-turn" : direction < 0 ? " book-turn-back" : "");
     $("book-spread").innerHTML = ids
       .map((pid) => {
-        const p = b.pages.find((p) => p.id === pid);
-        return `<div class="book-sheet" data-page-id="${p.id}" data-active="${p.id === active}" tabindex="0" aria-label="${esc(p.role === "page" ? "Page " + b.pages.indexOf(p) + ": " + p.title : p.title)}">${rulers && !reading ? rulerMarkup() : ""}${M.svg(p, renderedAssets, { ...M.pageRenderOptions(p, b.pages, b.pageNumbers), guides: guides && !reading })}${editorGuides(p.id)}</div>`;
+        const p = state.book.pages.find((p) => p.id === pid);
+        return `<div class="book-sheet" data-page-id="${p.id}" data-active="${p.id === state.active}" tabindex="0" aria-label="${esc(p.role === "page" ? "Page " + state.book.pages.indexOf(p) + ": " + p.title : p.title)}">${state.rulers && !state.reading ? rulerMarkup() : ""}${M.svg(p, renderedAssets, { ...M.pageRenderOptions(p, state.book.pages, state.book.pageNumbers), guides: state.guides && !state.reading })}${editorGuides(p.id)}</div>`;
       })
       .join("");
     const p = page();
@@ -1313,14 +1260,14 @@
           ? "Back cover"
           : ids
               .filter(Boolean)
-              .map((id) => b.pages.findIndex((p) => p.id === id))
+              .map((id) => state.book.pages.findIndex((p) => p.id === id))
               .join("–") +
             " / " +
-            (b.pages.length - 2);
+            (state.book.pages.length - 2);
     $("first-page").disabled = $("prev-page").disabled = turn === 0;
     $("last-page").disabled = $("next-page").disabled =
       turn === spreads.length - 1;
-    document.title = b.title + " · Book Studio";
+    document.title = state.book.title + " · Book Studio";
     fitStage();
     renderContentWarnings();
   }
@@ -1329,189 +1276,51 @@
     if (box) box.innerHTML = o ? M.contentOverflow(o).map((warning) => `<p class="book-warning">${esc(warning[0].toUpperCase() + warning.slice(1))}</p>`).join("") : "";
   }
   const isPath = (o) => o && ["line", "arrow"].includes(o.type);
-  function furnitureBox(kind = furnitureSelection) {
-    const options = M.pageRenderOptions(page(), b.pages, b.pageNumbers);
+  function furnitureBox(kind = state.furnitureSelection) {
+    const options = M.pageRenderOptions(page(), state.book.pages, state.book.pageNumbers);
     return kind === "logo" ? M.logoGeometry(page(), options) : M.numberGeometry(page(), options);
   }
   function placeFurniture(box) {
     const p = page();
-    if (furnitureSelection === "logo") {
+    if (state.furnitureSelection === "logo") {
       const old = furnitureBox(), w = M.clamp(box.w, 8, 60), h = w * old.h / old.w;
       p.logoPlacement = { x: M.clamp(box.x, 0, M.W - w), y: M.clamp(box.y, 0, M.H - h), w };
     } else p.numberPlacement = { x: M.clamp(box.x, 0, M.W - box.w), y: M.clamp(box.y, 0, M.H - box.h) };
   }
   function selectFurniture(kind) {
     if (!editable() || !furnitureBox(kind)) return;
-    finishText(); selected = []; furnitureSelection = kind; activePathPoint = -1;
-    inspectorTab = "settings";
-    setInspector(true, innerWidth <= 780);
-    renderSelection(); renderInspector();
+    finishText(); state.selected = []; state.furnitureSelection = kind; state.activePathPoint = -1;
+    state.inspectorTab = "settings";
+    inspector.setInspector(true, innerWidth <= 780);
+    renderSelection(); inspector.renderInspector();
   }
-  function showPageNumbers() {
-    panelDetails.add("Page numbers");
-    inspectorTab = "settings";
-    setInspector(true, innerWidth <= 780);
-    renderInspector();
-    const section = $("page-number-controls");
-    section.open = true;
-    section.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
-    section.querySelector("input")?.focus({ preventScroll: true });
-  }
-  function dragFurniture(event, sheet, kind) {
-    selectFurniture(kind);
-    const original = furnitureBox(), scale = sheet.getBoundingClientRect().width / M.W;
-    if (!original) return;
-    const resize = event.target.closest("[data-logo-resize]");
-    let moved = false;
-    const move = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-      const delta = { x: (e.clientX - event.clientX) / scale, y: (e.clientY - event.clientY) / scale };
-      if (!moved && Math.hypot(delta.x, delta.y) < .5) return;
-      if (!moved) { if (!checkpoint()) return; moved = true; }
-      let box = { ...original }, lines = [];
-      if (resize) box.w += delta.x;
-      else {
-        let applied = delta;
-        if (snap && !e.altKey) {
-          const result = M.snapMove([{ ...original, rotation: 0 }], delta, page().items, 6 / scale, grid);
-          applied = result.delta; lines = result.lines;
-        }
-        box.x += applied.x; box.y += applied.y;
-      }
-      placeFurniture(box); renderStage(); feedback(lines, furnitureBox());
-    };
-    const up = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", up);
-      document.removeEventListener("pointercancel", up);
-      feedback(); if (moved) changed();
-    };
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", up);
-    document.addEventListener("pointercancel", up);
-    event.preventDefault();
-  }
-  function dragPathPoint(event, sheet) {
-    const node = event.target.closest("[data-path-point]"), o = page().items.find((x) => x.id === node.dataset.object);
-    if (!isPath(o) || o.locked) return;
-    selected = [o.id]; furnitureSelection = ""; activePathPoint = +node.dataset.pathPoint;
-    const original = M.clone(o), rect = sheet.getBoundingClientRect(), scale = rect.width / M.W;
-    let moved = false;
-    renderSelection(); renderInspector();
-    const move = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-      if (!moved && Math.hypot(e.clientX - event.clientX, e.clientY - event.clientY) < 3) return;
-      if (!moved) { if (!checkpoint()) return; moved = true; }
-      const world = { x: M.clamp((e.clientX - rect.left) / scale, 0, M.W), y: M.clamp((e.clientY - rect.top) / scale, 0, M.H) };
-      if (e.shiftKey) {
-        world.x = Math.round(world.x / 5) * 5; world.y = Math.round(world.y / 5) * 5;
-      }
-      Object.assign(o, P.movePoint(original, activePathPoint, world)); renderStage();
-    };
-    const up = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", up);
-      document.removeEventListener("pointercancel", up);
-      if (moved) changed();
-      document.querySelector(`[data-path-point="${activePathPoint}"]`)?.focus({ preventScroll: true });
-    };
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", up);
-    document.addEventListener("pointercancel", up);
-    event.preventDefault();
-  }
-  let pathMenuPoint = null;
-  function closePathMenu(immediate = false) {
-    const menu = $("book-path-menu"); pathMenuPoint = null;
-    if (!menu) return;
-    menu.inert = true;
-    if (immediate || matchMedia("(prefers-reduced-motion: reduce)").matches) { menu.remove(); return; }
-    menu.getAnimations().forEach((animation) => animation.cancel());
-    menu.animate([{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-4px)"}], {duration:140,easing:"ease-in",fill:"forwards"}).finished.then(() => menu.remove()).catch(() => {});
-  }
-  function addPathBend() {
-    const o = item();
-    if (!isPath(o) || o.locked || P.points(o).length >= 32 || !checkpoint()) return;
-    const pts = P.points(o).map((p) => p.slice());
-    let insertion;
-    if (pathMenuPoint) {
-      const local = P.localPoint(o, pathMenuPoint);
-      insertion = M.nearestPathInsertion(o, { x: local[0], y: local[1] });
-    }
-    else {
-      let longest = -1;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const distance = Math.hypot((pts[i + 1][0] - pts[i][0]) * o.w, (pts[i + 1][1] - pts[i][1]) * o.h);
-        if (distance > longest) { longest = distance; insertion = { index: i + 1, point: [(pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2] }; }
-      }
-    }
-    pts.splice(insertion.index, 0, insertion.point); o.pathPoints = pts;
-    activePathPoint = insertion.index;
-    closePathMenu(); changed();
-    document.querySelector(`[data-path-point="${activePathPoint}"]`)?.focus({ preventScroll: true });
-  }
-  function removePathBend() {
-    const o = item(), points = isPath(o) && P.points(o);
-    if (!points || o.locked || activePathPoint <= 0 || activePathPoint >= points.length - 1 || !checkpoint()) return;
-    o.pathPoints = points.filter((_, i) => i !== activePathPoint); activePathPoint = -1;
-    closePathMenu(); changed();
-  }
-  function pathContextMenu(event) {
-    const node = event.target.closest("[data-object]"), sheet = event.target.closest("[data-page-id]");
-    if (!node || !sheet || !editable() || reading) return;
-    const p = b.pages.find((x) => x.id === sheet.dataset.pageId), o = p.items.find((x) => x.id === node.dataset.object);
-    if (!isPath(o) || o.locked) return;
-    event.preventDefault(); closePathMenu(true);
-    active = p.id; selected = [o.id]; furnitureSelection = "";
-    activePathPoint = event.target.dataset.pathPoint === undefined ? -1 : +event.target.dataset.pathPoint;
-    const rect = sheet.getBoundingClientRect(), scale = rect.width / M.W;
-    pathMenuPoint = { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale };
-    renderSelection(); renderInspector();
-    const menu = document.createElement("div"); menu.id = "book-path-menu"; menu.className = "book-path-menu";
-    menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Edit line");
-    menu.innerHTML = `<button role="menuitem" data-command="add-path-bend" ${P.points(o).length >= 32 ? "disabled" : ""}>Add bend here</button><button role="menuitem" data-command="remove-path-bend" ${activePathPoint <= 0 || activePathPoint >= P.points(o).length - 1 ? "disabled" : ""}>Remove this bend</button>`;
-    document.body.appendChild(menu);
-    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) menu.animate([{opacity:0,transform:"translateY(-4px)"},{opacity:1,transform:"translateY(0)"}], {duration:180,easing:"ease-out"});
-    layoutRule("#book-path-menu", { left: Math.max(8, Math.min(innerWidth - 220, event.clientX)) + "px", top: Math.max(8, Math.min(innerHeight - 120, event.clientY)) + "px" });
-    menu.querySelector("button:not(:disabled)")?.focus();
-    menu.addEventListener("keydown", (e) => {
-      if (["ArrowDown", "ArrowUp"].includes(e.key)) {
-        e.preventDefault(); e.stopPropagation();
-        const choices = Array.from(menu.querySelectorAll("button:not(:disabled)"));
-        choices[(choices.indexOf(document.activeElement) + 1) % choices.length]?.focus();
-      }
-    });
-  }
-
   function renderSelection() {
-    if (furnitureSelection && !furnitureBox()) furnitureSelection = "";
+    if (state.furnitureSelection && !furnitureBox()) state.furnitureSelection = "";
     for (const key of layoutRules.keys())
       if (key.startsWith(".book-selection")) removeLayoutRule(key);
     document.querySelectorAll(".book-selection").forEach((el) => el.remove());
     selectionToolbar();
-    if (reading || !editable()) return;
+    if (state.reading || !editable()) return;
     const sheet = $("book-spread").querySelector(
-      '[data-page-id="' + active + '"]',
+      '[data-page-id="' + state.active + '"]',
     );
     if (!sheet) return;
     const scale = sheet.clientWidth / M.W;
-    if (furnitureSelection) {
+    if (state.furnitureSelection) {
       const box = furnitureBox();
       if (box) {
         const el = document.createElement("div");
         el.className = "book-selection book-furniture-selection";
-        el.dataset.furniture = furnitureSelection;
-        layoutRule('.book-selection[data-furniture="' + furnitureSelection + '"]', {
+        el.dataset.furniture = state.furnitureSelection;
+        layoutRule('.book-selection[data-furniture="' + state.furnitureSelection + '"]', {
           left: box.x * scale + "px", top: box.y * scale + "px",
           width: box.w * scale + "px", height: box.h * scale + "px",
         });
-        el.innerHTML = furnitureSelection === "logo" ? '<button class="book-handle se" data-furniture="logo" data-logo-resize="true" aria-label="Resize xPED logo"></button>' : "";
+        el.innerHTML = state.furnitureSelection === "logo" ? '<button class="book-handle se" data-furniture="logo" data-logo-resize="true" aria-label="Resize xPED logo"></button>' : "";
         sheet.appendChild(el);
       }
     }
-    selected.forEach((id) => {
+    state.selected.forEach((id) => {
       const o = page().items.find((x) => x.id === id);
       if (!o || o.locked || o.hidden) return;
       const el = document.createElement("div");
@@ -1530,11 +1339,11 @@
             `<button class="book-handle ${c}" data-handle="${c}" data-object="${id}" aria-label="Resize ${esc(o.name)} from ${c}"></button>`,
         )
         .join("");
-      if (isPath(o) && selected.length === 1) {
+      if (isPath(o) && state.selected.length === 1) {
         el.classList.add("book-path-selection");
         P.points(o).forEach((pt, index) => {
           const handle = document.createElement("button");
-          handle.className = "book-path-point" + (index === activePathPoint ? " active" : "");
+          handle.className = "book-path-point" + (index === state.activePathPoint ? " active" : "");
           handle.dataset.pathPoint = index;
           handle.dataset.object = o.id;
           handle.setAttribute("aria-label", index === 0 ? "Move line start" : index === P.points(o).length - 1 ? "Move line end" : "Move bend " + index);
@@ -1555,734 +1364,20 @@
     if (next === turn) return;
     finishText();
     turn = next;
-    const prev = active;
-    active = spreads[turn].find(Boolean);
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
-    selectionRange = null;
-    renderStage(offset || (prev === active ? 0 : 1));
+    const prev = state.active;
+    state.active = spreads[turn].find(Boolean);
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
+    state.selectionRange = null;
+    renderStage(offset || (prev === state.active ? 0 : 1));
     renderPages();
-    renderInspector();
-  }
-  function selectedStyle(o) {
-    if (!o || !selectionRange || selectionRange.end <= selectionRange.start)
-      return o?.style;
-    let offset = 0;
-    for (const r of o.runs || []) {
-      offset += r.text.length;
-      if (offset > selectionRange.start) return { ...o.style, ...r.style };
-    }
-    return o.style;
-  }
-  function renderInspector() {
-    if (!b) return;
-    document.querySelectorAll("[data-tool]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.tool === tool)));
-    const p = page(),
-      source = item(),
-      o = source ? { ...source, style: selectedStyle(source) } : null,
-      disabled = !editable();
-    if (o?.type === "flow") {
-      const colors = M.flowAppearance(o, p.background, p.decoration);
-      o.fill = colors.fill;
-      o.stroke = colors.stroke;
-      o.style = { ...o.style, color: colors.ink };
-    }
-    const panel = $("inspector"),
-      scroll = panel.scrollTop,
-      focused = document.activeElement;
-    const focusField = panel.contains(focused) ? focused.dataset.field : null;
-    panel.querySelectorAll("details").forEach((d) => {
-      const key = d.querySelector("summary").textContent;
-      if (d.open) panelDetails.add(key);
-      else panelDetails.delete(key);
-    });
-    let html = `<div class="book-panel-heading"><h2${selected.length === 1 && o ? ' data-user-content' : ''}>${selected.length > 1 ? selected.length + " objects" : o ? esc(o.name || o.type) : furnitureSelection === "logo" ? "xPED logo" : furnitureSelection === "number" ? "Page number" : "Page settings"}</h2><button class="icon-btn" id="close-inspector" aria-label="Close settings" title="Close settings">${icon("close")}</button></div>`;
-    html += `<div class="book-inspector-tabs" role="tablist" aria-label="Settings sections"><button role="tab" data-panel="settings" tabindex="${inspectorTab === "settings" ? "0" : "-1"}" aria-selected="${inspectorTab === "settings"}" aria-controls="book-properties">Settings</button><button role="tab" data-panel="layers" tabindex="${inspectorTab === "layers" ? "0" : "-1"}" aria-selected="${inspectorTab === "layers"}" aria-controls="book-layers">Layers · ${p.items.length}</button></div><div id="book-properties" role="tabpanel" aria-label="Settings" ${inspectorTab !== "settings" ? "hidden" : ""}>`;
-    if (disabled)
-      html +=
-        '<p class="book-status-banner">' +
-        (b.deleted
-          ? "Restore this book from your bookshelf to edit it."
-          : b.local
-            ? ""
-            : b.editor
-              ? esc(b.editor.name) +
-                " is editing. You can read and leave comments."
-              : "You are viewing this book.") +
-        "</p>";
-    if (furnitureSelection && furnitureBox()) {
-      const box = furnitureBox();
-      html += `<h3>${furnitureSelection === "logo" ? "xPED logo" : "Page number"}</h3><p class="book-muted book-hint">Drag on the page, or choose an exact position. Arrow keys make small adjustments.</p><div class="book-row">` +
-        field("Left (mm)", "furniture.x", +box.x.toFixed(1), "number", 'min="0" step="0.5"') +
-        field("Top (mm)", "furniture.y", +box.y.toFixed(1), "number", 'min="0" step="0.5"') + "</div>";
-      if (furnitureSelection === "logo") html += field("Logo width (mm)", "furniture.w", +box.w.toFixed(1), "number", 'min="8" max="60" step="0.5"');
-      html += '<button class="secondary-btn" id="reset-furniture">Reset position</button>';
-      if (furnitureSelection === "number") panelDetails.add("Page numbers");
-    } else if (o) {
-      if (o.locked)
-        html += `<p class="book-status-banner">This object is locked. Unlock it to make changes.</p><button class="secondary-btn" data-lock="${o.id}">${icon("unlock")} Unlock object</button>`;
-      if (o.hidden)
-        html += `<p class="book-status-banner">Hidden on the page and in exports.</p><button class="secondary-btn" data-hide="${o.id}">${icon("eye")} Show object</button>`;
-      html +=
-        '<fieldset class="book-object-fields"' +
-        (o.locked ? " disabled" : "") +
-        ">";
-      html += field("Object name", "name", o.name);
-      if (o.type === "text") {
-        html += `<label class="book-field"><span>Text <button type="button" class="book-text-link" id="edit-on-page" aria-label="Edit text on page">Edit on page</button></span><textarea id="object-text" maxlength="12000" aria-label="Text">${esc(o.runs && o.runs.length ? o.runs.map((r) => r.text).join("") : o.text)}</textarea></label>`;
-        if (M.textLines(o).height > o.h + 0.5)
-          html +=
-            '<p class="book-warning">This text is taller than its box.</p><button class="secondary-btn" id="fit-text-height">Fit box to text</button>';
-        html += selectField("Text style", "styleName", o.styleName, [
-          ["", "Custom"],
-          ["heading", "Heading"],
-          ["body", "Body"],
-          ["caption", "Caption"],
-        ]);
-        html += selectField("Font", "style.font", o["style"].font, M.fontOptions);
-        html +=
-          '<div class="book-row">' +
-          field(
-            "Size (pt)",
-            "style.size",
-            o["style"].size,
-            "number",
-            'min="6" max="160"',
-          ) +
-          field("Color", "style.color", o["style"].color, "color") +
-          "</div>";
-        const weights = M.fontWeights(o["style"].font);
-        html += weights
-          ? selectField(
-              "Thickness",
-              "style.weight",
-              o["style"].weight,
-              weights.map((w) => [
-                w,
-                w === 300 ? "Light" : w === 400 ? "Regular" : "Bold",
-              ]),
-            )
-          : field(
-              "Thickness · " + o["style"].weight,
-              "style.weight",
-              o["style"].weight,
-              "range",
-              `min="${o["style"].font === "Nunito" ? 200 : 100}" max="${o["style"].font === "Playpen Sans" ? 800 : o["style"].font === "Fraunces" ? 900 : 1000}" step="10"`,
-            );
-        html +=
-          '<div class="book-segmented">' +
-          [
-            ["italic", "Italic"],
-            ["underline", "Underline"],
-            ["highlightOn", "Highlight"],
-          ]
-            .map(
-              ([key, label]) =>
-                `<button data-style-toggle="${key}"${key === "italic" && !M.fontSupportsItalic(o["style"].font) ? ' disabled title="This font has no italic style"' : ""} aria-pressed="${o.style[key]}">${label}</button>`,
-            )
-            .join("") +
-          "</div>";
-        html += selectField("Alignment", "style.align", o["style"].align, [
-          ["left", "Left"],
-          ["center", "Center"],
-          ["right", "Right"],
-        ]);
-        html +=
-          '<details><summary>Text spacing & effects</summary><div class="book-row">' +
-          field(
-            "Line spacing",
-            "style.lineHeight",
-            o["style"].lineHeight,
-            "number",
-            'min="0.8" max="3" step="0.1"',
-          ) +
-          field(
-            "Letter spacing",
-            "style.letterSpacing",
-            o["style"].letterSpacing,
-            "number",
-            'min="-2" max="10" step="0.2"',
-          ) +
-          "</div>" +
-          field(
-            "Outline",
-            "style.outline",
-            o["style"].outline,
-            "range",
-            'min="0" max="4" step="0.1"',
-          ) +
-          field(
-            "Highlight color",
-            "style.highlight",
-            o["style"].highlight,
-            "color",
-          ) +
-          '<button class="secondary-btn" id="save-text-style">Update book text style</button></details>';
-      }
-      if (o.type === "image") {
-        html +=
-          '<div class="book-segmented">' +
-          [
-            ["small", "Small"],
-            ["medium", "Medium"],
-            ["large", "Large"],
-            ["fit", "Fit page"],
-          ]
-            .map(([v, l]) => `<button data-size="${v}">${l}</button>`)
-            .join("") +
-          "</div>";
-        html += toggle("Keep proportions", "aspectLock", o.aspectLock);
-        html +=
-          '<div class="book-row"><button class="secondary-btn" id="replace-image">Replace</button><button class="secondary-btn" id="illustration-assistant">Illustration prompt</button></div>';
-        html += selectField("Image fit", "fit", o.fit, [
-          ["contain", "Show whole image"],
-          ["cover", "Crop to fill"],
-        ]);
-        html +=
-          "<details><summary>Crop & edges</summary>" +
-          field(
-            "Horizontal crop",
-            "cropX",
-            o.cropX,
-            "range",
-            'min="0" max="100"',
-          ) +
-          field(
-            "Vertical crop",
-            "cropY",
-            o.cropY,
-            "range",
-            'min="0" max="100"',
-          ) +
-          selectField("Mask", "mask", o.mask, [
-            ["none", "Rectangle"],
-            ["rounded", "Rounded"],
-            ["circle", "Oval"],
-          ]) +
-          field(
-            "Soft edges",
-            "feather",
-            o.feather,
-            "range",
-            'min="0" max="20"',
-          ) +
-          "</details>";
-        html +=
-          '<div class="book-button-stack"><button class="secondary-btn" id="fill-page">Fill page</button><button class="secondary-btn" id="span-pages">' +
-          (o.spanId ? "Split spread illustration" : "Span both pages") +
-          '</button><button class="ghost-btn" id="download-original">Download original</button></div>';
-      }
-      if (o.type === "shape")
-        html += selectField(
-          "Shape",
-          "shape",
-          o.shape,
-          M.shapeOptions.map((s) => [s.value, s.label]),
-        );
-      if (o.type === "table") {
-        html += selectField(
-          "Table style",
-          "tableStyle",
-          o.tableStyle || "paper",
-          [
-            ["paper", "Match page paper"],
-            ["ruled", "Simple ruled lines"],
-            ["custom", "Custom colors"],
-          ],
-        );
-        html +=
-          '<p class="book-muted book-hint">' +
-          (o.tableStyle === "custom"
-            ? "Choose your own header, line and text colors. Empty cells keep the page’s paper color."
-            : "Colors follow this page’s paper, with gentle shading and readable text.") +
-          "</p>";
-      }
-      if (o.type === "flow" && p.decoration?.id === "xped")
-        html += selectField("Step colors", "flowStyle", o.flowStyle || "theme", [
-          ["theme", "Match page theme"],
-          ["custom", "Custom colors"],
-        ]);
-      if (
-        ["shape", "drawing", "flow"].includes(o.type) ||
-        (o.type === "table" && o.tableStyle === "custom")
-      )
-        html +=
-          '<div class="book-row">' +
-          field(
-            o.type === "table" ? "Shading color" : "Fill",
-            "fill",
-            o.fill,
-            "color",
-          ) +
-          field("Line", "stroke", o.stroke, "color") +
-          "</div>" +
-          field(
-            "Line thickness",
-            "strokeWidth",
-            o.strokeWidth,
-            "range",
-            o.type === "table"
-              ? 'min="0.1" max="1.5" step="0.05"'
-              : 'min="0.1" max="10" step="0.1"',
-          );
-      if (o.type === "table" && o.tableStyle !== "custom")
-        html += field(
-          "Line thickness",
-          "strokeWidth",
-          o.strokeWidth,
-          "range",
-          'min="0.1" max="1.5" step="0.05"',
-        );
-      if (isPath(o)) {
-        html += field("Line color", "stroke", o.stroke, "color") +
-          field("Line thickness (mm)", "strokeWidth", o.strokeWidth, "range", 'min="0.1" max="10" step="0.1"');
-        if (o.type === "arrow") html += selectField("Arrowheads", "arrowHead", o.arrowHead || "end", [
-          ["none", "No arrowhead"], ["end", "At the end"], ["both", "Both ends"],
-        ]) + (o.arrowHead !== "none" ? field("Arrowhead color", "arrowFill", o.arrowFill || o.stroke, "color") : "");
-        html += selectField("Line style", "arrowLine", o.arrowLine || "solid", [["solid", "Solid"], ["dashed", "Dashed"]]) +
-          selectField("Bends", "pathMode", o.pathMode || "angular", [["angular", "Sharp corners"], ["smooth", "Smooth curve"]]) +
-          '<p class="book-muted book-hint">Drag the points on your line to reshape it. Right-click anywhere along it to add a bend.</p><div class="book-row"><button class="secondary-btn" id="add-path-bend" ' + (P.points(o).length >= 32 ? "disabled" : "") + '>Add bend</button><button class="secondary-btn" id="straighten-path">Straighten</button></div>' +
-          '<button class="ghost-btn" id="remove-path-bend" ' + (activePathPoint <= 0 || activePathPoint >= P.points(o).length - 1 ? 'disabled title="Select a bend point on the page"' : "") + '>Remove selected bend</button>' +
-          toggle("Show bend markers", "nodeMarkers", !!o.nodeMarkers);
-        if (o.nodeMarkers) html += field("Marker color", "markerColor", o.markerColor || "#ffd617", "color") +
-          field("Marker diameter (mm)", "markerDiameter", o.markerDiameter || 3, "range", 'min="2" max="12" step="0.5"');
-      }
-      if (["table", "flow"].includes(o.type))
-        html +=
-          '<div id="object-content-warnings" aria-live="polite"></div><div class="book-row">' +
-          selectField("Font", "style.font", o["style"].font, M.fontOptions) +
-          field(
-            "Text size (pt)",
-            "style.size",
-            o["style"].size,
-            "number",
-            'min="6" max="160"',
-          ) +
-          "</div>" +
-          (o.type !== "table" || o.tableStyle === "custom"
-            ? field("Text color", "style.color", o["style"].color, "color")
-            : "");
-      if (o.type === "table") {
-        const rows = o.cells.length || 1,
-          cols = Math.max(1, ...o.cells.map((r) => r.length));
-        html += `<h3>Table content</h3><div class="book-table-controls"><span>${rows} rows</span>${iconButton("more", "Add row", `data-table-axis="row" data-delta="1" ${rows >= 8 ? "disabled" : ""}`)}${iconButton("trash", "Remove last row", `data-table-axis="row" data-delta="-1" ${rows <= 1 ? "disabled" : ""}`)}<span>${cols} columns</span>${iconButton("more", "Add column", `data-table-axis="column" data-delta="1" ${cols >= 8 ? "disabled" : ""}`)}${iconButton("trash", "Remove last column", `data-table-axis="column" data-delta="-1" ${cols <= 1 ? "disabled" : ""}`)}</div><div class="book-cell-grid" data-columns="${cols}">${o.cells.map((row, r) => Array.from({ length: cols }, (_, c) => `<input type="text" maxlength="2000" aria-label="Row ${r + 1}, column ${c + 1}" data-cell="${r},${c}" value="${esc(row[c] || "")}" placeholder="Cell ${r + 1}, ${c + 1}">`).join("")).join("")}</div>`;
-        html +=
-          toggle("Header row", "tableHeader", o.tableHeader !== false) +
-          toggle("Alternating rows", "tableStriped", o.tableStriped !== false) +
-          toggle("Column lines", "tableColumns", !!o.tableColumns) +
-          (o.tableStyle === "ruled"
-            ? ""
-            : toggle(
-                "Rounded corners",
-                "tableRounded",
-                o.tableRounded !== false,
-              ));
-      }
-      if (o.type === "flow") {
-        html +=
-          selectField(
-            "Direction",
-            "flowDirection",
-            o.flowDirection || "horizontal",
-            [
-              ["vertical", "Top to bottom"],
-              ["horizontal", "Left to right"],
-            ],
-          ) +
-          selectField("Step shape", "flowShape", o.flowShape || "rounded", [
-            ["rounded", "Soft rectangle"],
-            ["pill", "Pill"],
-            ["square", "Rectangle"],
-          ]);
-        html += `<h3>Story steps</h3><div class="book-flow-steps">${o.steps.map((t, i) => `<div class="book-flow-step"><span>${i + 1}</span><input aria-label="Step ${i + 1}" data-step="${i}" value="${esc(t)}" maxlength="400">${iconButton("up", "Move step " + (i + 1) + " up", `data-step-move="${i}" ${i === 0 ? "disabled" : ""}`)}${iconButton("trash", "Remove step " + (i + 1), `data-step-remove="${i}" ${o.steps.length <= 1 ? "disabled" : ""}`)}</div>`).join("")}</div><button class="secondary-btn" id="add-flow-step" ${o.steps.length >= 8 ? "disabled" : ""}>${icon("more")} Add step</button>`;
-      }
-      html +=
-        '<h3>Position & size</h3><div class="book-row">' +
-        field(
-          "Width (mm)",
-          "w",
-          +o.w.toFixed(1),
-          "number",
-          'min="1" max="297" step="0.5"',
-        ) +
-        field(
-          "Height (mm)",
-          "h",
-          +o.h.toFixed(1),
-          "number",
-          'min="1" max="420" step="0.5"',
-        ) +
-        '</div><details><summary>Position & rotation</summary><div class="book-row">' +
-        field("Left (mm)", "x", +o.x.toFixed(1), "number", 'step="0.5"') +
-        field("Top (mm)", "y", +o.y.toFixed(1), "number", 'step="0.5"') +
-        "</div>" +
-        field(
-          "Rotation",
-          "rotation",
-          o.rotation,
-          "range",
-          'min="-180" max="180"',
-        ) +
-        field(
-          "Opacity",
-          "opacity",
-          o.opacity,
-          "range",
-          'min="0.1" max="1" step="0.05"',
-        ) +
-        '<div class="book-row"><button class="secondary-btn" id="rotate-object">' +
-        icon("rotate") +
-        ' Rotate 90°</button><button class="secondary-btn" id="reset-rotation">Reset</button></div></details>';
-      html +=
-        '<h3>Align to page</h3><div class="book-segmented">' +
-        ["left", "center", "right", "top", "middle", "bottom"]
-          .map(
-            (v) =>
-              `<button data-align="${v}" title="Align selection to page ${v}">${v[0].toUpperCase() + v.slice(1)}</button>`,
-          )
-          .join("") +
-        '</div><div class="book-row"><button class="secondary-btn" data-distribute="x" ' +
-        (selected.length < 3
-          ? 'disabled title="Select at least 3 objects"'
-          : "") +
-        '>Space across</button><button class="secondary-btn" data-distribute="y" ' +
-        (selected.length < 3
-          ? 'disabled title="Select at least 3 objects"'
-          : "") +
-        '>Space down</button></div><div class="book-row"><button class="secondary-btn" id="duplicate-object">Duplicate</button><button class="ghost-btn book-danger" id="delete-object">Delete</button></div>';
-      if (selected.length > 1 || o.group)
-        html +=
-          '<button class="secondary-btn" id="group-objects">' +
-          (o.group ? "Ungroup" : "Group selected") +
-          "</button>";
-      html += "</fieldset>";
-    } else {
-      html +=
-        field("Page title", "page.title", p.title) +
-        field(
-          "This page’s paper color",
-          "page.background",
-          p.background,
-          "color",
-        ) +
-        selectField("Paper", "page.texture", p.texture, [
-          ["plain", "Plain"],
-          ["grain", "Subtle grain"],
-          ["lined", "Lined"],
-          ["dots", "Dotted"],
-          ["grid", "Grid"],
-        ]);
-      if (p.decoration?.id === "xped")
-        html += toggle("Show theme artwork", "page.themeArtwork", p.themeArtwork !== false) +
-          toggle("Show xPED logo", "page.showLogo", p.showLogo !== false) +
-          '<button class="secondary-btn" data-select-furniture="logo" ' + (p.showLogo === false ? "disabled" : "") + '>Move & resize logo</button>';
-      html +=
-        '<p class="book-muted book-hint">Paper is the background of this page. It appears in print.</p><button class="secondary-btn" id="apply-paper">Apply paper to all pages</button><h3>Page actions</h3><div class="book-row"><button class="secondary-btn" id="page-earlier" ' +
-        (!canMovePage(-1)
-          ? 'disabled title="This page cannot move earlier"'
-          : "") +
-        '>Move earlier</button><button class="secondary-btn" id="page-later" ' +
-        (!canMovePage(1)
-          ? 'disabled title="This page cannot move later"'
-          : "") +
-        '>Move later</button></div><div class="book-button-stack"><button class="secondary-btn" id="duplicate-page">Duplicate page</button><button class="secondary-btn" id="duplicate-spread">Duplicate spread</button><button class="ghost-btn book-danger" id="delete-page" ' +
-        (p.role !== "page" || b.pages.length <= 4
-          ? 'disabled title="Keep both covers and at least two inside pages"'
-          : "") +
-        ">Delete page</button></div>";
-    }
-    html +=
-      '<details class="book-layout-section"><summary>Layout guides</summary><p class="book-muted book-hint">Guides help you arrange the page. They do not print.</p>' +
-      toggle("Print-safe margins", "guides", guides) +
-      toggle("Layout grid · 5 mm", "grid", grid) +
-      toggle("Center & thirds", "thirds", thirds) +
-      toggle("Smart snapping", "snap", snap) +
-      toggle("Rulers · millimeters", "rulers", rulers) +
-      '<p class="book-muted book-hint">Snap to page centers, thirds, margins and nearby objects. Hold Alt to move freely.</p></details>';
-    html +=
-      '<details><summary>Book palette & themes</summary><p class="book-muted book-hint">Reusable colors for text, shapes and illustrations. Paper color is set separately.</p><div class="book-palette">' +
-      b.palette
-        .slice(0, b.theme?.id === "xped" ? 6 : 4)
-        .map(
-          (c, i) =>
-            `<div>${field(b.theme?.id === "xped" ? M.xped.colors[i].name : ["Accent", "Soft", "Warm", "Ink"][i], "palette." + i, c, "color")}<button class="secondary-btn" data-palette="${i}" ${!o || o.locked || o.type === "image" ? 'disabled title="Select text, a shape or a drawing to use this color"' : ""}>Use</button></div>`,
-        )
-        .join("") +
-      '</div><button class="secondary-btn" id="book-themes">Choose a book theme</button></details>';
-    const pageNumbers = M.pageNumberOptions(b.pageNumbers);
-    const numberWeights = M.fontWeights(pageNumbers.font);
-    html += '<details id="page-number-controls"><summary>Page numbers</summary>' +
-      toggle('Show page numbers', 'pageNumbers.enabled', pageNumbers.enabled) +
-      '<p class="book-muted book-hint">Number inside pages from 1. Covers stay unnumbered; moving pages updates the numbers automatically.</p>';
-    if (pageNumbers.enabled) {
-      html += '<h3>Number position</h3><div class="book-button-stack book-number-positions" role="group" aria-label="Number position">' +
-        [['logo', 'Beside logo'], ['center', 'Bottom center'], ['outer', 'Bottom outside edge']].map(([value, label]) => `<button class="secondary-btn" data-number-position="${value}" aria-pressed="${pageNumbers.position === value && !p.numberPlacement}">${label}</button>`).join('') + '</div>' +
-        '<p class="book-muted book-hint">Position presets apply to every inside page. Drag a number to adjust just that page.</p>' +
-        (p.role === 'page' ? '<button class="secondary-btn" data-select-furniture="number">Move this page number</button>' : '') +
-        selectField('Number font', 'pageNumbers.font', pageNumbers.font, M.fontOptions) +
-      field('Number size (pt)', 'pageNumbers.size', pageNumbers.size, 'number', 'min="6" max="24" step="1"') +
-      (numberWeights ? selectField('Number thickness', 'pageNumbers.weight', pageNumbers.weight, numberWeights.map((weight) => [weight, weight === 700 ? 'Bold' : weight === 400 ? 'Regular' : weight === 300 ? 'Light' : String(weight)])) :
-        field('Number thickness', 'pageNumbers.weight', pageNumbers.weight, 'range', `min="${pageNumbers.font === 'Nunito' ? 200 : 100}" max="${pageNumbers.font === 'Playpen Sans' ? 800 : pageNumbers.font === 'Nunito' ? 1000 : 900}" step="10"`)) +
-      selectField('Number color', 'pageNumbers.colorMode', pageNumbers.colorMode, [['theme', 'Match the page'], ['custom', 'Custom color']]);
-      if (pageNumbers.colorMode === 'custom') html += field('Custom number color', 'pageNumbers.color', pageNumbers.color, 'color');
-    }
-    html += '</details>';
-    if (tool !== "select")
-      html +=
-        "<h3>Drawing</h3>" +
-        selectField("Tool", "tool", tool, [
-          ["select", "Select"],
-          ["pen", "Pen"],
-          ["pencil", "Pencil"],
-          ["highlighter", "Highlighter"],
-          ["eraser", "Eraser"],
-        ]) +
-        field("Color", "brushColor", brushColor, "color") +
-        field(
-          "Thickness",
-          "brushWidth",
-          brushWidth,
-          "range",
-          'min="0.2" max="6" step="0.1"',
-        );
-    html += `</div><section id="book-layers" class="book-layers" role="tabpanel" aria-label="Layers" ${inspectorTab !== "layers" ? "hidden" : ""}><h3>Layers <span>${p.items.length}</span></h3><p class="book-muted book-hint">Top of the list appears in front.</p>${
-      p.items
-        .slice()
-        .reverse()
-        .map(
-          (layer, i) =>
-            `<div class="book-layer${selected.includes(layer.id) ? " selected" : ""}${layer.hidden ? " is-hidden" : ""}"><button data-select-object="${layer.id}" aria-pressed="${selected.includes(layer.id)}" title="Select ${esc(layer.name)}">${icon(layer.type)}<span>${esc(layer.name || layer.type)}${layer.hidden ? "<small>Hidden</small>" : layer.locked ? "<small>Locked</small>" : ""}</span></button><div class="book-layer-actions">${iconButton("up", "Move " + layer.name + " forward", `data-layer-up="${layer.id}" ${i === 0 ? "disabled" : ""}`)}${iconButton("down", "Move " + layer.name + " backward", `data-layer-down="${layer.id}" ${i === p.items.length - 1 ? "disabled" : ""}`)}${iconButton(layer.locked ? "lock" : "unlock", (layer.locked ? "Unlock " : "Lock ") + layer.name, `data-lock="${layer.id}" aria-pressed="${layer.locked}"`)}${iconButton(layer.hidden ? "hidden" : "eye", (layer.hidden ? "Show " : "Hide ") + layer.name, `data-hide="${layer.id}" aria-pressed="${layer.hidden}"`)}</div></div>`,
-        )
-        .join("") ||
-      '<p class="book-muted book-hint">Add text, an image or a shape to begin.</p>'
-    }</section>`;
-    window.BookColorPicker?.close();
-    panel.innerHTML = html;
-    panel.querySelectorAll("details").forEach((d) => {
-      d.open = panelDetails.has(d.querySelector("summary").textContent);
-    });
-    if (disabled)
-      panel
-        .querySelectorAll(
-          "input,textarea,select,button:not(#close-inspector):not([data-select-object]):not([data-panel])",
-        )
-        .forEach((e) => {
-          if (
-            !["guides", "snap", "rulers", "grid", "thirds"].includes(
-              e.dataset.field,
-            )
-          )
-            e.disabled = true;
-        });
-    if (focusField)
-      panel
-        .querySelector(`[data-field="${focusField}"]`)
-        ?.focus({ preventScroll: true });
-    window.BookColorPicker?.enhance(panel);
-    window.LectureProcessorUx?.enhanceMarkedSelects?.(panel);
-    panel.scrollTop = scroll;
-    renderContentWarnings();
-    selectionToolbar();
-  }
-  function applyStyle(key, value) {
-    const o = item();
-    if (!o) return;
-    const range = selectionRange;
-    const length = o.runs?.length
-      ? o.runs.reduce((n, r) => n + r.text.length, 0)
-      : o.text.length;
-    if (
-      range &&
-      range.end > range.start &&
-      !(range.start === 0 && range.end >= length) &&
-      o.type === "text"
-    ) {
-      const runs =
-        o.runs && o.runs.length
-          ? o.runs
-          : [{ text: o.text, style: { ...o.style } }];
-      let offset = 0,
-        next = [];
-      runs.forEach((r) => {
-        const end = offset + r.text.length,
-          startCut = Math.max(0, range.start - offset),
-          endCut = Math.min(r.text.length, range.end - offset);
-        if (startCut < endCut) {
-          if (startCut)
-            next.push({
-              text: r.text.slice(0, startCut),
-              style: { ...r.style },
-            });
-          next.push({
-            text: r.text.slice(startCut, endCut),
-            style: { ...r.style, [key]: value },
-          });
-          if (endCut < r.text.length)
-            next.push({ text: r.text.slice(endCut), style: { ...r.style } });
-        } else next.push(r);
-        offset = end;
-      });
-      o.runs = next;
-    } else {
-      o.style[key] = value;
-      if (o.runs)
-        o.runs = o.runs.map((r) => ({
-          ...r,
-          style: { ...r.style, [key]: value },
-        }));
-    }
-  }
-  let brushColor = "#263343",
-    brushWidth = 0.8;
-  function changeField(input) {
-    const name = input.dataset.field;
-    if (!name) return;
-    if (input.type === "number" && (input.value.trim() === "" || !Number.isFinite(Number(input.value)))) return;
-    if (input.type === "color") {
-      if (liveColorValues.get(input) === input.value) return;
-      liveColorValues.set(input, input.value);
-    }
-    let value =
-      input.type === "checkbox"
-        ? input.checked
-        : ["range", "number"].includes(input.type)
-          ? Number(input.value)
-          : input.value;
-    if (input.type === "number") {
-      value = M.clamp(value, input.min === "" ? -Infinity : Number(input.min), input.max === "" ? Infinity : Number(input.max));
-      input.dataset.lastValue = String(value);
-    }
-    if (
-      [
-        "guides",
-        "snap",
-        "rulers",
-        "grid",
-        "thirds",
-        "tool",
-        "brushColor",
-        "brushWidth",
-      ].includes(name)
-    ) {
-      if (name === "guides") guides = value;
-      if (name === "snap") snap = value;
-      if (name === "rulers") rulers = value;
-      if (name === "grid") grid = value;
-      if (name === "thirds") thirds = value;
-      if (name === "tool") tool = value;
-      if (name === "brushColor") brushColor = value;
-      if (name === "brushWidth") brushWidth = value;
-      saveView();
-      renderStage();
-      if (name === "tool") renderInspector();
-      return;
-    }
-    if (!editCheckpoint(input)) return;
-    const o = item();
-    if (o?.type === "flow" && o.flowStyle !== "custom" &&
-        (["fill", "stroke", "style.color"].includes(name) || (name === "flowStyle" && value === "custom"))) {
-      const colors = M.flowAppearance(o, page().background, page().decoration);
-      o.fill = colors.fill;
-      o.stroke = colors.stroke;
-      o["style"].color = colors.ink;
-      o.flowStyle = "custom";
-      const selector = $("inspector").querySelector('[data-field="flowStyle"]');
-      if (selector) selector.value = "custom";
-    }
-    if (name.startsWith("furniture.")) {
-      const box = { ...furnitureBox(), [name.slice(10)]: value };
-      placeFurniture(box);
-    }
-    else if (name.startsWith("page.")) page()[name.slice(5)] = value;
-    else if (name.startsWith('pageNumbers.')) {
-      if (name === "pageNumbers.position") b.pages.forEach((p) => delete p.numberPlacement);
-      b.pageNumbers = M.pageNumberOptions({ ...M.pageNumberOptions(b.pageNumbers), [name.slice(12)]: value });
-    }
-    else if (name.startsWith("palette."))
-      b.palette[+name.split(".")[1]] = value;
-    else if (o) {
-      if (name.startsWith("style.")) {
-        const selectionStyle = selectedStyle(o);
-        applyStyle(name.slice(6), value);
-        if (name === "style.font") {
-          const weights = M.fontWeights(value);
-          if (weights)
-            applyStyle("weight", weights.reduce((closest, weight) => Math.abs(weight - selectionStyle.weight) < Math.abs(closest - selectionStyle.weight) ? weight : closest));
-          if (value === "Playpen Sans") {
-            applyStyle("weight", Math.min(800, selectionStyle.weight));
-          }
-          if (!M.fontSupportsItalic(value)) applyStyle("italic", false);
-        }
-      } else if (name === "styleName") {
-        o.styleName = value;
-        if (b.styles[value]) {
-          o.style = M.clone(b.styles[value]);
-          o.runs = [];
-          M.styleObjectForBook(o, b, page());
-        }
-      } else {
-        const oldW = o.w,
-          oldH = o.h;
-        if (
-          o.type === "table" &&
-          name === "tableStyle" &&
-          value === "custom" &&
-          o.tableStyle !== "custom"
-        ) {
-          const colors = M.tableAppearance(o, page().background, page().decoration);
-          o.fill = colors.header;
-          o.stroke = colors.line;
-          o["style"].color = colors.ink;
-        }
-        if (
-          (name === "w" || name === "h") &&
-          o.type === "image" &&
-          o.aspectLock
-        ) {
-          const scale = M.clamp(value / o[name], Math.max(0.2 / o.w, 0.2 / o.h), Math.min(297 / o.w, 420 / o.h));
-          o.w *= scale;
-          o.h *= scale;
-          value = o[name];
-          input.dataset.lastValue = String(value);
-        }
-        o[name] = value;
-        if (name === "stroke" && o.type === "arrow" && !o.arrowFill) {
-          const headColor = $("inspector").querySelector('[data-field="arrowFill"]');
-          if (headColor) { headColor.value = value; window.BookColorPicker?.enhance(headColor); }
-        }
-        if (name === "shape" && value === "pill" && o.w < o.h * 1.6) {
-          o.w = Math.min(M.W - 20, o.h * 2.4);
-          o.x = M.clamp(o.x, 0, M.W - o.w);
-        }
-        if (["w", "h"].includes(name))
-          o[name] = M.clamp(value, 0.2, name === "w" ? 297 : 420);
-        if (["w", "h"].includes(name) && o.type === "image" && o.aspectLock) {
-          const otherName = name === "w" ? "h" : "w";
-          const otherInput = $("inspector").querySelector(`[data-field="${otherName}"]`);
-          if (otherInput) {
-            otherInput.value = String(Math.round(o[otherName] * 100) / 100);
-            otherInput.dataset.lastValue = otherInput.value;
-          }
-        }
-        if (o.type === "drawing" && ["w", "h"].includes(name))
-          o.points = o.points.map((p) => [
-            (p[0] * o.w) / oldW,
-            (p[1] * o.h) / oldH,
-            p[2],
-          ]);
-      }
-    }
-    changed(false);
-    renderStage();
-    schedulePages();
-    if (input.tagName === "SELECT" || input.type === "checkbox")
-      renderInspector();
+    inspector.renderInspector();
   }
   function syncLinkedItems() {
     const o = item();
     if (!o || !o.spanId) return;
-    b.pages.forEach((p) =>
+    state.book.pages.forEach((p) =>
       p.items.forEach((other) => {
         if (other.spanId === o.spanId && other.id !== o.id) {
           const keep = { id: other.id, spanSide: other.spanSide };
@@ -2292,19 +1387,19 @@
     );
   }
   function keepSpreadsTogether() {
-    const result = M.preserveSpreads(b.pages);
+    const result = M.preserveSpreads(state.book.pages);
     if (result.length > 100) {
-      const previous = undoStack.pop();
+      const previous = state.undoStack.pop();
       if (previous) {
         const { activePage, ...snapshot } = previous;
-        Object.assign(b, snapshot);
-        active = activePage;
+        Object.assign(state.book, snapshot);
+        state.active = activePage;
       }
       throw new Error(
         "This change needs a blank page to keep the spread together. The book is at its page limit.",
       );
     }
-    b.pages = result;
+    state.book.pages = result;
   }
   function addObject(type, preset = "body") {
     finishText();
@@ -2317,7 +1412,7 @@
     const styles =
       type === "text"
         ? {
-            style: M.clone(b.styles[preset]),
+            style: M.clone(state.book.styles[preset]),
             styleName: preset,
             text:
               preset === "heading"
@@ -2327,12 +1422,12 @@
                   : "Your story starts here.",
           }
         : {};
-    inspectorTab = "settings";
-    activePathPoint = -1;
+    state.inspectorTab = "settings";
+    state.activePathPoint = -1;
     const o = M.object(type, {
       ...styles,
-      fill: b.palette[1],
-      stroke: b.palette[0],
+      fill: state.book.palette[1],
+      stroke: state.book.palette[0],
     });
     const baseName =
       type === "text"
@@ -2345,7 +1440,7 @@
     if (type === "table") {
       o.h = 55;
       o.strokeWidth = 0.2;
-      o.style = { ...b.styles.body, size: 13, color: b.palette[3] };
+      o.style = { ...state.book.styles.body, size: 13, color: state.book.palette[3] };
       o.cells = [
         ["Character", "Favorite thing"],
         ["Little fox", "Moonlight"],
@@ -2356,7 +1451,7 @@
       o.w = 88;
       o.h = 100;
       o.x = (M.W - o.w) / 2;
-      o.style = { ...b.styles.body, size: 15, color: b.palette[3] };
+      o.style = { ...state.book.styles.body, size: 15, color: state.book.palette[3] };
       o.steps = ["An idea", "A little adventure", "A happy ending"];
     }
     if (["line", "arrow"].includes(type)) {
@@ -2372,37 +1467,37 @@
       o.y = 74;
     }
     if (type === "image") return;
-    M.styleObjectForBook(o, b, page());
-    if (b.theme?.id === "xped" && type === "table")
+    M.styleObjectForBook(o, state.book, page());
+    if (state.book.theme?.id === "xped" && type === "table")
       o.cells = [["Topic", "Notes"], ["An idea", "What matters to you"], ["Next step", "Something to explore"]];
-    if (b.theme?.id === "xped" && type === "flow")
+    if (state.book.theme?.id === "xped" && type === "flow")
       o.steps = ["Start here", "Explore an idea", "Choose a next step"];
     page().items.push(o);
-    furnitureSelection = "";
-    selected = [o.id];
-    tool = "select";
+    state.furnitureSelection = "";
+    state.selected = [o.id];
+    state.tool = "select";
     changed();
-    setInspector(true, window.innerWidth <= 780);
+    inspector.setInspector(true, window.innerWidth <= 780);
   }
   function addPage() {
-    if (b.pages.length >= 100) {
+    if (state.book.pages.length >= 100) {
       notify("This book has reached 100 pages.", true);
       return;
     }
     if (!checkpoint()) return;
     const index = Math.min(
-      b.pages.length - 1,
-      Math.max(1, b.pages.indexOf(page()) + 1),
+      state.book.pages.length - 1,
+      Math.max(1, state.book.pages.indexOf(page()) + 1),
     );
-    const p = M.pageForBook(b);
-    if (b.theme?.id !== "xped") p.background = page().background;
+    const p = M.pageForBook(state.book);
+    if (state.book.theme?.id !== "xped") p.background = page().background;
     p.texture = page().texture;
-    b.pages.splice(index, 0, p);
+    state.book.pages.splice(index, 0, p);
     keepSpreadsTogether();
-    active = p.id;
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
+    state.active = p.id;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
     changed();
   }
   function deletePage() {
@@ -2413,23 +1508,23 @@
       );
       return;
     }
-    if (b.pages.length <= 4) {
+    if (state.book.pages.length <= 4) {
       notify("Keep at least two inside pages in your book.");
       return;
     }
-    const i = b.pages.indexOf(p);
+    const i = state.book.pages.indexOf(p);
     if (p.items.some((o) => o.spanId)) {
       notify("Split the spread illustration before deleting this page.");
       return;
     }
     if (!checkpoint()) return;
-    b.deletedPages.push(p);
-    b.pages.splice(i, 1);
+    state.book.deletedPages.push(p);
+    state.book.pages.splice(i, 1);
     keepSpreadsTogether();
-    active = b.pages[Math.min(i, b.pages.length - 1)].id;
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
+    state.active = state.book.pages[Math.min(i, state.book.pages.length - 1)].id;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
     changed();
   }
   function copyPage(p) {
@@ -2448,13 +1543,13 @@
     const sources = spread
       ? currentSpreads()
           [turn].filter(Boolean)
-          .map((id) => b.pages.find((p) => p.id === id))
+          .map((id) => state.book.pages.find((p) => p.id === id))
       : [page()];
     if (!spread && page().items.some((o) => o.spanId)) {
       notify("Use Duplicate spread to keep this illustration together.");
       return;
     }
-    if (b.pages.length + sources.length > 100) {
+    if (state.book.pages.length + sources.length > 100) {
       notify("This book has reached its page limit.");
       return;
     }
@@ -2467,19 +1562,19 @@
           o.spanId = spanMap[o.spanId] || (spanMap[o.spanId] = M.id());
       }),
     );
-    b.pages.splice(
+    state.book.pages.splice(
       Math.min(
-        b.pages.length - 1,
-        b.pages.indexOf(sources[sources.length - 1]) + 1,
+        state.book.pages.length - 1,
+        state.book.pages.indexOf(sources[sources.length - 1]) + 1,
       ),
       0,
       ...copies,
     );
     keepSpreadsTogether();
-    active = copies[0].id;
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
+    state.active = copies[0].id;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
     changed();
   }
   function duplicateObject() {
@@ -2490,7 +1585,7 @@
     if (!checkpoint()) return;
     const groups = new Map();
     const copies = page()
-      .items.filter((o) => selected.includes(o.id) && !o.locked)
+      .items.filter((o) => state.selected.includes(o.id) && !o.locked)
       .map((o) => ({
         ...M.clone(o),
         id: M.id(),
@@ -2504,7 +1599,7 @@
           : "",
       }));
     page().items.push(...copies);
-    selected = copies.map((o) => o.id);
+    state.selected = copies.map((o) => o.id);
     changed();
   }
   function deleteObjects() {
@@ -2515,44 +1610,44 @@
       .items.filter((o) => removable.includes(o.id))
       .map((o) => o.spanId)
       .filter(Boolean);
-    b.pages.forEach((p) => {
+    state.book.pages.forEach((p) => {
       p.items = p.items.filter(
         (o) => !removable.includes(o.id) && !spanIds.includes(o.spanId),
       );
     });
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
     changed();
   }
   function undo(redo = false) {
     finishText();
-    editBatch = null;
+    state.editBatch = null;
     if (!editable()) return;
-    const from = redo ? redoStack : undoStack,
-      to = redo ? undoStack : redoStack;
+    const from = redo ? state.redoStack : state.undoStack,
+      to = redo ? state.undoStack : state.redoStack;
     if (!from.length) return;
     to.push(
       M.clone({
-        pages: b.pages,
-        deletedPages: b.deletedPages,
+        pages: state.book.pages,
+        deletedPages: state.book.deletedPages,
         ...metadata(),
-        activePage: active,
+        activePage: state.active,
       }),
     );
     const { activePage, ...snapshot } = from.pop();
-    Object.assign(b, snapshot);
-    active = b.pages.some((p) => p.id === activePage)
+    Object.assign(state.book, snapshot);
+    state.active = state.book.pages.some((p) => p.id === activePage)
       ? activePage
-      : b.pages[0].id;
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
+      : state.book.pages[0].id;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
     changed();
   }
   function sizeImage(preset) {
     const o = item(),
-      a = b.assets.find((a) => a.id === o.assetId);
+      a = state.book.assets.find((a) => a.id === o.assetId);
     if (!o || !a || !checkpoint()) return;
     Object.assign(o, M.imageSize(a.width, a.height, preset));
     o.x = M.clamp(o.x, 0, M.W - o.w);
@@ -2564,7 +1659,7 @@
     if (!o || !checkpoint()) return;
     if (o.spanId) {
       const span = o.spanId;
-      b.pages.forEach((p) => {
+      state.book.pages.forEach((p) => {
         p.items = p.items.filter((x) => x.spanId !== span || x.id === o.id);
       });
       o.spanId = "";
@@ -2572,14 +1667,14 @@
       changed();
       return;
     }
-    const ids = M.spreads(b.pages).find((s) => s.includes(active));
+    const ids = M.spreads(state.book.pages).find((s) => s.includes(state.active));
     if (!ids || ids.length !== 2 || !ids.every(Boolean)) {
       notify("Choose two facing inside pages first.");
       return;
     }
     const span = M.id(),
-      left = b.pages.find((p) => p.id === ids[0]),
-      right = b.pages.find((p) => p.id === ids[1]);
+      left = state.book.pages.find((p) => p.id === ids[0]),
+      right = state.book.pages.find((p) => p.id === ids[1]);
     page().items = page().items.filter((x) => x.id !== o.id);
     const h = Math.min(M.H, o.h),
       y = M.clamp(o.y, 0, M.H - h);
@@ -2605,977 +1700,10 @@
       h,
       fit: "cover",
     });
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
     changed();
-  }
-  function resizePoint(o, delta, corner) {
-    let x = o.x,
-      y = o.y,
-      w = o.w,
-      h = o.h;
-    const left = corner.includes("w"),
-      top = corner.includes("n");
-    w = Math.max(2, o.w + (left ? -delta.x : delta.x));
-    h = Math.max(2, o.h + (top ? -delta.y : delta.y));
-    if (o.aspectLock && o.type === "image") {
-      const ratio = o.w / o.h;
-      if (Math.abs(delta.x) > Math.abs(delta.y)) h = w / ratio;
-      else w = h * ratio;
-      const scale = Math.min(1, 297 / w, 420 / h);
-      w *= scale; h *= scale;
-    }
-    if (left) x = o.x + o.w - w;
-    if (top) y = o.y + o.h - h;
-    return { x, y, w: Math.min(297, w), h: Math.min(420, h) };
-  }
-  let canvasPointer = null;
-  for (const eventName of ["pointerup", "pointercancel"]) document.addEventListener(eventName, (event) => {
-    if (event.pointerId === canvasPointer) canvasPointer = null;
-  });
-  function pointer(event) {
-    if (canvasPointer !== null && canvasPointer !== event.pointerId) return;
-    if (event.target.closest("#canvas-text-editor")) return;
-    if (inlineEdit) finishText();
-    let sheet = event.target.closest("[data-page-id]");
-    if (!sheet || !b || event.button > 0) return;
-    canvasPointer = event.pointerId;
-    const pid = sheet.dataset.pageId;
-    sheet.focus({ preventScroll: true });
-    // Blurring an inspector field can redraw the page; use its live geometry.
-    if (!sheet.isConnected) {
-      sheet = $("book-spread").querySelector(`[data-page-id="${pid}"]`);
-      if (!sheet) return;
-      sheet.focus({ preventScroll: true });
-    }
-    if (pid !== active) {
-      active = pid;
-      selected = [];
-      furnitureSelection = "";
-      activePathPoint = -1;
-      renderPages();
-      $("book-spread").querySelectorAll("[data-page-id]").forEach((node) => { node.dataset.active = String(node.dataset.pageId === active); });
-      renderInspector();
-    }
-    if (!editable() || reading) {
-      const startX = event.clientX;
-      const startY = event.clientY;
-      sheet.onpointerup = (e) => {
-        if (e.pointerId !== event.pointerId) return;
-        if (event.pointerType === "touch" && Math.abs(e.clientX - startX) > 60 && Math.abs(e.clientX - startX) > Math.abs(e.clientY - startY) * 1.5) go(e.clientX < startX ? 1 : -1);
-        sheet.onpointerup = null;
-      };
-      return;
-    }
-    const rect = sheet.getBoundingClientRect(),
-      scale = rect.width / M.W,
-      start = {
-        x: (event.clientX - rect.left) / scale,
-        y: (event.clientY - rect.top) / scale,
-      };
-    const furnitureNode = event.target.closest("[data-furniture]");
-    if (furnitureNode && tool === "select") return dragFurniture(event, sheet, furnitureNode.dataset.furniture);
-    if (event.target.closest("[data-path-point]")) return dragPathPoint(event, sheet);
-    furnitureSelection = "";
-    const objectNode = event.target.closest("[data-object]"),
-      handle = event.target.closest("[data-handle]");
-    if (tool === "eraser") {
-      const target =
-        objectNode &&
-        page().items.find((o) => o.id === objectNode.dataset.object);
-      if (target && target.type === "drawing" && !target.locked && checkpoint()) {
-        page().items = page().items.filter((o) => o !== target);
-        changed();
-      }
-      return;
-    }
-    if (["pen", "pencil", "highlighter"].includes(tool)) {
-      if (page().items.length >= 300) return notify("This page has 300 objects. Add another page to keep drawing.", true);
-      if (!checkpoint()) return;
-      const p = page(),
-        o = M.object("drawing", {
-          name:
-            tool === "pen"
-              ? "Pen drawing"
-              : tool === "pencil"
-                ? "Pencil drawing"
-                : "Highlight",
-          x: 0,
-          y: 0,
-          w: M.W,
-          h: M.H,
-          brush: tool,
-          stroke: brushColor,
-          strokeWidth: brushWidth,
-          points: [[start.x, start.y, event.pressure || 0.5]],
-        });
-      p.items.push(o);
-      selected = [];
-      furnitureSelection = "";
-      activePathPoint = -1;
-      const move = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-        if (o.points.length >= 3000) return;
-        const x = M.clamp((e.clientX - rect.left) / scale, 0, M.W),
-          y = M.clamp((e.clientY - rect.top) / scale, 0, M.H);
-        const last = o.points[o.points.length - 1];
-        if (Math.hypot(x - last[0], y - last[1]) < 0.3) return;
-        o.points.push([x, y, e.pressure || 0.5]);
-        renderStage();
-      };
-      const up = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", up);
-        document.removeEventListener("pointercancel", up);
-        const xs = o.points.map((p) => p[0]),
-          ys = o.points.map((p) => p[1]);
-        o.x = Math.min(...xs);
-        o.y = Math.min(...ys);
-        o.w = Math.max(1, Math.max(...xs) - o.x);
-        o.h = Math.max(1, Math.max(...ys) - o.y);
-        o.points = o.points.map((p) => [p[0] - o.x, p[1] - o.y, p[2]]);
-        changed();
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", up);
-      document.addEventListener("pointercancel", up);
-      event.preventDefault();
-      return;
-    }
-    if (!objectNode) {
-      const before = event.shiftKey ? selected.slice() : [];
-      selected = before;
-      selectionRange = null;
-      renderSelection();
-      renderInspector();
-      const sx = event.clientX,
-        sy = event.clientY;
-      const marquee = document.createElement("div");
-      marquee.className = "book-marquee";
-      let moved = false;
-      const move = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-        if (event.pointerType === "touch") return;
-        if (Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
-        moved = true;
-        if (!marquee.isConnected) sheet.append(marquee);
-        const end = {
-            x: (e.clientX - rect.left) / scale,
-            y: (e.clientY - rect.top) / scale,
-          },
-          area = {
-            x: Math.min(start.x, end.x),
-            y: Math.min(start.y, end.y),
-            w: Math.abs(start.x - end.x),
-            h: Math.abs(start.y - end.y),
-          };
-        layoutRule(".book-marquee", {
-          left: area.x * scale + "px",
-          top: area.y * scale + "px",
-          width: area.w * scale + "px",
-          height: area.h * scale + "px",
-        });
-        selected = [
-          ...new Set([
-            ...before,
-            ...page()
-              .items.filter((o) => {
-                const q = M.bounds([o]);
-                return (
-                  !o.locked &&
-                  !o.hidden &&
-                  q.x < area.x + area.w &&
-                  q.x + q.w > area.x &&
-                  q.y < area.y + area.h &&
-                  q.y + q.h > area.y
-                );
-              })
-              .map((o) => o.id),
-          ]),
-        ];
-        renderSelection();
-      };
-      const release = (e) => {
-        if (e.pointerId !== event.pointerId) return;
-        document.removeEventListener("pointermove", move);
-        document.removeEventListener("pointerup", release);
-        document.removeEventListener("pointercancel", release);
-        marquee.remove();
-        if (
-          event.pointerType === "touch" &&
-          (start.x < 12 || start.x > M.W - 12) &&
-          Math.abs(e.clientX - sx) > 70 &&
-          Math.abs(e.clientY - sy) < 70
-        )
-          go(e.clientX < sx ? 1 : -1);
-        else if (moved) renderInspector();
-      };
-      document.addEventListener("pointermove", move);
-      document.addEventListener("pointerup", release);
-      document.addEventListener("pointercancel", release);
-      return;
-    }
-    const o = page().items.find((x) => x.id === objectNode.dataset.object);
-    if (!o) return;
-    if (o.locked) {
-      furnitureSelection = "";
-      selected = [o.id];
-      setInspector(true);
-      renderSelection();
-      renderInspector();
-      notify("This object is locked. Use Unlock to edit it.");
-      return;
-    }
-    inspectorTab = "settings";
-    if (!inspectorOpen) setInspector(true);
-    if (event.shiftKey && !handle) {
-      selected = selected.includes(o.id)
-        ? selected.filter((id) => id !== o.id)
-        : selected.concat(o.id);
-      renderSelection();
-      renderInspector();
-      return;
-    }
-    if (!selected.includes(o.id)) activePathPoint = -1;
-    if (!selected.includes(o.id))
-      selected = o.group
-        ? page()
-            .items.filter((x) => x.group === o.group && !x.locked && !x.hidden)
-            .map((x) => x.id)
-        : [o.id];
-    selectionRange = null;
-    renderSelection();
-    if (event.detail < 2) renderInspector();
-    const originals = page()
-      .items.filter((x) => selected.includes(x.id))
-      .map(M.clone);
-    let moved = false;
-    const move = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-      const delta = {
-        x: (e.clientX - event.clientX) / scale,
-        y: (e.clientY - event.clientY) / scale,
-      };
-      if (!moved && Math.hypot(delta.x, delta.y) < 0.5) return;
-      if (!moved) {
-        checkpoint();
-        moved = true;
-      }
-      const groupBox = M.bounds(originals);
-      let applied = delta,
-        lines = [];
-      if (!handle) {
-        applied = {
-          x: M.clamp(
-            delta.x,
-            -groupBox.x - groupBox.w + 4,
-            M.W - 4 - groupBox.x,
-          ),
-          y: M.clamp(
-            delta.y,
-            -groupBox.y - groupBox.h + 4,
-            M.H - 4 - groupBox.y,
-          ),
-        };
-        if (snap && !e.altKey) {
-          const result = M.snapMove(
-            originals,
-            applied,
-            page().items.filter((x) => !selected.includes(x.id)),
-            6 / scale,
-            grid,
-          );
-          applied = result.delta;
-          lines = result.lines;
-        }
-      }
-      originals.forEach((original) => {
-        const target = page().items.find((x) => x.id === original.id);
-        if (!target) return;
-        if (handle) {
-          Object.assign(
-            target,
-            resizePoint(original, delta, handle.dataset.handle),
-          );
-          if (target.type === "drawing")
-            target.points = original.points.map((p) => [
-              (p[0] * target.w) / original.w,
-              (p[1] * target.h) / original.h,
-              p[2],
-            ]);
-        } else {
-          target.x = original.x + applied.x;
-          target.y = original.y + applied.y;
-        }
-      });
-      syncLinkedItems();
-      renderStage();
-      feedback(lines, M.bounds(selectedItems()));
-    };
-    const up = (e) => {
-      if (e.pointerId !== event.pointerId) return;
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", up);
-      document.removeEventListener("pointercancel", up);
-      feedback();
-      if (moved) changed();
-    };
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", up);
-    document.addEventListener("pointercancel", up);
-    event.preventDefault();
-  }
-  async function imageInfo(file) {
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type))
-      throw new Error("Choose a PNG, JPEG or WebP image.");
-    if (file.size > 10 * 1024 * 1024)
-      throw new Error(
-        "This image is larger than 10 MB. Choose a smaller file.",
-      );
-    let bitmap;
-    try {
-      bitmap = await createImageBitmap(file);
-    } catch (_) {
-      throw new Error(
-        "This image could not be opened. Try saving it again as a PNG, JPEG or WebP.",
-      );
-    }
-    const dimensions = { width: bitmap.width, height: bitmap.height };
-    bitmap.close();
-    if (dimensions.width * dimensions.height > 32000000)
-      throw new Error("Resize this image to at most 32 megapixels.");
-    return dimensions;
-  }
-  async function importImages(files, pid, point) {
-    if (!editable() || reading) {
-      notify("Start an editing turn before adding images.");
-      return;
-    }
-    const current = b, generation = accountGeneration,
-      p = current.pages.find((p) => p.id === pid) || page();
-    if (!checkpoint()) return;
-    uploads++;
-    let offset = 0;
-    try {
-      for (const file of Array.from(files)) {
-        const progress = document.createElement("div");
-        progress.className = "book-upload";
-        progress.textContent = "Adding " + file.name + "…";
-        $("upload-list").appendChild(progress);
-        try {
-          const dims = await imageInfo(file);
-          assertAccount(generation);
-          if (b !== current) return;
-          if (
-            current.assets.reduce((n, a) => n + a.size, 0) + file.size >
-            25 * 1024 * 1024
-          )
-            throw new Error("This book has reached its image allowance.");
-          const aid = M.id(),
-            asset = {
-              id: aid,
-              name: file.name || "Pasted image",
-              size: file.size,
-              ...dims,
-              mime: file.type,
-              local: true,
-            };
-          await D.putAsset({ ...asset, blob: file });
-          assertAccount(generation);
-          if (b !== current) return;
-          current.assets.push(asset);
-          renderedAssets[aid] = {
-            src: URL.createObjectURL(file),
-            ...dims,
-            blob: file,
-          };
-          const old = replacement && p.items.find((o) => o.id === replacement);
-          let o;
-          if (old) {
-            o = old;
-            if (!o.originalAssetId) o.originalAssetId = o.assetId;
-            o.assetId = aid;
-            replacement = "";
-          } else {
-            const size = M.imageSize(dims.width, dims.height);
-            o = M.object("image", {
-              ...size,
-              assetId: aid,
-              name: asset.name,
-              x: M.clamp(
-                (point ? point.x - size.w / 2 : (M.W - size.w) / 2) + offset,
-                0,
-                M.W - size.w,
-              ),
-              y: M.clamp(
-                (point ? point.y - size.h / 2 : (M.H - size.h) / 2) + offset,
-                0,
-                M.H - size.h,
-              ),
-            });
-            p.items.push(o);
-            offset += 5;
-          }
-          if (b === current) {
-            active = p.id;
-            furnitureSelection = "";
-            selected = [o.id];
-            changed();
-          }
-          progress.textContent = file.name + " · Saved on this device";
-          if (!current.local) {
-            try {
-              await uploadOne(asset, file, current);
-              progress.remove();
-            } catch (e) {
-              saveError = e.message;
-              updateStatus();
-              progress.textContent = file.name + " · " + e.message;
-              const retry = document.createElement("button");
-              retry.className = "secondary-btn";
-              retry.textContent = "Retry";
-              retry.onclick = action(async () => {
-                if (b !== current)
-                  throw new Error("Open this book before retrying.");
-                await uploadOne(asset, file, current);
-                progress.remove();
-              });
-              progress.appendChild(retry);
-            }
-          } else setTimeout(() => progress.remove(), 2500);
-        } catch (e) {
-          progress.textContent = e.message;
-          setTimeout(() => progress.remove(), 9000);
-        }
-      }
-    } finally {
-      uploads--;
-      if (b === current) changed();
-    }
-  }
-  async function uploadOne(asset, file, current) {
-    // Flush only after remapping all local references, so no local asset IDs reach cloud pages.
-    clearTimeout(saveTimer);
-    if (saving) await saving;
-    if (b !== current) throw accountChangedError();
-    if (!leaseToken)
-      throw new Error("Start a new editing turn, then retry the image upload.");
-    const form = new FormData();
-    form.append("image", file, asset.name);
-    form.append("lease_token", leaseToken);
-    form.append("base_revision", current.revision);
-    form.append("idempotency_key", "asset:" + asset.id);
-    const result = await api("/api/books/" + current.id + "/assets", {
-        method: "POST",
-        body: form,
-      }),
-      remote = result.asset;
-    if (b !== current) throw accountChangedError();
-    await D.putAsset({ ...remote, blob: file });
-    if (b !== current) throw accountChangedError();
-    renderedAssets[remote.id] = renderedAssets[asset.id];
-    current.pages
-      .concat(
-        current.deletedPages || [],
-        ...(current.versions || []).map((v) =>
-          v.pages.concat(v.deletedPages || []),
-        ),
-        ...undoStack.map((v) => v.pages.concat(v.deletedPages || [])),
-        ...redoStack.map((v) => v.pages.concat(v.deletedPages || [])),
-      )
-      .forEach((p) =>
-        p.items.forEach((o) => {
-          if (o.assetId === asset.id) o.assetId = remote.id;
-          if (o.originalAssetId === asset.id) o.originalAssetId = remote.id;
-        }),
-      );
-    current.assets = current.assets.map((a) =>
-      a.id === asset.id ? remote : a,
-    );
-    if (b === current) {
-      changed();
-      if (!uploads && !current.assets.some((a) => a.local)) await persist();
-    }
-  }
-  const cloudSync = window.BookCloudSync.create({
-    storage: D,
-    holder: instance,
-    session: () => session,
-    accountMatches: (uid) => user?.uid === uid,
-    request: (url, options, uid) => api(url, options, false, uid),
-  });
-  async function ensureCloudBook(allowRecovery = false) {
-    const current = b, uid = user?.uid, generation = accountGeneration;
-    if (!current?.local || !uid || current.deleted) return;
-    if (current.id.startsWith("local-recovery-") && !allowRecovery) return;
-    if (cloudPromotion) return cloudPromotion;
-    if (!D.canReadBook(current, storageScope())) {
-      cloudBlocked = true;
-      saveError = "Sign in with the account that first saved this draft to continue.";
-      updateStatus();
-      return;
-    }
-    current.cloudAccountUid = uid;
-    current.cacheAccountUid = uid;
-    cloudBlocked = false;
-    cloudPhase = "saving";
-    saveError = "";
-    cloudPromotion = (async () => {
-      try {
-        const result = await cloudSync.sync(current, uid, {
-          isCurrent: () => b === current && generation === accountGeneration,
-          isBusy: () => uploads > 0,
-          onClaim: async () => { queueLocalSave(current); await localSaves.flush(); },
-          beforeComplete: () => localSaves.flush(),
-          onState: (phase) => {
-            if (b !== current || generation !== accountGeneration) return;
-            cloudPhase = phase;
-            updateStatus();
-          },
-        });
-        assertAccount(generation);
-        if (b !== current) return;
-        if (result.existingId) {
-          // A second tab completed this promotion. Keep any separate edits as recovery.
-          if (dirty) {
-            const recovery = {
-              ...M.clone(current), id: "local-recovery-" + M.id(),
-              title: current.title + " (recovered draft)", pending: false,
-            };
-            recovery.cacheAccountUid = uid;
-            delete recovery.cloudAccountUid;
-            await D.putBook(recovery);
-            notify("This book was saved in another tab. Your separate edits are safe in a recovered draft.");
-          }
-          cloudPromotion = null;
-          cloudPhase = "";
-          dirty = false;
-          await openBook(result.existingId);
-          return;
-        }
-        Object.entries(result.assetMap).forEach(([localId, remote]) => {
-          if (renderedAssets[localId]) renderedAssets[remote.id] = renderedAssets[localId];
-          [...undoStack, ...redoStack].forEach((version) =>
-            version.pages.concat(version.deletedPages || []).forEach((p) => p.items.forEach((o) => {
-              if (o.assetId === localId) o.assetId = remote.id;
-              if (o.originalAssetId === localId) o.originalAssetId = remote.id;
-            })),
-          );
-        });
-        Object.assign(current, result.book);
-        delete current.cloudAccountUid;
-        delete current.cloudSaveError;
-        leaseToken = result.leaseToken;
-        sessionStorage.setItem("book-lease-" + current.id, leaseToken);
-        accessToken = "";
-        savedPages = Object.fromEntries(current.pages.concat(current.deletedPages || []).map((p) => [p.id, JSON.stringify(p)]));
-        dirty = false;
-        saveError = "";
-        cloudPhase = "";
-        history.replaceState({}, "", "/books/" + current.id);
-        if ($("publish-book")) closeDialog();
-        renderAll();
-      } catch (e) {
-        if (b === current) {
-          cloudPhase = "error";
-          cloudBlocked = ["account", "tab", "conflict"].includes(e.code);
-          saveError = e.message;
-          current.cloudSaveError = e.message;
-          if (!["tab", "account"].includes(e.code)) await D.putBook(current);
-          notify(e.message, true);
-          renderAll();
-        }
-        throw e;
-      } finally {
-        cloudPromotion = null;
-        if (b === current && cloudPhase !== "error") cloudPhase = "";
-        if (b === current) updateStatus();
-      }
-    })();
-    updateStatus();
-    return cloudPromotion;
-  }
-  async function publish() {
-    if (!user) await signIn();
-    if (user) await ensureCloudBook(true);
-  }
-  async function retryCloudSave() {
-    saveError = "";
-    if (b.local) return ensureCloudBook();
-    if (!leaseToken) await acquire();
-    for (const asset of b.assets.filter((a) => a.local)) {
-      const stored = await D.getAsset(asset.id);
-      if (!stored?.blob) throw new Error("An illustration is missing. Add it again before saving.");
-      await uploadOne(asset, stored.blob, b);
-    }
-    await persist();
-    updateStatus();
-  }
-  async function signIn() {
-    try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      await auth.signInWithPopup(provider);
-    } catch (e) {
-      throw new Error(
-        e.code === "auth/popup-blocked"
-          ? "Allow the Google sign-in window, then try again."
-          : e.code === "auth/popup-closed-by-user"
-            ? "Sign-in was closed. Your local books are still here."
-            : "Google sign-in could not finish. Please try again.",
-      );
-    }
-  }
-  function download(blob, name) {
-    const url = URL.createObjectURL(blob),
-      a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  }
-  async function dataUrl(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error("This image could not be read."));
-      reader.readAsDataURL(blob);
-    });
-  }
-  async function fontCss(pages, pageNumbers) {
-    const families = new Set(
-      pages.flatMap((p) =>
-        p.items
-          .filter((o) => ["text", "flow", "table"].includes(o.type))
-          .flatMap((o) => [
-            o["style"].font,
-            ...(o.runs || []).map((r) => r["style"].font),
-          ]),
-      ),
-    );
-    if (pageNumbers?.enabled) families.add(M.pageNumberOptions(pageNumbers).font);
-    const response = await fetch("/static/css/book-studio.css"),
-      css = await response.text();
-    const faces = css.match(/@font-face\s*\{[^}]+\}/g) || [];
-    let embedded = "";
-    for (const face of faces) {
-      const family = (face.match(/font-family:\s*([^;]+)/) || [])[1]
-        ?.replace(/["']/g, "")
-        .trim();
-      if (!families.has(family)) continue;
-      const url = (face.match(/url\(\s*["']?([^"')\s]+)["']?\s*\)/) || [])[1];
-      if (!url) continue;
-      if (!fontCache[url])
-        fontCache[url] = await dataUrl(await (await fetch(url)).blob());
-      embedded += face
-        .replace(url, fontCache[url])
-        .replace(/font-display:\s*swap/g, "font-display:block");
-    }
-    return embedded;
-  }
-  async function raster(p, assets, fonts, options) {
-    const svg = M.svg(p, assets, { ...options, fonts }).replace(
-      'width="148.5" height="210"',
-      'width="1754" height="2480"',
-    );
-    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-    try {
-      const image = new Image();
-      image.src = url;
-      await image.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = 1754;
-      canvas.height = 2480;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, 0, 0);
-      const result = canvas.toDataURL("image/png");
-      canvas.width = canvas.height = 1;
-      return result;
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-  function exportDialog() {
-    const issues = M.checks(b);
-    dialog(
-      "Export your book",
-      `<p class="book-muted">Choose how you want to use your book. Your original stays editable here.</p><div class="book-row">${selectField(
-        "File",
-        "exportFormat",
-        "faithful",
-        [
-          ["faithful", "Word · exact appearance"],
-          ["editable", "Word · editable text & shapes"],
-          ["pdf", "PDF · ready to print"],
-        ],
-      )}</div><div id="export-advice" class="book-status-banner">Print single-sided on A4 landscape. Cut along the middle and assemble the pages in reading order.</div><div class="book-row">${toggle("Show center guide", "exportGuides", true)}${toggle("Save ink", "economy", false)}</div>${issues.length ? "<details><summary>" + issues.length + ' things to check before printing</summary><ul class="book-check-list">' + issues.map((i) => "<li>" + esc(i) + "</li>").join("") + "</ul></details>" : '<p class="book-muted">Your pages are ready for a closer look.</p>'}<div id="editable-notes"></div><h3>Sheet preview</h3><div id="print-preview" class="book-print-preview"></div><div class="book-row"><button class="primary-btn" id="download-export">Download</button><button class="secondary-btn" id="download-backup">Download backup</button></div><p class="book-muted" id="export-progress" role="status"></p>`,
-    );
-    printPreview();
-  }
-  function printPreview() {
-    const format = $("dialog-content").querySelector(
-        "[data-field=exportFormat]",
-      ).value,
-      economy = $("dialog-content").querySelector("[data-field=economy]").checked,
-      showGuides = $("dialog-content").querySelector("[data-field=exportGuides]").checked;
-    const pairs = M.sheetPairs(b.pages);
-    $("print-preview").innerHTML = pairs
-      .map(
-        (pair, i) =>
-          `<div><div class="book-print-sheet${showGuides ? " with-guide" : ""}${economy ? " save-ink" : ""}">${pair.map((index) => (index === null ? '<div class="empty-half"></div>' : M.svg(b.pages[index], renderedAssets, { ...M.pageRenderOptions(b.pages[index], b.pages, b.pageNumbers), economy }))).join("")}</div><small class="book-muted">Sheet ${i + 1} · ${pair.map((index) => (index === null ? "Blank" : index === 0 ? "Cover" : index === b.pages.length - 1 ? "Back cover" : "Page " + index)).join(" / ")}</small></div>`,
-      )
-      .join("");
-    $("export-advice").textContent =
-      "Print single-sided on A4 landscape. Cut along the middle and assemble the pages in reading order. The cover is the first half-page." +
-      (format === "editable"
-        ? " Install the book fonts for the closest match. Word changes stay in the downloaded file."
-        : "");
-    const notes = [];
-    if (format === "editable") {
-      b.pages.forEach((p, i) =>
-        p.items
-          .filter((o) => !o.hidden)
-          .forEach((o) => {
-            const name =
-              (p.role === "page" ? "Page " + i : p.title) + " · " + o.name;
-            if (!M.nativeEligible(o)) notes.push(name + ": kept as an image.");
-            else if (o.type === "text") {
-              const weights = new Set(
-                (o.runs.length ? o.runs : [o]).map((r) => r["style"].weight),
-              );
-              weights.forEach((w) => {
-                if (![400, 700].includes(w))
-                  notes.push(
-                    name +
-                      ": thickness " +
-                      w +
-                      " becomes " +
-                      (w >= 600 ? "Bold (700)" : "Regular (400)") +
-                      ".",
-                  );
-              });
-            }
-          }),
-      );
-    }
-    $("editable-notes").innerHTML =
-      format === "editable"
-        ? '<p class="book-muted">Text boxes and simple shapes stay editable. Word may adjust wrapping and layer order.</p><details><summary>' +
-          notes.length +
-          ' export adjustments</summary><ul class="book-check-list">' +
-          notes.map((n) => "<li>" + esc(n) + "</li>").join("") +
-          '</ul></details><a class="secondary-btn" href="/api/books/fonts" download>Download book fonts</a>'
-        : "";
-  }
-  async function doExport() {
-    const generation = accountGeneration;
-    await persist();
-    assertAccount(generation);
-    if (!b) throw accountChangedError();
-    if (dirty && !b.local)
-      throw new Error(
-        "Save your latest changes before exporting. Start an editing turn or download a backup.",
-      );
-    if (b.assets.some((a) => a.local) && !b.local)
-      throw new Error("Finish uploading your images before exporting.");
-    const button = $("download-export");
-    button.disabled = true;
-    const snapshot = M.clone(b),
-      format = $("dialog-content").querySelector(
-        "[data-field=exportFormat]",
-      ).value,
-      economy = $("dialog-content").querySelector(
-        "[data-field=economy]",
-      ).checked,
-      showGuides = $("dialog-content").querySelector(
-        "[data-field=exportGuides]",
-      ).checked;
-    try {
-      $("export-progress").textContent = "Preparing fonts and illustrations…";
-      await document.fonts.ready;
-      const fonts = await fontCss(snapshot.pages, snapshot.pageNumbers),
-        assets = {};
-      assertAccount(generation);
-      for (const a of snapshot.assets) {
-        let stored = await D.getAsset(a.id),
-          blob = stored && stored.blob;
-        assertAccount(generation);
-        if (!snapshot.local) {
-          blob = await api(
-            "/api/books/" + snapshot.id + "/assets/" + a.id + "?original=1",
-            {},
-            true,
-          );
-        }
-        if (blob)
-          assets[a.id] = {
-            src: await dataUrl(blob),
-            width: a.width,
-            height: a.height,
-          };
-        else
-          throw new Error(
-            "An illustration is missing. Reload it before exporting.",
-          );
-      }
-      const previews = [];
-      for (let i = 0; i < snapshot.pages.length; i++) {
-        assertAccount(generation);
-        $("export-progress").textContent =
-          "Preparing page " + (i + 1) + " of " + snapshot.pages.length + "…";
-        previews.push(
-          await raster(snapshot.pages[i], assets, fonts, {
-            ...M.pageRenderOptions(snapshot.pages[i], snapshot.pages, snapshot.pageNumbers),
-            editable: format === "editable",
-            economy,
-          }),
-        );
-      }
-      assertAccount(generation);
-      $("export-progress").textContent = "Creating your download…";
-      const blob = await api(
-        "/api/books/export",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            title: snapshot.title,
-            pages: snapshot.pages,
-            previews,
-            format,
-            arrangement: "cut",
-            economy,
-            guides: showGuides,
-            book_id: snapshot.local ? null : snapshot.id,
-            revision: snapshot.revision,
-          }),
-        },
-        true,
-      );
-      download(
-        blob,
-        (snapshot.title || "Book") +
-          " - cut and bind" +
-          (format === "editable" ? " - editable" : "") +
-          "." +
-          (format === "pdf" ? "pdf" : "docx"),
-      );
-      $("export-progress").textContent =
-        "Your book is ready. Check your downloads.";
-    } finally {
-      button.disabled = false;
-    }
-  }
-  async function backup() {
-    const generation = accountGeneration;
-    // Backups must remain available as an escape hatch when device storage is full.
-    await localSaves.flush().catch(() => {});
-    assertAccount(generation);
-    if (!b) throw accountChangedError();
-    const snapshot = M.clone(b),
-      files = {};
-    if (!snapshot.local) {
-      const history = await api(
-        "/api/books/" + snapshot.id + "/history?include_pages=1",
-      );
-      snapshot.versions = history.versions;
-    }
-    files["book.json"] = window.BookZip.strToU8(JSON.stringify(snapshot));
-    for (const a of snapshot.assets) {
-      const stored = await D.getAsset(a.id);
-      assertAccount(generation);
-      let blob = stored && stored.blob;
-      if (!snapshot.local && a.ready)
-        blob = await api(
-          "/api/books/" + snapshot.id + "/assets/" + a.id + "?original=1",
-          {},
-          true,
-        );
-      if (!blob)
-        throw new Error(
-          "An illustration is missing. Load it before downloading a backup.",
-        );
-      files["assets/" + a.id] = new Uint8Array(await blob.arrayBuffer());
-    }
-    assertAccount(generation);
-    download(
-      new Blob([window.BookZip.zipSync(files, { level: 1 })], {
-        type: "application/zip",
-      }),
-      snapshot.title + " - backup.zip",
-    );
-    notify("Backup downloaded.");
-  }
-  async function importBackup(file) {
-    const generation = accountGeneration, uid = user?.uid;
-    await localSaves.flush();
-    if (file.size > 40 * 1024 * 1024)
-      throw new Error("Choose a backup smaller than 40 MB.");
-    let uncompressed = 0;
-    const entries = window.BookZip.unzipSync(
-      new Uint8Array(await file.arrayBuffer()),
-      {
-        filter: (entry) => {
-          uncompressed += entry.originalSize;
-          if (uncompressed > 80 * 1024 * 1024)
-            throw new Error("This backup is too large.");
-          return (
-            entry.name === "book.json" ||
-            /^assets\/[a-zA-Z0-9_-]+$/.test(entry.name)
-          );
-        },
-      },
-    );
-    if (!entries["book.json"])
-      throw new Error("This is not a Book Studio backup.");
-    const raw = M.readBackup(
-      JSON.parse(window.BookZip.strFromU8(entries["book.json"])),
-    );
-    const next = { ...raw, assets: [] },
-      mapping = {};
-    let assetBytes = 0;
-    for (const old of raw.assets) {
-      const bytes = entries["assets/" + old.id];
-      if (!bytes)
-        throw new Error("An illustration is missing from this backup.");
-      const blob = new Blob([bytes], { type: old.mime });
-      assetBytes += blob.size;
-      if (assetBytes > 25 * 1024 * 1024)
-        throw new Error("This backup exceeds the book image allowance.");
-      const info = await imageInfo(blob),
-        aid = M.id();
-      mapping[old.id] = aid;
-      const asset = {
-        ...old,
-        ...info,
-        id: aid,
-        local: true,
-        ready: false,
-        size: blob.size,
-      };
-      await D.putAsset({ ...asset, blob });
-      assertAccount(generation);
-      next.assets.push(asset);
-    }
-    next.pages
-      .concat(
-        next.deletedPages,
-        ...next.versions.map((v) => v.pages.concat(v.deletedPages)),
-      )
-      .forEach((p) =>
-        p.items.forEach((o) => {
-          if (o.assetId) o.assetId = mapping[o.assetId] || "";
-          if (o.originalAssetId)
-            o.originalAssetId = mapping[o.originalAssetId] || "";
-        }),
-      );
-    scopeDraft(next, uid);
-    await D.putBook(next);
-    assertAccount(generation);
-    await openBook(next.id);
-    notify(user ? "Your imported book is saving to your account." : "Backup opened as a new local book.");
   }
   function sharingLinks(links) {
     return (
@@ -3592,22 +1720,22 @@
     );
   }
   async function shareDialog() {
-    if (b.local && user && !b.id.startsWith("local-recovery-")) await ensureCloudBook();
-    if (b.local) {
+    if (state.book.local && state.user && !state.book.id.startsWith("local-recovery-")) await io.ensureCloudBook();
+    if (state.book.local) {
       dialog(
         "Save your book to share it",
-        user
+        state.user
           ? '<p class="book-muted">Your draft is safe on this device. Finish saving it to your account to share it.</p><button class="primary-btn" data-command="retry-cloud-save">Retry cloud save</button>'
           : '<p class="book-muted">Sign in to save your book and invite people.</p><button class="primary-btn" id="publish-book">Sign in to share</button>',
       );
       return;
     }
-    if (b.role !== "owner") {
+    if (state.book.role !== "owner") {
       notify("Only the owner can change sharing.");
       return;
     }
     await persist();
-    const settings = await api("/api/books/" + b.id + "/sharing");
+    const settings = await api("/api/books/" + state.book.id + "/sharing");
     dialog(
       "Share your book",
       `<p class="book-muted">Your book is private until you invite someone or create a link. Only one person edits at a time.</p><h3>Invite by email</h3><div class="book-row">${field("Email address", "inviteEmail", "", "email")}${selectField(
@@ -3655,11 +1783,11 @@
         "[data-field=inviteRole]",
       ).value;
     }
-    await api("/api/books/" + b.id + "/sharing", {
+    await api("/api/books/" + state.book.id + "/sharing", {
       method: "POST",
       body: JSON.stringify({ members }),
     });
-    leaseToken = "";
+    state.leaseToken = "";
     await reloadRemote();
     await shareDialog();
     notify(
@@ -3676,25 +1804,25 @@
       require_signin = $("dialog-content").querySelector(
         "[data-field=linkSignin]",
       ).checked;
-    const result = await api("/api/books/" + b.id + "/sharing", {
+    const result = await api("/api/books/" + state.book.id + "/sharing", {
       method: "POST",
       body: JSON.stringify({ role, days, require_signin }),
     });
     $("share-result").innerHTML =
       `<label class="book-field"><span>Share this link</span><input id="share-url" readonly value="${esc(result.url)}"></label><button class="secondary-btn" id="copy-link">Copy link</button>`;
-    const settings = await api("/api/books/" + b.id + "/sharing");
+    const settings = await api("/api/books/" + state.book.id + "/sharing");
     $("existing-links").innerHTML = sharingLinks(settings.links);
   }
   async function reloadRemote() {
-    if (!b || b.local) return;
-    const current = b, generation = accountGeneration;
-    const result = await api("/api/books/" + b.id + "?since=" + b.revision),
+    if (!state.book || state.book.local) return;
+    const current = state.book, generation = state.accountGeneration;
+    const result = await api("/api/books/" + state.book.id + "?since=" + state.book.revision),
       remote = result.book;
-    if (b !== current) return;
+    if (state.book !== current) return;
     const pagesById = new Map(
-      b.pages.concat(b.deletedPages || [], result.pages).map((p) => [p.id, p]),
+      state.book.pages.concat(state.book.deletedPages || [], result.pages).map((p) => [p.id, p]),
     );
-    Object.assign(b, remote, {
+    Object.assign(state.book, remote, {
       pages: remote.page_ids.map((id) => pagesById.get(id)).filter(Boolean),
       deletedPages: (remote.deleted_page_ids || [])
         .map((id) => pagesById.get(id))
@@ -3702,37 +1830,37 @@
       assets: result.assets,
       local: false,
     });
-    $("book-title").value = b.title;
-    savedPages = Object.fromEntries(
-      b.pages.concat(b.deletedPages).map((p) => [p.id, JSON.stringify(p)]),
+    $("book-title").value = state.book.title;
+    state.savedPages = Object.fromEntries(
+      state.book.pages.concat(state.book.deletedPages).map((p) => [p.id, JSON.stringify(p)]),
     );
-    if (!b.pages.some((p) => p.id === active)) active = b.pages[0].id;
+    if (!state.book.pages.some((p) => p.id === state.active)) state.active = state.book.pages[0].id;
     await loadAssets();
     assertAccount(generation);
-    if (b !== current) return;
-    await D.putBook(b);
+    if (state.book !== current) return;
+    await D.putBook(state.book);
     assertAccount(generation);
     renderAll();
   }
   function detailsDialog() {
     dialog(
       "Book details",
-      field("Title", "detailsTitle", b.title) +
-        field("Folder", "detailsFolder", b.folder) +
+      field("Title", "detailsTitle", state.book.title) +
+        field("Folder", "detailsFolder", state.book.folder) +
         field(
           "Tags · separate with commas",
           "detailsTags",
-          (b.tags || []).join(", "),
+          (state.book.tags || []).join(", "),
         ) +
-        toggle("Favorite", "detailsFavorite", b.favorite) +
+        toggle("Favorite", "detailsFavorite", state.book.favorite) +
         '<div class="book-row"><button class="primary-btn" id="save-details">Save details</button><button class="secondary-btn" id="copy-book">Make a copy</button></div>' +
-        (b.local && (!user || b.id.startsWith("local-recovery-"))
+        (state.book.local && (!state.user || state.book.id.startsWith("local-recovery-"))
           ? '<button class="secondary-btn" id="publish-book">Save to my account</button>'
           : ""),
     );
   }
-  async function copyBook(source = b) {
-    const generation = accountGeneration, uid = user?.uid;
+  async function copyBook(source = state.book) {
+    const generation = state.accountGeneration, uid = state.user?.uid;
     await localSaves.flush();
     assertAccount(generation);
     if (!source.local) {
@@ -3770,71 +1898,71 @@
     await D.putBook(next);
     assertAccount(generation);
     closeDialog();
-    if (b && !b.local && leaseToken) await release();
+    if (state.book && !state.book.local && state.leaseToken) await release();
     await openBook(next.id);
-    notify(user ? "Your new copy is saving to your account." : "A new copy is ready on this device.");
+    notify(state.user ? "Your new copy is saving to your account." : "A new copy is ready on this device.");
   }
   function illustrationDialog() {
     const p = page(),
       o = item();
     dialog(
       "Illustration prompt",
-      `<p class="book-muted">Turn a sketch into artwork that feels at home in your book. Attach your sketch and character references in ChatGPT.</p>${field("Drawing style", "illustrationStyle", b.illustration.style)}<label class="book-field"><span>Characters and details to keep</span><textarea id="character-details">${esc(b.illustration.characters)}</textarea></label>${field("Leave space for text", "illustrationSpace", b.illustration.space)}${toggle("Blend into page", "illustrationBlend", b.illustration.blend)}${toggle("Transparent background", "illustrationTransparent", b.illustration.transparent)}<label class="book-field"><span>Your prompt</span><textarea id="illustration-prompt" rows="7">${esc(M.prompt(b, p, o))}</textarea></label><div class="book-row"><button class="primary-btn" id="copy-prompt">Copy prompt</button><a class="secondary-btn" href="${esc(document.body.dataset.chatgptUrl || "https://chatgpt.com/")}" target="_blank" rel="noopener noreferrer">Open ChatGPT</a></div>${o && o.type === "image" ? '<button class="secondary-btn" id="download-reference">Download sketch/reference</button>' : ""}<p class="book-muted">In ChatGPT, choose image creation, attach your sketch and paste the prompt. Download the result, then drag it onto your book or use Replace.</p>`,
+      `<p class="book-muted">Turn a sketch into artwork that feels at home in your book. Attach your sketch and character references in ChatGPT.</p>${field("Drawing style", "illustrationStyle", state.book.illustration.style)}<label class="book-field"><span>Characters and details to keep</span><textarea id="character-details">${esc(state.book.illustration.characters)}</textarea></label>${field("Leave space for text", "illustrationSpace", state.book.illustration.space)}${toggle("Blend into page", "illustrationBlend", state.book.illustration.blend)}${toggle("Transparent background", "illustrationTransparent", state.book.illustration.transparent)}<label class="book-field"><span>Your prompt</span><textarea id="illustration-prompt" rows="7">${esc(M.prompt(state.book, p, o))}</textarea></label><div class="book-row"><button class="primary-btn" id="copy-prompt">Copy prompt</button><a class="secondary-btn" href="${esc(document.body.dataset.chatgptUrl || "https://chatgpt.com/")}" target="_blank" rel="noopener noreferrer">Open ChatGPT</a></div>${o && o.type === "image" ? '<button class="secondary-btn" id="download-reference">Download sketch/reference</button>' : ""}<p class="book-muted">In ChatGPT, choose image creation, attach your sketch and paste the prompt. Download the result, then drag it onto your book or use Replace.</p>`,
     );
   }
   function updatePrompt() {
     if (!editable()) return;
     const get = (name) =>
       $("dialog-content").querySelector("[data-field=" + name + "]");
-    b.illustration = {
+    state.book.illustration = {
       style: get("illustrationStyle").value,
       characters: $("character-details").value,
       space: get("illustrationSpace").value,
       blend: get("illustrationBlend").checked,
       transparent: get("illustrationTransparent").checked,
     };
-    $("illustration-prompt").value = M.prompt(b, page(), item());
+    $("illustration-prompt").value = M.prompt(state.book, page(), item());
     changed(false);
   }
   async function original(reference = false) {
     const o = item(),
       id = reference ? o.originalAssetId || o.assetId : o.assetId;
-    const a = b.assets.find((a) => a.id === id);
+    const a = state.book.assets.find((a) => a.id === id);
     if (!a) throw new Error("This original is unavailable.");
     const stored = await D.getAsset(id),
-      blob = b.local
+      blob = state.book.local
         ? stored && stored.blob
         : await api(
-            "/api/books/" + b.id + "/assets/" + id + "?original=1",
+            "/api/books/" + state.book.id + "/assets/" + id + "?original=1",
             {},
             true,
           );
-    if (blob) download(blob, a.name);
+    if (blob) io.download(blob, a.name);
   }
   async function assetsDialog() {
     await loadAssets();
     dialog(
       "Your illustrations",
-      `<p class="book-muted">Keep characters and sketches close by. Choose an image to add it to the current page.</p><div class="book-search-row"><input type="search" id="asset-search" aria-label="Search illustrations" placeholder="Find an illustration…"><button class="secondary-btn" id="asset-upload">＋ Add images</button></div><p id="asset-no-results" class="book-muted" ${b.assets.length ? "hidden" : ""}>No illustrations yet. Add sketches or pictures to reuse them on any page.</p><div class="book-asset-grid">${b.assets.map((a) => `<div class="book-asset-card" data-search="${esc(a.name.toLowerCase())}">${renderedAssets[a.id] ? `<img src="${esc(renderedAssets[a.id].src)}" alt="${esc(a.name)}">` : ""}<p>${esc(a.name)}</p><button class="secondary-btn" data-use-asset="${a.id}">Add to page</button><button class="ghost-btn" data-remove-asset="${a.id}">Remove unused</button></div>`).join("")}</div>`,
+      `<p class="book-muted">Keep characters and sketches close by. Choose an image to add it to the current page.</p><div class="book-search-row"><input type="search" id="asset-search" aria-label="Search illustrations" placeholder="Find an illustration…"><button class="secondary-btn" id="asset-upload">＋ Add images</button></div><p id="asset-no-results" class="book-muted" ${state.book.assets.length ? "hidden" : ""}>No illustrations yet. Add sketches or pictures to reuse them on any page.</p><div class="book-asset-grid">${state.book.assets.map((a) => `<div class="book-asset-card" data-search="${esc(a.name.toLowerCase())}">${renderedAssets[a.id] ? `<img src="${esc(renderedAssets[a.id].src)}" alt="${esc(a.name)}">` : ""}<p>${esc(a.name)}</p><button class="secondary-btn" data-use-asset="${a.id}">Add to page</button><button class="ghost-btn" data-remove-asset="${a.id}">Remove unused</button></div>`).join("")}</div>`,
     );
   }
   async function historyDialog() {
-    cachedVersions = b.versions || [];
-    if (!b.local)
-      cachedVersions = (await api("/api/books/" + b.id + "/history")).versions;
+    cachedVersions = state.book.versions || [];
+    if (!state.book.local)
+      cachedVersions = (await api("/api/books/" + state.book.id + "/history")).versions;
     cachedVersions = cachedVersions
       .slice()
       .sort((a, z) => (z.created_at || 0) - (a.created_at || 0));
     dialog(
       "Version history",
-      `<p class="book-muted">Save a milestone before trying a new idea. Preview a version before restoring it. Restoring can be undone.</p><div class="book-version-save">${field("Version name", "versionName", "", "text", 'placeholder="For example: First illustrated draft" maxlength="100"')}<button class="primary-btn" id="save-version" ${!editable() ? "disabled" : ""}>Save version</button></div><h3>Saved versions</h3><div class="book-version-list">${cachedVersions.map((v) => `<article class="book-version"><div>${icon("history")}<div><strong>${esc(v.name)}</strong><p>${v.created_at ? new Date(v.created_at * 1000).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB')) : "Earlier version"} · ${(v.pages || v.page_ids || []).length} pages</p></div></div><button class="secondary-btn" data-preview-version="${v.id}">Preview</button></article>`).join("") || '<p class="book-muted">Your saved milestones will appear here. Your current work also saves automatically.</p>'}</div><details><summary>Deleted pages · ${(b.deletedPages || []).length}</summary>${(b.deletedPages || []).map((p) => `<div class="book-version"><strong>${esc(p.title)}</strong><button class="secondary-btn" data-restore-page="${p.id}" ${!editable() ? "disabled" : ""}>Restore page</button></div>`).join("") || '<p class="book-muted">No deleted pages.</p>'}</details><button class="secondary-btn" id="recover-copy">Save recovery copy on this device</button>`,
+      `<p class="book-muted">Save a milestone before trying a new idea. Preview a version before restoring it. Restoring can be undone.</p><div class="book-version-save">${field("Version name", "versionName", "", "text", 'placeholder="For example: First illustrated draft" maxlength="100"')}<button class="primary-btn" id="save-version" ${!editable() ? "disabled" : ""}>Save version</button></div><h3>Saved versions</h3><div class="book-version-list">${cachedVersions.map((v) => `<article class="book-version"><div>${icon("history")}<div><strong>${esc(v.name)}</strong><p>${v.created_at ? new Date(v.created_at * 1000).toLocaleString((window.LectureI18n ? window.LectureI18n.locale() : 'en-GB')) : "Earlier version"} · ${(v.pages || v.page_ids || []).length} pages</p></div></div><button class="secondary-btn" data-preview-version="${v.id}">Preview</button></article>`).join("") || '<p class="book-muted">Your saved milestones will appear here. Your current work also saves automatically.</p>'}</div><details><summary>Deleted pages · ${(state.book.deletedPages || []).length}</summary>${(state.book.deletedPages || []).map((p) => `<div class="book-version"><strong>${esc(p.title)}</strong><button class="secondary-btn" data-restore-page="${p.id}" ${!editable() ? "disabled" : ""}>Restore page</button></div>`).join("") || '<p class="book-muted">No deleted pages.</p>'}</details><button class="secondary-btn" id="recover-copy">Save recovery copy on this device</button>`,
     );
   }
   async function previewVersion(id) {
     let version = cachedVersions.find((v) => v.id === id);
     if (!version?.pages) {
       cachedVersions = (
-        await api("/api/books/" + b.id + "/history?include_pages=1")
+        await api("/api/books/" + state.book.id + "/history?include_pages=1")
       ).versions;
       version = cachedVersions.find((v) => v.id === id);
     }
@@ -3852,27 +1980,27 @@
     const name =
       $("dialog-content").querySelector("[data-field=versionName]").value ||
       "Saved version";
-    if (b.local) {
-      if (b.versions.length >= 20)
+    if (state.book.local) {
+      if (state.book.versions.length >= 20)
         throw new Error("You can keep up to 20 versions per book.");
-      b.versions.push({
+      state.book.versions.push({
         id: M.id(),
         name,
         created_at: Date.now() / 1000,
-        pages: M.clone(b.pages),
-        deletedPages: M.clone(b.deletedPages),
+        pages: M.clone(state.book.pages),
+        deletedPages: M.clone(state.book.deletedPages),
         metadata: M.clone(metadata()),
       });
       changed(false);
-      await D.putBook(b);
+      await D.putBook(state.book);
     } else {
       await persist();
-      await api("/api/books/" + b.id + "/history", {
+      await api("/api/books/" + state.book.id + "/history", {
         method: "POST",
         body: JSON.stringify({
           name,
-          lease_token: leaseToken,
-          base_revision: b.revision,
+          lease_token: state.leaseToken,
+          base_revision: state.book.revision,
         }),
       });
     }
@@ -3881,14 +2009,14 @@
   async function restoreVersion(id) {
     if (!checkpoint()) return;
     let version;
-    if (b.local) version = b.versions.find((v) => v.id === id);
+    if (state.book.local) version = state.book.versions.find((v) => v.id === id);
     else {
-      version = await api("/api/books/" + b.id + "/history", {
+      version = await api("/api/books/" + state.book.id + "/history", {
         method: "POST",
         body: JSON.stringify({
           restore: id,
-          lease_token: leaseToken,
-          base_revision: b.revision,
+          lease_token: state.leaseToken,
+          base_revision: state.book.revision,
         }),
       });
       version = {
@@ -3901,31 +2029,31 @@
         ),
       };
     }
-    Object.assign(b, version.metadata, {
+    Object.assign(state.book, version.metadata, {
       theme: version.metadata?.theme || null,
       pageNumbers: M.pageNumberOptions(version.metadata?.pageNumbers),
       pages: M.clone(version.pages),
       deletedPages: M.clone(version.deletedPages || []),
     });
-    active = b.pages[0].id;
-    selected = [];
-    furnitureSelection = "";
-    activePathPoint = -1;
+    state.active = state.book.pages[0].id;
+    state.selected = [];
+    state.furnitureSelection = "";
+    state.activePathPoint = -1;
     changed();
     closeDialog();
   }
   async function commentsDialog() {
-    if (b.local && user && !b.id.startsWith("local-recovery-")) await ensureCloudBook();
-    if (b.local) {
+    if (state.book.local && state.user && !state.book.id.startsWith("local-recovery-")) await io.ensureCloudBook();
+    if (state.book.local) {
       dialog(
         "Comments",
-        user
+        state.user
           ? '<p class="book-muted">Your draft is safe on this device. Finish saving it to your account to invite comments.</p><button class="primary-btn" data-command="retry-cloud-save">Retry cloud save</button>'
           : '<p class="book-muted">Sign in to save your book and invite comments.</p><button class="primary-btn" id="publish-book">Sign in for comments</button>',
       );
       return;
     }
-    const result = await api("/api/books/" + b.id + "/comments");
+    const result = await api("/api/books/" + state.book.id + "/comments");
     dialog(
       "Comments",
       `<p class="book-muted">Leave a note on ${esc(page().title)}${item() ? " · " + esc(item().name) : ""}.</p><label class="book-field"><span>Your comment</span><textarea id="comment-text" maxlength="2000"></textarea></label><button class="primary-btn" id="add-comment">Add comment</button><div class="book-comments">${
@@ -3933,7 +2061,7 @@
           .filter((c) => !c.resolved)
           .map(
             (c) =>
-              `<article><strong>${esc(c.author)}</strong><small> · ${esc((b.pages.find((p) => p.id === c.page_id) || {}).title || "Deleted page")}</small><p>${esc(c.text)}</p><button class="ghost-btn" data-comment-page="${esc(c.page_id)}">Go to page</button><button class="ghost-btn" data-resolve-comment="${c.id}">Resolve</button></article>`,
+              `<article><strong>${esc(c.author)}</strong><small> · ${esc((state.book.pages.find((p) => p.id === c.page_id) || {}).title || "Deleted page")}</small><p>${esc(c.text)}</p><button class="ghost-btn" data-comment-page="${esc(c.page_id)}">Go to page</button><button class="ghost-btn" data-resolve-comment="${c.id}">Resolve</button></article>`,
           )
           .join("") || '<p class="book-muted">No comments yet.</p>'
       }</div>`,
@@ -3965,1154 +2093,9 @@
     closeDialog();
     await loadLibrary();
   }
-  document.addEventListener(
-    "click",
-    action(async (event) => {
-      const target = event.target.closest("button,a");
-      if (!target) return;
-      const ds = target.dataset,
-        id = ds.command || target.id;
-      if (b && target.tagName === "A" && !target.hasAttribute("download") && target.target !== "_blank" && target.origin === window.location.origin) {
-        event.preventDefault();
-        await persist();
-        await localSaves.flush();
-        window.location.assign(target.href);
-        return;
-      }
-      if (ds.template) return create(ds.template);
-      if (ds.open) {
-        closeDialog();
-        return openBook(ds.open);
-      }
-      if (ds.bookOptions) return bookOptions(ds.bookOptions);
-      if (ds.libraryFavorite)
-        return libraryChange(ds.libraryFavorite, "favorite");
-      if (ds.libraryDelete) return libraryChange(ds.libraryDelete, "deleted");
-      if (ds.collection) {
-        collection = ds.collection;
-        document
-          .querySelectorAll("[data-collection]")
-          .forEach((el) =>
-            el.setAttribute("aria-selected", String(el === target)),
-          );
-        return renderLibrary();
-      }
-      if (ds.new !== undefined || id === "new-book") return newBookDialog();
-      if (id === "sign-in") return signIn();
-      if (id === "retry-book-startup") return initializeStudio();
-      if (id === "reload-book-startup") return window.location.reload();
-      if (id === "retry-cloud-save") return retryCloudSave();
-      if (id === "import-backup") return $("backup-input").click();
-      if (!b) return;
-      if (ds.selectFurniture) return selectFurniture(ds.selectFurniture);
-      if (ds.numberPosition && checkpoint()) {
-        b.pageNumbers = M.pageNumberOptions({ ...b.pageNumbers, enabled: true, position: ds.numberPosition });
-        b.pages.forEach((p) => delete p.numberPlacement);
-        changed();
-        return;
-      }
-      if (id === "page-numbers") return showPageNumbers();
-      if (id === "furniture-settings") { setInspector(true, innerWidth <= 780); renderInspector(); return; }
-      if (id === "reset-furniture" && checkpoint()) {
-        delete page()[furnitureSelection === "logo" ? "logoPlacement" : "numberPlacement"];
-        changed(); return;
-      }
-      if (id === "add-path-bend") return addPathBend();
-      if (id === "remove-path-bend") return removePathBend();
-      if (id === "straighten-path" && isPath(item()) && checkpoint()) {
-        const pts = P.points(item()); item().pathPoints = [pts[0], pts[pts.length - 1]];
-        activePathPoint = -1; changed(); return;
-      }
-      if (ds.panel) {
-        inspectorTab = ds.panel;
-        renderInspector();
-        return;
-      }
-      if (ds.page) {
-        finishText();
-        active = ds.page;
-        selected = [];
-        furnitureSelection = "";
-        activePathPoint = -1;
-        renderAll();
-        return;
-      }
-      if (ds.add) return addObject(ds.add);
-      if (ds.textPreset) {
-        addObject("text", ds.textPreset);
-        closeDialog();
-        return;
-      }
-      if (ds.theme !== undefined) {
-        themeChoice = ds.theme === "xped" ? "xped" : +ds.theme;
-        themeDialog();
-        if (themeChoice === 'xped') $("dialog-content").querySelector('.book-xped-options').scrollIntoView({ block: 'start' });
-        return;
-      }
-      if (ds.xpedVariant || ds.xpedMode) {
-        const scroll = $("book-dialog").scrollTop;
-        if (ds.xpedVariant) xpedVariant = ds.xpedVariant;
-        if (ds.xpedMode) xpedMode = ds.xpedMode;
-        themeDialog();
-        $("book-dialog").scrollTop = scroll;
-        $("dialog-content").querySelector(ds.xpedVariant ? `[data-xped-variant="${xpedVariant}"]` : `[data-xped-mode="${xpedMode}"]`).focus({ preventScroll: true });
-        return;
-      }
-      if (ds.tableAxis) return resizeTable(ds.tableAxis, +ds.delta);
-      if (ds.stepMove !== undefined && checkpoint()) {
-        const i = +ds.stepMove;
-        [item().steps[i - 1], item().steps[i]] = [
-          item().steps[i],
-          item().steps[i - 1],
-        ];
-        changed();
-        return;
-      }
-      if (ds.stepRemove !== undefined && checkpoint()) {
-        item().steps.splice(+ds.stepRemove, 1);
-        changed();
-        return;
-      }
-      if (ds.distribute && selectedItems().length >= 3 && checkpoint()) {
-        M.distribute(selectedItems(), ds.distribute);
-        changed();
-        return;
-      }
-      if (
-        ds.palette !== undefined &&
-        item() &&
-        !item().locked &&
-        checkpoint()
-      ) {
-        const color = b.palette[+ds.palette];
-        if (item().type === "text") applyStyle("color", color);
-        else if (["drawing", "arrow", "line"].includes(item().type))
-          item().stroke = color;
-        else {
-          if (item().type === "table" && item().tableStyle !== "custom") {
-            const colors = M.tableAppearance(item(), page().background, page().decoration);
-            item().stroke = colors.line;
-            item()["style"].color = colors.ink;
-            item().tableStyle = "custom";
-          }
-          if (item().type === "flow" && item().flowStyle !== "custom") {
-            const colors = M.flowAppearance(item(), page().background, page().decoration);
-            item().stroke = colors.stroke;
-            item()["style"].color = colors.ink;
-            item().flowStyle = "custom";
-          }
-          item().fill = color;
-        }
-        changed();
-        return;
-      }
-      if (ds.previewVersion) return previewVersion(ds.previewVersion);
-      if (ds.confirmVersion) return restoreVersion(ds.confirmVersion);
-      if (ds.tool) {
-        tool = ds.tool;
-        document
-          .querySelectorAll("[data-tool]")
-          .forEach((el) =>
-            el.setAttribute("aria-pressed", String(el.dataset.tool === tool)),
-          );
-        setInspector(true);
-        renderInspector();
-        return;
-      }
-      if (ds.size) return sizeImage(ds.size);
-      if (ds.align && selectedItems().length && checkpoint()) {
-        M.alignItems(selectedItems(), ds.align);
-        changed();
-        return;
-      }
-      if (ds.styleToggle && item() && !item().locked && checkpoint()) {
-        applyStyle(ds.styleToggle, !selectedStyle(item())[ds.styleToggle]);
-        changed();
-        return;
-      }
-      if (ds.selectObject) {
-        furnitureSelection = "";
-        activePathPoint = -1;
-        if (event.shiftKey)
-          selected = selected.includes(ds.selectObject)
-            ? selected.filter((x) => x !== ds.selectObject)
-            : [...selected, ds.selectObject];
-        else selected = [ds.selectObject];
-        setInspector(true);
-        renderSelection();
-        renderInspector();
-        return;
-      }
-      if (ds.lock || ds.hide || ds.layerUp || ds.layerDown) {
-        if (!checkpoint()) return;
-        const oid = ds.lock || ds.hide || ds.layerUp || ds.layerDown,
-          o = page().items.find((x) => x.id === oid);
-        if (ds.lock) o.locked = !o.locked;
-        if (ds.hide) o.hidden = !o.hidden;
-        if (ds.layerUp || ds.layerDown) {
-          const ix = page().items.indexOf(o);
-          page().items.splice(ix, 1);
-          page().items.splice(
-            M.clamp(ix + (ds.layerUp ? 1 : -1), 0, page().items.length),
-            0,
-            o,
-          );
-        }
-        changed();
-        return;
-      }
-      if (ds.removeMember) return invite(ds.removeMember);
-      if (ds.revoke) {
-        await api("/api/books/" + b.id + "/sharing", {
-          method: "POST",
-          body: JSON.stringify({ revoke: ds.revoke }),
-        });
-        return shareDialog();
-      }
-      if (ds.restoreVersion) return previewVersion(ds.restoreVersion);
-      if (ds.restorePage) {
-        if (!checkpoint()) return;
-        const p = b.deletedPages.find((p) => p.id === ds.restorePage);
-        if (b.pages.length >= 100)
-          throw new Error("This book already has 100 pages.");
-        b.deletedPages = b.deletedPages.filter((p) => p.id !== ds.restorePage);
-        b.pages.splice(b.pages.length - 1, 0, p);
-        active = p.id;
-        changed();
-        return closeDialog();
-      }
-      if (ds.commentPage) {
-        if (b.pages.some((p) => p.id === ds.commentPage)) {
-          active = ds.commentPage;
-          selected = [];
-          furnitureSelection = "";
-          activePathPoint = -1;
-          renderAll();
-          closeDialog();
-        }
-        return;
-      }
-      if (ds.resolveComment) {
-        await api("/api/books/" + b.id + "/comments", {
-          method: "POST",
-          body: JSON.stringify({ resolve: ds.resolveComment, resolved: true }),
-        });
-        return commentsDialog();
-      }
-      if (ds.useAsset) {
-        if (!checkpoint()) return;
-        const a = b.assets.find((a) => a.id === ds.useAsset),
-          size = M.imageSize(a.width, a.height),
-          o = M.object("image", {
-            ...size,
-            assetId: a.id,
-            name: a.name,
-            x: (M.W - size.w) / 2,
-            y: (M.H - size.h) / 2,
-          });
-        page().items.push(o);
-        furnitureSelection = "";
-        selected = [o.id];
-        changed();
-        closeDialog();
-        return;
-      }
-      if (ds.removeAsset) {
-        if (!editable()) return;
-        const aid = ds.removeAsset;
-        if (
-          b.pages
-            .concat(b.deletedPages)
-            .some((p) =>
-              p.items.some(
-                (o) => o.assetId === aid || o.originalAssetId === aid,
-              ),
-            ) ||
-          (b.versions || []).some((v) =>
-            v.pages.some((p) =>
-              p.items.some(
-                (o) => o.assetId === aid || o.originalAssetId === aid,
-              ),
-            ),
-          )
-        )
-          throw new Error("This image is used in a page or saved version.");
-        if (!b.local) {
-          await persist();
-          const removed = await api("/api/books/" + b.id + "/assets/" + aid, {
-            method: "DELETE",
-            body: JSON.stringify({
-              lease_token: leaseToken,
-              base_revision: b.revision,
-            }),
-          });
-          b.revision = removed.revision;
-        }
-        b.assets = b.assets.filter((a) => a.id !== aid);
-        await D.deleteAsset(aid);
-        changed();
-        return assetsDialog();
-      }
-      switch (id) {
-        case "text-presets":
-          dialog(
-            "Add text",
-            `<div class="book-text-presets">${["heading", "body", "caption"].map((k) => `<button class="book-template" data-text-preset="${k}"><strong>${k[0].toUpperCase() + k.slice(1)}</strong><span>${b.styles[k].font} · ${b.styles[k].size} pt</span></button>`).join("")}</div>`,
-          );
-          break;
-        case "edit-on-page":
-          startText();
-          break;
-        case "fit-text-height":
-          if (item() && checkpoint()) {
-            item().h = Math.min(420, M.textLines(item()).height + 1);
-            changed();
-          }
-          break;
-        case "rotate-object":
-          if (selectedItems().length && checkpoint()) {
-            selectedItems().forEach(
-              (o) => (o.rotation = (o.rotation + 90) % 360),
-            );
-            changed();
-          }
-          break;
-        case "reset-rotation":
-          if (selectedItems().length && checkpoint()) {
-            selectedItems().forEach((o) => (o.rotation = 0));
-            changed();
-          }
-          break;
-        case "zoom-value":
-          zoom = 1;
-          fitStage();
-          break;
-        case "apply-paper":
-          if (checkpoint()) {
-            b.pages.forEach((p) => {
-              p.background = page().background;
-              p.texture = page().texture;
-            });
-            changed();
-            notify("Paper updated on all pages. You can undo this change.");
-          }
-          break;
-        case "page-earlier":
-          movePage(-1);
-          break;
-        case "page-later":
-          movePage(1);
-          break;
-        case "book-themes":
-          if (b.theme?.id === "xped") {
-            themeChoice = "xped";
-            xpedVariant = b.theme.variant;
-            xpedMode = b.theme.mode;
-          }
-          themeDialog();
-          break;
-        case "apply-theme":
-          applyTheme();
-          break;
-        case "add-flow-step":
-          if (item()?.steps.length < 8 && checkpoint()) {
-            item().steps.push("Next step");
-            changed();
-          }
-          break;
-        case "edit-turn":
-          if (b.editor && b.role === "owner") {
-            dialog(
-              "Take an editing turn?",
-              `<p>${esc(b.editor.name)} is editing. Taking over ends their editing turn. Any changes they have not saved will stay on their device for recovery.</p><button class="primary-btn" id="confirm-takeover">Take over editing</button>`,
-            );
-          } else await acquire();
-          break;
-        case "confirm-takeover":
-          await acquire(true);
-          closeDialog();
-          await reloadRemote();
-          break;
-        case "finish-turn":
-          await release();
-          break;
-        case "add-page":
-        case "add-page-side":
-          addPage();
-          break;
-        case "first-page":
-          go(-1, 0);
-          break;
-        case "prev-page":
-          go(-1);
-          break;
-        case "next-page":
-          go(1);
-          break;
-        case "last-page":
-          go(1, currentSpreads().length - 1);
-          break;
-        case "page-position":
-          dialog(
-            "Go to a page",
-            `<div class="book-button-stack">${b.pages.map((p, i) => `<button class="secondary-btn" data-jump="${p.id}">${esc(p.role === "page" ? "Page " + i : p.title)}</button>`).join("")}</div>`,
-          );
-          break;
-        case "zoom-in":
-          zoom = M.clamp(zoom + 0.1, 0.4, 2.5);
-          fitStage();
-          break;
-        case "zoom-out":
-          zoom = M.clamp(zoom - 0.1, 0.4, 2.5);
-          fitStage();
-          break;
-        case "reading":
-          reading = !reading;
-          document.body.classList.toggle("book-reading", reading);
-          target.textContent = reading ? "Edit view" : "Read";
-          selected = [];
-          furnitureSelection = "";
-          activePathPoint = -1;
-          renderAll();
-          break;
-        case "undo":
-          undo();
-          break;
-        case "redo":
-          undo(true);
-          break;
-        case "add-image":
-        case "asset-upload":
-          imageTarget = active;
-          replacement = "";
-          $("image-input").click();
-          break;
-        case "replace-image":
-          replacement = item().id;
-          imageTarget = active;
-          $("image-input").click();
-          break;
-        case "duplicate-page":
-          duplicatePages(false);
-          break;
-        case "duplicate-spread":
-          duplicatePages(true);
-          break;
-        case "delete-page":
-          deletePage();
-          break;
-        case "duplicate-object":
-          duplicateObject();
-          break;
-        case "delete-object":
-          deleteObjects();
-          break;
-        case "group-objects":
-          if (checkpoint()) {
-            const group = item().group,
-              next = group ? "" : M.id();
-            page()
-              .items.filter((o) =>
-                group ? o.group === group : selected.includes(o.id),
-              )
-              .forEach((o) => (o.group = next));
-            changed();
-          }
-          break;
-        case "fill-page":
-          if (checkpoint()) {
-            Object.assign(item(), { x: 0, y: 0, w: M.W, h: M.H, fit: "cover" });
-            changed();
-          }
-          break;
-        case "span-pages":
-          spanImage();
-          break;
-        case "download-original":
-          await original();
-          break;
-        case "download-reference":
-          await original(true);
-          break;
-        case "save-text-style":
-          if (checkpoint()) {
-            const o = item(),
-              name = o.styleName || "body";
-            b.styles[name] = M.clone(o.style);
-            b.pages.forEach((p) =>
-              p.items.forEach((x) => {
-                if (x.type === "text" && x.styleName === name) {
-                  x.style = M.clone(o.style);
-                  x.runs = [];
-                }
-              }),
-            );
-            changed();
-            notify("Your " + name + " style is updated throughout the book.");
-          }
-          break;
-        case "object-settings":
-          finishText();
-          inspectorTab = "settings";
-          setInspector(true, true);
-          renderInspector();
-          break;
-        case "page-settings":
-          finishText();
-          selected = [];
-          furnitureSelection = "";
-          activePathPoint = -1;
-          selectionRange = null;
-          inspectorTab = "settings";
-          setInspector(true, true);
-          renderSelection();
-          renderInspector();
-          break;
-        case "close-inspector":
-          setInspector(false);
-          $("page-settings").focus();
-          break;
-        case "organize":
-          detailsDialog();
-          break;
-        case "save-details":
-          if (checkpoint()) {
-            const val = (name) =>
-              $("dialog-content").querySelector("[data-field=" + name + "]");
-            b.title = val("detailsTitle").value.trim() || "Untitled book";
-            b.folder = val("detailsFolder").value;
-            b.tags = val("detailsTags")
-              .value.split(",")
-              .map((x) => x.trim())
-              .filter(Boolean);
-            b.favorite = val("detailsFavorite").checked;
-            $("book-title").value = b.title;
-            changed();
-            closeDialog();
-          }
-          break;
-        case "copy-book":
-        case "recover-copy":
-          await copyBook();
-          break;
-        case "publish-book":
-          await publish();
-          closeDialog();
-          break;
-        case "share":
-          await shareDialog();
-          break;
-        case "invite-member":
-          await invite();
-          break;
-        case "create-link":
-          await createLink();
-          break;
-        case "copy-link":
-          await navigator.clipboard.writeText($("share-url").value);
-          notify("Link copied.");
-          break;
-        case "illustration-assistant":
-          illustrationDialog();
-          break;
-        case "copy-prompt":
-          await navigator.clipboard.writeText($("illustration-prompt").value);
-          notify("Prompt copied.");
-          break;
-        case "assets":
-          await assetsDialog();
-          break;
-        case "history":
-          await historyDialog();
-          break;
-        case "save-version":
-          await saveVersion();
-          break;
-        case "comments":
-          await commentsDialog();
-          break;
-        case "add-comment":
-          await api("/api/books/" + b.id + "/comments", {
-            method: "POST",
-            body: JSON.stringify({
-              text: $("comment-text").value,
-              page_id: active,
-              item_id: selected[0] || "",
-            }),
-          });
-          await commentsDialog();
-          break;
-        case "export":
-          exportDialog();
-          break;
-        case "download-export":
-          await doExport();
-          break;
-        case "download-backup":
-          await backup();
-          break;
-        case "more-tools":
-          dialog(
-            "Create on the page",
-            `<div class="book-template-grid">${[
-              ["line", "Line", "Draw a route, curve or connection"],
-              ["arrow", "Arrow", "Point the way with editable bends"],
-              ["table", "Table", "Compare and collect ideas"],
-              ["flow", "Story steps", "One moment after another"],
-            ]
-              .map(
-                ([type, label, description]) =>
-                  `<button class="book-template" data-extra="${type}">${icon(type)}<strong>${label}</strong><span>${description}</span></button>`,
-              )
-              .join("")}${[
-              ["pencil", "Pencil", "Soft sketch lines"],
-              ["highlighter", "Highlighter", "A little emphasis"],
-              ["eraser", "Eraser", "Remove a drawing stroke"],
-            ]
-              .map(
-                ([type, label, description]) =>
-                  `<button class="book-template" data-drawing="${type}">${icon("pen")}<strong>${label}</strong><span>${description}</span></button>`,
-              )
-              .join(
-                "",
-              )}</div><div class="book-mobile-book-actions"><button class="secondary-btn" id="organize">Book details</button><button class="secondary-btn" id="history">Version history</button><button class="secondary-btn" id="comments">Comments</button></div>`,
-          );
-          break;
-        case "shortcuts":
-          shortcutsDialog();
-          break;
-      }
-      if (ds.jump) {
-        active = ds.jump;
-        selected = [];
-        furnitureSelection = "";
-        activePathPoint = -1;
-        renderAll();
-        closeDialog();
-      }
-      if (ds.extra) {
-        addObject(ds.extra);
-        closeDialog();
-      }
-      if (ds.drawing) {
-        tool = ds.drawing;
-        renderInspector();
-        setInspector(true, true);
-        closeDialog();
-      }
-    }),
-  );
-  $("inspector").addEventListener(
-    "change",
-    action((e) => {
-      if (e.target.type === "number" && e.target.dataset.field) {
-        if (e.target.value.trim() === "" || !e.target.validity.valid) e.target.value = e.target.dataset.lastValue;
-        else { changeField(e.target); e.target.value = e.target.dataset.lastValue; }
-        return;
-      }
-      if (
-        e.target.tagName === "SELECT" ||
-        e.target.type === "checkbox" ||
-        e.target.type === "color"
-      )
-        changeField(e.target);
-    }),
-  );
-  $("inspector").addEventListener("input", (e) => {
-    if (
-      e.target.dataset.field &&
-      e.target.tagName !== "SELECT" &&
-      e.target.type !== "checkbox"
-    ) {
-      changeField(e.target);
-      if (e.target.type === "range") {
-        const span = e.target.previousElementSibling;
-        span.textContent =
-          span.textContent.split(" · ")[0] + " · " + e.target.value;
-      }
-      return;
-    }
-    const o = item();
-    if (!o || !editable() || o.locked) return;
-    if (e.target.dataset.cell || e.target.dataset.step !== undefined) {
-      if (!editCheckpoint(e.target)) return;
-      if (e.target.dataset.cell) {
-        const [r, c] = e.target.dataset.cell.split(",").map(Number);
-        o.cells[r][c] = e.target.value;
-      } else o.steps[+e.target.dataset.step] = e.target.value;
-      changed(false);
-      renderStage();
-      schedulePages();
-      return;
-    }
-    if (e.target.id === "object-text") {
-      if (!editCheckpoint(e.target)) return;
-      M.replaceText(o, e.target.value);
-      selectionRange = null;
-      changed(false);
-      renderStage();
-      schedulePages();
-    }
-    if (e.target.id === "table-content") {
-      checkpoint();
-      o.cells = e.target.value
-        .split("\n")
-        .slice(0, 8)
-        .map((r) =>
-          r
-            .split("|")
-            .slice(0, 8)
-            .map((s) => s.trim()),
-        );
-      changed(false);
-      renderStage();
-    }
-    if (e.target.id === "flow-content") {
-      checkpoint();
-      o.steps = e.target.value.split("\n").slice(0, 8);
-      changed(false);
-      renderStage();
-    }
-  });
-  $("inspector").addEventListener("select", (e) => {
-    if (e.target.id === "object-text")
-      selectionRange = {
-        start: e.target.selectionStart,
-        end: e.target.selectionEnd,
-      };
-  });
-  $("dialog-content").addEventListener(
-    "change",
-    action((e) => {
-      const field = e.target.dataset.field;
-      if (["exportFormat", "exportGuides", "economy"].includes(field)) printPreview();
-      if (field && field.startsWith("illustration")) updatePrompt();
-    }),
-  );
-  $("dialog-content").addEventListener("input", (e) => {
-    if (e.target.id === "character-details") updatePrompt();
-  });
-  $("book-title").addEventListener("input", () => {
-    if (!editable()) return;
-    if (editBatch !== "book-title") {
-      if (!checkpoint()) return;
-      editBatch = "book-title";
-    }
-    b.title = $("book-title").value.trim() || "Untitled book";
-    changed(false);
-  });
-  $("book-title").addEventListener("blur", () => {
-    editBatch = null;
-    if (b) $("book-title").value = b.title;
-  });
-  $("book-search").addEventListener("input", renderLibrary);
-  $("book-sort").addEventListener("change", renderLibrary);
-  $("fit-mode").addEventListener("change", () => {
-    fit = $("fit-mode").value;
-    zoom = 1;
-    renderStage();
-  });
-  $("image-input").addEventListener(
-    "change",
-    action(async () => {
-      const files = Array.from($("image-input").files);
-      $("image-input").value = "";
-      await importImages(files, imageTarget || active);
-    }),
-  );
-  $("backup-input").addEventListener(
-    "change",
-    action(async () => {
-      const file = $("backup-input").files[0];
-      $("backup-input").value = "";
-      if (file) await importBackup(file);
-    }),
-  );
-  $("book-spread").addEventListener("contextmenu", pathContextMenu);
-  $("book-spread").addEventListener("pointerdown", pointer);
-  $("book-spread").addEventListener("dblclick", (e) => {
-    if (e.target.closest("#canvas-text-editor")) return;
-    const node = e.target.closest("[data-object]");
-    if (node && item()?.type === "text") startText();
-    else if (node && item()) {
-      setInspector(true, true);
-      renderInspector();
-    }
-  });
-  let draggedPage = "";
-  $("page-list").addEventListener("dragstart", (e) => {
-    const node = e.target.closest("[data-page]");
-    if (!node || !editable()) return;
-    e.dataTransfer.setData("application/x-book-page", node.dataset.page);
-    draggedPage = node.dataset.page;
-  });
-  $("page-list").addEventListener("dragover", (e) => {
-    if (draggedPage) e.preventDefault();
-  });
-  $("page-list").addEventListener("drop", (e) => {
-    if (!draggedPage) return;
-    e.preventDefault();
-    const target = e.target.closest("[data-page]");
-    if (!target) return;
-    const source = b.pages.find((p) => p.id === draggedPage),
-      dest = b.pages.find((p) => p.id === target.dataset.page);
-    draggedPage = "";
-    if (
-      !source ||
-      source.role !== "page" ||
-      dest.role !== "page" ||
-      source === dest
-    )
-      return;
-    if (!checkpoint()) return;
-    const linked = source.items.find((o) => o.spanId),
-      group = linked
-        ? b.pages.filter((p) => p.items.some((o) => o.spanId === linked.spanId))
-        : [source];
-    if (group.includes(dest)) return;
-    b.pages = b.pages.filter((p) => !group.includes(p));
-    const index = b.pages.indexOf(dest);
-    b.pages.splice(index, 0, ...group);
-    keepSpreadsTogether();
-    changed();
-  });
-  $("page-list").addEventListener("dragend", () => (draggedPage = ""));
-  document.addEventListener("dragover", (e) => {
-    if (e.dataTransfer.types.includes("Files")) {
-      e.preventDefault();
-      document
-        .querySelectorAll(".drop-target")
-        .forEach((n) => n.classList.remove("drop-target"));
-      const sheet = e.target.closest("[data-page-id]");
-      if (sheet && editable()) sheet.classList.add("drop-target");
-    }
-  });
-  document.addEventListener("dragleave", (e) => {
-    if (!e.relatedTarget)
-      document
-        .querySelectorAll(".drop-target")
-        .forEach((n) => n.classList.remove("drop-target"));
-  });
-  document.addEventListener(
-    "drop",
-    action(async (e) => {
-      if (!e.dataTransfer.files.length) return;
-      e.preventDefault();
-      document
-        .querySelectorAll(".drop-target")
-        .forEach((n) => n.classList.remove("drop-target"));
-      const sheet = e.target.closest("[data-page-id]");
-      if (!sheet || !b) {
-        notify("Open a book and drop the image onto a page.");
-        return;
-      }
-      const rect = sheet.getBoundingClientRect();
-      replacement = "";
-      await importImages(e.dataTransfer.files, sheet.dataset.pageId, {
-        x: ((e.clientX - rect.left) / rect.width) * M.W,
-        y: ((e.clientY - rect.top) / rect.height) * M.H,
-      });
-    }),
-  );
-  document.addEventListener(
-    "paste",
-    action(async (e) => {
-      if (
-        !b ||
-        !editable() ||
-        reading ||
-        $("book-dialog").open ||
-        e.target.closest("input,textarea,select,[contenteditable=true]")
-      )
-        return;
-      const encoded =
-        e.clipboardData.getData("application/x-book-studio") ||
-        e.clipboardData.getData("text/plain");
-      if (encoded.startsWith("BOOK-STUDIO:")) {
-        e.preventDefault();
-        const data = JSON.parse(encoded.slice(12));
-        if (data.book !== b.id)
-          throw new Error(
-            "Paste these objects within the same book so their images stay connected.",
-          );
-        const sample = M.book();
-        sample.pages[0].items = data.items;
-        const clean = M.readBackup(sample).pages[0].items;
-        if (page().items.length + clean.length > 300)
-          throw new Error("This page is full. Paste onto another page.");
-        if (!checkpoint()) return;
-        const groups = new Map();
-        clean.forEach((o) => {
-          o.id = M.id();
-          o.locked = false;
-          o.hidden = false;
-          o.spanId = "";
-          o.spanSide = "";
-          o.x += 4;
-          o.y += 4;
-          if (o.group) {
-            if (!groups.has(o.group)) groups.set(o.group, M.id());
-            o.group = groups.get(o.group);
-          }
-        });
-        page().items.push(...clean);
-        selected = clean.map((o) => o.id);
-        changed();
-        setInspector(true);
-        notify(
-          clean.length === 1
-            ? "Object pasted."
-            : clean.length + " objects pasted.",
-        );
-        return;
-      }
-      const files = Array.from(e.clipboardData.items)
-        .filter((i) => i.kind === "file" && i.type.startsWith("image/"))
-        .map((i) => i.getAsFile());
-      if (files.length) {
-        e.preventDefault();
-        replacement = "";
-        await importImages(files, active);
-      }
-    }),
-  );
-  document.addEventListener("keydown", (e) => {
-    const tab = e.target.closest('[role="tab"]');
-    if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
-      e.preventDefault();
-      const list = tab.closest('[role="tablist"]'), tabs = [...list.querySelectorAll('[role="tab"]')];
-      const step = e.key === "ArrowLeft" ? -1 : 1;
-      const index = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (tabs.indexOf(tab) + step + tabs.length) % tabs.length;
-      tabs[index].click();
-      const label = list.getAttribute("aria-label");
-      document.querySelector(`[role="tablist"][aria-label="${label}"] [aria-selected="true"]`)?.focus();
-      return;
-    }
-    if (
-      !b ||
-      e.defaultPrevented ||
-      e.target.closest(".book-color-popover") ||
-      $("book-dialog").open ||
-      e.target.closest("input,textarea,select,[contenteditable=true]")
-    )
-      return;
-    if ((e.ctrlKey || e.metaKey) && ["=", "+", "-", "0"].includes(e.key)) {
-      e.preventDefault();
-      zoom =
-        e.key === "0"
-          ? 1
-          : M.clamp(zoom + (e.key === "-" ? -0.1 : 0.1), 0.4, 2.5);
-      fitStage();
-      return;
-    }
-    if (reading) {
-      if (["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(e.key)) {
-        e.preventDefault();
-        if (e.key === "Escape") $("reading").click();
-        else if (e.key === "Home" || e.key === "End") go(e.key === "Home" ? -1 : 1, e.key === "Home" ? 0 : currentSpreads().length - 1);
-        else go(e.key === "ArrowRight" ? 1 : -1);
-      }
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
-      e.preventDefault();
-      duplicateObject();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
-      e.preventDefault();
-      furnitureSelection = "";
-      selected = page()
-        .items.filter((o) => !o.locked && !o.hidden)
-        .map((o) => o.id);
-      renderSelection();
-      renderInspector();
-      return;
-    }
-    if (
-      e.key === "Enter" &&
-      item()?.type === "text" &&
-      !e.target.closest("button,a,summary,[role=tab]")
-    ) {
-      e.preventDefault();
-      startText();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-      e.preventDefault();
-      undo(true);
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-      e.preventDefault();
-      undo(e.shiftKey);
-      return;
-    }
-    if (e.key === "Escape") {
-      closePathMenu();
-      selected = [];
-      furnitureSelection = "";
-      activePathPoint = -1;
-      tool = "select";
-      $("inspector").classList.remove("mobile-open");
-      renderAll();
-      return;
-    }
-    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "n") {
-      e.preventDefault();
-      addPage();
-      return;
-    }
-    if ((e.key === "Delete" || e.key === "Backspace") && e.target.dataset.pathPoint !== undefined && activePathPoint > 0 && activePathPoint < P.points(item()).length - 1) {
-      e.preventDefault(); removePathBend(); return;
-    }
-    if ((e.key === "Delete" || e.key === "Backspace") && selected.length) {
-      e.preventDefault();
-      deleteObjects();
-      return;
-    }
-    if (e.key === "Home" || e.key === "End") {
-      e.preventDefault();
-      go(
-        e.key === "Home" ? -1 : 1,
-        e.key === "Home" ? 0 : currentSpreads().length - 1,
-      );
-      return;
-    }
-    if (e.key.startsWith("Arrow")) {
-      e.preventDefault();
-      if (furnitureSelection && !e.altKey && editable() && checkpoint()) {
-        const box = furnitureBox(), step = e.shiftKey ? 5 : .5;
-        box.x += e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
-        box.y += e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
-        placeFurniture(box); changed(); return;
-      }
-      if (e.target.dataset.pathPoint !== undefined && !e.altKey && isPath(item()) && editable() && checkpoint()) {
-        const o = item(), index = +e.target.dataset.pathPoint, pt = P.points(o)[index];
-        const angle = (o.rotation || 0) * Math.PI / 180, dx = (pt[0] - .5) * o.w, dy = (pt[1] - .5) * o.h;
-        const step = e.shiftKey ? 5 : .5;
-        const world = { x: o.x + o.w / 2 + dx * Math.cos(angle) - dy * Math.sin(angle), y: o.y + o.h / 2 + dx * Math.sin(angle) + dy * Math.cos(angle) };
-        world.x += e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
-        world.y += e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
-        Object.assign(o, P.movePoint(o, index, world)); changed();
-        document.querySelector(`[data-path-point="${index}"]`)?.focus(); return;
-      }
-      if (selected.length && !e.altKey && editable()) {
-        checkpoint();
-        const step = e.shiftKey ? 5 : 0.5;
-        page()
-          .items.filter((o) => selected.includes(o.id) && !o.locked)
-          .forEach((o) => {
-            o.x +=
-              e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
-            o.y +=
-              e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
-          });
-        changed();
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight")
-        go(e.key === "ArrowRight" ? 1 : -1);
-    }
-  });
-  let pollBusy = false;
-  setInterval(async () => {
-    if (!b || b.local || document.hidden || opening || pollBusy) return;
-    const current = b;
-    pollBusy = true;
-    try {
-      const result = await api("/api/books/" + b.id + "/revision");
-      if (b !== current) return;
-      lastRefresh = Date.now();
-      const editorChanged =
-        JSON.stringify(b.editor) !== JSON.stringify(result.book.editor);
-      b.editor = result.book.editor;
-      b.role = result.book.role;
-      if (
-        leaseToken &&
-        (!result.book.editor || !["owner", "edit"].includes(b.role))
-      ) {
-        leaseToken = "";
-        sessionStorage.removeItem("book-lease-" + b.id);
-      }
-      if (!leaseToken && !dirty && result.book.revision !== b.revision)
-        await reloadRemote();
-      updateStatus();
-      if (editorChanged && !leaseToken) renderInspector();
-    } catch (e) {
-      if (b === current && e.code !== "account") status("Updates paused · Reconnecting…");
-    } finally {
-      pollBusy = false;
-    }
-  }, 5000);
-  setInterval(async () => {
-    if (!b || b.local || !leaseToken) return;
-    const current = b;
-    try {
-      await api("/api/books/" + b.id + "/lease", {
-        method: "POST",
-        body: JSON.stringify({ action: "renew", lease_token: leaseToken }),
-      });
-    } catch (e) {
-      if (b !== current) return;
-      leaseToken = "";
-      sessionStorage.removeItem("book-lease-" + b.id);
-      updateStatus();
-      renderInspector();
-      renderSelection();
-      notify(e.message, true);
-    }
-  }, 20000);
-  window.addEventListener("resize", () => {
-    if (b) {
-      if (inlineEdit) {
-        const ids = currentSpreads().find((spread) => spread.includes(active)).filter(Boolean);
-        const shown = [...$("book-spread").children].map((sheet) => sheet.dataset.pageId);
-        if (ids.join() !== shown.join()) {
-          const { selectionStart, selectionEnd } = inlineEdit.editor;
-          renderStage();
-          startText();
-          inlineEdit?.editor.setSelectionRange(selectionStart, selectionEnd);
-          renderPages();
-        } else fitStage();
-      }
-      else { renderStage(); renderPages(); }
-    }
-  });
-  window.addEventListener("online", () => {
-    if (b?.local && user && !b.id.startsWith("local-recovery-")) {
-      ensureCloudBook().catch(() => {});
-      return;
-    }
-    if (b && dirty && leaseToken)
-      persist().catch((e) => notify(e.message, true));
-  });
-  window.addEventListener("beforeunload", (e) => {
-    if (b) {
-      localSaves.flush().catch(() => {});
-      if (dirty || localWrites || localSaveError || cloudPromotion) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    }
-  });
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden && b) {
-      localSaves.flush().catch(() => {});
-      if (dirty && leaseToken) persist().catch(() => {});
-    }
-  });
-  function refreshFontLayouts() {
-    if (startupState !== "ready") return;
-    if (b) {
-      $("page-list").querySelectorAll(".book-thumb").forEach((node) => { node.bookPreviewKey = null; });
-      if (!inlineEdit) renderStage();
-      renderPages();
-    } else if (!b) renderLibrary();
-  }
-  document.fonts.ready.then(refreshFontLayouts);
-  document.fonts.addEventListener("loadingdone", refreshFontLayouts);
   function showStartupError(error) {
     startupError = error;
-    startupState = "error";
+    state.startupState = "error";
     document.body.dataset.ready = "error";
     $("book-loading").hidden = true;
     $("workspace").hidden = true;
@@ -5130,8 +2113,8 @@
   }
   async function initializeStudio() {
     if (startupTask) return startupTask;
-    const generation = accountGeneration;
-    startupState = "loading";
+    const generation = state.accountGeneration;
+    state.startupState = "loading";
     startupError = null;
     document.body.dataset.ready = "false";
     $("book-loading").hidden = false;
@@ -5141,12 +2124,12 @@
     startupTask = (async () => {
       try {
         await boot();
-        if (generation !== accountGeneration) return;
-        startupState = "ready";
+        if (generation !== state.accountGeneration) return;
+        state.startupState = "ready";
         document.body.dataset.ready = "true";
-        $("library").hidden = !!b;
+        $("library").hidden = !!state.book;
       } catch (error) {
-        if (generation === accountGeneration) showStartupError(error);
+        if (generation === state.accountGeneration) showStartupError(error);
       } finally {
         $("book-loading").hidden = true;
         startupTask = null;
@@ -5156,16 +2139,16 @@
   }
   async function boot() {
     await new Promise((resolve) => setTimeout(resolve, 80));
-    user = auth.currentUser;
-    $("sign-in").hidden = !!user;
-    $("account-name").hidden = !user;
-    $("account-name").textContent = user ? user.displayName || user.email : "";
+    state.user = auth.currentUser;
+    $("sign-in").hidden = !!state.user;
+    $("account-name").hidden = !state.user;
+    $("account-name").textContent = state.user ? state.user.displayName || state.user.email : "";
     const share = document.body.dataset.shareToken;
     let id = document.body.dataset.bookId;
     if (share) {
       dialog(
         "Open a shared book",
-        field("Your name", "guestName", user ? user.displayName || "" : "") +
+        field("Your name", "guestName", state.user ? state.user.displayName || "" : "") +
           '<p class="book-muted">Your name appears with comments and while you edit.</p><button class="primary-btn" id="open-shared">Open book</button>',
       );
       $("open-shared").onclick = action(async () => {
@@ -5187,97 +2170,51 @@
       try {
         await openBook(id);
       } catch (e) {
-        b = null;
+        state.book = null;
         throw e;
       }
     } else await loadLibrary();
   }
-  decorateTools();
-  document.addEventListener("book-color-start", () => { editBatch = null; });
-  $("inspector").addEventListener("focusout", (e) => {
-    if (e.target.type === "color" && !e.relatedTarget) return;
-    editBatch = null;
-  });
-  $("inspector").addEventListener("pointerdown", (e) => {
-    if (e.target.type === "color") editBatch = null;
-  });
-  document.addEventListener("pointerdown", (e) => {
-    if (!e.target.closest("#book-path-menu")) closePathMenu();
-    if (inlineEdit && !e.target.closest("#canvas-text-editor")) finishText();
-    if (
-      b &&
-      e.target.closest("#book-viewport") &&
-      !e.target.closest("[data-page-id]")
-    )
-      clearSelection();
-  });
-  let backdropDown = false;
-  $("book-dialog").addEventListener("pointerdown", (e) => {
-    const r = $("book-dialog").getBoundingClientRect();
-    backdropDown =
-      e.target === $("book-dialog") &&
-      (e.clientX < r.left ||
-        e.clientX > r.right ||
-        e.clientY < r.top ||
-        e.clientY > r.bottom);
-  });
-  $("book-dialog").addEventListener("click", (e) => {
-    if (backdropDown && e.target === $("book-dialog")) closeDialog();
-    backdropDown = false;
-  });
-  ["copy", "cut"].forEach((type) =>
-    document.addEventListener(type, (e) => {
-      if (
-        !b ||
-        !editable() ||
-        reading ||
-        !selected.length ||
-        $("book-dialog").open ||
-        e.target.closest("input,textarea,select,[contenteditable=true]")
-      )
-        return;
-      const objects = selectedItems();
-      if (!objects.length) return;
-      const value =
-        "BOOK-STUDIO:" + JSON.stringify({ book: b.id, items: objects });
-      e.clipboardData.setData("application/x-book-studio", value);
-      e.clipboardData.setData("text/plain", value);
-      e.preventDefault();
-      if (type === "cut") deleteObjects();
-      notify(
-        objects.length === 1
-          ? "Object " + (type === "cut" ? "cut." : "copied.")
-          : objects.length +
-              " objects " +
-              (type === "cut" ? "cut." : "copied."),
-      );
-    }),
-  );
-  $("dialog-content").addEventListener("input", (e) => {
-    if (e.target.id === "shortcut-search")
-      document.querySelectorAll(".book-shortcut").forEach((n) => {
-        n.hidden = !n.dataset.search.includes(e.target.value.toLowerCase());
-      });
-    if (e.target.id === "asset-search") {
-      let count = 0;
-      document.querySelectorAll(".book-asset-card").forEach((n) => {
-        n.hidden = !n.dataset.search.includes(e.target.value.toLowerCase());
-        if (!n.hidden) count++;
-      });
-      $("asset-no-results").hidden = count > 0;
-    }
-  });
+
+  const editor = {
+    auth, instance, storageScope, accountChangedError, assertAccount, scopeDraft, api,
+    localSaves, queueLocalSave, acquire, release, reloadRemote, persist, initializeStudio,
+
+    page, item, editable, selectedItems, furnitureBox, isPath, currentSpreads,
+    canMovePage,
+
+    action, notify, status, updateStatus, dialog, closeDialog, decorateTools, renderAll,
+    renderLibrary, renderPages, renderStage, renderSelection, renderContentWarnings,
+    selectionToolbar, schedulePages, fitStage, layoutRule, feedback, saveView,
+
+    checkpoint, editCheckpoint, changed, undo, clearSelection, startText, finishText,
+    addObject, duplicateObject, deleteObjects, addPage, duplicatePages, deletePage,
+    movePage, go, placeFurniture, selectFurniture, syncLinkedItems, keepSpreadsTogether,
+    resizeTable, sizeImage, spanImage,
+
+    newBookDialog, create, openBook, copyBook, bookOptions, libraryChange, detailsDialog,
+    themeDialog, applyTheme, shortcutsDialog,
+
+    renderedAssets, fontCache, illustrationDialog, updatePrompt, original, assetsDialog,
+    shareDialog, invite, createLink, commentsDialog, historyDialog, previewVersion,
+    saveVersion, restoreVersion,
+  };
+  const inspector = createBookInspector(state, editor);
+  const pointerTools = createBookPointerTools(state, editor, inspector);
+  const io = createBookIO(state, editor);
+  bindBookEvents(state, editor, inspector, pointerTools, io);
+
   let initialized = false;
   auth.onAuthStateChanged(
     action(async (next) => {
-      const previousUid = user?.uid;
+      const previousUid = state.user?.uid;
       if (initialized && previousUid !== next?.uid) {
-        const generation = ++accountGeneration;
-        const anonymousDraft = b?.local && !D.accountUid(b) && !previousUid;
+        const generation = ++state.accountGeneration;
+        const anonymousDraft = state.book?.local && !D.accountUid(state.book) && !previousUid;
         if (!anonymousDraft) {
-          const promotion = cloudPromotion;
+          const promotion = state.cloudPromotion;
           const retiring = retirePrivateBook();
-          user = next;
+          state.user = next;
           for (const key of Object.keys(sessionStorage)) {
             if (key.startsWith("book-lease-") || key.startsWith("book-access-")) sessionStorage.removeItem(key);
           }
@@ -5285,7 +2222,7 @@
           if (promotion) await promotion.catch(() => {});
           assertAccount(generation);
           startupError = null;
-          startupState = "ready";
+          state.startupState = "ready";
           document.body.dataset.bookId = "";
           document.body.dataset.shareToken = "";
           document.body.dataset.ready = "true";
@@ -5296,7 +2233,7 @@
           document.querySelector(".book-library-tools").hidden = false;
         }
       }
-      user = next;
+      state.user = next;
       $("sign-in").hidden = !!next;
       $("account-name").hidden = !next;
       $("account-name").textContent = next
@@ -5305,9 +2242,11 @@
       if (!initialized) {
         initialized = true;
         await initializeStudio();
-      } else if (startupState === "error") await initializeStudio();
-      else if (!b) await loadLibrary();
-      else if (b.local && next) await ensureCloudBook();
+      } else if (state.startupState === "error") await initializeStudio();
+      else if (!state.book) await loadLibrary();
+      else if (state.book.local && next) await io.ensureCloudBook();
     }),
   );
-})();
+}
+
+startBookStudio();
