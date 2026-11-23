@@ -237,10 +237,8 @@ for (const theme of ['light', 'dark']) {
   });
 }
 
-for (const sheet of ['study']) {
-  test(`${sheet} date picker today ring stays visible in dark mode`, async ({ page }) => {
-    await renderStyles(page, sheet === 'study' ? STUDY_SHEETS : [sheet], '<button class="flatpickr-day today">14</button>', 'dark');
-    const shadow = await page.locator('.flatpickr-day').evaluate(element => getComputedStyle(element).boxShadow);
-    expect(shadow).toContain('rgb(155, 188, 255)');
-  });
-}
+test('study date picker today ring stays visible in dark mode', async ({ page }) => {
+  await renderStyles(page, STUDY_SHEETS, '<button class="flatpickr-day today">14</button>', 'dark');
+  const shadow = await page.locator('.flatpickr-day').evaluate(element => getComputedStyle(element).boxShadow);
+  expect(shadow).toContain('rgb(155, 188, 255)');
+});
