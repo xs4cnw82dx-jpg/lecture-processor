@@ -464,3 +464,35 @@ test('a learner resumes their older course-wide draft as private work', async ({
   await expect.poll(() => posts.at(-1)?.answers).toEqual({ [fresh.id]: 'Deze deel ik' });
   expect(posts.every(post => post.sessionId !== 'old-session' && !post.stepComments)).toBe(true);
 });
+
+test('a late feedback receipt belongs to the sharing session that submitted it', async ({ page }) => {
+  const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
+  course.shareOptions = { collectResponses: true, collectPilotFeedback: true, collectionVersion: 'pilot' };
+  await openCourse(page, course);
+  let heldFeedback;
+  const posts = [];
+  await page.route(apiPath + '/responses', async route => {
+    const body = route.request().postDataJSON();
+    posts.push(body);
+    if (body.pilotFeedback) heldFeedback = route;
+    else await route.fulfill({ json: { ok: true } });
+  });
+  await page.locator('.xped-hero-cta-row button').click();
+  await chooseSharing(page);
+  const finish = page.getByRole('button', { name: Model.ui('nl', 'finish') });
+  const submit = page.getByRole('button', { name: Model.ui('nl', 'pilotSubmit') });
+  await finish.click();
+  await submit.click();
+  await expect.poll(() => Boolean(heldFeedback)).toBe(true);
+  const firstSession = heldFeedback.request().postDataJSON().sessionId;
+  for (const choice of ['private', 'share']) {
+    await page.getByRole('button', { name: Model.ui('nl', 'returnHome') }).first().click();
+    await page.getByRole('button', { name: Model.ui('nl', 'changeConsent') }).click();
+    await chooseSharing(page, choice);
+  }
+  await finish.click();
+  await heldFeedback.fulfill({ json: { ok: true } });
+  await expect.poll(() => posts.some(post => post.completed && post.sessionId !== firstSession)).toBe(true);
+  await expect(submit).toBeVisible();
+  await expect(page.getByText(Model.ui('nl', 'pilotThanks'))).toHaveCount(0);
+});

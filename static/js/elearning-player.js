@@ -602,16 +602,19 @@
           comment: txt,
           createdAt: Math.floor(Date.now() / 1000),
         };
+        var commentGrant = state.consent;
         state.stepComments.push(comment);
         revSend.disabled = true;
         revTa.readOnly = true;
         try {
           var result = await sendResponse(false);
+          if (!grantIsCurrent(commentGrant)) return;
           if (!result.ok) throw new Error('Comment unavailable');
           saveLocalProgress();
           revTa.value = '';
           revStat.textContent = Model.ui(lang, 'stepCommentSent');
         } catch (_err) {
+          if (!grantIsCurrent(commentGrant)) return;
           state.stepComments = state.stepComments.filter(function (item) { return item !== comment; });
           revStat.textContent = Model.ui(lang, 'feedbackFailed');
         } finally {
@@ -846,16 +849,19 @@
         submitError.setAttribute('role', 'alert');
         submitError.hidden = true;
         subBtn.addEventListener('click', async function () {
+          var feedbackGrant = state.consent;
           subBtn.disabled = true;
           submitError.hidden = true;
           clearTimeout(state.syncTimer);
           try {
             var result = await sendResponse(true, { clarity: scores.clarity || null, engagement: scores.engagement || null, comment: ta.value });
+            if (!grantIsCurrent(feedbackGrant)) return;
             if (!result.ok) throw new Error('Feedback unavailable');
             state.pilotSent = true;
             saveLocalProgress();
             if (state.view === 'summary') renderSummary();
           } catch (_err) {
+            if (!grantIsCurrent(feedbackGrant)) return;
             subBtn.disabled = false;
             submitError.textContent = Model.ui(lang, 'feedbackFailed');
             submitError.hidden = false;
