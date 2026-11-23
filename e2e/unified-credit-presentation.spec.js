@@ -169,6 +169,7 @@ async function adminFixture(page, options = {}) {
     return route.fulfill({ json: pathname.endsWith('/overview') ? { metrics: { total_processed: 7, total_revenue_cents: 1234 }, recent_jobs: [{ credit_scheme: 2, charged_credits: 10, refunded_credits: 2, credit_refunded: true }] } : { grants: options.history || [] } });
   });
   const html = fs.readFileSync('templates/admin.html', 'utf8')
+    .replace("{% include '_firebase_scripts.html' %}", fs.readFileSync('templates/_firebase_scripts.html', 'utf8').replace(/\{#[\s\S]*?#\}/g, ''))
     .replace("{% include '_preferences_head.html' %}", fs.readFileSync('templates/_preferences_head.html', 'utf8'))
     .replace(/\{#[\s\S]*?#\}/g, '')
     .replace(/\{\{ url_for\('static', filename='([^']+)'\) \}\}/g, (_match, filename) => `/static/${filename}`)
