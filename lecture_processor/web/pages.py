@@ -193,6 +193,9 @@ def _render_processing_page(forced_mode: str):
         sentry_release=runtime.SENTRY_RELEASE,
         sentry_capture_local=runtime.SENTRY_CAPTURE_LOCAL,
         index_results_js_asset=runtime.resolve_js_asset('js/index-results-utils.js'),
+        index_auth_modal_js_asset=runtime.resolve_js_asset('js/index-auth-modal.js'),
+        index_language_js_asset=runtime.resolve_js_asset('js/index-language.js'),
+        index_audio_js_asset=runtime.resolve_js_asset('js/index-audio.js'),
         index_js_asset=runtime.resolve_js_asset('js/index-app.js'),
         **_shell_context(runtime=runtime, page_key=page_key, show_credits_pill=True),
     )
