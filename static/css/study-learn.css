@@ -650,7 +650,8 @@
       -webkit-appearance: none;
       background: transparent;
       border-radius: 2px;
-      overflow: hidden
+      overflow: hidden;
+      display: block;
     }
 
     .learn-progress-fill::-webkit-progress-bar {
@@ -1999,3 +2000,259 @@
       }
     }
 
+/* Learn: smaller screens and late refinements (folded in from study.css). */
+
+@media (max-width: 600px) {
+  .audio-player-bar {
+    grid-template-columns: 44px minmax(56px, 1fr) 44px 44px 44px;
+    gap: 7px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .audio-play-btn { grid-column: 1; grid-row: 1 }
+
+  .audio-time { grid-column: 2; grid-row: 1; min-width: 0 }
+
+  .audio-speed-btn { grid-column: 3; grid-row: 1; padding: 4px }
+
+  .audio-download-btn { grid-column: 4; grid-row: 1 }
+
+  .audio-close-btn { grid-column: 5; grid-row: 1 }
+
+  .audio-progress-wrap { grid-column: 1 / -1; grid-row: 2; width: 100%; min-width: 0; height: 8px }
+
+  .audio-pack-title, .audio-retention-note { display: none }
+
+  .export-menu-item .export-notes-label-full {
+    display: none;
+  }
+
+  .learn-shell {
+    padding: 10px;
+  }
+
+  .learn-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+  }
+
+  .learn-top .actions {
+    justify-content: flex-end;
+  }
+
+  .learn-progress-center {
+    justify-content: flex-start;
+  }
+
+  .learn-card {
+    padding: 14px;
+    border-radius: var(--radius-lg);
+  }
+
+  .flashcard-3d {
+    height: 260px;
+  }
+
+  .flashcard-view-tools {
+    width: 100%;
+  }
+
+  .flashcard-list-view {
+    width: 100%;
+    padding: 8px;
+  }
+
+  .peek-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .peek-divider {
+    display: none;
+  }
+
+  .peek-right {
+    grid-column: 1 / -1;
+    padding-left: 42px;
+  }
+
+  #learn-pane-flashcards .learn-controls {
+    display: none;
+  }
+
+  .difficulty-toolbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: calc(var(--z-modal) + 1);
+    margin: 0;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--theme-line);
+    background: var(--theme-surface);
+    box-shadow: 0 -8px 20px rgba(15, 23, 42, .12);
+  }
+
+  .difficulty-toolbar.visible {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .difficulty-toolbar .difficulty-hint {
+    display: none;
+  }
+
+  .difficulty-btn {
+    min-height: 48px;
+    border-radius: 12px;
+    font-size: .86rem;
+  }
+
+  .learn-card {
+    padding-bottom: 88px;
+  }
+
+  body.flashcard-list-mode .difficulty-toolbar {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px solid var(--theme-line);
+    box-shadow: none;
+    background: var(--theme-surface);
+  }
+
+  body.flashcard-list-mode .difficulty-toolbar.visible {
+    display: flex;
+    grid-template-columns: none;
+  }
+
+  body.flashcard-list-mode .difficulty-toolbar .difficulty-hint {
+    display: inline-flex;
+  }
+
+  body.flashcard-list-mode .difficulty-btn {
+    min-height: 40px;
+  }
+
+  body.flashcard-list-mode .learn-card {
+    padding-bottom: 16px;
+  }
+
+  .algo-slot {
+    width: 68px;
+    height: 82px;
+    font-size: .68rem;
+  }
+
+  .algo-slot svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .algo-chevron svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .algo-lane {
+    gap: 4px;
+  }
+
+  .lesson-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lesson-card {
+    padding: 14px 34px 14px 58px;
+  }
+
+  .setup-modal {
+    padding: 18px;
+  }
+
+  .setup-tabs {
+    flex-wrap: wrap;
+  }
+
+  .setup-tab {
+    padding: 8px 4px;
+    font-size: .72rem;
+  }
+
+  .setup-tab svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .mastery-extra {
+    grid-template-columns: 1fr;
+  }
+
+  .keyboard-hints {
+    display: none;
+  }
+
+  .match-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 400px) {
+  .setup-overlay { padding: 0; align-items: flex-end }
+
+  .setup-modal { max-height: 94dvh; border-radius: 20px 20px 0 0; padding: 20px 16px calc(16px + env(safe-area-inset-bottom)) }
+
+  .setup-tab svg { display: none }
+
+  .lesson-card { min-height: 90px }
+
+  .algo-slot { width: 70px; min-height: 76px }
+}
+
+@media (max-width: 600px) {
+  .write-input-row { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)) }
+
+  .write-input-row .write-input { grid-column: 1/-1; width: 100% }
+
+  .write-prompt-card .write-prompt { padding: 52px 16px 20px }
+}
+
+.mode-picker-context { max-width: 540px; margin: 8px auto 22px; color: var(--theme-muted); font-size: .88rem; line-height: 1.6; text-align: center }
+
+.mode-picker-free { display: block; margin: 20px auto 0; font-size: .8rem }
+
+.algo-availability { color: var(--theme-muted); font-size: .82rem; line-height: 1.6; margin: 12px 0 }
+
+.mode-picker-card[data-study-mode="resume"] { grid-column: 1 / -1; padding: 12px 16px; flex-direction: row; justify-content: center; border-width: 1px; background: var(--theme-surface-soft) }
+
+.mode-picker-card[data-study-mode="resume"] svg { width: 22px; height: 22px }
+
+.mode-picker-card[data-study-mode="resume"] .mode-picker-card-title { font-size: .8rem }
+
+.mode-picker-card[data-study-mode="resume"] .mode-picker-card-desc { display: none }
+
+@media (max-width: 500px) {
+  .mode-picker-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px }
+
+  .mode-picker-card { padding: 18px 10px }
+
+  .mode-picker-card svg { width: 28px; height: 28px }
+
+  .mode-picker-card-title { font-size: .86rem }
+
+  .mode-picker-card-desc { font-size: .74rem; line-height: 1.5 }
+
+  .mode-picker-context { font-size: .8rem; margin-bottom: 16px }
+}
+
+/* Let long study content scroll without shrinking its controls into each other. */
+.learn-card > * { flex-shrink: 0 }
+
+.learn-card .learn-pane { min-height: auto }

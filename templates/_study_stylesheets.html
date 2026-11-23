@@ -1,4 +1,4 @@
-{# Study stylesheets, in cascade order: study.css holds the small-screen overrides and must stay last. #}
+{# Study stylesheets, in cascade order. study.css holds the shared modals, toasts and animations that sit over every area, so it stays last. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study-library.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study-learn.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/study-builder.css') }}">

@@ -880,3 +880,6 @@
       color: var(--theme-ink)
     }
 
+/* Coding: smaller screens and late refinements (folded in from study.css). */
+
+.coding-shell.has-ai-panel .coding-actions #coding-ai-accept-btn, .coding-shell.has-ai-panel .coding-actions #coding-ai-reject-btn { display: none }

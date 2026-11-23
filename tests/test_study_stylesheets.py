@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-# study.css carries the small-screen overrides for every Study area, so it must load last.
+# study.css holds the shared modals and toasts that sit over every area, so it loads last.
 STUDY_SHEETS = ['study-library', 'study-learn', 'study-builder', 'study-coding', 'study']
 
 
