@@ -4,7 +4,10 @@
   var bootstrap = window.LectureProcessorBootstrap || {};
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
-  var authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  // Signed-in requests go through the shared client (auth-utils.js), which retries
+  // once after a 401 and rejects with 'Please sign in' when nobody is signed in.
+  var authFetch = authClient.authFetch;
   var downloadUtils = window.LectureProcessorDownload || {};
   var creditUtils = window.LectureProcessorCreditUtils || {};
   var escapeHtml = window.LectureProcessorHtml.escapeHtml;
@@ -303,20 +306,6 @@
     if (shell && typeof shell.showToast === 'function') {
       shell.showToast(message, variant || '');
     }
-  }
-
-  function authFetch(path, options) {
-    if (authClient && typeof authClient.authFetch === 'function') {
-      return authClient.authFetch(path, options, { retryOn401: true });
-    }
-    if (!auth || !auth.currentUser) {
-      return Promise.reject(new Error('Please sign in'));
-    }
-    return auth.currentUser.getIdToken().then(function (token) {
-      var opts = options || {};
-      var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
-      return fetch(path, Object.assign({}, opts, { headers: headers }));
-    });
   }
 
   function saveBlobAsFile(blob, fallbackName) {

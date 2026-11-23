@@ -7,6 +7,9 @@
   var creditUtils = window.LectureProcessorCreditUtils || {};
   var creditShell = window.LectureProcessorShell || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  // Signed-in requests go through the shared client (auth-utils.js), which retries
+  // once after a 401 and rejects with 'Please sign in' when nobody is signed in.
+  var authFetch = authClient.authFetch;
   var config = window.ReaderConfig || {};
   var sourceType = String(config.source || 'document');
 
@@ -342,18 +345,6 @@
     runBtn.disabled = pending || !signedIn || !hasInput || running;
     runBtn.textContent = running ? 'Extracting...' : 'Extract';
     updateAuthStateUI();
-  }
-
-  async function authFetch(path, options) {
-    if (authClient && typeof authClient.authFetch === 'function') {
-      return authClient.authFetch(path, options, { retryOn401: true });
-    }
-    var signedInUser = getSignedInUser();
-    if (!signedInUser) throw new Error('Please sign in');
-    var token = await signedInUser.getIdToken();
-    var opts = options || {};
-    var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
-    return fetch(path, Object.assign({}, opts, { headers: headers }));
   }
 
   async function refreshCredits() {

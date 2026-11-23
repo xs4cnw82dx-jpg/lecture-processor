@@ -5,6 +5,9 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  // Signed-in requests go through the shared client (auth-utils.js), which retries
+  // once after a 401 and rejects with 'Please sign in' when nobody is signed in.
+  var authFetch = authClient.authFetch;
   var downloadUtils = window.LectureProcessorDownload || {};
 
   if (!auth) return;
@@ -104,18 +107,6 @@
     if (urlInput) urlInput.disabled = running;
     formatButtons.forEach(function (button) { button.disabled = running; });
     updateAuthStateUI();
-  }
-
-  async function authFetch(path, options) {
-    if (authClient && typeof authClient.authFetch === 'function') {
-      return authClient.authFetch(path, options, { retryOn401: true });
-    }
-    var signedInUser = getSignedInUser();
-    if (!signedInUser) throw new Error('Please sign in');
-    var token = await signedInUser.getIdToken();
-    var opts = options || {};
-    var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
-    return fetch(path, Object.assign({}, opts, { headers: headers }));
   }
 
   function attemptIsCurrent(attempt) {

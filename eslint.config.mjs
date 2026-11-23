@@ -1,17 +1,45 @@
 import globals from "globals";
 
+// Shared helpers live in one place (html-utils.js, auth-utils.js, ux-utils.js);
+// pages use them instead of keeping their own copies.
+const SHARED_HELPERS = ["escapeHtml", "authFetch"];
+
+// Files allowed to define a helper, and why.
+const HELPER_EXEMPTIONS = {
+  // The shared definitions.
+  "static/js/html-utils.js": ["escapeHtml"],
+  "static/js/auth-utils.js": ["authFetch"],
+  // Loads before html-utils.js on the lecture page.
+  "static/js/marked-lite.js": ["escapeHtml"],
+  // Tested fallbacks for when html-utils.js fails to load
+  // (tests_js/markdown-utils.test.js, e2e/plan-html-fallback.spec.js).
+  "static/js/markdown-utils.js": ["escapeHtml"],
+  "static/js/study-plan.js": ["escapeHtml"],
+  // The app shell's request helper also undoes a session login when the account
+  // changes mid-request, which the shared client does not do.
+  "static/js/app-shell.js": ["authFetch"],
+  // Waits for its WP-E3 split to settle.
+  "static/js/index-app.js": ["escapeHtml", "authFetch"],
+};
+
 // Reject page-local definitions of the shared helpers: a function declaration with
 // the name, or a function assigned to a variable with the name (including
 // `x = shared.fn || function () {...}` fallbacks).
-function sharedHelperCopies(names) {
+function sharedHelperRule(names) {
+  if (!names.length) return "off";
   const pattern = `/^(${names.join("|")})$/`;
   const message = "Use the shared helper (window.LectureProcessorHtml, LectureProcessorAuth or LectureProcessorUx) instead of a page copy.";
-  return [
+  return ["error",
     { selector: `FunctionDeclaration[id.name=${pattern}]`, message },
     { selector: `VariableDeclarator[id.name=${pattern}] FunctionExpression`, message },
     { selector: `VariableDeclarator[id.name=${pattern}] ArrowFunctionExpression`, message },
   ];
 }
+
+const helperExemptionConfigs = Object.entries(HELPER_EXEMPTIONS).map(([file, allowed]) => ({
+  files: [file],
+  rules: { "no-restricted-syntax": sharedHelperRule(SHARED_HELPERS.filter(name => !allowed.includes(name))) },
+}));
 
 export default [
   {
@@ -41,25 +69,10 @@ export default [
       "no-redeclare": "error",
       "no-unreachable": "error",
       "no-unused-vars": ["error", { vars: "all", args: "none", caughtErrors: "none" }],
-      // Shared helpers live in one place; use them instead of writing page copies.
-      "no-restricted-syntax": ["error", ...sharedHelperCopies(["escapeHtml"])],
+      "no-restricted-syntax": sharedHelperRule(SHARED_HELPERS),
     },
   },
-  {
-    // The shared definitions themselves, and the copies that must stay for now:
-    // marked-lite.js loads before html-utils.js; markdown-utils.js and study-plan.js
-    // keep tested fallbacks for when html-utils.js fails to load
-    // (tests_js/markdown-utils.test.js, e2e/plan-html-fallback.spec.js);
-    // index-app.js waits for its WP-E3 split.
-    files: [
-      "static/js/html-utils.js",
-      "static/js/marked-lite.js",
-      "static/js/markdown-utils.js",
-      "static/js/study-plan.js",
-      "static/js/index-app.js",
-    ],
-    rules: { "no-restricted-syntax": "off" },
-  },
+  ...helperExemptionConfigs,
   {
     files: ["static/js/book-studio.js", "static/js/book-studio-*.js"],
     languageOptions: { sourceType: "module" },

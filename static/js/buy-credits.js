@@ -5,6 +5,9 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  // Signed-in requests go through the shared client (auth-utils.js), which retries
+  // once after a 401 and rejects with 'Please sign in' when nobody is signed in.
+  var authFetch = authClient.authFetch;
   var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
   var creditUtils = window.LectureProcessorCreditUtils || {};
   var pricingGrid = document.getElementById('credit-bundles');
@@ -133,18 +136,6 @@
     if (authPanel) authPanel.hidden = signedIn || !authStateResolved;
     if (signInLink) signInLink.href = getSignInHref();
     setBundleButtons(checkoutBusy);
-  }
-
-  async function authFetch(path, options) {
-    if (authClient && typeof authClient.authFetch === 'function') {
-      return authClient.authFetch(path, options, { retryOn401: true });
-    }
-    var user = getCurrentUser();
-    if (!user) throw new Error('Please sign in');
-    var token = await user.getIdToken();
-    var opts = options || {};
-    var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
-    return fetch(path, Object.assign({}, opts, { headers: headers }));
   }
 
   function setBundleButtons(disabled, activeBundle) {
