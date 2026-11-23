@@ -278,10 +278,7 @@
 
 /* Builder: smaller screens and late refinements (folded in from study.css). */
 
-/* Study shared rules, loaded LAST of the Study stylesheets: Pack Builder import preview
-   and exit dialog, modals, toasts, shared animations, then the small-screen overrides and
-   later fixes for every Study area. The overrides rely on coming after
-   study-library/learn/builder/coding.css. */
+/* Import preview and the unsaved-changes exit dialog. */
 .builder-import-tools {
   display: grid;
   grid-template-columns: 1fr 1fr;

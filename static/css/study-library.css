@@ -1,6 +1,6 @@
 /* Study Library: page frame, library panels, pack view, notes and the highlight toolbar.
-   Loaded first of the Study stylesheets; keep the <link> order in study.html and
-   shared_study.html, because later sheets build on these rules. */
+   Loaded first of the Study stylesheets; keep the order in templates/_study_stylesheets.html,
+   because later sheets build on these rules. */
     :root {
       --primary-dark: #1D47B3;
       --secondary: #3874B8;
