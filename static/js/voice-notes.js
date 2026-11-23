@@ -6,6 +6,9 @@
   var auth = bootstrap.getAuth ? bootstrap.getAuth() : (window.firebase ? window.firebase.auth() : null);
   var authUtils = window.LectureProcessorAuth || {};
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
+  // Signed-in requests go through the shared client (auth-utils.js), which retries
+  // once after a 401 and rejects with 'Please sign in' when nobody is signed in.
+  var authFetch = authClient && authClient.authFetch;
   var utils = window.LectureProcessorVoiceNotes || {};
   var downloadUtils = window.LectureProcessorDownload || {};
   var uxUtils = window.LectureProcessorUx || {};
@@ -277,19 +280,6 @@
 
   function hasSignedInSession() {
     return !!(state.user && state.user === auth.currentUser);
-  }
-
-  function authFetch(path, options) {
-    if (authClient && typeof authClient.authFetch === 'function') {
-      return authClient.authFetch(path, options || {}, { retryOn401: true });
-    }
-    var user = state.user || auth.currentUser;
-    if (!user) return Promise.reject(new Error('Please sign in'));
-    return user.getIdToken().then(function (token) {
-      var opts = options || {};
-      var headers = Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + token });
-      return fetch(path, Object.assign({}, opts, { headers: headers }));
-    });
   }
 
   function apiJson(path, options) {

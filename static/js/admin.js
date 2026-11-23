@@ -2,6 +2,9 @@ const bootstrap = window.LectureProcessorBootstrap || {};
 const auth = bootstrap.getAuth ? bootstrap.getAuth() : firebase.auth();
 const authUtils = window.LectureProcessorAuth || {};
 const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
+// Signed-in admin requests go through the shared client (auth-utils.js), which
+// retries once after a 401 and rejects with 'Not signed in' when nobody is signed in.
+const authFetch = authClient && authClient.authFetch;
 const downloadUtils = window.LectureProcessorDownload || {};
 const uxUtils = window.LectureProcessorUx || {};
 const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
@@ -91,20 +94,6 @@ adminToast.setAttribute('role', 'status');
 adminToast.setAttribute('aria-live', 'polite');
 adminToast.setAttribute('aria-atomic', 'true');
 document.body.appendChild(adminToast);
-
-function authFetch(path, options) {
-    if (authClient && typeof authClient.authFetch === 'function') {
-        return authClient.authFetch(path, options, { retryOn401: true });
-    }
-    if (!auth.currentUser) {
-        return Promise.reject(new Error('Not signed in'));
-    }
-    return auth.currentUser.getIdToken().then((token) => {
-        const opts = options || {};
-        const headers = Object.assign({}, opts.headers || {}, { 'Authorization': `Bearer ${token}` });
-        return fetch(path, Object.assign({}, opts, { headers }));
-    });
-}
 
 function onAdminAuthStateReady(callback) {
     if (bootstrap && typeof bootstrap.onAuthStateReady === 'function') {
