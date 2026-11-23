@@ -1,6 +1,6 @@
 /* Study Library: page frame, library panels, pack view, notes and the highlight toolbar.
-   Loaded first of the Study stylesheets; keep the <link> order in study.html and
-   shared_study.html, because later sheets build on these rules. */
+   Loaded first of the Study stylesheets; keep the order in templates/_study_stylesheets.html,
+   because later sheets build on these rules. */
     :root {
       --primary-dark: #1D47B3;
       --secondary: #3874B8;
@@ -353,7 +353,7 @@
     .library-folders .item { padding:10px; border:1px solid var(--theme-line); border-radius:14px; background:var(--theme-surface); box-shadow:0 2px 5px #17233c04; }
     .library-folders .item:hover { background:var(--theme-surface-soft); border-color:var(--theme-accent-line); transform:none; }
     .library-folders .item.active { background:var(--theme-accent-soft); border-color:var(--theme-accent-line); box-shadow:0 0 0 1px #2558d909; }
-    .library-folders .item-title { font-size:.9rem; line-height:1.4; overflow-wrap:anywhere; }
+    .library-folders .item-title { overflow-wrap: anywhere; font-size: .86rem; line-height: 1.35 }
     .library-folders .item-sub:not(.pinned-note):not(.pending-hint) { font-size:.75rem; }
     .library-content > .panel-body { padding:0; }
     .panel-head.library-content-head { padding:10px 18px; }
@@ -782,8 +782,8 @@
     .folder-collapse-btn:hover { background:var(--theme-accent-soft); color:var(--theme-accent-ink); }
     .folder-collapse-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .library-folders .folder-action-menu > summary { width:30px; min-width:30px; height:34px; min-height:34px; padding:6px; border-color:transparent; background:transparent; box-shadow:none; }
-    .library-folders .folder-depth-1 { margin-left:14px; }
-    .library-folders .folder-depth-2,.library-folders .folder-depth-3,.library-folders .folder-depth-4,.library-folders .folder-depth-5,.library-folders .folder-depth-6,.library-folders .folder-depth-7,.library-folders .folder-depth-8 { margin-left:24px; }
+    .library-folders .folder-depth-1 { margin-left: 18px }
+    .library-folders .folder-depth-2,.library-folders .folder-depth-3,.library-folders .folder-depth-4,.library-folders .folder-depth-5,.library-folders .folder-depth-6,.library-folders .folder-depth-7,.library-folders .folder-depth-8 { margin-left: 32px }
     .pack-save-status.builder-status.saved { font-size:11px; font-weight:500; border:0; background:transparent; color:var(--theme-muted); padding:2px 0; letter-spacing:0; }
     .folder-row-main:focus-visible {
       outline: 2px solid var(--focus-ring);
@@ -1871,3 +1871,460 @@
       }
     }
 
+/* Library: smaller screens and late refinements (folded in from study.css). */
+
+@media (max-width: 980px) {
+  .pack-goals-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pack-goal-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .pack-goal-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pack-goal-actions .btn {
+    width: 100%;
+  }
+
+  .pack-goal-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 10px 10px calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .topbar {
+    padding: 10px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    position: static;
+    border-radius: var(--radius-md);
+  }
+
+  .topbar .actions {
+    justify-content: flex-end;
+  }
+
+  .topbar-sub {
+    max-width: 100%;
+  }
+
+  .topbar-kicker {
+    font-size: .64rem;
+  }
+
+  .panel {
+    border-radius: var(--radius-lg);
+  }
+
+  #library-grid {
+    gap: 10px;
+  }
+
+  .panel-head {
+    padding: 12px 14px;
+  }
+
+  .panel-head,
+  .panel-head .actions {
+    align-items: stretch;
+  }
+
+  .panel-head {
+    flex-direction: column;
+  }
+
+  .panel-head .actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .panel-head .actions .btn {
+    width: 100%;
+  }
+
+  .panel-head .actions .btn.primary {
+    order: -1;
+  }
+
+  .panel-body {
+    padding: 12px 14px;
+  }
+
+  #library-grid>aside.panel .panel-head {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  #library-grid>aside.panel .panel-head .actions {
+    width: auto;
+    flex-direction: row;
+  }
+
+  #library-grid>aside.panel .panel-head .btn {
+    width: auto;
+    min-height: 34px;
+    padding: 6px 9px;
+  }
+
+  #library-grid>section.panel .panel-head {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  #library-grid>section.panel .panel-head .actions {
+    width: auto;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  #library-grid>section.panel .panel-head .actions .btn {
+    width: auto;
+    min-height: 38px;
+    padding: 7px 10px;
+    font-size: .78rem;
+  }
+
+  #create-pack-btn {
+    max-width: none;
+  }
+
+  #create-pack-btn .create-pack-label {
+    display: none;
+  }
+
+  #create-pack-btn .create-pack-mobile-label {
+    display: inline;
+  }
+
+  .library-folders #folder-list { flex-direction: column; overflow: visible; gap: 8px }
+
+  .library-folders #folder-list .item { width: auto; padding: 8px }
+
+  #folder-list .folder-action-menu summary { min-height: 44px }
+
+  #folder-list .folder-mini-btn { min-height: 44px }
+
+  .pack-search-box {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: -2px -2px 12px;
+    padding: 2px;
+    background: linear-gradient(180deg, var(--theme-surface) 70%, rgba(255, 255, 255, 0));
+  }
+
+  #pack-list {
+    max-height: 40vh;
+  }
+
+  #pack-list .item {
+    padding: 11px 12px;
+  }
+
+  #pack-list .pack-row-main {
+    gap: 8px;
+  }
+
+  #pack-list .pack-select-control {
+    margin-top: -1px;
+  }
+
+  #pack-list .item .item-head {
+    align-items: flex-start;
+  }
+
+  #pack-list .item .item-title {
+    font-size: .92rem;
+    line-height: 1.25;
+  }
+
+  #pack-list .item .item-sub:last-child {
+    display: none;
+  }
+
+  .pack-quick-learn {
+    display: inline-flex;
+  }
+
+  .pack-summary {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .pack-summary-stats {
+    gap: 8px;
+  }
+
+  .editor-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .editor-actions .btn,
+  .editor-actions>.export-menu,
+  .editor-actions>.export-menu .btn {
+    width: 100%;
+  }
+
+  .editor-actions .btn {
+    min-width: 0;
+    justify-content: center;
+    gap: 7px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: .84rem;
+    line-height: 1.18;
+  }
+
+  .editor-actions .btn svg {
+    flex: 0 0 auto;
+  }
+
+  .export-menu-item .export-notes-label-short {
+    display: inline;
+  }
+
+  #open-learn-btn {
+    order: -10;
+    grid-column: 1 / -1;
+    min-height: 48px;
+    font-size: .95rem;
+  }
+
+  .editor-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    margin-bottom: 10px;
+  }
+
+  .editor-tab {
+    min-height: 48px;
+    padding: 8px 6px;
+    font-size: .78rem;
+    line-height: 1.18;
+  }
+
+  .highlight-toolbar {
+    gap: 8px;
+    padding: 10px 12px;
+    min-height: 48px;
+    grid-template-columns: 1fr;
+  }
+
+  .hl-color-group {
+    width: 100%;
+    padding-right: 0;
+    border-right: none;
+    padding-bottom: 2px;
+  }
+
+  .hl-action-group {
+    width: 100%;
+    flex-wrap: wrap;
+    overflow: visible;
+    justify-content: flex-start;
+  }
+
+  .hl-download-wrap {
+    width: auto;
+    margin-left: 0;
+  }
+
+  .hl-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hl-btn.hl-action {
+    min-height: 44px;
+    font-size: .92rem;
+    padding: 10px 12px;
+  }
+
+  .hl-download-btn {
+    width: auto;
+    min-height: 44px;
+    font-size: .92rem;
+    padding: 10px 16px;
+  }
+
+  .hl-download-menu {
+    right: 0;
+    left: auto;
+    top: calc(100% + 8px);
+    max-width: min(320px, calc(100vw - 56px));
+  }
+
+  .notes-view {
+    padding: 18px 74px 18px 18px;
+  }
+
+  .notes-fullscreen-btn {
+    margin: 14px 14px 0 0;
+  }
+
+  .split {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .study-auth-gate-card {
+    padding: 24px 18px;
+    border-radius: var(--radius-lg);
+  }
+
+  .study-auth-gate-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .study-auth-gate-actions .btn {
+    width: 100%;
+  }
+
+  .btn.cta {
+    padding: 12px 20px;
+    font-size: .92rem;
+  }
+
+  .editor-tab {
+    font-size: .75rem;
+    padding: 8px 6px;
+    gap: 4px;
+  }
+
+  .editor-tab svg {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .library-page-header { align-items: flex-start }
+
+  #library-grid { grid-template-columns: 1fr; gap: 18px }
+
+  .library-folders #folder-list { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 4px }
+
+  .library-folders .panel-head { padding-bottom: 8px }
+}
+
+@media (max-width: 760px) {
+  .study-page .container { padding: 0 0 90px }
+
+  .library-page-header { flex-direction: column; gap: 16px; margin-bottom: 24px }
+
+  .library-create-actions { width: 100% }
+
+  .library-create-actions > .btn { flex: 1 }
+
+  .library-folders #folder-list { grid-template-columns: repeat(2,minmax(0,1fr)) }
+
+  .library-content .split { grid-template-columns: 1fr }
+
+  .library-pack-browser { border-right: 0; padding: 16px }
+
+  .library-pack-browser #pack-list { max-height: none }
+
+  .library-pack-detail { display: none; padding: 20px 16px }
+
+  .has-open-pack .library-pack-browser,.has-open-pack > .library-folders { display: none }
+
+  .has-open-pack .library-pack-detail { display: block }
+
+  .library-back { display: inline-flex; margin-bottom: 18px }
+
+  .library-folders .item-sub { display: none !important }
+
+  .library-folders .folder-collapse-btn,.library-folders .folder-action-menu > summary { min-height: 40px }
+
+  .library-content-head { flex-direction: row; align-items: center; padding: 14px 16px }
+
+  .library-content-head .library-pack-tools .actions { width: 185px; flex-direction: column }
+
+  .pack-summary { padding: 0 0 16px }
+
+  .pack-details-disclosure > summary span { display: none }
+}
+
+@media (max-width: 400px) {
+  .library-folders #folder-list { grid-template-columns: 1fr }
+}
+
+.share-scope-control { background: var(--theme-accent-soft); padding: 4px; border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr }
+
+.share-scope-control .btn { background: transparent; border-color: transparent; box-shadow: none }
+
+.share-scope-control .btn.primary { background: var(--theme-surface); color: var(--theme-accent-ink); box-shadow: 0 2px 8px #17233c12 }
+
+/* Fullscreen reading retains exports when the Library toolbar is outside the viewport. */
+.notes-pane-shell:fullscreen .hl-download-wrap, .notes-pane-shell:-webkit-full-screen .hl-download-wrap { display: block }
+
+.library-pack-browser #pack-list .item { background: var(--theme-surface-soft); border: 1px solid var(--theme-accent-line); border-radius: 12px; box-shadow: 0 2px 5px #24365404 }
+
+.library-pack-browser #pack-list .item:hover { background: var(--theme-accent-soft); border-color: var(--theme-accent-line) }
+
+.library-pack-browser #pack-list .item.active { background: var(--theme-accent-soft); border-color: var(--theme-accent-line-strong); box-shadow: inset 3px 0 #2558d9 }
+
+/* ── Study Library layout ──
+   One page scroll: the pack list and the selected pack grow with the page
+   instead of scrolling inside fixed boxes (menus inside the pack can open
+   freely); opening a pack further down the list scrolls its details into view. Folders are a compact tree at every width, so subfolders keep
+   their place under their parent. Card rows read as a list until Edit. */
+.library-folders #folder-list { display: flex; flex-direction: column; gap: 3px }
+
+.library-folders .item { padding: 4px 4px 4px 6px; border: 1px solid transparent; border-radius: 11px; background: transparent; box-shadow: none }
+
+.library-folders .item:hover { background: var(--theme-surface); border-color: var(--theme-line) }
+
+.library-folders .item.active { background: var(--theme-accent-soft); border-color: var(--theme-accent-line); box-shadow: none }
+
+.library-folders .folder-row-main { min-height: 38px }
+
+.library-pack-browser #pack-list { max-height: none; overflow: visible; gap: 6px }
+
+.library-pack-browser #pack-list .item-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
+
+.library-pack-detail .editor-list { max-height: none; overflow: visible; padding-right: 0 }
+
+@media (min-width: 761px) {
+  .library-content .split { grid-template-columns: minmax(240px, 290px) minmax(0, 1fr) }
+
+  .library-pack-browser { padding: 16px 12px }
+
+  .library-pack-detail { padding: 16px 18px }
+}
+
+.editor-card .editor-card-preview [data-item-summary] { color: var(--theme-ink); font-weight: 700; font-size: .86rem; line-height: 1.4; overflow-wrap: anywhere }
+
+.editor-card .editor-card-answer { color: var(--theme-muted); font-size: .82rem; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden }
+
+.editor-card .editor-card-answer:empty { display: none }
+
+.editor-card[open] .editor-card-answer { display: none }
+
+.editor-card .editor-row-open-label, .editor-card[open] .editor-row-closed-label { display: none }
+
+.editor-card[open] .editor-row-open-label { display: inline }
+
+/* The Edit/Close label is the row's control, so the generic disclosure chevron is not needed. */
+.editor-card > summary .app-disclosure-chevron { display: none }
