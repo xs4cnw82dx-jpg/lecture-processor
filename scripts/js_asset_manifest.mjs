@@ -15,6 +15,7 @@ export const minifiedTargets = [
   { entry: 'static/js/study.js', out: 'static/js/study.min.js' },
   { entry: 'static/js/study-highlights.js', out: 'static/js/study-highlights.min.js' },
   { entry: 'static/js/study-builder.js', out: 'static/js/study-builder.min.js' },
+  { entry: 'static/js/study-learn-modes.js', out: 'static/js/study-learn-modes.min.js' },
   { entry: 'static/js/study-plan.js', out: 'static/js/study-plan.min.js' },
   { entry: 'static/js/voice-notes-utils.js', out: 'static/js/voice-notes-utils.min.js' },
   { entry: 'static/js/voice-notes.js', out: 'static/js/voice-notes.min.js' },
