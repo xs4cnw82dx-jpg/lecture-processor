@@ -23,17 +23,6 @@ MAX_BOOTSTRAP_DAYS = 120
 MAX_CALENDAR_FEEDS = 5
 
 
-def _require_user(app_ctx, request):
-    return access_service.require_allowed_user(app_ctx, request)
-
-
-def _write_guard(app_ctx, uid):
-    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if allowed:
-        return None
-    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
-
-
 def _new_id(prefix):
     return f"{prefix}_{secrets.token_urlsafe(12).replace('-', '_')[:18]}"
 
@@ -398,10 +387,8 @@ def _local_day_start_timestamp(day_value, timezone_name):
         return datetime.combine(day_value, datetime.min.time(), tzinfo=timezone.utc).timestamp()
 
 
-def get_bootstrap(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_bootstrap(app_ctx, request, decoded):
     uid = decoded['uid']
     try:
         preferences = _migrate_legacy_folder_goals(app_ctx, uid, _preferences(app_ctx, uid))
@@ -508,19 +495,15 @@ def get_bootstrap(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not load your study plan.'}), 500
 
 
-def get_membership(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_membership(app_ctx, request, decoded):
     goals = app_ctx.repositories.planner.list_active_study_goals_by_uid(app_ctx.db, decoded['uid'])
     pack_ids = sorted({pack_id for goal in goals if goal.get('status', 'active') == 'active' for pack_id in study_plan.sanitize_pack_ids(goal.get('pack_ids', []))})
     return app_ctx.jsonify({'pack_ids': pack_ids})
 
 
-def get_library_page(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_library_page(app_ctx, request, decoded):
     uid = decoded['uid']
     try:
         limit = max(1, min(100, int(request.args.get('limit', 100) or 100)))
@@ -543,14 +526,9 @@ def get_library_page(app_ctx, request):
     return app_ctx.jsonify({'study_packs': packs, 'next_cursor': next_cursor})
 
 
-def update_preferences(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_preferences(app_ctx, request, decoded):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     incoming = request.get_json(silent=True) or {}
     current = _preferences(app_ctx, uid)
     requested_revision = incoming.get('revision')
@@ -562,14 +540,9 @@ def update_preferences(app_ctx, request):
     return app_ctx.jsonify({'ok': True, 'preferences': safe})
 
 
-def create_goal(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def create_goal(app_ctx, request, decoded):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     body = request.get_json(silent=True) or {}
     goal_id = _new_id('goal')
     payload, error = study_plan.sanitize_goal(body, goal_id=goal_id, now_ts=app_ctx.time.time())
@@ -583,14 +556,9 @@ def create_goal(app_ctx, request):
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(payload)}), 201
 
 
-def update_goal(app_ctx, request, goal_id):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_goal(app_ctx, request, decoded, goal_id):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     safe_id = study_plan.sanitize_id(goal_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Study goal id is invalid.'}), 400
@@ -619,14 +587,9 @@ def update_goal(app_ctx, request, goal_id):
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(payload)})
 
 
-def archive_goal(app_ctx, request, goal_id):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def archive_goal(app_ctx, request, decoded, goal_id):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     safe_id = study_plan.sanitize_id(goal_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Study goal id is invalid.'}), 400
@@ -654,14 +617,9 @@ def archive_goal(app_ctx, request, goal_id):
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(current)})
 
 
-def reset_plan(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def reset_plan(app_ctx, request, decoded):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or body.get('confirm') != 'clear_study_plan':
         return app_ctx.jsonify({'error': 'Confirm that you want to clear the entire Study Plan.'}), 400
@@ -685,10 +643,8 @@ def reset_plan(app_ctx, request):
     return app_ctx.jsonify({'ok': True, **result})
 
 
-def preview_plan(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def preview_plan(app_ctx, request, decoded):
     uid = decoded['uid']
     body = request.get_json(silent=True) or {}
     now_ts = app_ctx.time.time()
@@ -793,14 +749,9 @@ def preview_plan(app_ctx, request):
     return app_ctx.jsonify({'proposal': proposal})
 
 
-def apply_plan(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def apply_plan(app_ctx, request, decoded):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     body = request.get_json(silent=True) or {}
     proposal_id = study_plan.sanitize_id(body.get('proposal_id'))
     idempotency_key = study_plan.sanitize_id(body.get('idempotency_key'))
@@ -883,14 +834,9 @@ def apply_plan(app_ctx, request):
     return app_ctx.jsonify({'ok': True, 'goal': _serialize_goal(goal), 'session_ids': proposal['applied_session_ids'], 'replayed': False})
 
 
-def update_plan_item(app_ctx, request, session_id):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_plan_item(app_ctx, request, decoded, session_id):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     safe_id = study_plan.sanitize_id(session_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Study session id is invalid.'}), 400
@@ -934,14 +880,9 @@ def update_plan_item(app_ctx, request, session_id):
     return app_ctx.jsonify({'ok': True, 'session': safe}), (200 if existing else 201)
 
 
-def update_activity(app_ctx, request, activity_id):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_activity(app_ctx, request, decoded, activity_id):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     safe_id = study_plan.sanitize_id(activity_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Activity session id is invalid.'}), 400
@@ -1002,14 +943,9 @@ def _public_feed_state(raw):
     }
 
 
-def create_calendar_feed(app_ctx, request):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def create_calendar_feed(app_ctx, request, decoded):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     active = app_ctx.repositories.planner.list_calendar_feeds_by_uid(app_ctx.db, uid, MAX_CALENDAR_FEEDS + 1, active_only=True)
     if len(active) >= MAX_CALENDAR_FEEDS:
         return app_ctx.jsonify({'error': 'You can connect up to five device calendars.'}), 409
@@ -1040,14 +976,9 @@ def create_calendar_feed(app_ctx, request):
     return app_ctx.jsonify({'ok': True, 'feed': _public_feed_state(payload), 'subscription_url': f'{base_url}/calendar/feed/{token}.ics'}), 201
 
 
-def revoke_calendar_feed(app_ctx, request, feed_id):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def revoke_calendar_feed(app_ctx, request, decoded, feed_id):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     safe_id = study_plan.sanitize_id(feed_id)
     if not safe_id:
         return app_ctx.jsonify({'error': 'Calendar connection id is invalid.'}), 400
@@ -1062,14 +993,9 @@ def revoke_calendar_feed(app_ctx, request, feed_id):
     return app_ctx.jsonify({'ok': True, 'feed': _public_feed_state(payload)})
 
 
-def rotate_calendar_feed(app_ctx, request, feed_id):
-    decoded, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def rotate_calendar_feed(app_ctx, request, decoded, feed_id):
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
-    if guard is not None:
-        return guard
     safe_id = study_plan.sanitize_id(feed_id)
     snapshot = app_ctx.repositories.planner.get_calendar_feed(app_ctx.db, safe_id)
     payload = snapshot.to_dict() if snapshot.exists else {}

@@ -1,3 +1,4 @@
+from lecture_processor.services import access_service
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
@@ -180,8 +181,8 @@ def coding(monkeypatch):
         'proposed_codes': [{'temp_id': 'c1', 'name': 'Guidance', 'color': 'teal'}],
         'proposed_quotations': [{'start_offset': 0, 'end_offset': 5, 'text': 'Hello', 'code_refs': ['c1']}],
     })
-    monkeypatch.setattr(service.study_api_support, 'require_user', lambda *_args: ({'uid': state.uid}, None, None))
-    monkeypatch.setattr(service.study_api_support, 'account_write_guard', lambda *_args: None)
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': state.uid}, None, None))
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_args: None)
     monkeypatch.setattr(service, '_require_interview_pack', lambda *_args: ({'uid': 'owner'}, state.transcript, None, None))
     monkeypatch.setattr(service, '_coding_state_payload', lambda *_args: {'ready': True})
     state.accept = lambda: service.accept_ai_coding_run(state.runtime, None, 'pack-1', 'run-1')

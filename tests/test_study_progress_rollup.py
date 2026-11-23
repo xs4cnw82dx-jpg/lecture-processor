@@ -7,7 +7,7 @@ import pytest
 from flask import Flask, jsonify
 
 from lecture_processor.repositories import study_repo
-from lecture_processor.services import study_api_support, study_library_service
+from lecture_processor.services import access_service, study_library_service
 from lecture_processor.services import study_progress_service as service
 from tests.support.study_progress_rollup import Database, Ref, update
 
@@ -23,8 +23,8 @@ def setup(monkeypatch):
         get_study_progress_doc=lambda uid: study_repo.study_progress_doc_ref(db, uid),
         get_study_card_state_doc=lambda uid, pack_id: study_repo.study_card_state_doc_ref(db, uid, pack_id),
     )
-    monkeypatch.setattr(study_api_support, 'require_user', lambda *_: ({'uid': 'owner'}, None, None))
-    monkeypatch.setattr(study_api_support, 'account_write_guard', lambda *_: None)
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_, **_kwargs: ({'uid': 'owner'}, None, None))
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_: None)
     removed_audio = []
     monkeypatch.setattr(study_library_service.study_audio, 'remove_pack_audio_file', lambda pack, runtime=None: removed_audio.append(pack))
     with Flask(__name__).app_context():

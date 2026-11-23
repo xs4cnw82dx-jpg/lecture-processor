@@ -5,6 +5,7 @@ import hashlib
 import json
 import threading
 
+from lecture_processor.services import access_service
 from lecture_processor.services import study_plan_service as plans
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.study.content_revision import fingerprint as fingerprint
@@ -193,13 +194,8 @@ def _session(session):
     return session
 
 
-def _request(app, request, handler):
-    decoded, error, _status = plans._require_user(app, request)
-    if error is not None:
-        return error, _status
-    guard = plans._write_guard(app, decoded['uid'])
-    if guard:
-        return guard
+@access_service.require_user(allowlist=True, writes=True)
+def _request(app, request, decoded, handler):
     try:
         body = request.get_json(silent=True) or {}
         if not isinstance(body, dict):

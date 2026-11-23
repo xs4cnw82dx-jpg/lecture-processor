@@ -2,8 +2,7 @@
 
 import json
 
-from lecture_processor.domains.account import lifecycle as account_lifecycle
-from lecture_processor.domains.auth import policy as auth_policy
+from lecture_processor.services import access_service
 from lecture_processor.domains.billing import credits as billing_credits
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
@@ -26,13 +25,6 @@ def require_ai_processing_ready(app_ctx):
         return None
     app_ctx.logger.error('AI processing requested while Gemini client is not configured.')
     return app_ctx.jsonify({'error': 'AI processing is temporarily unavailable right now. Please try again later.'}), 503
-
-
-def account_write_guard_response(app_ctx, uid):
-    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if allowed:
-        return None
-    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
 
 
 def stage_uploaded_slides_file(app_ctx, uploaded_file, job_id):
@@ -413,20 +405,18 @@ def parse_checkbox_value(raw_value):
 
 
 def batch_user_guard(app_ctx, request):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return None, None, app_ctx.jsonify({'error': 'Please sign in to continue'}), 401
-    uid = decoded_token['uid']
-    email = decoded_token.get('email', '')
-    if not auth_policy.is_email_allowed(email, runtime=app_ctx):
-        return None, None, app_ctx.jsonify({'error': 'Email not allowed'}), 403
-    return uid, decoded_token, None, None
+    user, error, status = access_service.require_allowed_user(
+        app_ctx, request, unauthorized_error='Please sign in to continue', email_not_allowed_message='',
+    )
+    if error is not None:
+        return None, None, error, status
+    return user['uid'], user, None, None
 
 
 def get_batch_with_permission(app_ctx, request, batch_id, *, batch_orchestrator_module):
-    decoded_token = app_ctx.verify_firebase_token(request)
-    if not decoded_token:
-        return None, None, app_ctx.jsonify({'error': 'Unauthorized'}), 401
+    decoded_token, error, status = access_service.require_authenticated_user(app_ctx, request)
+    if error is not None:
+        return None, None, error, status
     batch = batch_orchestrator_module.get_batch(batch_id, runtime=app_ctx)
     if not batch:
         return None, None, app_ctx.jsonify({'error': 'Batch not found'}), 404

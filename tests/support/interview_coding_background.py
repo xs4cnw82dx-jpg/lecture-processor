@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from lecture_processor.domains.ai.providers.contracts import GenerationResult, Usage
 from lecture_processor.domains.runtime_jobs.schema import PERSISTED_RUNTIME_JOB_FIELDS
 from lecture_processor.repositories import runtime_jobs_repo, study_repo, users_repo
+from lecture_processor.services import access_service
 from lecture_processor.services import interview_coding_service as service
 from lecture_processor.services import job_state_service
 
@@ -145,8 +146,8 @@ def make_coding(monkeypatch):
     state.documents[('users', 'owner')] = {'uid': 'owner', 'account_status': 'active', 'slides_credits': 10}
     state.documents[('study_packs', 'pack-1')] = {'uid': 'owner', 'mode': 'interview', 'title': 'Interview'}
     state.runtime.get_or_create_user = lambda *_args: deepcopy(state.documents[('users', 'owner')])
-    monkeypatch.setattr(service.study_api_support, 'require_user', lambda *_args: ({'uid': state.uid}, None, None))
-    monkeypatch.setattr(service.study_api_support, 'account_write_guard', lambda *_args: None)
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': state.uid}, None, None))
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_args: None)
     monkeypatch.setattr(service, '_require_interview_pack', lambda *_args: (deepcopy(state.documents.get(('study_packs', 'pack-1'), {})), state.transcript, None, None))
     state.generate = generate
     monkeypatch.setattr(service.factory, 'open_provider_session', lambda _runtime: SimpleNamespace(

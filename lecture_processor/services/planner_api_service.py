@@ -2,27 +2,13 @@
 
 from __future__ import annotations
 
-from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.study import progress as study_progress
 from lecture_processor.domains import planner as planner_models
 from lecture_processor.services import access_service, study_progress_service
 
 
-def _require_user(app_ctx, request):
-    return access_service.require_allowed_user(app_ctx, request)
-
-
-def _account_write_guard(app_ctx, uid):
-    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if allowed:
-        return None
-    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
-
-
-def get_planner_settings(app_ctx, request):
-    decoded_token, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_planner_settings(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     snapshot = app_ctx.repositories.planner.get_planner_settings(app_ctx.db, uid)
     payload = planner_models.sanitize_settings_payload(snapshot.to_dict() if snapshot.exists else {}, runtime=app_ctx)
@@ -30,14 +16,9 @@ def get_planner_settings(app_ctx, request):
     return app_ctx.jsonify(payload)
 
 
-def update_planner_settings(app_ctx, request):
-    decoded_token, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_planner_settings(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
-    deletion_guard = _account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
@@ -53,10 +34,8 @@ def update_planner_settings(app_ctx, request):
     return app_ctx.jsonify({'ok': True, 'settings': planner_models.sanitize_settings_payload(merged, runtime=app_ctx), 'updated_at': merged['updated_at']})
 
 
-def list_planner_sessions(app_ctx, request):
-    decoded_token, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def list_planner_sessions(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     try:
         limit = int(request.args.get('limit', 200) or 200)
@@ -104,14 +83,9 @@ def list_planner_sessions(app_ctx, request):
     return app_ctx.jsonify({'sessions': ordered[:limit]})
 
 
-def upsert_planner_session(app_ctx, request, session_id):
-    decoded_token, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def upsert_planner_session(app_ctx, request, decoded_token, session_id):
     uid = decoded_token['uid']
-    deletion_guard = _account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
@@ -148,14 +122,9 @@ def upsert_planner_session(app_ctx, request, session_id):
     return app_ctx.jsonify({'ok': True, 'session': safe_payload})
 
 
-def delete_planner_session(app_ctx, request, session_id):
-    decoded_token, error_response, status = _require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def delete_planner_session(app_ctx, request, decoded_token, session_id):
     uid = decoded_token['uid']
-    deletion_guard = _account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     safe_session_id = planner_models.sanitize_session_id(session_id, runtime=app_ctx)
     if not safe_session_id:
         return app_ctx.jsonify({'error': 'Invalid session id'}), 400

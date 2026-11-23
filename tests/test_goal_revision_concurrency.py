@@ -1,5 +1,6 @@
 """Goal edits retain revision protection through the final database write."""
 
+from lecture_processor.services import access_service
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -26,8 +27,8 @@ def goal_runtime(monkeypatch):
         db=None, jsonify=jsonify, time=SimpleNamespace(time=lambda: 1001),
         repositories=SimpleNamespace(planner=planner_repo),
     )
-    monkeypatch.setattr(service, '_require_user', lambda *_: ({'uid': 'owner'}, None, 0))
-    monkeypatch.setattr(service, '_write_guard', lambda *_: None)
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_, **_kwargs: ({'uid': 'owner'}, None, 0))
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_: None)
     monkeypatch.setattr(service, '_owned_pack_ids', lambda _runtime, _uid, ids: set(ids))
     with Flask(__name__).app_context():
         yield runtime
@@ -140,7 +141,7 @@ def test_legacy_null_revision_is_treated_as_zero(goal_runtime, include_revision)
 
 
 def test_another_account_cannot_read_or_edit_the_goal(goal_runtime, monkeypatch):
-    monkeypatch.setattr(service, '_require_user', lambda *_: ({'uid': 'other'}, None, 0))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_, **_kwargs: ({'uid': 'other'}, None, 0))
 
     status, response = update_goal(goal_runtime, {'revision': 1, 'title': 'Foreign title'})
 
@@ -150,7 +151,7 @@ def test_another_account_cannot_read_or_edit_the_goal(goal_runtime, monkeypatch)
 
 
 def test_account_write_guard_blocks_the_edit_before_goal_access(goal_runtime, monkeypatch):
-    monkeypatch.setattr(service, '_write_guard', lambda *_: (
+    monkeypatch.setattr(access_service, 'account_write_guard', lambda *_: (
         jsonify({'error': 'Account is unavailable.', 'status': 'account_deletion_in_progress'}), 409,
     ))
     original = stored_goal()

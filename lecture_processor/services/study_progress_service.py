@@ -1,5 +1,6 @@
 """Study progress routes extracted from study API service."""
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.study import progress as study_progress
 
 from lecture_processor.services import study_api_support
@@ -263,10 +264,8 @@ def _pack_is_owned(app_ctx, uid, pack_id):
     return pack_result is not None
 
 
-def get_study_progress(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_progress(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     try:
         progress_data = _complete_progress_data(app_ctx, uid)
@@ -302,10 +301,8 @@ def get_study_progress(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not load study progress'}), 500
 
 
-def get_study_progress_pack(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_progress_pack(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     safe_pack_id = study_progress.sanitize_pack_id(pack_id, runtime=app_ctx)
     if not safe_pack_id:
@@ -333,14 +330,9 @@ def get_study_progress_pack(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not load study progress'}), 500
 
 
-def update_study_progress(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_study_progress(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
@@ -515,10 +507,8 @@ def load_study_progress_summary(app_ctx, uid):
     return _summary_with_due_count(progress_data, due_today, app_ctx)
 
 
-def get_study_progress_summary(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_progress_summary(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     try:
         if request is not None and request.args.get('scope') == 'active_plan':
@@ -600,11 +590,9 @@ def load_due_study_cards(app_ctx, uid, *, active_plan=False, progress_data=None,
     packs.sort(key=lambda pack: (pack['cards'][0]['due_date'], pack['title'].casefold()))
     return {'date': today, 'due_count': sum(pack['due_count'] for pack in packs), 'packs': packs}
 
-def get_due_study_cards(app_ctx, request):
+@access_service.require_user(allowlist=True, writes=False)
+def get_due_study_cards(app_ctx, request, decoded_token):
     """Resolve the complete owned due queue to real, currently available cards."""
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
     uid = decoded_token['uid']
     try:
         account_lifecycle.require_account_access(uid, runtime=app_ctx)

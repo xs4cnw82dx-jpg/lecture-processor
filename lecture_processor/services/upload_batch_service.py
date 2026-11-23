@@ -6,6 +6,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass, field
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import instant_batch_orchestrator
@@ -714,7 +715,7 @@ def create_batch_job(app_ctx, request, *, instant=False):
     uid, decoded_token, error_response, status = upload_batch_support.batch_user_guard(app_ctx, request)
     if error_response is not None:
         return error_response, status
-    deletion_guard = upload_batch_support.account_write_guard_response(app_ctx, uid)
+    deletion_guard = access_service.account_write_guard(app_ctx, uid)
     if deletion_guard is not None:
         return deletion_guard
 
@@ -911,7 +912,7 @@ def set_batch_visibility(app_ctx, request, batch_id):
     uid, _decoded, error_response, status = upload_batch_support.batch_user_guard(app_ctx, request)
     if error_response is not None:
         return error_response, status
-    write_error = upload_batch_support.account_write_guard_response(app_ctx, uid)
+    write_error = access_service.account_write_guard(app_ctx, uid)
     if write_error is not None:
         return write_error
     payload = request.get_json(silent=True)

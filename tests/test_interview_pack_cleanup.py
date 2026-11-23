@@ -1,5 +1,6 @@
 """Owned pack removal and concurrent quotation writes, using synthetic storage."""
 
+from lecture_processor.services import access_service
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
@@ -51,7 +52,7 @@ def pack_cleanup(monkeypatch):
         ('interview_ai_coding_runs', 'other'): {'uid': 'owner', 'pack_id': 'other', 'status': 'draft'},
         ('interview_ai_coding_runs', 'foreign'): {'uid': 'someone-else', 'pack_id': 'pack', 'status': 'draft'},
     })
-    monkeypatch.setattr(library.study_api_support, 'require_user', lambda *_args: ({'uid': 'owner'}, None, None))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *_args, **_kwargs: ({'uid': 'owner'}, None, None))
     monkeypatch.setattr(library.study_picture_service, 'delete_for_pack', lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(library.study_audio, 'remove_pack_audio_file', lambda *_args, **_kwargs: False)
     return SimpleNamespace(runtime=runtime, store=store)

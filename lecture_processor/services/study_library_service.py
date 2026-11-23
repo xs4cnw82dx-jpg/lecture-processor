@@ -4,6 +4,7 @@ import re
 import secrets
 from urllib.parse import quote
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study import export as study_export
@@ -173,10 +174,8 @@ def _folder_ids_including_descendants(app_ctx, uid, folder_id):
     return {root_id} | study_api_support.build_folder_descendant_ids(folders, root_id)
 
 
-def get_study_packs(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_packs(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     try:
         limit = study_api_support.parse_study_pack_limit(request.args.get('limit'))
@@ -228,14 +227,9 @@ def get_study_packs(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not load study packs'}), 500
 
 
-def create_study_pack(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def create_study_pack(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
@@ -322,10 +316,8 @@ def create_study_pack(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not create study pack'}), 500
 
 
-def get_study_pack(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_pack(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     try:
         pack_result, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
@@ -389,14 +381,9 @@ def get_study_pack(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not fetch study pack'}), 500
 
 
-def update_study_pack(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_study_pack(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
@@ -520,14 +507,9 @@ def update_study_pack(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not update study pack'}), 500
 
 
-def bulk_move_study_packs(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def bulk_move_study_packs(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
@@ -588,14 +570,9 @@ def bulk_move_study_packs(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not move study packs'}), 500
 
 
-def delete_study_pack(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def delete_study_pack(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     try:
         pack_result, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
         if error_response is not None:
@@ -670,10 +647,8 @@ def _cleanup_deleted_pack(app_ctx, uid, pack_id):
     return removed, pending
 
 
-def get_study_folders(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_folders(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
     try:
         include_pending = str(request.args.get('include_pending', '1') or '1').strip().lower() not in {'0', 'false', 'no'}
@@ -713,10 +688,8 @@ def get_study_folders(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not load study folders'}), 500
 
 
-def stream_study_pack_audio(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def stream_study_pack_audio(app_ctx, request, decoded_token, pack_id):
     try:
         audio_storage_path, pack, error_response, status = _get_owned_audio_path(app_ctx, request, decoded_token, pack_id)
         if error_response is not None:
@@ -734,10 +707,8 @@ def stream_study_pack_audio(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not stream audio'}), 500
 
 
-def create_study_pack_audio_token(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def create_study_pack_audio_token(app_ctx, request, decoded_token, pack_id):
     try:
         audio_storage_path, _pack, error_response, status = _get_owned_audio_path(app_ctx, request, decoded_token, pack_id)
         if error_response is not None:
@@ -771,14 +742,9 @@ def stream_study_pack_audio_with_token(app_ctx, request, pack_id):
     return app_ctx.send_file(audio_storage_path, mimetype=app_ctx.get_mime_type(audio_storage_path), conditional=True)
 
 
-def create_study_folder(app_ctx, request):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def create_study_folder(app_ctx, request, decoded_token):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json() or {}
     name = str(payload.get('name', '')).strip()[:120]
     if not name:
@@ -817,14 +783,9 @@ def create_study_folder(app_ctx, request):
         return app_ctx.jsonify({'error': 'Could not create folder'}), 500
 
 
-def update_study_folder(app_ctx, request, folder_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_study_folder(app_ctx, request, decoded_token, folder_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     payload = request.get_json() or {}
     try:
         folder_ref = app_ctx.repositories.study.study_folder_doc_ref(app_ctx.db, folder_id)
@@ -875,14 +836,9 @@ def update_study_folder(app_ctx, request, folder_id):
         return app_ctx.jsonify({'error': 'Could not update folder'}), 500
 
 
-def delete_study_folder(app_ctx, request, folder_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def delete_study_folder(app_ctx, request, decoded_token, folder_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     try:
         folder_ref = app_ctx.repositories.study.study_folder_doc_ref(app_ctx.db, folder_id)
         doc = folder_ref.get()
@@ -913,10 +869,8 @@ def delete_study_folder(app_ctx, request, folder_id):
         return app_ctx.jsonify({'error': 'Could not delete folder'}), 500
 
 
-def get_study_pack_share(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_pack_share(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     if app_ctx.db is None:
         return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
@@ -932,14 +886,9 @@ def get_study_pack_share(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not load sharing settings'}), 500
 
 
-def update_study_pack_share(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_study_pack_share(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     if app_ctx.db is None:
         return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
     payload = request.get_json(silent=True) or {}
@@ -980,10 +929,8 @@ def update_study_pack_share(app_ctx, request, pack_id):
         return app_ctx.jsonify({'error': 'Could not save sharing settings'}), 500
 
 
-def get_study_folder_share(app_ctx, request, folder_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_study_folder_share(app_ctx, request, decoded_token, folder_id):
     uid = decoded_token['uid']
     if app_ctx.db is None:
         return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
@@ -999,14 +946,9 @@ def get_study_folder_share(app_ctx, request, folder_id):
         return app_ctx.jsonify({'error': 'Could not load sharing settings'}), 500
 
 
-def update_study_folder_share(app_ctx, request, folder_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_study_folder_share(app_ctx, request, decoded_token, folder_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     if app_ctx.db is None:
         return app_ctx.jsonify({'error': 'Sharing is unavailable'}), 503
     payload = request.get_json(silent=True) or {}

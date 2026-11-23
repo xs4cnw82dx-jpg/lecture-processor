@@ -6,6 +6,7 @@
 - [Environment variables and defaults](ENVIRONMENT.md)
 - [AI provider configuration](AI_PROVIDER_CONFIGURATION.md) and [prompt updates](PROMPT_UPDATE_WORKFLOW.md)
 - [Background job lifecycle](BACKGROUND_JOB_LIFECYCLE.md)
+- [Request access policies](REQUEST_ACCESS.md)
 - [Study Plan operations](STUDY_PLAN_V2.md) and [calendar setup](google-calendar-setup.md)
 - [Book Studio](BOOK_STUDIO.md)
 - [Visual redesign plan](VISUAL_REDESIGN_MASTER_PLAN.md), [progress](VISUAL_REDESIGN_PROGRESS.md) and [reference captures](redesign-evidence/README.md)

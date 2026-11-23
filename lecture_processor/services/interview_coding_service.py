@@ -3,6 +3,7 @@
 import math
 from urllib.parse import quote
 
+from lecture_processor.services import access_service
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai.providers import factory
 from lecture_processor.domains.ai.providers.contracts import TextPart
@@ -188,10 +189,8 @@ def _coding_state_payload(app_ctx, pack_id, pack, transcript, uid):
     }
 
 
-def get_coding_state(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_coding_state(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     pack, transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
@@ -199,14 +198,9 @@ def get_coding_state(app_ctx, request, pack_id):
     return app_ctx.jsonify(_coding_state_payload(app_ctx, pack_id, pack, transcript, uid))
 
 
-def create_code(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def create_code(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     pack, _transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -232,14 +226,9 @@ def create_code(app_ctx, request, pack_id):
     return app_ctx.jsonify({'ok': True, 'code': _serialize_code_doc(doc_ref.get())})
 
 
-def update_code(app_ctx, request, pack_id, code_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_code(app_ctx, request, decoded_token, pack_id, code_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     _pack, _transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -268,14 +257,9 @@ def update_code(app_ctx, request, pack_id, code_id):
     return app_ctx.jsonify({'ok': True, 'code': _serialize_code_doc(doc.reference.get())})
 
 
-def delete_code(app_ctx, request, pack_id, code_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def delete_code(app_ctx, request, decoded_token, pack_id, code_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     _pack, _transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -298,14 +282,9 @@ def delete_code(app_ctx, request, pack_id, code_id):
     return app_ctx.jsonify({'ok': True})
 
 
-def merge_code(app_ctx, request, pack_id, source_code_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def merge_code(app_ctx, request, decoded_token, pack_id, source_code_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     _pack, _transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -360,14 +339,9 @@ def _commit_quotation(app_ctx, uid, pack_id, reference, payload, *, create=False
     commit(app_ctx.db.transaction())
 
 
-def create_quotation(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def create_quotation(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     _pack, transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -395,14 +369,9 @@ def create_quotation(app_ctx, request, pack_id):
     return app_ctx.jsonify({'ok': True, 'quotation': _serialize_quotation_doc(doc_ref.get())})
 
 
-def update_quotation(app_ctx, request, pack_id, quotation_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def update_quotation(app_ctx, request, decoded_token, pack_id, quotation_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     _pack, transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -434,14 +403,9 @@ def update_quotation(app_ctx, request, pack_id, quotation_id):
     return app_ctx.jsonify({'ok': True, 'quotation': _serialize_quotation_doc(doc.reference.get())})
 
 
-def delete_quotation(app_ctx, request, pack_id, quotation_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def delete_quotation(app_ctx, request, decoded_token, pack_id, quotation_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     _pack, _transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -458,15 +422,10 @@ def _credit_cost_for_transcript(transcript):
     return max(1, int(math.ceil(len(str(transcript or '')) / 120000.0)))
 
 
-def start_ai_coding_run(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def start_ai_coding_run(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     email = decoded_token.get('email', '')
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     pack, transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -509,10 +468,8 @@ def _run_response(app_ctx, pack_id, run_id, *, reused=False):
     }
 
 
-def get_ai_coding_run(app_ctx, request, pack_id, run_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def get_ai_coding_run(app_ctx, request, decoded_token, pack_id, run_id):
     uid = decoded_token['uid']
     _pack, error_response, status = study_api_support.get_owned_study_pack(app_ctx, uid, pack_id)
     if error_response is not None:
@@ -623,14 +580,9 @@ def _owned_run_doc(app_ctx, uid, pack_id, run_id):
     return doc, None, None
 
 
-def accept_ai_coding_run(app_ctx, request, pack_id, run_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def accept_ai_coding_run(app_ctx, request, decoded_token, pack_id, run_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     pack, transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -651,14 +603,9 @@ def accept_ai_coding_run(app_ctx, request, pack_id, run_id):
     return app_ctx.jsonify({'ok': True, 'state': _coding_state_payload(app_ctx, pack_id, pack, transcript, uid)})
 
 
-def reject_ai_coding_run(app_ctx, request, pack_id, run_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=True)
+def reject_ai_coding_run(app_ctx, request, decoded_token, pack_id, run_id):
     uid = decoded_token['uid']
-    deletion_guard = study_api_support.account_write_guard(app_ctx, uid)
-    if deletion_guard is not None:
-        return deletion_guard
     _pack, _transcript, error_response, status = _require_interview_pack(app_ctx, uid, pack_id)
     if error_response is not None:
         return error_response, status
@@ -674,10 +621,8 @@ def reject_ai_coding_run(app_ctx, request, pack_id, run_id):
     return app_ctx.jsonify({'ok': True, 'run': _serialize_run_doc(run_doc.reference.get())})
 
 
-def export_coding_pdf(app_ctx, request, pack_id):
-    decoded_token, error_response, status = study_api_support.require_user(app_ctx, request)
-    if error_response is not None:
-        return error_response, status
+@access_service.require_user(allowlist=True, writes=False)
+def export_coding_pdf(app_ctx, request, decoded_token, pack_id):
     uid = decoded_token['uid']
     if not study_export.REPORTLAB_AVAILABLE:
         return app_ctx.jsonify({'error': 'PDF export is currently unavailable on this server'}), 503

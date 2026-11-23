@@ -5,6 +5,7 @@ import pytest
 from flask import Flask
 
 from lecture_processor.domains.books.model import BookError
+from lecture_processor.services import access_service, study_api_support
 from lecture_processor.services import study_picture_service as service
 
 
@@ -117,9 +118,9 @@ def test_private_read_and_account_cleanup(study_pictures, monkeypatch):
 
 def test_nonpilot_and_unsigned_requests_are_rejected_before_pack_lookup(study_pictures, monkeypatch):
     runtime, _, _, _ = study_pictures
-    monkeypatch.setattr(service.study_api_support, 'require_user', lambda *args: (None, {'error': 'Unauthorized'}, 401))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *args, **_kwargs: (None, {'error': 'Unauthorized'}, 401))
     assert service.require_access(runtime, None, 'pack')[1][1] == 401
-    monkeypatch.setattr(service.study_api_support, 'require_user', lambda *args: ({'uid': 'owner'}, None, 0))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *args, **_kwargs: ({'uid': 'owner'}, None, 0))
     monkeypatch.setattr(service, 'enabled', lambda *args: False)
     with Flask(__name__).app_context():
         assert service.require_access(runtime, None, 'pack')[1][1] == 403
@@ -128,9 +129,9 @@ def test_nonpilot_and_unsigned_requests_are_rejected_before_pack_lookup(study_pi
 @pytest.mark.parametrize('owner,expected', [('owner', None), ('someone-else', 403), (None, 404)])
 def test_picture_access_checks_ownership_with_a_projected_owner_read(study_pictures, monkeypatch, owner, expected):
     runtime, db, _, _ = study_pictures
-    monkeypatch.setattr(service.study_api_support, 'require_user', lambda *args: ({'uid': 'owner'}, None, 0))
+    monkeypatch.setattr(access_service, 'require_allowed_user', lambda *args, **_kwargs: ({'uid': 'owner'}, None, 0))
     monkeypatch.setattr(service, 'enabled', lambda *args: True)
-    monkeypatch.setattr(service.study_api_support, 'get_owned_study_pack',
+    monkeypatch.setattr(study_api_support, 'get_owned_study_pack',
                         lambda *args: pytest.fail('Picture access must not read the whole study pack'))
     reads = []
 

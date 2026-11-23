@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import date
 import secrets
 
-from lecture_processor.domains.account import lifecycle as account_lifecycle
+from lecture_processor.services import access_service
 from lecture_processor.domains.workout import models
 from lecture_processor.repositories import workout_repo
 from lecture_processor.services import admin_support
@@ -14,13 +14,6 @@ from lecture_processor.services import admin_support
 
 def _auth(app_ctx, request):
     return admin_support.require_admin(app_ctx, request)
-
-
-def _write_guard(app_ctx, uid):
-    allowed, message = account_lifecycle.ensure_account_allows_writes(uid, runtime=app_ctx)
-    if allowed:
-        return None
-    return app_ctx.jsonify({'error': message, 'status': 'account_deletion_in_progress'}), 409
 
 
 def _json_payload(request):
@@ -118,7 +111,7 @@ def update_profile(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     payload = _json_payload(request)
@@ -136,7 +129,7 @@ def update_start_tests(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     payload = _json_payload(request)
@@ -214,7 +207,7 @@ def start_cycle(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     payload = _json_payload(request)
@@ -243,7 +236,7 @@ def create_exercise(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     safe, validation_error = models.sanitize_exercise(_json_payload(request), uid=uid, now_ts=app_ctx.time.time())
@@ -258,7 +251,7 @@ def update_exercise(app_ctx, request, exercise_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     existing_snapshot = workout_repo.get_record(app_ctx.db, workout_repo.EXERCISE_COLLECTION, uid, models.safe_id(exercise_id))
@@ -291,7 +284,7 @@ def create_routine(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     safe, validation_error = models.sanitize_routine(_json_payload(request), uid=uid, now_ts=app_ctx.time.time())
@@ -323,7 +316,7 @@ def update_routine(app_ctx, request, routine_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     safe_id = models.safe_id(routine_id)
@@ -361,7 +354,7 @@ def duplicate_routine(app_ctx, request, routine_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     _, routines = _exercise_and_routine_data(app_ctx, uid)
@@ -383,7 +376,7 @@ def delete_routine(app_ctx, request, routine_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     _, routines = _exercise_and_routine_data(app_ctx, uid)
@@ -404,7 +397,7 @@ def restore_baseline(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     baseline = models.baseline_routines(uid)
@@ -438,7 +431,7 @@ def update_occurrence(app_ctx, request, occurrence_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     snapshot = workout_repo.get_record(app_ctx.db, workout_repo.OCCURRENCE_COLLECTION, uid, models.safe_id(occurrence_id))
@@ -507,7 +500,7 @@ def start_session(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     active = _active_session(app_ctx, uid)
@@ -564,7 +557,7 @@ def update_session(app_ctx, request, session_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     snapshot = workout_repo.get_record(app_ctx.db, workout_repo.SESSION_COLLECTION, uid, models.safe_id(session_id))
@@ -589,7 +582,7 @@ def finish_session(app_ctx, request, session_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     snapshot = workout_repo.get_record(app_ctx.db, workout_repo.SESSION_COLLECTION, uid, models.safe_id(session_id))
@@ -659,7 +652,7 @@ def discard_session(app_ctx, request, session_id):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     snapshot = workout_repo.get_record(app_ctx.db, workout_repo.SESSION_COLLECTION, uid, models.safe_id(session_id))
@@ -696,7 +689,7 @@ def upsert_bodyweight(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     payload = _json_payload(request)
@@ -734,7 +727,7 @@ def create_share(app_ctx, request):
     if error is not None:
         return error, status
     uid = decoded['uid']
-    guard = _write_guard(app_ctx, uid)
+    guard = access_service.account_write_guard(app_ctx, uid)
     if guard:
         return guard
     payload = _json_payload(request)
@@ -784,7 +777,7 @@ def revoke_share(app_ctx, request, token):
     decoded, error, status = _auth(app_ctx, request)
     if error is not None:
         return error, status
-    guard = _write_guard(app_ctx, decoded['uid'])
+    guard = access_service.account_write_guard(app_ctx, decoded['uid'])
     if guard:
         return guard
     share_snapshot = workout_repo.get_share(app_ctx.db, str(token or '').strip())
