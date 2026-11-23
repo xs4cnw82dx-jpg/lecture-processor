@@ -142,6 +142,28 @@ test('a standalone shared pack still displays notes and revealed cards safely', 
   await expect(page.locator('#shared-folder-shell')).toBeHidden();
 });
 
+test('a shared pack shows markup in titles, cards and questions as plain text', async ({ page }) => {
+  const markup = '<img src="invalid" onerror="window.sharedMarkupRan=true"> A & B \'quoted\'';
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await fixture(page, (route, pack) => route.fulfill({ json: pack }));
+  await page.route('**/api/shared/synthetic', route => route.fulfill({ json: {
+    entity_type: 'study_pack', study_pack: { ...packs[0], title: markup,
+      flashcards: [{ front: markup, back: markup }],
+      test_questions: [{ question: markup, options: [markup, 'Plain option'], answer: markup, explanation: markup }],
+    },
+  } }));
+  await page.goto('/shared/synthetic');
+  await expect(page.locator('#shared-pack-shell')).toBeVisible();
+  await expect(page.locator('#shared-flashcards-list .shared-card-front')).toHaveText(markup);
+  await expect(page.locator('#shared-flashcards-list .shared-card-back')).toHaveText(markup);
+  await expect(page.locator('.shared-question-title').first()).toHaveText(markup);
+  await expect(page.locator('.shared-question-explanation').first()).toHaveText(markup);
+  await expect(page.locator('#shared-pack-shell img[onerror], #shared-pack-shell [onerror]')).toHaveCount(0);
+  expect(await page.evaluate(() => window.sharedMarkupRan)).toBeUndefined();
+  expect(errors).toEqual([]);
+});
+
 test('an empty shared folder keeps its useful empty preview', async ({ page }) => {
   await fixture(page, (route, pack) => route.fulfill({ json: pack }));
   await page.route('**/api/shared/synthetic', route => route.fulfill({ json: {

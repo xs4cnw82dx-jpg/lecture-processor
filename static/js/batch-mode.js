@@ -7,6 +7,7 @@
   var authClient = auth && authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
   var downloadUtils = window.LectureProcessorDownload || {};
   var creditUtils = window.LectureProcessorCreditUtils || {};
+  var escapeHtml = window.LectureProcessorHtml.escapeHtml;
 
   var body = document.body;
   var forcedMode = String((body && body.dataset && body.dataset.forcedMode) || 'lecture-notes').trim();
@@ -369,15 +370,6 @@
     var units = ['B', 'KB', 'MB', 'GB'];
     var idx = Math.min(units.length - 1, Math.floor(Math.log(total) / Math.log(1024)));
     return (total / Math.pow(1024, idx)).toFixed(idx === 0 ? 0 : 2) + ' ' + units[idx];
-  }
-
-  function escapeHtml(value) {
-    return String(value == null ? '' : value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
   }
 
   function storageKeyForMode() {
