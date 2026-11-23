@@ -56,6 +56,25 @@ def test_lost_admission_ack_uses_committed_receipt_without_a_second_debit():
     assert len(store.docs('credit_charges')) == 1
 
 
+def test_failed_read_after_lost_ack_keeps_its_cause_and_cannot_debit_again():
+    runtime, store = runtime_fixture()
+
+    def lose_ack(_operations):
+        store.after_commit = None
+        store.fail_reads.add(('runtime_jobs', 'job'))
+        raise RuntimeError('Synthetic lost acknowledgement')
+
+    store.after_commit = lose_ack
+    with pytest.raises(ledger.LedgerUnavailable) as failure:
+        job_charges.admit_runtime_job('owner', 'job', 'lecture-notes', PRIMARY, runtime=runtime)
+    assert str(failure.value.__cause__) == 'Synthetic read failure'
+    store.fail_reads.clear()
+    receipt = job_charges.admit_runtime_job('owner', 'job', 'lecture-notes', PRIMARY, runtime=runtime)
+    assert receipt['charged_credits'] == 8
+    assert store.docs('users')['owner']['credits'] == 92
+    assert len(store.docs('credit_charges')) == 1
+
+
 @pytest.mark.parametrize('enabled,version,expected_scheme,expected_cost', [
     (False, 1, 1, 1), (True, 1, 2, 8), (False, 2, 2, 8),
 ])
@@ -103,6 +122,26 @@ def test_large_batch_admission_keeps_transactions_bounded_and_exact_half_price()
     assert store.docs('users')['owner']['credits'] == 4000 - 499 * 4
     parent = runtime.batch_repo.get_batch_job_doc(runtime.db, 'batch').to_dict()
     assert parent['status'] == 'queued' and parent['admitted_rows'] == 499
+
+
+def test_lost_batch_ack_without_a_durable_receipt_reports_unavailable():
+    runtime, store = runtime_fixture()
+    stage_batch(runtime, 'batch', 1)
+    row = runtime.batch_repo.batch_row_doc_ref(runtime.db, 'batch', '0')
+
+    def lose_ack_without_receipt(_operations):
+        store.after_commit = None
+        saved = row.get().to_dict()
+        saved.pop('billing_receipt')
+        row.set(saved)
+        raise RuntimeError('Synthetic acknowledgement loss')
+
+    store.after_commit = lose_ack_without_receipt
+    with pytest.raises(ledger.LedgerUnavailable, match='Could not reserve credits for this batch row'):
+        job_charges.admit_batch_row('owner', 'batch', '0', 'lecture-notes', PRIMARY, overnight=True, runtime=runtime)
+    assert row.get().to_dict()['credit_admission_state'] == 'admitted'
+    assert store.docs('users')['owner']['credits'] == 96
+    assert len(store.docs('credit_charges')) == 1
 
 
 def test_replayed_batch_row_admission_never_increments_the_parent_twice():

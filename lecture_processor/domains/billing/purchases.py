@@ -1,9 +1,11 @@
-from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.domains.account import lifecycle as account_lifecycle
-from lecture_processor.domains.billing import credits as billing_credits
-from lecture_processor.domains.billing import policy as billing_policy
 from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.analytics import events as analytics_events
+from lecture_processor.domains.billing import credits as billing_credits
+from lecture_processor.domains.billing import policy as billing_policy
+from lecture_processor.domains.billing.storage import STORAGE_ERRORS
+from lecture_processor.domains.shared.parsing import int_or_default
+from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 
 
 def _fulfillment_bundle(bundle_id, runtime):
@@ -16,7 +18,7 @@ def _session_created_at(stripe_session, runtime=None):
     created_at = stripe_session.get('created')
     try:
         return float(created_at)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return float(resolved_runtime.time.time())
 
 
@@ -38,27 +40,6 @@ def _session_line_items(stripe_session):
     else:
         data = getattr(line_items, 'data', []) or []
     return [item for item in data if isinstance(item, dict) or hasattr(item, 'get')]
-
-
-def _session_amount_total(stripe_session):
-    try:
-        return int(stripe_session.get('amount_total', -1))
-    except Exception:
-        return -1
-
-
-def _line_item_amount_total(line_item):
-    try:
-        return int(line_item.get('amount_total', -1))
-    except Exception:
-        return -1
-
-
-def _line_item_quantity(line_item):
-    try:
-        return int(line_item.get('quantity', 0))
-    except Exception:
-        return 0
 
 
 def _stripe_key_is_live(runtime):
@@ -90,7 +71,7 @@ def _validate_checkout_session(stripe_session, runtime=None):
 
     expected_amount = int(bundle.get('price_cents', 0) or 0)
     expected_currency = str(bundle.get('currency', '') or '').strip().lower()
-    if _session_amount_total(stripe_session) != expected_amount:
+    if int_or_default(stripe_session.get('amount_total'), -1) != expected_amount:
         return (False, 'checkout_amount_mismatch')
     if str(stripe_session.get('currency', '') or '').strip().lower() != expected_currency:
         return (False, 'checkout_currency_mismatch')
@@ -104,9 +85,9 @@ def _validate_checkout_session(stripe_session, runtime=None):
     if len(line_items) != 1:
         return (False, 'missing_checkout_line_items')
     line_item = line_items[0]
-    if _line_item_quantity(line_item) != 1:
+    if int_or_default(line_item.get('quantity'), 0) != 1:
         return (False, 'checkout_quantity_mismatch')
-    if _line_item_amount_total(line_item) != expected_amount:
+    if int_or_default(line_item.get('amount_total'), -1) != expected_amount:
         return (False, 'checkout_line_amount_mismatch')
     if str(line_item.get('currency', '') or '').strip().lower() != expected_currency:
         return (False, 'checkout_line_currency_mismatch')
@@ -132,6 +113,14 @@ def _build_purchase_record(uid, bundle_id, stripe_session_id, *, payment_status,
     }
 
 
+def _record_purchase_rollup(record, runtime):
+    # Once the purchase is durable, counters must not change its fulfillment result.
+    try:
+        admin_rollups.increment_purchase_rollups(record, runtime=runtime)
+    except Exception:
+        runtime.logger.exception("Could not update purchase rollups for session %s", record.get('stripe_session_id'))
+
+
 def save_purchase_record(uid, bundle_id, stripe_session_id, runtime=None, *, payment_status='paid', fulfilled_at=None, created_at=None):
     resolved_runtime = _resolve_runtime(runtime)
     now_ts = float(resolved_runtime.time.time())
@@ -151,9 +140,9 @@ def save_purchase_record(uid, bundle_id, stripe_session_id, runtime=None, *, pay
             resolved_runtime.purchases_repo.set_doc(resolved_runtime.db, stripe_session_id, record, merge=True)
         else:
             resolved_runtime.purchases_repo.add_doc(resolved_runtime.db, record)
-        admin_rollups.increment_purchase_rollups(record, runtime=resolved_runtime)
+        _record_purchase_rollup(record, resolved_runtime)
         resolved_runtime.logger.info("📝 Saved purchase record for user %s: %s", uid, record.get('bundle_name', bundle_id))
-    except Exception as error:
+    except STORAGE_ERRORS as error:
         resolved_runtime.logger.error("❌ Failed to save purchase record for user %s: %s", uid, error)
 
 
@@ -168,7 +157,7 @@ def purchase_record_exists_for_session(stripe_session_id, runtime=None):
         for _ in resolved_runtime.purchases_repo.query_by_session_id(resolved_runtime.db, stripe_session_id, limit=1):
             return True
         return False
-    except Exception as error:
+    except STORAGE_ERRORS as error:
         resolved_runtime.logger.warning("⚠️ Could not check purchase record for session %s: %s", stripe_session_id, error)
         return False
 
@@ -279,12 +268,9 @@ def _grant_credits_and_record_purchase_atomic(stripe_session, runtime=None):
         transaction = db.transaction()
         status, committed_record = _run_transaction(transaction, purchase_ref, user_ref, deletion_ref)
         if status == 'granted':
-            try:
-                admin_rollups.increment_purchase_rollups(committed_record, runtime=resolved_runtime)
-            except Exception as error:
-                resolved_runtime.logger.error("❌ Failed to update purchase rollups for session %s: %s", stripe_session_id, error)
+            _record_purchase_rollup(committed_record, resolved_runtime)
         return (status in {'granted', 'already_processed'}, status)
-    except Exception as error:
+    except (TypeError, OverflowError, *STORAGE_ERRORS) as error:
         resolved_runtime.logger.error("❌ Atomic purchase fulfillment failed for session %s: %s", stripe_session_id, error)
         return (False, 'could_not_grant_credits')
 

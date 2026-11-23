@@ -518,6 +518,23 @@ def test_active_runtime_jobs_contract_returns_only_active_regular_jobs(client, m
     assert payload["jobs"][1]["step_description"] == "Transcribing audio..."
 
 
+def test_confirm_checkout_preserves_single_expanded_request_on_sdk_failure(client, monkeypatch):
+    monkeypatch.setattr(core, "verify_firebase_token", lambda _request: {"uid": "u2", "email": "user@example.com"})
+    monkeypatch.setattr(auth_policy, "is_email_allowed", lambda _email, runtime=None: True)
+    calls = []
+
+    def retrieve(session_id, **kwargs):
+        calls.append((session_id, kwargs))
+        raise TypeError('Invalid provider response')
+
+    monkeypatch.setattr(core.stripe.checkout.Session, "retrieve", retrieve)
+    response = client.get("/api/confirm-checkout-session?session_id=sess_failed")
+
+    assert response.status_code == 500
+    assert response.get_json() == {"error": "Could not confirm checkout session."}
+    assert calls == [('sess_failed', {'expand': ['line_items']})]
+
+
 def test_stripe_webhook_requires_secret(client, monkeypatch):
     monkeypatch.setattr(core, "STRIPE_WEBHOOK_SECRET", "")
 

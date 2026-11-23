@@ -2,6 +2,14 @@ from lecture_processor.runtime.container import resolve_runtime as _resolve_runt
 from lecture_processor.domains.shared.tool_catalog import sanitize_favorite_tools
 
 
+def int_or_default(value, default):
+    """Coerce an optional stored or provider value, including legacy numeric strings."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 def parse_requested_amount(raw_value, allowed, default, runtime=None):
     value = str(raw_value or default).strip().lower()
     return value if value in allowed else default

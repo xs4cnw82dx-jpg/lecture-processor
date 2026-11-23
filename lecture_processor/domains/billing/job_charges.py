@@ -2,6 +2,7 @@
 
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import credits, ledger, policy
+from lecture_processor.domains.billing.storage import STORAGE_ERRORS
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.runtime.container import resolve_runtime as _runtime
 
@@ -69,6 +70,15 @@ def _job_ref(runtime, job_id):
     return runtime.runtime_jobs_repo.doc_ref(runtime.db, runtime.RUNTIME_JOBS_COLLECTION, job_id)
 
 
+def _read_admission_after_commit_error(ref, unavailable_message):
+    # Reconcile a lost acknowledgement with durable storage before returning a receipt.
+    try:
+        snapshot = ref.get()
+    except STORAGE_ERRORS as read_error:
+        raise ledger.LedgerUnavailable(unavailable_message) from read_error
+    return snapshot.to_dict() or {} if snapshot.exists else {}
+
+
 def admit_runtime_job(uid, job_id, mode, components, *, job_scope='', processed_count=1, runtime=None):
     """Commit the debit and a recoverable job before any background dispatch."""
     runtime = _runtime(runtime)
@@ -109,21 +119,16 @@ def admit_runtime_job(uid, job_id, mode, components, *, job_scope='', processed_
         payload = admit(runtime.db.transaction())
     except (ledger.InsufficientCredits, ledger.LedgerConflict, account_lifecycle.AccountUnavailableError):
         raise
-    except Exception as error:
+    except STORAGE_ERRORS as error:
         # A commit acknowledgement can be lost after both writes became durable.
         # The matching admission is authoritative; never issue a second debit.
-        try:
-            snapshot = job_ref.get()
-            payload = snapshot.to_dict() or {} if snapshot.exists else {}
-            if (payload.get('user_id') != uid or payload.get('charge_ref') != charge_ref
-                    or payload.get('credit_admission_state') != 'admitted'
-                    or payload.get('status') not in {'starting', 'queued'}
-                    or payload.get('recovery_claimed_at')):
-                raise ledger.LedgerUnavailable('Could not reserve credits for processing.') from error
-        except ledger.LedgerUnavailable:
-            raise
-        except Exception:
-            raise ledger.LedgerUnavailable('Could not reserve credits for processing.') from error
+        message = 'Could not reserve credits for processing.'
+        payload = _read_admission_after_commit_error(job_ref, message)
+        if (payload.get('user_id') != uid or payload.get('charge_ref') != charge_ref
+                or payload.get('credit_admission_state') != 'admitted'
+                or payload.get('status') not in {'starting', 'queued'}
+                or payload.get('recovery_claimed_at')):
+            raise ledger.LedgerUnavailable(message) from error
     _cache_job(runtime, job_id, payload)
     return payload['billing_receipt']
 
@@ -244,18 +249,15 @@ def admit_batch_row(uid, batch_id, row_id, mode, components, *, overnight=False,
         return admit(runtime.db.transaction())
     except (ledger.InsufficientCredits, ledger.LedgerConflict, account_lifecycle.AccountUnavailableError):
         raise
-    except Exception as error:
-        try:
-            snapshot = row_ref.get()
-            row = snapshot.to_dict() or {} if snapshot.exists else {}
-            parent_snapshot = parent_ref.get()
-            parent = parent_snapshot.to_dict() or {} if parent_snapshot.exists else {}
-            if (row.get('uid') == uid and row.get('charge_ref') == charge_ref and row.get('credit_admission_state') == 'admitted'
-                    and parent.get('status') == 'preparing' and parent.get('credit_admission_state') == 'pending'):
-                return row['billing_receipt']
-        except Exception:
-            pass
-        raise ledger.LedgerUnavailable('Could not reserve credits for this batch row.') from error
+    except STORAGE_ERRORS as error:
+        message = 'Could not reserve credits for this batch row.'
+        row = _read_admission_after_commit_error(row_ref, message)
+        parent = _read_admission_after_commit_error(parent_ref, message)
+        if (row.get('uid') == uid and row.get('charge_ref') == charge_ref
+                and row.get('credit_admission_state') == 'admitted' and 'billing_receipt' in row
+                and parent.get('status') == 'preparing' and parent.get('credit_admission_state') == 'pending'):
+            return row['billing_receipt']
+        raise ledger.LedgerUnavailable(message) from error
 
 
 def persist_batch_admission(batch_id, payload, rows, *, runtime=None):

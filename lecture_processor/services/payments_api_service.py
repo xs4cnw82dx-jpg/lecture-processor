@@ -7,6 +7,7 @@ from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.billing import purchases as billing_purchases
 from lecture_processor.domains.billing import policy as billing_policy
+from lecture_processor.domains.billing.storage import STORAGE_ERRORS
 from lecture_processor.domains.analytics import events as analytics_events
 from lecture_processor.domains.rate_limit import limiter as rate_limiter
 
@@ -94,16 +95,13 @@ def _refund_deleted_account_checkout(app_ctx, session):
             merge=True,
         )
         return True
-    except Exception:
+    except (app_ctx.stripe.error.StripeError, *STORAGE_ERRORS):
         app_ctx.logger.error('Could not refund deleted-account checkout %s', session_id, exc_info=True)
         return False
 
 
 def _retrieve_checkout_session_for_fulfillment(app_ctx, session_id):
-    try:
-        return app_ctx.stripe.checkout.Session.retrieve(session_id, expand=['line_items'])
-    except TypeError:
-        return app_ctx.stripe.checkout.Session.retrieve(session_id)
+    return app_ctx.stripe.checkout.Session.retrieve(session_id, expand=['line_items'])
 
 
 @access_service.require_user(
@@ -174,8 +172,8 @@ def create_checkout_session(app_ctx, request, decoded_token):
             },
         )
         return app_ctx.jsonify({'checkout_url': checkout_session.url})
-    except Exception as e:
-        app_ctx.logger.error(f"Stripe checkout error: {e}")
+    except app_ctx.stripe.error.StripeError:
+        app_ctx.logger.error("Stripe checkout failed", exc_info=True)
         return app_ctx.jsonify({'error': 'Could not create checkout session. Please try again.'}), 500
 
 
@@ -200,8 +198,8 @@ def confirm_checkout_session(app_ctx, request, decoded_token):
     except app_ctx.stripe.error.StripeError as e:
         app_ctx.logger.error(f"Stripe confirm session error: {e}")
         return app_ctx.jsonify({'error': 'Could not verify checkout session.'}), 400
-    except Exception as e:
-        app_ctx.logger.error(f"Confirm checkout session error: {e}")
+    except (TypeError, *STORAGE_ERRORS):
+        app_ctx.logger.error("Could not confirm checkout session", exc_info=True)
         return app_ctx.jsonify({'error': 'Could not confirm checkout session.'}), 500
 
 
@@ -220,8 +218,8 @@ def stripe_webhook(app_ctx, request):
         except app_ctx.stripe.error.SignatureVerificationError as e:
             app_ctx.logger.warning(f"Stripe webhook signature verification failed: {e}")
             return 'Invalid signature', 400
-        except Exception as e:
-            app_ctx.logger.error(f"Stripe webhook unexpected error: {e}")
+        except (TypeError, AttributeError, app_ctx.stripe.error.StripeError):
+            app_ctx.logger.error("Stripe webhook construction failed", exc_info=True)
             return 'Webhook processing error', 500
     else:
         app_ctx.logger.warning("⚠️ Stripe webhook rejected: STRIPE_WEBHOOK_SECRET is not configured")
@@ -234,7 +232,7 @@ def stripe_webhook(app_ctx, request):
         if session_id:
             try:
                 session = _retrieve_checkout_session_for_fulfillment(app_ctx, session_id)
-            except app_ctx.stripe.error.StripeError as error:
+            except (TypeError, app_ctx.stripe.error.StripeError) as error:
                 app_ctx.logger.warning("⚠️ Stripe webhook could not expand checkout session %s: %s", session_id, error)
                 return 'Could not retrieve checkout session', 500
         ok, status = billing_purchases.process_checkout_session_credits(session, runtime=app_ctx)
@@ -297,6 +295,6 @@ def get_purchase_history(app_ctx, request, decoded_token):
                    if p.get('credit_scheme') == 2 and isinstance(p.get('legacy_credits'), dict) else {}),
             })
         return app_ctx.jsonify({'purchases': purchases})
-    except Exception as e:
-        app_ctx.logger.error(f"Error fetching purchase history: {e}")
+    except STORAGE_ERRORS:
+        app_ctx.logger.error("Could not fetch purchase history", exc_info=True)
         return app_ctx.jsonify({'error': 'Could not load purchase history'}), 500
