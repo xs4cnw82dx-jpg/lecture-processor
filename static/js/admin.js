@@ -4,7 +4,7 @@ const authUtils = window.LectureProcessorAuth || {};
 const authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Not signed in' }) : null;
 // Signed-in admin requests go through the shared client (auth-utils.js), which
 // retries once after a 401 and rejects with 'Not signed in' when nobody is signed in.
-const authFetch = authClient.authFetch;
+const authFetch = authClient && authClient.authFetch;
 const downloadUtils = window.LectureProcessorDownload || {};
 const uxUtils = window.LectureProcessorUx || {};
 const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};

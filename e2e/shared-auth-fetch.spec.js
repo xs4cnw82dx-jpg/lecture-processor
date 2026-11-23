@@ -22,3 +22,12 @@ test('Buy Credits retries purchase history once with a refreshed token after a 4
   expect(seen.slice(0, 2)).toEqual(['Bearer token-stale', 'Bearer token-fresh']);
   expect(fixture.browserErrors).toEqual([]);
 });
+
+test('Buy Credits still loads its bundles when auth-utils.js fails to load', async ({ page }) => {
+  const fixture = await installAccountFixture(page);
+  await page.route('**/static/js/auth-utils.js*', route => route.abort('failed'));
+  await page.goto('/buy_credits');
+  await expect(page.locator('button', { hasText: 'Regular study' })).toBeVisible();
+  await expect(page.locator('button', { hasText: 'Regular study' })).toBeEnabled();
+  expect(fixture.browserErrors).toEqual([]);
+});

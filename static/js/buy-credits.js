@@ -7,7 +7,7 @@
   var authClient = authUtils.createAuthClient ? authUtils.createAuthClient(auth, { notSignedInMessage: 'Please sign in' }) : null;
   // Signed-in requests go through the shared client (auth-utils.js), which retries
   // once after a 401 and rejects with 'Please sign in' when nobody is signed in.
-  var authFetch = authClient.authFetch;
+  var authFetch = authClient && authClient.authFetch;
   var displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
   var creditUtils = window.LectureProcessorCreditUtils || {};
   var pricingGrid = document.getElementById('credit-bundles');
