@@ -267,3 +267,41 @@ test('a second sign-in submit while the first is running is ignored', async ({ p
     expect(fixture.errors).toEqual([]);
   } finally { fixture.release(); }
 });
+
+test('restored and interactive sign-in share an in-flight activation', async ({ page }) => {
+  const fixture = await loginFixture(page, { restored: true, hold: ['/api/verify-email'] });
+  try {
+    await page.goto('/lecture-notes?auth=signin');
+    await expect.poll(() => fixture.pendingPaths()).toContain('/api/verify-email');
+    await page.evaluate(() => {
+      const user = window.loginTestAuth.currentUser;
+      const getToken = user.getIdToken.bind(user);
+      const activate = window.activateVerifiedUser;
+      window.activationAttempts = 0;
+      window.activateVerifiedUser = account => {
+        window.activationAttempts++;
+        return activate(account);
+      };
+      window.pendingActivationTokens = [];
+      user.getIdToken = (...args) => {
+        if (args.length) return getToken(...args);
+        return new Promise(resolve => window.pendingActivationTokens.push(() => resolve('fixture-token')));
+      };
+      window.completeActivation = () => {
+        user.getIdToken = getToken;
+        window.pendingActivationTokens.forEach(release => release());
+      };
+    });
+    await page.locator('#signin-email').fill('student@gmail.com');
+    await page.locator('#signin-password').fill('fixture-password');
+    await page.locator('#signin-submit').click();
+    await expect.poll(() => fixture.pendingPaths().filter(path => path === '/api/verify-email').length).toBe(2);
+    fixture.release('/api/verify-email');
+    await expect.poll(() => page.evaluate(() => window.activationAttempts)).toBe(2);
+    expect(await page.evaluate(() => window.pendingActivationTokens.length)).toBe(1);
+    await page.evaluate(() => window.completeActivation());
+    await expect(page.locator('#toast-text')).toHaveText('Signed in successfully!');
+    await expect(page.locator('#sign-in-required')).toBeHidden();
+    expect(fixture.errors).toEqual([]);
+  } finally { fixture.release(); }
+});

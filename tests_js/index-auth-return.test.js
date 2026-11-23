@@ -4,10 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'index-app.js'), 'utf8');
-const helperStart = source.indexOf('function sanitizeAuthReturnUrl');
-const helperEnd = source.indexOf('function showAuthView', helperStart);
-const helperSource = source.slice(helperStart, helperEnd);
+const source = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'index-auth-modal.js'), 'utf8');
 
 function createHarness(options = {}) {
     const storage = new Map();
@@ -19,9 +16,7 @@ function createHarness(options = {}) {
         URL,
         Promise,
         JSON,
-        AUTH_RETURN_STORAGE_KEY: 'lectureProcessorAuthReturnUrl',
-        authReturnResumePromise: null,
-        authReturnRedirectStarted: false,
+        document: { getElementById: () => null },
         currentUser: options.currentUser || null,
         userProfileLoaded: Boolean(options.userProfileLoaded),
         currentUserIsAdmin: Boolean(options.currentUserIsAdmin),
@@ -48,7 +43,7 @@ function createHarness(options = {}) {
         captureClientError(error, tag) { errors.push({ error, tag }); },
     };
     vm.createContext(context);
-    vm.runInContext(helperSource, context);
+    vm.runInContext(source, context);
     return { context, storage, assignments, fetchCalls, toasts, errors };
 }
 
@@ -120,11 +115,4 @@ test('non-admin account is not given an admin session and pending return remains
     assert.deepEqual(harness.assignments, []);
     assert.equal(harness.storage.get('lectureProcessorAuthReturnUrl'), '/admin/workout');
     assert.match(harness.toasts.at(-1).message, /does not have admin access/i);
-});
-
-test('email, Google, and auth-state flows all use the deduplicated activation handoff', () => {
-    assert.match(source, /await activateVerifiedUser\(credential\.user\)/);
-    assert.match(source, /await activateVerifiedUser\(result\.user\)/);
-    assert.match(source, /await activateVerifiedUser\(user\)/);
-    assert.match(source, /verifiedUserActivationPromise && verifiedUserActivationUid === uid/);
 });

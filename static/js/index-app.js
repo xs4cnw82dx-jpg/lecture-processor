@@ -1,3 +1,26 @@
+// The processing page loads its auth, language and audio controls before bootstrap.
+/* global applyPreferencesToOutputLanguage, audioDownload, audioFile, audioImportInFlight,
+   audioInput, audioRemove, audioUrlStatus, authOverlay, authSubmitBusyKind,
+   bindAudioImportControls, bindLanguageOnboarding, bindOutputLanguagePicker,
+   bindProcessingAuthModal, bindRecordingControls, checkEmailAllowed, clearImportedAudioLocalState,
+   clearLanguagePreferenceSaveTimer, clearSelectedAudioFile, closeLanguageOnboarding,
+   currentAudioBytes, discardActiveRecording, downloadSelectedAudio, getLanguageLabel,
+   getPendingAuthReturnUrl, getReadyImportedAudioToken, handleAudioFile,
+   hasReadyImportedAudioToken, hideAuthModal, isAdminAuthReturnUrl, isUnverifiedEmailUser,
+   languageOnboardingOverlay, maybeOpenAuthModalFromQuery, outputLanguageCustom,
+   outputLanguagePicker, outputLanguageSelect, recordingState, releaseImportedAudioToken,
+   removeSelectedAudio, resumePendingAuthReturnIfNeeded, resumePendingNonAdminAuthReturnIfNeeded,
+   setOutputLanguage, setOutputLanguageMenuVisible, showAuthError, showAuthModal,
+   showEmailVerificationPrompt, signOut, signinError, signupError, signupView, stopAudioRecording,
+   syncAudioInfoUI, syncRecorderUI, warnBeforeLeavingRecording */
+/* exported activateVerifiedUser, audioZone, auth, authenticatedFetch, captureClientError,
+   closeHeaderDropdowns, closeOverlay, currentMode, currentUser, currentUserIsAdmin,
+   downloadLocalPreviewFile, downloadUtils, focusMenuItem, formatFileSize, formatRetryDelay,
+   getRetryAfterSeconds, handleUnverifiedEmailUser, headerSignInBtn, modeConfig, openOverlay,
+   otherAudioOpen, otherAudioToggle, setHidden, showToast, signInToProcessBtn,
+   syncProcessingLayout, trackEvent, unverifiedEmailUser, updateProcessButton, userPreferences,
+   userProfileLoaded */
+
 const runtimeConfig = window.LectureProcessorRuntime || {};
 const sentryFrontendDsn = runtimeConfig.sentryFrontendDsn || '';
 const sentryEnvironment = runtimeConfig.sentryEnvironment || '';
@@ -36,7 +59,6 @@ const topbarUtils = window.LectureProcessorTopbar || {};
 const progressUtils = window.LectureProcessorStudyProgressUtils || {};
 const displayFormatUtils = window.LectureProcessorDisplayFormatUtils || {};
 const runtimeJobUtils = window.LectureProcessorRuntimeJobUtils || {};
-const audioImportUtils = window.LectureProcessorLectureAudioImportUtils || {};
 const processingUi = window.LectureProcessorProcessingUi || {};
 const progressFlowUtils = window.LectureProcessorIndexProgress || {};
 const indexResultsUtils = window.LectureProcessorIndexResults || {};
@@ -59,52 +81,17 @@ const setHidden = typeof uxUtils.setHidden === 'function'
         element.hidden = Boolean(hidden);
     };
 
-function normalizeAudioImportUrl(value) {
-    if (typeof audioImportUtils.normalizeAudioImportUrl === 'function') {
-        return audioImportUtils.normalizeAudioImportUrl(value);
-    }
-    return String(value || '').trim();
-}
-
-function describeAudioImportRequest(options) {
-    if (typeof audioImportUtils.describeAudioImportRequest === 'function') {
-        return audioImportUtils.describeAudioImportRequest(options);
-    }
-    const settings = options && typeof options === 'object' ? options : {};
-    const mode = String(settings.mode || '').trim();
-    const url = normalizeAudioImportUrl(settings.url);
-    const hasLocalAudioFile = Boolean(settings.hasLocalAudioFile);
-    const importedToken = String(settings.importedAudioToken || '').trim();
-    const importedSourceUrl = normalizeAudioImportUrl(settings.importedAudioSourceUrl);
-    if (mode !== 'lecture-notes' && mode !== 'interview') return { shouldImport: false, reason: 'unsupported-mode' };
-    if (!url) return { shouldImport: false, reason: 'empty-url' };
-    if (hasLocalAudioFile) return { shouldImport: false, reason: 'local-audio-selected' };
-    if (importedToken && importedSourceUrl === url) return { shouldImport: false, reason: 'already-imported' };
-    if (importedToken && importedSourceUrl && importedSourceUrl !== url) {
-        return { shouldImport: true, reason: 'replace-imported-audio' };
-    }
-    return { shouldImport: true, reason: 'import' };
-}
-
-
-
 let currentUser = null;
 let unverifiedEmailUser = null;
-const AUTH_RETURN_STORAGE_KEY = 'lectureProcessorAuthReturnUrl';
 let userCredits = null;
 let publicCreditConfig = null;
 let creationProfileRevision = 0;
 let idToken = null;
 let currentUserIsAdmin = false;
 let authStateResolved = Boolean(auth && auth.currentUser);
-let authReturnResumePromise = null;
-let authReturnRedirectStarted = false;
 let verifiedUserActivationPromise = null;
 let verifiedUserActivationUid = '';
 let pdfFile = null;
-let audioFile = null;
-let audioFileOrigin = 'upload';
-let recordedAudioNeedsDownload = false;
 let currentJobId = null;
 let pollInterval = null;
 let pollFailures = 0;
@@ -135,30 +122,7 @@ let selectedStudyFeatures = 'both';
 let selectedFlashcardAmount = '20';
 let selectedQuestionAmount = '10';
 let selectedInterviewFeatures = [];
-let importedAudioToken = '';
-let importedAudioSizeBytes = 0;
-let importedAudioName = '';
-let importedAudioSourceUrl = '';
-let pendingAutoImportUrl = '';
-let audioImportInFlight = false;
-let audioImportRequestUrl = '';
-let recordingState = 'idle';
-let recordingStream = null;
-let mediaRecorder = null;
-let recordingChunks = [];
-let recordingMimeType = '';
-let recordingExtension = '';
-let recordingStartedAtMs = 0;
-let recordingElapsedMs = 0;
-let recordingTimer = null;
-let recorderStatusMessage = '';
-let recorderStatusTone = 'info';
-let discardNextRecordingResult = false;
-let languageOnboardingOpen = false;
-let languageOnboardingSaving = false;
 let userPreferences = null;
-let languagePreferenceSaveTimer = null;
-let suppressLanguagePreferencePersist = false;
 let interviewSummaryText = '';
 let interviewSectionsText = '';
 let interviewCombinedText = '';
@@ -181,15 +145,6 @@ const DOWNLOAD_LABELS = Object.freeze({
     slideExtract: 'Slide Extract',
     lectureTranscript: 'Lecture Transcript',
     interviewTranscript: 'Interview Transcription',
-});
-const OUTPUT_LANGUAGE_LABELS = Object.freeze({
-    dutch: '🇳🇱 Dutch',
-    english: '🇬🇧 English',
-    spanish: '🇪🇸 Spanish',
-    french: '🇫🇷 French',
-    german: '🇩🇪 German',
-    chinese: '🇨🇳 Chinese',
-    other: '🌐 Other',
 });
 
 function createAnalyticsSessionId() {
@@ -313,34 +268,6 @@ const purchaseHistoryBtn = document.getElementById('purchase-history-btn');
 const adminDashboardBtn = document.getElementById('admin-dashboard-btn');
 const signOutBtn = document.getElementById('sign-out-btn');
 
-const authOverlay = document.getElementById('auth-overlay');
-const authModalClose = document.getElementById('auth-modal-close');
-const signinView = document.getElementById('signin-view');
-const signupView = document.getElementById('signup-view');
-const resetView = document.getElementById('reset-view');
-const signinForm = document.getElementById('signin-form');
-const signupForm = document.getElementById('signup-form');
-const resetForm = document.getElementById('reset-form');
-const signinSubmit = document.getElementById('signin-submit');
-const signupSubmit = document.getElementById('signup-submit');
-const resetSubmit = document.getElementById('reset-submit');
-const signinEmail = document.getElementById('signin-email');
-const signinPassword = document.getElementById('signin-password');
-const signupEmail = document.getElementById('signup-email');
-const signupPassword = document.getElementById('signup-password');
-const signupPasswordConfirm = document.getElementById('signup-password-confirm');
-const resetEmail = document.getElementById('reset-email');
-const signinError = document.getElementById('signin-error');
-const signupError = document.getElementById('signup-error');
-const resetError = document.getElementById('reset-error');
-const resetSuccess = document.getElementById('reset-success');
-const googleSignInBtn = document.getElementById('google-sign-in-btn');
-const googleSignUpBtn = document.getElementById('google-sign-up-btn');
-const switchToSignup = document.getElementById('switch-to-signup');
-const switchToSignin = document.getElementById('switch-to-signin');
-const forgotPasswordLink = document.getElementById('forgot-password-link');
-const backToSignin = document.getElementById('back-to-signin');
-
 const signInRequired = document.getElementById('sign-in-required');
 const signInToProcessBtn = document.getElementById('sign-in-to-process-btn');
 const studyPackTitleLabel = document.getElementById('study-pack-title-label');
@@ -377,13 +304,6 @@ const flashcardAmountChips = document.querySelectorAll('#flashcard-amount-chips 
 const questionAmountChips = document.querySelectorAll('#question-amount-chips .amount-chip');
 const interviewOptionButtons = document.querySelectorAll('.interview-option[data-feature]');
 const interviewExtraNote = document.getElementById('interview-extra-note');
-const outputLanguageSelect = document.getElementById('output-language-select');
-const outputLanguagePicker = document.getElementById('output-language-picker');
-const outputLanguageButton = document.getElementById('output-language-button');
-const outputLanguageLabel = document.getElementById('output-language-label');
-const outputLanguageMenu = document.getElementById('output-language-menu');
-const outputLanguageItems = document.querySelectorAll('#output-language-menu .app-select-item');
-const outputLanguageCustom = document.getElementById('output-language-custom');
 
 const pdfZone = document.getElementById('pdf-zone');
 const audioZone = document.getElementById('audio-zone');
@@ -398,41 +318,17 @@ const audioZoneTitle = document.getElementById('audio-zone-title');
 const audioZoneBadge = document.getElementById('audio-zone-badge');
 const audioZoneHelper = document.getElementById('audio-zone-helper');
 const pdfInput = document.getElementById('pdf-input');
-const audioInput = document.getElementById('audio-input');
 const pdfInfo = document.getElementById('pdf-info');
-const audioInfo = document.getElementById('audio-info');
 const pdfName = document.getElementById('pdf-name');
 const pdfSize = document.getElementById('pdf-size');
-const audioName = document.getElementById('audio-name');
-const audioSize = document.getElementById('audio-size');
 const pdfDownload = document.getElementById('pdf-download');
-const audioDownload = document.getElementById('audio-download');
 const pdfRemove = document.getElementById('pdf-remove');
-const audioRemove = document.getElementById('audio-remove');
 const audioUrlImportTitle = document.getElementById('audio-url-import-title');
 const audioUrlImportHint = document.getElementById('audio-url-import-hint');
-const audioUrlAdvanced = document.getElementById('audio-url-advanced');
-const audioUrlAdvancedToggle = document.getElementById('audio-url-advanced-toggle');
-const audioUrlAdvancedPanel = document.getElementById('audio-url-advanced-panel');
 const otherAudioDisclosure = document.getElementById('other-audio-disclosure');
 const otherAudioToggle = document.getElementById('other-audio-toggle');
 const otherAudioBody = document.getElementById('other-audio-body');
 const otherAudioSummary = document.getElementById('other-audio-summary');
-const audioUrlInput = document.getElementById('audio-url-input');
-const audioUrlFetchBtn = document.getElementById('audio-url-fetch-btn');
-const audioUrlStatus = document.getElementById('audio-url-status');
-const audioRecorderPanel = document.getElementById('audio-recorder-panel');
-const audioRecordStartBtn = document.getElementById('audio-record-start');
-const audioRecordPauseBtn = document.getElementById('audio-record-pause');
-const audioRecordStopBtn = document.getElementById('audio-record-stop');
-const audioRecorderTimer = document.getElementById('audio-recorder-timer');
-const audioRecordingStatus = document.getElementById('audio-recording-status');
-const audioRecordingWarning = document.getElementById('audio-recording-warning');
-const languageOnboardingOverlay = document.getElementById('language-onboarding-overlay');
-const languageOnboardingButtons = document.querySelectorAll('#language-onboarding-grid .onboarding-language-btn');
-const languageOnboardingCustom = document.getElementById('language-onboarding-custom');
-const languageOnboardingError = document.getElementById('language-onboarding-error');
-const languageOnboardingSaveBtn = document.getElementById('language-onboarding-save-btn');
 
 const processButton = document.getElementById('process-button');
 const processDisabledReason = document.getElementById('process-disabled-reason');
@@ -649,26 +545,8 @@ async function fetchStudyProgressSummary() {
 
 let activeModalOverlay = null;
 let modalStateStack = [];
-let authSubmitBusyKind = '';
 let uploadCooldownUntilMs = 0;
 let uploadCooldownTimer = null;
-const authSubmitButtons = {
-    signin: signinSubmit,
-    signup: signupSubmit,
-    reset: resetSubmit,
-    google: [googleSignInBtn, googleSignUpBtn],
-};
-const authSubmitForms = {
-    signin: signinForm,
-    signup: signupForm,
-    reset: resetForm,
-};
-const authSubmitBusyLabels = {
-    signin: 'Signing in...',
-    signup: 'Creating account...',
-    reset: 'Sending...',
-    google: 'Continuing...',
-};
 function getModalContainer(overlay) {
     if (uxUtils.getModalContainer) return uxUtils.getModalContainer(overlay);
     if (!overlay) return null;
@@ -793,18 +671,6 @@ function setAdvancedSettingsVisible(visible) {
     advancedSettingsToggle.setAttribute('aria-expanded', visible ? 'true' : 'false');
     advancedSettingsBody.setAttribute('aria-hidden', visible ? 'false' : 'true');
 }
-function setAudioUrlAdvancedOpen(visible) {
-    if (!audioUrlAdvanced || !audioUrlAdvancedToggle || !audioUrlAdvancedPanel) return;
-    const open = Boolean(visible);
-    audioUrlAdvanced.classList.toggle('is-open', open);
-    audioUrlAdvancedToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    audioUrlAdvancedPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
-}
-function setOutputLanguageMenuVisible(visible) {
-    outputLanguageMenu.classList.toggle('visible', visible);
-    outputLanguageButton.classList.toggle('open', visible);
-    outputLanguageButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
-}
 function setHeaderSidebarVisible(visible) {
     if (!headerSidebar || !headerSidebarBackdrop || !headerNavToggle) return;
     const show = Boolean(visible);
@@ -824,446 +690,6 @@ function closeHeaderDropdowns(except) {
     if (except !== 'more-actions') setMoreActionsDropdownVisible(false);
     if (except !== 'language') setOutputLanguageMenuVisible(false);
     if (except !== 'sidebar' && except !== 'progress') setHeaderSidebarVisible(false);
-}
-function showAuthModal(view = 'signin') {
-    openOverlay(authOverlay);
-    showAuthView(view);
-    clearAuthErrors();
-    trackEvent('auth_modal_opened', { view: view || 'signin' });
-}
-function hideAuthModal() {
-    closeOverlay(authOverlay);
-    clearAuthErrors();
-    signinForm.reset();
-    signupForm.reset();
-    resetForm.reset();
-}
-function sanitizeAuthReturnUrl(rawValue) {
-    const raw = String(rawValue || '').trim();
-    if (!raw) return '';
-    try {
-        const target = new URL(raw, window.location.origin);
-        if (target.origin !== window.location.origin) return '';
-        return target.pathname + target.search + target.hash;
-    } catch (_) {
-        return '';
-    }
-}
-function setPendingAuthReturnUrl(rawValue) {
-    const safeUrl = sanitizeAuthReturnUrl(rawValue);
-    if (!safeUrl) return;
-    try {
-        sessionStorage.setItem(AUTH_RETURN_STORAGE_KEY, safeUrl);
-    } catch (_) { }
-}
-function getPendingAuthReturnUrl() {
-    let safeUrl = '';
-    try {
-        safeUrl = sanitizeAuthReturnUrl(sessionStorage.getItem(AUTH_RETURN_STORAGE_KEY) || '');
-    } catch (_) {
-        safeUrl = '';
-    }
-    return safeUrl;
-}
-function clearPendingAuthReturnUrl() {
-    try {
-        sessionStorage.removeItem(AUTH_RETURN_STORAGE_KEY);
-    } catch (_) { }
-}
-function isAdminAuthReturnUrl(returnUrl) {
-    const safeUrl = sanitizeAuthReturnUrl(returnUrl);
-    if (!safeUrl) return false;
-    try {
-        const pathname = new URL(safeUrl, window.location.origin).pathname;
-        return pathname === '/admin' || pathname.startsWith('/admin/');
-    } catch (_) {
-        return false;
-    }
-}
-function redirectToPendingAuthReturn(returnUrl) {
-    if (authReturnRedirectStarted) return true;
-    const currentUrl = window.location.pathname + window.location.search + window.location.hash;
-    clearPendingAuthReturnUrl();
-    if (returnUrl === currentUrl) return false;
-    authReturnRedirectStarted = true;
-    window.location.assign(returnUrl);
-    return true;
-}
-function resumePendingNonAdminAuthReturnIfNeeded() {
-    const returnUrl = getPendingAuthReturnUrl();
-    if (!returnUrl || isAdminAuthReturnUrl(returnUrl)) return false;
-    return redirectToPendingAuthReturn(returnUrl);
-}
-async function performPendingAuthReturn() {
-    const returnUrl = getPendingAuthReturnUrl();
-    if (!returnUrl) return false;
-    if (!isAdminAuthReturnUrl(returnUrl)) {
-        return redirectToPendingAuthReturn(returnUrl);
-    }
-    if (!currentUser) return false;
-    if (!userProfileLoaded) {
-        showToast('Could not verify admin access. Please retry after your account finishes loading.', 'error', 5200);
-        return false;
-    }
-    if (!currentUserIsAdmin) {
-        showToast('This account does not have admin access. Sign out and retry with an admin account.', 'error', 5600);
-        return false;
-    }
-
-    try {
-        const sessionResponse = await authenticatedFetch('/api/session/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        if (!sessionResponse.ok) {
-            throw new Error('Could not create the secure admin session.');
-        }
-        return redirectToPendingAuthReturn(returnUrl);
-    } catch (error) {
-        captureClientError(error, 'admin_auth_return_session');
-        showToast('Could not open the admin page. Your destination is saved; please retry sign-in.', 'error', 5600);
-        return false;
-    }
-}
-function resumePendingAuthReturnIfNeeded() {
-    if (authReturnRedirectStarted) return Promise.resolve(true);
-    if (authReturnResumePromise) return authReturnResumePromise;
-    const operation = performPendingAuthReturn();
-    authReturnResumePromise = operation;
-    return operation.finally(() => {
-        if (authReturnResumePromise === operation) authReturnResumePromise = null;
-    });
-}
-function showAuthView(view) {
-    signinView.classList.remove('active');
-    signupView.classList.remove('active');
-    resetView.classList.remove('active');
-    clearAuthErrors();
-    if (view === 'signin') signinView.classList.add('active');
-    if (view === 'signup') signupView.classList.add('active');
-    if (view === 'reset') resetView.classList.add('active');
-}
-const AUTH_ERROR_FIELDS = {
-    'signin-error': ['signin-email', 'signin-password'],
-    'signup-error': ['signup-email', 'signup-password', 'signup-password-confirm'],
-    'reset-error': ['reset-email'],
-};
-function setAuthFieldsInvalid(errorEl, invalid) {
-    if (!errorEl || !errorEl.id) return;
-    (AUTH_ERROR_FIELDS[errorEl.id] || []).forEach(fieldId => {
-        const field = document.getElementById(fieldId);
-        if (!field) return;
-        const described = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== errorEl.id);
-        if (invalid) {
-            field.setAttribute('aria-invalid', 'true');
-            described.push(errorEl.id);
-        } else {
-            field.removeAttribute('aria-invalid');
-        }
-        if (described.length) field.setAttribute('aria-describedby', described.join(' '));
-        else field.removeAttribute('aria-describedby');
-    });
-}
-function clearAuthErrors() {
-    [signinError, signupError, resetError, resetSuccess].forEach(el => {
-        el.classList.remove('visible');
-        el.textContent = '';
-        setAuthFieldsInvalid(el, false);
-    });
-}
-function showAuthError(el, msg) {
-    el.textContent = msg;
-    el.classList.add('visible');
-    setAuthFieldsInvalid(el, true);
-}
-function isUnverifiedEmailUser(user) {
-    return Boolean(user && user.email && user.emailVerified === false);
-}
-async function sendEmailVerificationIfPossible(user) {
-    const targetUser = user || unverifiedEmailUser || auth.currentUser;
-    if (!targetUser || typeof targetUser.sendEmailVerification !== 'function') {
-        throw new Error('Could not send a verification email for this account.');
-    }
-    await targetUser.sendEmailVerification();
-}
-function showEmailVerificationPrompt(user, options = {}) {
-    unverifiedEmailUser = user || unverifiedEmailUser || auth.currentUser;
-    const view = options.view || (signupView.classList.contains('active') ? 'signup' : 'signin');
-    const target = view === 'signup' ? signupError : signinError;
-    const email = String((unverifiedEmailUser && unverifiedEmailUser.email) || '').trim();
-    showAuthModal(view);
-    target.innerHTML = '';
-    target.classList.add('visible');
-
-    const message = document.createElement('div');
-    message.textContent = email
-        ? `Verify ${email} before continuing.`
-        : 'Verify your email address before continuing.';
-    target.appendChild(message);
-
-    const detail = document.createElement('div');
-    detail.textContent = 'Use the verification link in your inbox, then return here.';
-    target.appendChild(detail);
-
-    const status = document.createElement('div');
-    status.textContent = options.verificationEmailSent
-        ? 'Verification email sent. Check your inbox.'
-        : '';
-    target.appendChild(status);
-
-    const resendButton = document.createElement('button');
-    resendButton.type = 'button';
-    resendButton.className = 'auth-submit-btn u-mt-8';
-    resendButton.textContent = 'Resend verification email';
-    resendButton.addEventListener('click', async () => {
-        resendButton.disabled = true;
-        status.textContent = 'Sending verification email...';
-        try {
-            await sendEmailVerificationIfPossible(unverifiedEmailUser);
-            status.textContent = 'Verification email sent. Check your inbox.';
-        } catch (error) {
-            captureClientError(error, 'resend_email_verification');
-            status.textContent = getFirebaseErrorMessage(error);
-        } finally {
-            resendButton.disabled = false;
-        }
-    });
-    target.appendChild(resendButton);
-
-    const verifiedButton = document.createElement('button');
-    verifiedButton.type = 'button';
-    verifiedButton.className = 'google-sign-in-button u-mt-8';
-    verifiedButton.textContent = 'I verified my email';
-    verifiedButton.addEventListener('click', async () => {
-        verifiedButton.disabled = true;
-        status.textContent = 'Checking verification status...';
-        try {
-            const targetUser = unverifiedEmailUser || auth.currentUser;
-            if (!targetUser || typeof targetUser.reload !== 'function') {
-                throw new Error('Please sign in again after verifying your email.');
-            }
-            await targetUser.reload();
-            const refreshedUser = auth.currentUser || targetUser;
-            if (isUnverifiedEmailUser(refreshedUser)) {
-                status.textContent = 'Email is not verified yet. Open the link from your inbox, then try again.';
-                return;
-            }
-            // Email verification changed the token claims; refresh only here.
-            await refreshedUser.getIdToken(true);
-            const redirected = await activateVerifiedUser(refreshedUser);
-            hideAuthModal();
-            if (redirected) return;
-            showToast('Email verified. You are signed in.', 'success');
-        } catch (error) {
-            captureClientError(error, 'check_email_verification');
-            status.textContent = getFirebaseErrorMessage(error);
-        } finally {
-            verifiedButton.disabled = false;
-        }
-    });
-    target.appendChild(verifiedButton);
-
-    const signOutButton = document.createElement('button');
-    signOutButton.type = 'button';
-    signOutButton.className = 'google-sign-in-button u-mt-8';
-    signOutButton.textContent = 'Sign out';
-    signOutButton.addEventListener('click', async () => {
-        signOutButton.disabled = true;
-        try {
-            unverifiedEmailUser = null;
-            await auth.signOut();
-            showToast('Signed out', 'success');
-        } catch (error) {
-            captureClientError(error, 'signout_unverified_email');
-            status.textContent = getFirebaseErrorMessage(error);
-        } finally {
-            signOutButton.disabled = false;
-        }
-    });
-    target.appendChild(signOutButton);
-}
-function getFirebaseErrorMessage(e) {
-    const m = {
-        'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
-        'auth/invalid-email': 'Please enter a valid email address.',
-        'auth/weak-password': 'Password should be at least 6 characters.',
-        'auth/user-not-found': 'No account found with this email.',
-        'auth/wrong-password': 'Incorrect password. Please try again.',
-        'auth/invalid-credential': 'Invalid email or password. Please try again.',
-        'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
-        'auth/network-request-failed': 'Network error. Please check your connection.',
-        'auth/internal-error': 'Sign-in is temporarily unavailable right now. Please try again in a minute. If this keeps happening, contact support because the Firebase sign-in configuration likely needs to be redeployed.',
-    };
-    return m[e.code] || e.message || 'An error occurred. Please try again.';
-}
-async function checkEmailAllowed(email) {
-    try {
-        const r = await fetch('/api/verify-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-        return await r.json();
-    } catch (e) {
-        return { allowed: false, message: 'Could not verify email. Please try again.' };
-    }
-}
-function getAuthButtonsForKind(kind) {
-    const entry = authSubmitButtons[kind];
-    if (!entry) return [];
-    return Array.isArray(entry) ? entry.filter(Boolean) : [entry].filter(Boolean);
-}
-function setAuthButtonBusy(button, active, busyLabel) {
-    if (!button) return;
-    if (!button.dataset.defaultHtml) {
-        button.dataset.defaultHtml = button.innerHTML;
-    }
-    button.disabled = Boolean(authSubmitBusyKind);
-    button.setAttribute('aria-disabled', authSubmitBusyKind ? 'true' : 'false');
-    if (active) {
-        button.textContent = busyLabel || 'Working...';
-    } else {
-        button.innerHTML = button.dataset.defaultHtml;
-    }
-}
-function syncAuthSubmitBusyState() {
-    Object.keys(authSubmitButtons).forEach((kind) => {
-        const active = authSubmitBusyKind === kind;
-        getAuthButtonsForKind(kind).forEach((button) => {
-            setAuthButtonBusy(button, active, authSubmitBusyLabels[kind]);
-        });
-    });
-    Object.keys(authSubmitForms).forEach((kind) => {
-        if (!authSubmitForms[kind]) return;
-        authSubmitForms[kind].setAttribute('aria-busy', authSubmitBusyKind === kind ? 'true' : 'false');
-    });
-}
-function beginAuthSubmit(kind) {
-    if (authSubmitBusyKind) return false;
-    authSubmitBusyKind = kind;
-    syncAuthSubmitBusyState();
-    return true;
-}
-function endAuthSubmit(kind) {
-    if (authSubmitBusyKind !== kind) return;
-    authSubmitBusyKind = '';
-    syncAuthSubmitBusyState();
-}
-async function signInWithEmail(email, password) {
-    if (!beginAuthSubmit('signin')) return;
-    try {
-        const check = await checkEmailAllowed(email);
-        if (!check.allowed) {
-            trackEvent('auth_failed', { method: 'email', reason: 'disallowed_email' });
-            showAuthError(signinError, check.message);
-            return;
-        }
-        const credential = await auth.signInWithEmailAndPassword(email, password);
-        if (isUnverifiedEmailUser(credential.user)) {
-            handleUnverifiedEmailUser(credential.user, { view: 'signin' });
-            return;
-        }
-        hideAuthModal();
-        if (resumePendingNonAdminAuthReturnIfNeeded()) return;
-        if (await activateVerifiedUser(credential.user)) return;
-        showToast('Signed in successfully!', 'success');
-        trackEvent('auth_success', { method: 'email' });
-    } catch (e) {
-        trackEvent('auth_failed', { method: 'email', reason: e.code || 'unknown' });
-        captureClientError(e, 'signin_email');
-        showAuthError(signinError, getFirebaseErrorMessage(e));
-    } finally {
-        endAuthSubmit('signin');
-    }
-}
-async function signUpWithEmail(email, password) {
-    if (!beginAuthSubmit('signup')) return;
-    try {
-        const check = await checkEmailAllowed(email);
-        if (!check.allowed) {
-            trackEvent('auth_failed', { method: 'signup_email', reason: 'disallowed_email' });
-            showAuthError(signupError, check.message);
-            return;
-        }
-        const credential = await auth.createUserWithEmailAndPassword(email, password);
-        let verificationEmailSent = false;
-        if (credential.user) {
-            try {
-                await sendEmailVerificationIfPossible(credential.user);
-                verificationEmailSent = true;
-            } catch (verifyError) {
-                captureClientError(verifyError, 'signup_send_email_verification');
-            }
-        }
-        handleUnverifiedEmailUser(credential.user, { view: 'signup', verificationEmailSent });
-        trackEvent('auth_success', { method: 'signup_email', verification_required: true });
-    } catch (e) {
-        trackEvent('auth_failed', { method: 'signup_email', reason: e.code || 'unknown' });
-        captureClientError(e, 'signup_email');
-        showAuthError(signupError, getFirebaseErrorMessage(e));
-    } finally {
-        endAuthSubmit('signup');
-    }
-}
-async function signInWithGoogle() {
-    if (!beginAuthSubmit('google')) return;
-    const provider = new firebase.auth.GoogleAuthProvider();
-    try {
-        const result = await auth.signInWithPopup(provider);
-        const email = result.user.email || '';
-        const check = await checkEmailAllowed(email);
-        if (!check.allowed) {
-            try {
-                await result.user.delete();
-            } catch (deleteErr) {
-                console.warn('Could not delete disallowed Google user immediately:', deleteErr);
-            }
-            await auth.signOut();
-            trackEvent('auth_failed', { method: 'google', reason: 'disallowed_email' });
-            showAuthError(signinView.classList.contains('active') ? signinError : signupError, check.message);
-            return;
-        }
-        if (isUnverifiedEmailUser(result.user)) {
-            handleUnverifiedEmailUser(result.user, { view: signinView.classList.contains('active') ? 'signin' : 'signup' });
-            return;
-        }
-        hideAuthModal();
-        if (resumePendingNonAdminAuthReturnIfNeeded()) return;
-        if (await activateVerifiedUser(result.user)) return;
-        showToast('Signed in successfully!', 'success');
-        trackEvent('auth_success', { method: 'google' });
-    } catch (e) {
-        trackEvent('auth_failed', { method: 'google', reason: e.code || 'unknown' });
-        captureClientError(e, 'signin_google');
-        showAuthError(signinView.classList.contains('active') ? signinError : signupError, getFirebaseErrorMessage(e));
-    } finally {
-        endAuthSubmit('google');
-    }
-}
-async function sendPasswordReset(email) {
-    if (!beginAuthSubmit('reset')) return;
-    try {
-        await auth.sendPasswordResetEmail(email);
-        resetSuccess.textContent = 'Password reset email sent! Check your inbox.';
-        resetSuccess.classList.add('visible');
-    } catch (e) {
-        showAuthError(resetError, getFirebaseErrorMessage(e));
-    } finally {
-        endAuthSubmit('reset');
-    }
-}
-async function signOut() {
-    try {
-        await releaseImportedAudioToken({ clearStatus: true });
-        try {
-            await fetch('/api/session/logout', {
-                method: 'POST',
-                credentials: 'include'
-            });
-        } catch (_) { }
-        await auth.signOut();
-        showToast('Signed out', 'success');
-    } catch (e) {
-        console.error(e);
-        captureClientError(e, 'fetch_user_data');
-    }
 }
 async function fetchUserData(options = {}) {
     if (!currentUser) return;
@@ -1583,170 +1009,6 @@ function updateInterviewOptionsUI() {
     syncProcessingLayout();
     updateModeCreditDisplay();
     updateProcessButton();
-}
-function updateOutputLanguageInput() {
-    const isOther = outputLanguageSelect.value === 'other';
-    setHidden(outputLanguageCustom, !isOther);
-    if (!isOther) outputLanguageCustom.value = '';
-    syncProcessingLayout();
-}
-function getLanguageLabel(value, customValue = '') {
-    const key = String(value || 'english').trim().toLowerCase();
-    if (key === 'other') {
-        const custom = String(customValue || '').trim();
-        return custom ? `🌐 ${custom}` : OUTPUT_LANGUAGE_LABELS.other;
-    }
-    return OUTPUT_LANGUAGE_LABELS[key] || OUTPUT_LANGUAGE_LABELS.english;
-}
-function setOutputLanguage(value, label) {
-    const safeValue = Object.prototype.hasOwnProperty.call(OUTPUT_LANGUAGE_LABELS, value) ? value : 'english';
-    outputLanguageSelect.value = safeValue;
-    outputLanguageLabel.textContent = label || getLanguageLabel(safeValue, outputLanguageCustom.value);
-    outputLanguageItems.forEach(item => {
-        const isActive = item.dataset.value === safeValue;
-        item.classList.toggle('active', isActive);
-        item.setAttribute('aria-selected', isActive ? 'true' : 'false');
-    });
-    updateOutputLanguageInput();
-}
-function clearLanguagePreferenceSaveTimer() {
-    if (!languagePreferenceSaveTimer) return;
-    clearTimeout(languagePreferenceSaveTimer);
-    languagePreferenceSaveTimer = null;
-}
-async function saveUserPreferences(payload) {
-    if (!currentUser) return { ok: false, error: 'Please sign in' };
-    try {
-        const response = await authenticatedFetch('/api/user-preferences', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload || {}),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            return { ok: false, error: data.error || 'Could not save preferences.' };
-        }
-        if (data.preferences && typeof data.preferences === 'object') {
-            userPreferences = data.preferences;
-        }
-        return { ok: true, preferences: userPreferences };
-    } catch (e) {
-        captureClientError(e, 'save_user_preferences');
-        return { ok: false, error: 'Could not save preferences.' };
-    }
-}
-function setOnboardingError(message) {
-    if (!languageOnboardingError) return;
-    const text = String(message || '').trim();
-    languageOnboardingError.textContent = text;
-    languageOnboardingError.classList.toggle('visible', Boolean(text));
-}
-function setOnboardingLanguageSelection(value) {
-    const target = String(value || 'english').trim().toLowerCase();
-    languageOnboardingButtons.forEach((btn) => {
-        const selected = btn.dataset.value === target;
-        btn.classList.toggle('active', selected);
-        btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    });
-    const showCustom = target === 'other';
-    setHidden(languageOnboardingCustom, !showCustom);
-    if (!showCustom) languageOnboardingCustom.value = '';
-}
-function getOnboardingLanguageSelection() {
-    const active = Array.from(languageOnboardingButtons).find((btn) => btn.classList.contains('active'));
-    const value = active ? String(active.dataset.value || 'english').trim().toLowerCase() : 'english';
-    return {
-        value,
-        custom: value === 'other' ? String(languageOnboardingCustom.value || '').trim() : '',
-    };
-}
-function closeLanguageOnboarding() {
-    if (!languageOnboardingOpen) return;
-    languageOnboardingOpen = false;
-    setOnboardingError('');
-    closeOverlay(languageOnboardingOverlay);
-}
-function openLanguageOnboarding(preferences = null) {
-    if (!currentUser || languageOnboardingOpen) return;
-    const prefs = preferences && typeof preferences === 'object' ? preferences : (userPreferences || {});
-    const key = String(prefs.output_language || outputLanguageSelect.value || 'english').trim().toLowerCase();
-    const custom = String(prefs.output_language_custom || outputLanguageCustom.value || '').trim();
-    setOnboardingLanguageSelection(key);
-    languageOnboardingCustom.value = custom;
-    if (key === 'other') setHidden(languageOnboardingCustom, false);
-    languageOnboardingSaveBtn.disabled = false;
-    setOnboardingError('');
-    languageOnboardingOpen = true;
-    openOverlay(languageOnboardingOverlay);
-}
-async function saveLanguageOnboardingPreference() {
-    if (!currentUser || languageOnboardingSaving) return;
-    const selection = getOnboardingLanguageSelection();
-    if (selection.value === 'other' && !selection.custom) {
-        setOnboardingError('Please enter a custom language.');
-        return;
-    }
-    languageOnboardingSaving = true;
-    languageOnboardingSaveBtn.disabled = true;
-    setOnboardingError('');
-    const result = await saveUserPreferences({
-        output_language: selection.value,
-        output_language_custom: selection.custom,
-        onboarding_completed: true,
-    });
-    languageOnboardingSaving = false;
-    languageOnboardingSaveBtn.disabled = false;
-    if (!result.ok) {
-        setOnboardingError(result.error || 'Could not save preference.');
-        return;
-    }
-    suppressLanguagePreferencePersist = true;
-    setOutputLanguage(selection.value, getLanguageLabel(selection.value, selection.custom));
-    if (selection.value === 'other') outputLanguageCustom.value = selection.custom;
-    suppressLanguagePreferencePersist = false;
-    closeLanguageOnboarding();
-    showToast('Default language saved.', 'success');
-}
-async function persistCurrentOutputLanguage(options = {}) {
-    if (!currentUser || suppressLanguagePreferencePersist) return;
-    const value = String(outputLanguageSelect.value || 'english').trim().toLowerCase();
-    const custom = value === 'other' ? String(outputLanguageCustom.value || '').trim() : '';
-    if (value === 'other' && !custom) {
-        if (options.strict) showToast('Please enter a custom language before saving.', 'info');
-        return;
-    }
-    const payload = {
-        output_language: value,
-        output_language_custom: custom,
-    };
-    if (Object.prototype.hasOwnProperty.call(options, 'onboarding_completed')) {
-        payload.onboarding_completed = Boolean(options.onboarding_completed);
-    }
-    const result = await saveUserPreferences(payload);
-    if (!result.ok && options.showErrorToast) {
-        showToast(result.error || 'Could not save language preference.', 'error');
-    }
-}
-function scheduleLanguagePreferenceSave() {
-    if (!currentUser || suppressLanguagePreferencePersist || languageOnboardingOpen) return;
-    clearLanguagePreferenceSaveTimer();
-    languagePreferenceSaveTimer = setTimeout(() => {
-        persistCurrentOutputLanguage({ showErrorToast: true });
-    }, 500);
-}
-function applyPreferencesToOutputLanguage(preferences, options = {}) {
-    const prefs = preferences && typeof preferences === 'object' ? preferences : {};
-    const keyRaw = String(prefs.output_language || 'english').trim().toLowerCase();
-    const key = ['dutch', 'english', 'spanish', 'french', 'german', 'chinese', 'other'].includes(keyRaw) ? keyRaw : 'english';
-    const custom = String(prefs.output_language_custom || '').trim();
-    suppressLanguagePreferencePersist = true;
-    setOutputLanguage(key, getLanguageLabel(key, custom));
-    if (key === 'other') outputLanguageCustom.value = custom;
-    suppressLanguagePreferencePersist = false;
-    if (options.forceOnboardingOpen) {
-        if (!Boolean(prefs.onboarding_completed)) openLanguageOnboarding(prefs);
-        else closeLanguageOnboarding();
-    }
 }
 function setQuickstartVisible(visible) {
     if (!quickstartCard) return;
@@ -2081,571 +1343,6 @@ function formatFileSize(bytes) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-}
-function getCurrentAudioImportUrl() {
-    return normalizeAudioImportUrl(audioUrlInput ? audioUrlInput.value : '');
-}
-function hasReadyImportedAudioToken(urlValue) {
-    const safeUrl = normalizeAudioImportUrl(urlValue == null ? getCurrentAudioImportUrl() : urlValue);
-    if (typeof audioImportUtils.hasReadyImportedAudioToken === 'function') {
-        return audioImportUtils.hasReadyImportedAudioToken({
-            url: safeUrl,
-            importedAudioToken,
-            importedAudioSourceUrl,
-        });
-    }
-    return Boolean(importedAudioToken) && (!safeUrl || normalizeAudioImportUrl(importedAudioSourceUrl) === safeUrl);
-}
-function getReadyImportedAudioToken(urlValue) {
-    return hasReadyImportedAudioToken(urlValue) ? String(importedAudioToken || '').trim() : '';
-}
-function currentAudioBytes() {
-    if (audioFile) return Number(audioFile.size || 0);
-    return hasReadyImportedAudioToken() ? Number(importedAudioSizeBytes || 0) : 0;
-}
-function setAudioImportStatus(message = '', isError = false) {
-    if (!audioUrlStatus) return;
-    const text = String(message || '').trim();
-    audioUrlStatus.textContent = text;
-    audioUrlStatus.classList.toggle('error', Boolean(isError && text));
-    syncProcessingLayout();
-}
-function setAudioImportPending(inFlight) {
-    if (!audioUrlFetchBtn) return;
-    if (!audioUrlFetchBtn.dataset.defaultLabel) {
-        audioUrlFetchBtn.dataset.defaultLabel = audioUrlFetchBtn.textContent || 'Import Audio';
-    }
-    audioUrlFetchBtn.disabled = Boolean(inFlight);
-    audioUrlFetchBtn.textContent = inFlight ? 'Importing...' : (audioUrlFetchBtn.dataset.defaultLabel || 'Import Audio');
-    syncProcessingLayout();
-}
-function setRecorderStatus(message = '', tone = 'info') {
-    recorderStatusMessage = String(message || '').trim();
-    recorderStatusTone = String(tone || 'info').trim() || 'info';
-    if (!audioRecordingStatus) return;
-    audioRecordingStatus.textContent = recorderStatusMessage;
-    audioRecordingStatus.dataset.tone = recorderStatusTone;
-}
-function formatRecordingElapsed(ms) {
-    const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
-    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
-    const seconds = String(totalSeconds % 60).padStart(2, '0');
-    return `${minutes}:${seconds}`;
-}
-function stopRecordingTimer() {
-    if (recordingTimer) {
-        window.clearInterval(recordingTimer);
-        recordingTimer = null;
-    }
-}
-function currentRecordingElapsedMs() {
-    if (recordingState === 'recording' && recordingStartedAtMs > 0) {
-        return recordingElapsedMs + Math.max(0, Date.now() - recordingStartedAtMs);
-    }
-    return recordingElapsedMs;
-}
-function updateRecordingTimer() {
-    if (!audioRecorderTimer) return;
-    audioRecorderTimer.textContent = formatRecordingElapsed(currentRecordingElapsedMs());
-}
-function cleanupRecordingStream() {
-    if (!recordingStream) return;
-    try {
-        recordingStream.getTracks().forEach((track) => track.stop());
-    } catch (_) { }
-    recordingStream = null;
-}
-async function getMicrophonePermissionState() {
-    if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
-        return 'unknown';
-    }
-    try {
-        const status = await navigator.permissions.query({ name: 'microphone' });
-        return String(status && status.state || 'unknown').trim().toLowerCase() || 'unknown';
-    } catch (_) {
-        return 'unknown';
-    }
-}
-function getPreferredRecordingConfig() {
-    if (!window.MediaRecorder || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-        return null;
-    }
-    const candidates = [
-        { mimeType: 'audio/ogg;codecs=opus', extension: 'ogg' },
-        { mimeType: 'audio/ogg', extension: 'ogg' },
-        { mimeType: 'audio/webm;codecs=opus', extension: 'webm' },
-        { mimeType: 'audio/webm', extension: 'webm' },
-        { mimeType: 'audio/mp4;codecs=mp4a.40.2', extension: 'm4a' },
-        { mimeType: 'audio/mp4', extension: 'm4a' },
-    ];
-    const canCheck = typeof window.MediaRecorder.isTypeSupported === 'function';
-    for (const candidate of candidates) {
-        if (!canCheck || window.MediaRecorder.isTypeSupported(candidate.mimeType)) {
-            return candidate;
-        }
-    }
-    return null;
-}
-function syncRecorderUI() {
-    const visible = Boolean((modeConfig[currentMode] || {}).needsAudio);
-    const supportedConfig = getPreferredRecordingConfig();
-    setHidden(audioRecorderPanel, !visible);
-    if (!visible) return;
-    if (audioRecordStartBtn) {
-        audioRecordStartBtn.disabled = recordingState !== 'idle' || !supportedConfig;
-    }
-    if (audioRecordPauseBtn) {
-        audioRecordPauseBtn.disabled = !(
-            (recordingState === 'recording' && mediaRecorder && typeof mediaRecorder.pause === 'function') ||
-            (recordingState === 'paused' && mediaRecorder && typeof mediaRecorder.resume === 'function')
-        );
-        audioRecordPauseBtn.textContent = recordingState === 'paused' ? 'Resume' : 'Pause';
-    }
-    if (audioRecordStopBtn) {
-        audioRecordStopBtn.disabled = !(recordingState === 'recording' || recordingState === 'paused');
-    }
-    updateRecordingTimer();
-    if (recordingState === 'recording') {
-        setRecorderStatus('Recording in progress. Stop to attach it to this lecture.', 'recording');
-        return;
-    }
-    if (recordingState === 'paused') {
-        setRecorderStatus('Recording paused. Resume or stop to attach it to this lecture.', 'info');
-        return;
-    }
-    if (recordingState === 'stopping') {
-        setRecorderStatus('Saving recording...', 'info');
-        return;
-    }
-    if (!supportedConfig) {
-        setRecorderStatus('Browser recording is not available here. Upload or import audio instead.', 'error');
-        return;
-    }
-    if (!recorderStatusMessage) {
-        setRecorderStatus('Record directly here if you do not have an audio file yet.', 'info');
-    } else {
-        setRecorderStatus(recorderStatusMessage, recorderStatusTone);
-    }
-}
-function syncAudioInfoUI() {
-    if (audioFile) {
-        audioName.textContent = audioFile.name;
-        audioSize.textContent = audioFileOrigin === 'recording'
-            ? `${formatFileSize(audioFile.size)} · Recorded in browser`
-            : formatFileSize(audioFile.size);
-        setHidden(audioInfo, false);
-        audioZone.classList.add('has-file');
-    } else if (importedAudioToken) {
-        audioName.textContent = importedAudioName || 'Imported audio';
-        audioSize.textContent = importedAudioSizeBytes > 0
-            ? `${formatFileSize(importedAudioSizeBytes)} · Imported from URL`
-            : 'Imported from URL';
-        setHidden(audioInfo, false);
-        audioZone.classList.add('has-file');
-    } else {
-        setHidden(audioInfo, true);
-        audioZone.classList.remove('has-file');
-    }
-    if (audioRecordingWarning) {
-        if (audioFile && audioFileOrigin === 'recording') {
-            setHidden(audioRecordingWarning, false);
-            audioRecordingWarning.textContent = recordedAudioNeedsDownload
-                ? 'This recording only exists in this browser tab. Download it now if you want to keep it, or it will be lost forever when you leave this page.'
-                : 'This recording was downloaded. Keep the saved file somewhere safe, because the in-browser copy still disappears when you leave this page.';
-        } else {
-            setHidden(audioRecordingWarning, true);
-            audioRecordingWarning.textContent = '';
-        }
-    }
-    syncRecorderUI();
-    syncProcessingLayout();
-}
-function clearImportedAudioLocalState() {
-    importedAudioToken = '';
-    importedAudioSizeBytes = 0;
-    importedAudioName = '';
-    importedAudioSourceUrl = '';
-}
-function buildRecordedAudioFileName(extension) {
-    const now = new Date();
-    const stamp = [
-        now.getFullYear(),
-        String(now.getMonth() + 1).padStart(2, '0'),
-        String(now.getDate()).padStart(2, '0'),
-    ].join('') + '-' + [
-        String(now.getHours()).padStart(2, '0'),
-        String(now.getMinutes()).padStart(2, '0'),
-        String(now.getSeconds()).padStart(2, '0'),
-    ].join('');
-    return `lecture-recording-${stamp}.${String(extension || 'ogg').trim() || 'ogg'}`;
-}
-function finalizeRecordedAudio(blob) {
-    cleanupRecordingStream();
-    stopRecordingTimer();
-    recordingState = 'idle';
-    recordingStartedAtMs = 0;
-    const safeBlob = blob instanceof Blob ? blob : null;
-    if (!safeBlob || !safeBlob.size) {
-        recordingChunks = [];
-        recordingMimeType = '';
-        recordingExtension = '';
-        setRecorderStatus('No audio was captured. Please try again.', 'error');
-        showToast('No audio was captured. Please try again.', 'error');
-        syncRecorderUI();
-        return;
-    }
-    const mimeType = String(recordingMimeType || safeBlob.type || 'audio/ogg').trim() || 'audio/ogg';
-    const fileName = buildRecordedAudioFileName(recordingExtension || (mimeType.indexOf('mp4') >= 0 ? 'm4a' : 'ogg'));
-    const recordedFile = new File([safeBlob], fileName, { type: mimeType, lastModified: Date.now() });
-    recordingChunks = [];
-    recordingMimeType = '';
-    recordingExtension = '';
-    if (discardNextRecordingResult) {
-        discardNextRecordingResult = false;
-        setRecorderStatus('Recording discarded.', 'info');
-        syncRecorderUI();
-        return;
-    }
-    handleAudioFile(recordedFile, { origin: 'recording' });
-    setRecorderStatus('Recording attached. Download it from the audio card now if you want to keep it.', 'success');
-    showToast('Recording attached as your audio file. Download it now if you want to keep it.', 'success', 4200);
-    syncRecorderUI();
-}
-async function startAudioRecording() {
-    if (currentMode !== 'lecture-notes') {
-        setRecorderStatus('Recording is only available in Lecture Notes mode.', 'error');
-        return;
-    }
-    if (recordingState !== 'idle') return;
-    const config = getPreferredRecordingConfig();
-    if (!config) {
-        setRecorderStatus('Browser recording is not available here. Upload or import audio instead.', 'error');
-        return;
-    }
-    try {
-        const permissionState = await getMicrophonePermissionState();
-        if (permissionState === 'denied') {
-            const blockedMessage = 'Microphone access is blocked in your browser. Allow microphone access in the site settings, then try again.';
-            setRecorderStatus(blockedMessage, 'error');
-            showToast(blockedMessage, 'error', 4200);
-            syncRecorderUI();
-            return;
-        }
-        cleanupRecordingStream();
-        recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        recordingChunks = [];
-        recordingMimeType = config.mimeType;
-        recordingExtension = config.extension;
-        mediaRecorder = new window.MediaRecorder(recordingStream, { mimeType: config.mimeType });
-        mediaRecorder.addEventListener('dataavailable', (event) => {
-            if (event.data && event.data.size > 0) {
-                recordingChunks.push(event.data);
-            }
-        });
-        mediaRecorder.addEventListener('stop', () => {
-            const blob = new Blob(recordingChunks, { type: recordingMimeType || (mediaRecorder && mediaRecorder.mimeType) || config.mimeType });
-            mediaRecorder = null;
-            finalizeRecordedAudio(blob);
-        });
-        mediaRecorder.addEventListener('error', () => {
-            mediaRecorder = null;
-            cleanupRecordingStream();
-            stopRecordingTimer();
-            recordingState = 'idle';
-            recordingChunks = [];
-            recordingMimeType = '';
-            recordingExtension = '';
-            setRecorderStatus('Recording failed. Please try again.', 'error');
-            showToast('Recording failed. Please try again.', 'error');
-            syncRecorderUI();
-        });
-        recordingElapsedMs = 0;
-        recordingStartedAtMs = Date.now();
-        recordingState = 'recording';
-        recorderStatusMessage = '';
-        mediaRecorder.start();
-        updateRecordingTimer();
-        recordingTimer = window.setInterval(updateRecordingTimer, 500);
-        syncRecorderUI();
-    } catch (error) {
-        cleanupRecordingStream();
-        stopRecordingTimer();
-        recordingState = 'idle';
-        recordingChunks = [];
-        recordingMimeType = '';
-        recordingExtension = '';
-        const message = error && error.name === 'NotAllowedError'
-            ? 'Microphone access was blocked. Allow microphone access in your browser and try again.'
-            : 'Could not start recording in this browser.';
-        setRecorderStatus(message, 'error');
-        showToast(message, 'error', 3600);
-        syncRecorderUI();
-    }
-}
-function toggleAudioRecordingPause() {
-    if (!mediaRecorder) return;
-    if (recordingState === 'recording' && typeof mediaRecorder.pause === 'function') {
-        try {
-            recordingElapsedMs = currentRecordingElapsedMs();
-            recordingStartedAtMs = 0;
-            mediaRecorder.pause();
-            stopRecordingTimer();
-            recordingState = 'paused';
-            syncRecorderUI();
-        } catch (_) { }
-        return;
-    }
-    if (recordingState === 'paused' && typeof mediaRecorder.resume === 'function') {
-        try {
-            recordingStartedAtMs = Date.now();
-            mediaRecorder.resume();
-            recordingState = 'recording';
-            updateRecordingTimer();
-            recordingTimer = window.setInterval(updateRecordingTimer, 500);
-            syncRecorderUI();
-        } catch (_) { }
-    }
-}
-function stopAudioRecording() {
-    if (!mediaRecorder || !(recordingState === 'recording' || recordingState === 'paused')) return;
-    recordingElapsedMs = currentRecordingElapsedMs();
-    recordingStartedAtMs = 0;
-    recordingState = 'stopping';
-    stopRecordingTimer();
-    syncRecorderUI();
-    try {
-        mediaRecorder.stop();
-    } catch (_) {
-        mediaRecorder = null;
-        cleanupRecordingStream();
-        recordingState = 'idle';
-        recordingChunks = [];
-        recordingMimeType = '';
-        recordingExtension = '';
-        setRecorderStatus('Recording could not be saved. Please try again.', 'error');
-        syncRecorderUI();
-    }
-}
-async function releaseImportedAudioToken(options = {}) {
-    const token = String(importedAudioToken || '').trim();
-    const shouldClearStatus = options.clearStatus !== false;
-    if (options.resetPendingUrl !== false) {
-        pendingAutoImportUrl = '';
-    }
-    if (!token) {
-        if (shouldClearStatus) setAudioImportStatus('');
-        return;
-    }
-    clearImportedAudioLocalState();
-    if (!audioFile) syncAudioInfoUI();
-    if (shouldClearStatus) setAudioImportStatus('');
-    if (!currentUser) return;
-    try {
-        await authenticatedFetch('/api/import-audio-url/release', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audio_import_token: token }),
-        });
-    } catch (_) { }
-}
-async function applyImportedAudio(payload, previousToken = '', sourceUrl = '') {
-    const token = String(payload && payload.audio_import_token ? payload.audio_import_token : '').trim();
-    if (!token) return false;
-    if (audioFile) {
-        if (currentUser) {
-            try {
-                await authenticatedFetch('/api/import-audio-url/release', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ audio_import_token: token }),
-                });
-            } catch (_) { }
-        }
-        return false;
-    }
-    importedAudioToken = token;
-    importedAudioName = String(payload.file_name || 'Imported audio.mp3').trim();
-    importedAudioSizeBytes = Math.max(0, Number(payload.size_bytes || 0));
-    importedAudioSourceUrl = normalizeAudioImportUrl(sourceUrl);
-    syncAudioInfoUI();
-    updateProcessButton();
-    const ttlSeconds = Math.max(0, Number(payload.expires_in_seconds || 0));
-    if (ttlSeconds > 0) {
-        const minutes = Math.max(1, Math.round(ttlSeconds / 60));
-        setAudioImportStatus(`Imported ${importedAudioName}. Token expires in about ${minutes} minute${minutes === 1 ? '' : 's'}.`);
-    } else {
-        setAudioImportStatus(`Imported ${importedAudioName}.`);
-    }
-    if (previousToken && previousToken !== token && currentUser) {
-        try {
-            await authenticatedFetch('/api/import-audio-url/release', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audio_import_token: previousToken }),
-            });
-        } catch (_) { }
-    }
-    return true;
-}
-function waitForAudioImport(ms) {
-    return new Promise(resolve => window.setTimeout(resolve, Math.max(250, Number(ms || 1000))));
-}
-async function pollAudioImportJob(jobId) {
-    const safeJobId = String(jobId || '').trim();
-    if (!safeJobId) throw new Error('Audio import did not return a job id.');
-    const deadlineMs = Date.now() + 16 * 60 * 1000;
-    let attempt = 0;
-    while (Date.now() < deadlineMs) {
-        const response = await authenticatedFetch(`/api/import-audio-url/${encodeURIComponent(safeJobId)}`);
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            throw new Error(String(payload.error || 'Could not read audio import status.'));
-        }
-        const status = String(payload.status || '').trim().toLowerCase();
-        if (status === 'complete' && payload.audio_import_token) {
-            return payload;
-        }
-        if (status === 'error') {
-            throw new Error(String(payload.error || 'Audio import failed.'));
-        }
-        setAudioImportStatus(String(payload.step_description || 'Importing audio from URL...'));
-        attempt += 1;
-        await waitForAudioImport(Math.min(5000, 1000 + attempt * 500));
-    }
-    throw new Error('Audio import is taking longer than expected. Please try again.');
-}
-function syncAudioImportStatusForUrlChange() {
-    if (!((modeConfig[currentMode] || {}).needsAudio) || audioFile || audioImportInFlight) {
-        updateProcessButton();
-        return;
-    }
-    const currentUrl = getCurrentAudioImportUrl();
-    if (!currentUrl) {
-        setAudioImportStatus(importedAudioToken ? `Imported ${importedAudioName || 'audio'}.` : '');
-        updateProcessButton();
-        return;
-    }
-    const importedSourceUrl = normalizeAudioImportUrl(importedAudioSourceUrl);
-    if (importedAudioToken && importedSourceUrl !== currentUrl) {
-        setAudioImportStatus('URL changed. Paste again, press Enter, or click Import Audio to use this source.');
-    } else if (importedAudioToken && importedSourceUrl === currentUrl) {
-        setAudioImportStatus(`Imported ${importedAudioName || 'audio'} from this URL.`);
-    } else {
-        setAudioImportStatus('');
-    }
-    updateProcessButton();
-}
-async function importAudioFromUrl(options = {}) {
-    const importOptions = options && typeof options === 'object' ? options : {};
-    const importReason = String(importOptions.reason || 'manual').trim() || 'manual';
-    const url = normalizeAudioImportUrl(importOptions.url == null ? getCurrentAudioImportUrl() : importOptions.url);
-    if (!currentUser) {
-        if (importReason === 'manual') {
-            showAuthModal('signin');
-        } else {
-            setAudioImportStatus('Sign in to import audio from a lecture video URL.', true);
-        }
-        updateProcessButton();
-        return false;
-    }
-    if (!((modeConfig[currentMode] || {}).needsAudio)) {
-        setAudioImportStatus('URL import is only available when this mode accepts audio.', true);
-        updateProcessButton();
-        return false;
-    }
-    if (!url) {
-        setAudioImportStatus('Paste the index.m3u8 playlist URL copied from DevTools → Network.', true);
-        updateProcessButton();
-        return false;
-    }
-    if (audioImportInFlight) {
-        if (!audioFile && url && url !== audioImportRequestUrl) {
-            pendingAutoImportUrl = url;
-            setAudioImportStatus('Import in progress. The latest pasted lecture video URL will import next.');
-        } else if (importReason === 'manual') {
-            setAudioImportStatus('Import already in progress. Please wait.');
-        }
-        updateProcessButton();
-        return false;
-    }
-    const request = describeAudioImportRequest({
-        mode: currentMode,
-        url,
-        hasLocalAudioFile: Boolean(audioFile),
-        importedAudioToken,
-        importedAudioSourceUrl,
-    });
-    if (!request.shouldImport) {
-        if (request.reason === 'already-imported' && importReason === 'manual') {
-            setAudioImportStatus(`Imported ${importedAudioName || 'audio'} from this URL.`);
-        } else if (request.reason === 'local-audio-selected' && importReason === 'manual') {
-            setAudioImportStatus('Using your uploaded audio file. Remove it to import from LMS URL.');
-        }
-        updateProcessButton();
-        return request.reason === 'already-imported';
-    }
-    audioImportInFlight = true;
-    audioImportRequestUrl = url;
-    setAudioImportPending(true);
-    updateProcessButton();
-    setAudioImportStatus(importReason === 'paste' ? 'Importing audio from the pasted lecture video URL...' : 'Importing audio from URL...');
-    const previousToken = String(importedAudioToken || '').trim();
-    try {
-        const response = await authenticatedFetch('/api/import-audio-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            const retryAfter = getRetryAfterSeconds(response, data);
-            const errorText = String(data.error || 'Could not import audio from URL.');
-            if (response.status === 429 && retryAfter > 0) {
-                setAudioImportStatus(`${errorText} Try again in ${formatRetryDelay(retryAfter)}.`, true);
-            } else {
-                setAudioImportStatus(errorText, true);
-            }
-            return false;
-        }
-        const readyPayload = data.audio_import_token ? data : await pollAudioImportJob(data.job_id);
-        const applied = await applyImportedAudio(readyPayload, previousToken, url);
-        const queuedUrl = normalizeAudioImportUrl(pendingAutoImportUrl);
-        if (applied) {
-            if (queuedUrl && queuedUrl !== url) {
-                setAudioImportStatus('Newest pasted lecture video URL detected. Importing latest audio...');
-            } else {
-                showToast('Audio imported from URL.', 'success');
-            }
-        } else if (audioFile) {
-            setAudioImportStatus('Using your uploaded audio file. LMS import was ignored.');
-        }
-        return applied;
-    } catch (e) {
-        captureClientError(e, 'import_audio_url');
-        setAudioImportStatus('Could not import audio from URL. Please try again.', true);
-        return false;
-    } finally {
-        audioImportInFlight = false;
-        audioImportRequestUrl = '';
-        setAudioImportPending(false);
-        updateProcessButton();
-        const nextUrl = normalizeAudioImportUrl(pendingAutoImportUrl);
-        pendingAutoImportUrl = '';
-        if (!audioFile && nextUrl) {
-            const nextRequest = describeAudioImportRequest({
-                mode: currentMode,
-                url: nextUrl,
-                hasLocalAudioFile: Boolean(audioFile),
-                importedAudioToken,
-                importedAudioSourceUrl,
-            });
-            if (nextRequest.shouldImport) {
-                window.setTimeout(() => {
-                    importAudioFromUrl({ url: nextUrl, reason: 'queued-auto' });
-                }, 0);
-            }
-        }
-    }
 }
 function renderToastIcon(type) {
     while (toastIcon.firstChild) toastIcon.removeChild(toastIcon.firstChild);
@@ -3060,25 +1757,6 @@ function handlePdfFile(file) {
     syncProcessingLayout();
     updateProcessButton();
 }
-function handleAudioFile(file, options = {}) {
-    if (!file) return;
-    const valid = ['.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac', '.webm'];
-    if (!valid.some(ext => file.name.toLowerCase().endsWith(ext))) { showToast('Please select a valid audio file', 'error'); return; }
-    if (file.size > 500 * 1024 * 1024) { showToast('Audio file must be under 500 MB', 'error'); return; }
-    pendingAutoImportUrl = '';
-    if (importedAudioToken) {
-        releaseImportedAudioToken({ clearStatus: true });
-    }
-    audioFile = file;
-    audioFileOrigin = options.origin === 'recording' ? 'recording' : 'upload';
-    recordedAudioNeedsDownload = audioFileOrigin === 'recording';
-    if (audioFileOrigin !== 'recording') {
-        recorderStatusMessage = '';
-        recorderStatusTone = 'info';
-    }
-    syncAudioInfoUI();
-    updateProcessButton();
-}
 function shouldIgnoreDropZoneActivation(target) {
     if (!target || typeof target.closest !== 'function') return false;
     return Boolean(
@@ -3120,63 +1798,9 @@ function downloadLocalPreviewFile(file) {
     URL.revokeObjectURL(blobUrl);
     return true;
 }
-function downloadImportedAudioPreview() {
-    const tokenValue = String(importedAudioToken || '').trim();
-    if (!tokenValue) return Promise.reject(new Error('No imported audio is ready to download.'));
-    const fallbackName = String(importedAudioName || 'imported-audio.mp3').trim() || 'imported-audio.mp3';
-    return authenticatedFetch('/api/import-audio-url/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            audio_import_token: tokenValue,
-            file_name: fallbackName,
-        }),
-    }).then((response) => {
-        if (!response.ok) {
-            return response.json().catch(() => ({})).then((payload) => {
-                throw new Error(payload.error || 'Could not download imported audio.');
-            });
-        }
-        if (downloadUtils.downloadResponseBlob) {
-            return downloadUtils.downloadResponseBlob(response, fallbackName);
-        }
-        return response.blob().then((blob) => {
-            if (downloadUtils.saveBlobAsFile) {
-                downloadUtils.saveBlobAsFile(blob, fallbackName);
-                return fallbackName;
-            }
-            const url = URL.createObjectURL(blob);
-            const anchor = document.createElement('a');
-            anchor.href = url;
-            anchor.download = fallbackName;
-            document.body.appendChild(anchor);
-            anchor.click();
-            document.body.removeChild(anchor);
-            URL.revokeObjectURL(url);
-            return fallbackName;
-        });
-    });
-}
 setupDropZone(pdfZone, pdfInput, handlePdfFile);
 setupDropZone(audioZone, audioInput, handleAudioFile);
-if (audioRecordStartBtn) {
-    audioRecordStartBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        startAudioRecording();
-    });
-}
-if (audioRecordPauseBtn) {
-    audioRecordPauseBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleAudioRecordingPause();
-    });
-}
-if (audioRecordStopBtn) {
-    audioRecordStopBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        stopAudioRecording();
-    });
-}
+bindRecordingControls();
 const downloadSelectedPdf = () => {
     if (downloadLocalPreviewFile(pdfFile)) {
         showToast('Lecture slides download started.', 'success', 1600);
@@ -3188,24 +1812,6 @@ if (pdfDownload) {
         downloadSelectedPdf();
     });
 }
-const downloadSelectedAudio = () => {
-    if (downloadLocalPreviewFile(audioFile)) {
-        if (audioFileOrigin === 'recording') {
-            recordedAudioNeedsDownload = false;
-            syncAudioInfoUI();
-            showToast('Recording download started. Keep that file safe because the in-browser copy will disappear when you leave this page.', 'success', 4200);
-        } else {
-            showToast('Audio file download started.', 'success', 1600);
-        }
-        return;
-    }
-    if (importedAudioToken) {
-        showToast('Imported audio download started. Keep the saved file as your backup.', 'success', 3600);
-        downloadImportedAudioPreview().catch((error) => {
-            showToast(error && error.message ? error.message : 'Could not download imported audio.', 'error');
-        });
-    }
-};
 if (audioDownload) {
     audioDownload.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -3221,21 +1827,7 @@ pdfRemove.addEventListener('click', (e) => {
     syncProcessingLayout();
     updateProcessButton();
 });
-audioRemove.addEventListener('click', (e) => {
-    e.stopPropagation();
-    audioFile = null;
-    audioFileOrigin = 'upload';
-    recordedAudioNeedsDownload = false;
-    recorderStatusMessage = '';
-    recorderStatusTone = 'info';
-    audioInput.value = '';
-    pendingAutoImportUrl = '';
-    if (importedAudioToken) {
-        releaseImportedAudioToken({ clearStatus: true });
-    }
-    syncAudioInfoUI();
-    updateProcessButton();
-});
+audioRemove.addEventListener('click', removeSelectedAudio);
 
 function buildProgressSteps(steps) {
     progressSteps.innerHTML = '';
@@ -4184,62 +2776,7 @@ async function checkPaymentResult() {
     }
 }
 
-function maybeOpenAuthModalFromQuery() {
-    const params = new URLSearchParams(window.location.search);
-    const requested = String(params.get('auth') || '').trim().toLowerCase();
-    if (!requested) return;
-    setPendingAuthReturnUrl(params.get('next') || '');
-    params.delete('next');
-    if (currentUser && resumePendingAuthReturnIfNeeded()) return;
-    const view = ['signin', 'signup', 'reset'].includes(requested) ? requested : 'signin';
-    showAuthModal(view);
-    params.delete('auth');
-    const query = params.toString();
-    const nextUrl = window.location.pathname + (query ? `?${query}` : '') + window.location.hash;
-    window.history.replaceState({}, '', nextUrl);
-}
-
-if (headerSignInBtn) {
-    headerSignInBtn.addEventListener('click', () => showAuthModal('signin'));
-}
-signInToProcessBtn.addEventListener('click', () => showAuthModal('signin'));
-authModalClose.addEventListener('click', hideAuthModal);
-authOverlay.addEventListener('click', (e) => { if (e.target === authOverlay) hideAuthModal(); });
-switchToSignup.addEventListener('click', (e) => { e.preventDefault(); showAuthView('signup'); });
-switchToSignin.addEventListener('click', (e) => { e.preventDefault(); showAuthView('signin'); });
-forgotPasswordLink.addEventListener('click', (e) => { e.preventDefault(); showAuthView('reset'); });
-backToSignin.addEventListener('click', (e) => { e.preventDefault(); showAuthView('signin'); });
-signinForm.addEventListener('submit', async (e) => { e.preventDefault(); await signInWithEmail(signinEmail.value.trim(), signinPassword.value); });
-signupForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (signupPassword.value !== signupPasswordConfirm.value) { showAuthError(signupError, 'Passwords do not match.'); return; }
-    await signUpWithEmail(signupEmail.value.trim(), signupPassword.value);
-});
-resetForm.addEventListener('submit', async (e) => { e.preventDefault(); await sendPasswordReset(resetEmail.value.trim()); });
-googleSignInBtn.addEventListener('click', signInWithGoogle);
-googleSignUpBtn.addEventListener('click', signInWithGoogle);
-document.querySelectorAll('.password-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const input = document.getElementById(btn.dataset.target);
-        const open = btn.querySelector('.eye-open');
-        const closed = btn.querySelector('.eye-closed');
-        if (!input) return;
-        if (input.type === 'password') {
-            input.type = 'text';
-            setHidden(open, true);
-            setHidden(closed, false);
-            btn.setAttribute('aria-pressed', 'true');
-            btn.setAttribute('aria-label', 'Hide password');
-        }
-        else {
-            input.type = 'password';
-            setHidden(open, false);
-            setHidden(closed, true);
-            btn.setAttribute('aria-pressed', 'false');
-            btn.setAttribute('aria-label', 'Show password');
-        }
-    });
-});
+bindProcessingAuthModal();
 if (headerNavToggle) {
     headerNavToggle.addEventListener('click', () => {
         const shouldOpen = !(headerSidebar && headerSidebar.classList.contains('visible'));
@@ -4709,16 +3246,9 @@ studyNowBtn.addEventListener('click', () => {
 });
 newLectureButton.addEventListener('click', () => {
     setMoreActionsDropdownVisible(false);
-    if (recordingState === 'recording' || recordingState === 'paused') {
-        discardNextRecordingResult = true;
-        stopAudioRecording();
-    }
+    discardActiveRecording();
     pdfFile = null;
-    audioFile = null;
-    audioFileOrigin = 'upload';
-    recordedAudioNeedsDownload = false;
-    recorderStatusMessage = '';
-    recorderStatusTone = 'info';
+    clearSelectedAudioFile();
     releaseImportedAudioToken({ clearStatus: true });
     currentJobId = null;
     trackedTerminalJobId = '';
@@ -4810,125 +3340,9 @@ interviewOptionButtons.forEach(btn => {
         updateInterviewOptionsUI();
     });
 });
-outputLanguageButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const visible = !outputLanguageMenu.classList.contains('visible');
-    closeHeaderDropdowns(visible ? 'language' : '');
-    setOutputLanguageMenuVisible(visible);
-    if (visible) focusMenuItem(outputLanguageMenu, '.app-select-item', 'active');
-});
-outputLanguageButton.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        closeHeaderDropdowns('language');
-        setOutputLanguageMenuVisible(true);
-        focusMenuItem(outputLanguageMenu, '.app-select-item', 'active');
-    }
-    if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        closeHeaderDropdowns('language');
-        setOutputLanguageMenuVisible(true);
-        focusMenuItem(outputLanguageMenu, '.app-select-item', 'last');
-    }
-    if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        const visible = !outputLanguageMenu.classList.contains('visible');
-        closeHeaderDropdowns(visible ? 'language' : '');
-        setOutputLanguageMenuVisible(visible);
-        if (visible) focusMenuItem(outputLanguageMenu, '.app-select-item', 'active');
-    }
-    if (e.key === 'Escape') {
-        e.preventDefault();
-        setOutputLanguageMenuVisible(false);
-    }
-});
-outputLanguageMenu.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); focusMenuItem(outputLanguageMenu, '.app-select-item', 'next'); }
-    if (e.key === 'ArrowUp') { e.preventDefault(); focusMenuItem(outputLanguageMenu, '.app-select-item', 'prev'); }
-    if (e.key === 'Home') { e.preventDefault(); focusMenuItem(outputLanguageMenu, '.app-select-item', 'first'); }
-    if (e.key === 'End') { e.preventDefault(); focusMenuItem(outputLanguageMenu, '.app-select-item', 'last'); }
-    if (e.key === 'Escape') {
-        e.preventDefault();
-        setOutputLanguageMenuVisible(false);
-        outputLanguageButton.focus();
-    }
-    if (e.key === 'Tab') setOutputLanguageMenuVisible(false);
-});
-outputLanguageItems.forEach(item => {
-    item.addEventListener('click', () => {
-        const value = item.dataset.value || 'english';
-        setOutputLanguage(value, item.textContent.trim());
-        setOutputLanguageMenuVisible(false);
-        if (value === 'other') {
-            outputLanguageCustom.focus();
-            outputLanguageCustom.select();
-        } else {
-            scheduleLanguagePreferenceSave();
-            outputLanguageButton.focus();
-        }
-    });
-});
-outputLanguageCustom.addEventListener('input', () => {
-    if (outputLanguageSelect.value !== 'other') return;
-    outputLanguageLabel.textContent = getLanguageLabel('other', outputLanguageCustom.value);
-    scheduleLanguagePreferenceSave();
-});
-outputLanguageCustom.addEventListener('blur', () => {
-    if (outputLanguageSelect.value !== 'other') return;
-    outputLanguageLabel.textContent = getLanguageLabel('other', outputLanguageCustom.value);
-    scheduleLanguagePreferenceSave();
-});
-if (audioUrlFetchBtn) {
-    audioUrlFetchBtn.addEventListener('click', importAudioFromUrl);
-}
-if (otherAudioToggle) {
-    otherAudioToggle.addEventListener('click', () => {
-        otherAudioOpen = !otherAudioOpen;
-        syncProcessingLayout();
-    });
-}
-if (audioUrlAdvancedToggle) {
-    audioUrlAdvancedToggle.addEventListener('click', () => {
-        setAudioUrlAdvancedOpen(!(audioUrlAdvanced && audioUrlAdvanced.classList.contains('is-open')));
-    });
-}
-if (audioUrlInput) {
-    audioUrlInput.addEventListener('input', () => {
-        syncAudioImportStatusForUrlChange();
-    });
-    audioUrlInput.addEventListener('paste', () => {
-        window.setTimeout(() => {
-            importAudioFromUrl({ url: getCurrentAudioImportUrl(), reason: 'paste' });
-        }, 0);
-    });
-    audioUrlInput.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        importAudioFromUrl({ reason: 'manual' });
-    });
-}
-languageOnboardingButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-        setOnboardingLanguageSelection(button.dataset.value || 'english');
-        setOnboardingError('');
-        if ((button.dataset.value || '') === 'other') {
-            languageOnboardingCustom.focus();
-        }
-    });
-});
-languageOnboardingCustom.addEventListener('input', () => setOnboardingError(''));
-languageOnboardingCustom.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        saveLanguageOnboardingPreference();
-    }
-});
-languageOnboardingSaveBtn.addEventListener('click', saveLanguageOnboardingPreference);
-languageOnboardingOverlay.addEventListener('click', (e) => {
-    if (e.target === languageOnboardingOverlay) {
-        languageOnboardingCustom.focus();
-    }
-});
+bindOutputLanguagePicker();
+bindAudioImportControls();
+bindLanguageOnboarding();
 document.addEventListener('click', (e) => {
     if (!studyToolsPanel.contains(e.target) && !studyToolsToggle.contains(e.target)) {
         setStudyToolsPanelVisible(false);
@@ -4944,12 +3358,7 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') { e.preventDefault(); goFlashcard(1); }
     if (e.code === 'Space') { e.preventDefault(); flipFlashcard(); }
 });
-window.addEventListener('beforeunload', (e) => {
-    if ((audioFile && audioFileOrigin === 'recording' && recordedAudioNeedsDownload) || recordingState === 'recording' || recordingState === 'paused') {
-        e.preventDefault();
-        e.returnValue = '';
-    }
-});
+window.addEventListener('beforeunload', warnBeforeLeavingRecording);
 
 function updateHeaderNavActiveState() {
     const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
