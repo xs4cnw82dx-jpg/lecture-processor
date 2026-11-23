@@ -102,3 +102,18 @@ test('the builder role selector works on a phone and the content download reimpo
   await confirmation.getByRole('button', { name: 'Export course content' }).click();
   expect((await download).suggestedFilename()).toBe(exp.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-content.json');
 });
+
+test('older material can be downloaded after explaining the current import limits', async ({ page }) => {
+  await editorFixture(page);
+  await page.route('**/api/elearning/expeditions/visual/content-export', route => route.fulfill({
+    json: { course: { title: { nl: 'Oude cursus' }, modules: [] }, exceedsImportLimits: true, excludedUploads: 0 },
+  }));
+  await page.goto('/physio/elearning/visual/edit');
+  await page.getByRole('button', { name: 'More expedition actions' }).click();
+  await page.getByRole('menuitem', { name: 'Export course content' }).click();
+  const notice = page.getByRole('dialog', { name: 'Export course content' });
+  await expect(notice).toContainText('Shorten the course before importing it again.');
+  const download = page.waitForEvent('download');
+  await notice.getByRole('button', { name: 'Export course content' }).click();
+  expect((await download).suggestedFilename()).toMatch(/-content\.json$/);
+});

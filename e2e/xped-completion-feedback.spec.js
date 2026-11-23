@@ -157,3 +157,23 @@ test('an author can enlarge an SVG at phone width and return to the same editor'
   await page.keyboard.press('Escape');
   await expect(zoom).toBeFocused();
 });
+
+test('a learner can finish with a partially unreadable balance saved on the device', async ({page}) => {
+  const balance = Model.createBlock('balance_scale');
+  const saved = {};
+  const [first, next, third] = balance.data.factors;
+  saved[first.id] = 2;
+  saved[next.id] = 'unreadable';
+  saved[third.id] = '25';
+  await page.addInitScript(answers => {
+    localStorage.setItem('xped_el_progress_feedback', JSON.stringify({answers}));
+  }, {[balance.id]: saved});
+  await learner(page, [balance]);
+  await page.getByRole('button',{name:Model.ui('nl','finish')}).click();
+  const result = page.locator('.xped-completion-card');
+  const bars = result.getByRole('progressbar');
+  await expect(bars).toHaveCount(2);
+  const totals = await bars.evaluateAll(nodes => nodes.map(node => node.value));
+  expect(totals.reduce((sum, value) => sum + value, 0)).toBe(5);
+  await expect(result).not.toContainText('NaN');
+});

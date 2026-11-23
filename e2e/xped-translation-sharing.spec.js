@@ -104,7 +104,17 @@ test('two queued changes roll back to the last confirmed sharing state and scope
   await toggle.uncheck(); release();
   await expect(page.locator('#el-share-status')).toContainText('Sharing update failed');
   await expect(toggle).toBeChecked();
-  const cohort=page.locator('#el-share-cohort'); await cohort.fill('pilot-2');
+  const cohort=page.locator('#el-share-cohort');
+  await cohort.fill('groep 1');
+  await expect(cohort).toHaveAttribute('aria-invalid','true');
+  await expect(page.locator('#el-share-cohort-error')).toBeVisible();
+  await expect(page.locator('#el-share-url')).toHaveValue('');
+  await expect(page.getByRole('button',{name:'Copy shareable learner link'})).toBeDisabled();
+  await expect(page.locator('#el-share-open-link')).not.toHaveAttribute('href',/.+/);
+  await expect(page.locator('#el-share-qr svg')).toHaveCount(0);
+  await cohort.fill('pilot-2');
+  await expect(cohort).toHaveAttribute('aria-invalid','false');
+  await expect(page.getByRole('button',{name:'Copy shareable learner link'})).toBeEnabled();
   await expect(page.locator('#el-share-qr-cohort')).toContainText('pilot-2');
   await expect(page.locator('#el-share-open-link')).toHaveAttribute('href',/local-only\?cohort=pilot-2$/);
   await page.getByRole('tab',{name:'Translators',exact:true}).click();

@@ -79,3 +79,9 @@ def test_percentage_chart_and_custom_result_survive_publication_and_translation(
     assert chart['percentage'] == 0
     assert chart['citation']['nl'] == 'De onderzoeksgroep'
     assert chart['sourceUrl'] == 'https://doi.org/10.1000/example'
+
+
+@pytest.mark.parametrize('value', ['NaN', 'Infinity', '-Infinity'])
+def test_imported_nonfinite_percentage_uses_default(value):
+    chart = model.normalize_block({'type': 'custom_visual', 'data': {'preset': 'percentage', 'percentage': value}})
+    assert chart['data']['percentage'] == 50

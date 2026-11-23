@@ -435,13 +435,13 @@
               if (txt) plans.push(txt);
             });
           } else if (b.type === 'balance_scale' && ans && typeof ans === 'object') {
-            if (!(b.data.factors || []).some(function (f) { return Number.isFinite(ans[f.id]); })) return;
+            if (!(b.data.factors || []).some(function (f) { return Model.balanceScore(ans[f.id]) !== null; })) return;
             var loadT = 0;
             var resT = 0;
             var loadNames = [];
             var resNames = [];
             (b.data.factors || []).forEach(function (f) {
-              var v = Number(ans[f.id] || 0);
+              var v = Model.balanceScore(ans[f.id]) ?? 0;
               var lbl = Model.getLocalized(f.label, lang, defLang);
               if (f.category === 'resource') {
                 resT += v;

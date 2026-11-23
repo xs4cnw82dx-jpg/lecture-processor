@@ -200,7 +200,7 @@ test('edit video trim as a pair, then explicitly choose a different video timest
   const fixture=await author(page,[video]); await inspect(page,video);
   const start=page.getByRole('textbox',{name:/Start Time/}); const end=page.getByRole('textbox',{name:/End Time/});
   await start.fill('1:15'); await end.fill('0:45');
-  await expect(page.locator('.el-insp-error')).toContainText('must be after');
+  await expect(page.getByText(/End time .* must be after Start time/)).toBeVisible();
   await expect.poll(()=>fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.endSeconds).toBe(120);
   const url=page.getByRole('textbox',{name:'YouTube or Vimeo URL'});
   await url.fill('https://youtu.be/abcdefghijk?t=15'); await url.press('Tab');
@@ -407,4 +407,41 @@ test('the mini-plan picker lets an author leave custom steps out before insertio
   await expect(custom).toHaveCount(0);
   await page.getByRole('checkbox',{name:'Allow learner custom step'}).check();
   await expect(custom).toBeVisible();
+});
+
+test('literal Markdown and formatted DOI labels survive editing, saving and learner rendering', async ({page}) => {
+  const doi = 'https://doi.org/10.1000/study(2024)';
+  const rich = make('richtext', {body:local('[**Study** results](' + doi + ').')});
+  const fixture = await author(page, [rich]);
+  const area = page.getByRole('textbox', {name:'Paragraph text'});
+  const link = area.getByRole('link', {name:'Study results'});
+  await expect(link).toHaveAttribute('href', doi);
+  await expect(link.locator('strong')).toHaveText('Study');
+  await area.evaluate(editor => {
+    editor.focus();
+    const lastText = editor.lastChild.lastChild;
+    window.getSelection().collapse(lastText, lastText.length);
+  });
+  const lines = ['- item', '1. first', '2) second', '## literal heading', '**literal** and [label](https://example.org)'];
+  for (const line of lines) {
+    await area.press('Enter');
+    await page.keyboard.insertText(line);
+  }
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.body.en).toContain('https://example.org');
+  const savedBlock = fixture.writes.at(-1).body.modules[0].steps[0].blocks[0];
+  await enter(page, [savedBlock]);
+  const body = page.locator('.xped-richtext-body');
+  await expect(body.locator('p')).toHaveText(['Study results.', ...lines]);
+  await expect(body.getByRole('link')).toHaveCount(1);
+  await expect(body.getByRole('link')).toHaveAttribute('href', doi);
+  await expect(body.locator('a strong')).toHaveText('Study');
+});
+
+test('Dutch canvas text styles announce the paragraph option in Dutch', async ({page}) => {
+  const belief = make('myth_fact', {statement:local('A statement')});
+  await author(page, [belief]);
+  await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
+  await inCanvas(page, belief).getByText('A statement').focus();
+  await expect(page.getByRole('group', {name:'Tekststijl'}).getByRole('button',{name:'Alinea'})).toBeVisible();
 });

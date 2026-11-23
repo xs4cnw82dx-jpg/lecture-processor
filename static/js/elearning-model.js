@@ -29,7 +29,7 @@
       consentQuestion: "Wil je je antwoorden delen met de cursusmakers?",
       consentShare: "Ja, ik deel mijn antwoorden",
       consentPrivate: "Nee, ik houd mijn antwoorden privé",
-      consentPrivateNote: "Je antwoorden en je voortgang blijven bij jou.",
+      consentPrivateNote: "Je nieuwe antwoorden en je verdere voortgang blijven bij jou.",
       consentFeedback: "Ook feedback die je instuurt, kunnen de makers lezen.",
       changeConsent: "Mijn keuze voor gegevens delen wijzigen",
       authorAccess: 'De makers ontvangen je voortgang en antwoorden, ook ingevulde tekst, onder een sessiecode.',
@@ -145,7 +145,7 @@
       consentQuestion: "Would you like to share your answers with the course authors?",
       consentShare: "Yes, share my answers",
       consentPrivate: "No, keep my answers private",
-      consentPrivateNote: "Your answers and progress stay with you.",
+      consentPrivateNote: "Your new answers and further progress stay with you.",
       consentFeedback: "The authors can also read any feedback you send.",
       changeConsent: "Change my sharing choice",
       authorAccess: 'Course authors receive your progress and answers, including written responses, under a session ID.',
@@ -261,7 +261,7 @@
       consentQuestion: "Möchtest du deine Antworten mit dem Kursteam teilen?",
       consentShare: "Ja, meine Antworten teilen",
       consentPrivate: "Nein, meine Antworten bleiben privat",
-      consentPrivateNote: "Deine Antworten und dein Fortschritt bleiben bei dir.",
+      consentPrivateNote: "Deine neuen Antworten und dein weiterer Fortschritt bleiben bei dir.",
       consentFeedback: "Das Kursteam kann auch dein eingesendetes Feedback lesen.",
       changeConsent: "Meine Auswahl zur Datenfreigabe ändern",
       authorAccess: 'Die Kursverantwortlichen erhalten deinen Fortschritt und deine Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
@@ -734,6 +734,12 @@
       return Object.keys(val).length > 0;
     }
     return false;
+  }
+
+  function balanceScore(raw) {
+    if (typeof raw !== 'number' && !(typeof raw === 'string' && raw.trim())) return null;
+    var score = Number(raw);
+    return Number.isFinite(score) ? Math.max(0, Math.min(3, Math.round(score))) : null;
   }
 
   function normalizeMiniPlanAnswer(raw, suggestions) {
@@ -1579,6 +1585,7 @@
     getBlockMeta: getBlockMeta,
     normalizeCitationLink: normalizeCitationLink,
     hasMeaningfulAnswer: hasMeaningfulAnswer,
+    balanceScore: balanceScore,
     normalizeMiniPlanAnswer: normalizeMiniPlanAnswer,
     deriveStepContentState: deriveStepContentState,
     uid: uid,

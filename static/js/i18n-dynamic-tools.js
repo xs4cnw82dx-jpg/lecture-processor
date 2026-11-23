@@ -3,7 +3,7 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
-  "xPEDitie Pijn stores course content and collaborator access. In a pilot, you can choose to share your progress, answers and feedback with the course authors under a session ID. You can also complete the course privately. Your browser also saves progress so you can resume on that device.": "xPEDitie Pijn slaat cursusinhoud en toegangsrechten van medewerkers op. Bij een pilot kun je ervoor kiezen je voortgang, antwoorden en feedback onder een sessiecode te delen met de cursusmakers. Je kunt de cursus ook privé volgen. Je browser bewaart je voortgang ook, zodat je op dat apparaat verder kunt gaan.",
+  "xPEDitie Pijn stores course content and collaborator access. In a pilot, you can choose to share your progress, answers and feedback with the course authors under a session ID. You can also complete the course privately or stop sharing later. The authors keep the responses you shared before switching to private participation. Your browser also saves progress so you can resume on that device.": "xPEDitie Pijn slaat cursusinhoud en toegangsrechten van medewerkers op. Bij een pilot kun je ervoor kiezen je voortgang, antwoorden en feedback onder een sessiecode te delen met de cursusmakers. Je kunt de cursus ook privé volgen of later stoppen met delen. De makers behouden de antwoorden die je vóór die keuze hebt gedeeld. Je browser bewaart je voortgang ook, zodat je op dat apparaat verder kunt gaan.",
   "Cohort links and QR codes": "Cohortlinks en QR-codes",
   "Studio admin": "Studiobeheer",
   "Studio admin sections": "Onderdelen van studiobeheer",
@@ -46,6 +46,7 @@
   "Completion rate": "Voltooiingspercentage",
   "{completed} of {total} sessions completed": "{completed} van de {total} sessies voltooid",
   "Export course content": "Cursusinhoud exporteren",
+  "The download includes older material that exceeds the current size limits. Shorten the course before importing it again.": "Dit bestand bevat ouder cursusmateriaal dat groter is dan de huidige limieten toelaten. Kort de cursus in voordat je deze opnieuw importeert.",
   "Export without uploaded files?": "Exporteren zonder geüploade bestanden?",
   "The file includes course text and library illustrations. Reattach your uploaded images and audio after importing.": "Het bestand bevat de cursustekst en illustraties uit de bibliotheek. Voeg je eigen afbeeldingen en audio na het importeren opnieuw toe.",
   "Save your latest edits before exporting course content.": "Sla je wijzigingen op voordat je de cursusinhoud exporteert.",
@@ -73,6 +74,7 @@
   "Use New expedition to start with a blank station or explore an interactive example.": "Kies Nieuwe expeditie om met een leeg station te beginnen of een interactief voorbeeld te verkennen.",
   "Sign in to view your expeditions.": "Log in om je expedities te bekijken.",
   "Sign in to view responses.": "Log in om reacties te bekijken.",
+  "Use letters A–Z, digits, dots, underscores or hyphens for the group name.": "Gebruik voor de groepsnaam letters A–Z, cijfers, punten, liggende streepjes of koppeltekens.",
   "Optional pilot group": "Optionele pilotgroep",
   "Open learner link": "Deelnemerslink openen",
   "Pilot link active": "Pilotlink actief",
@@ -942,6 +944,7 @@
   "Horizontal position": "Horizontale positie",
   "Vertical position": "Verticale positie",
   "Reset framing": "Herstel uitsnede",
+  "Paragraph": "Alinea",
   "Heading 2": "Kop 2",
   "Heading 3": "Kop 3",
   "Station name": "Stationsnaam",

@@ -11,6 +11,7 @@ from google.cloud.firestore_v1.types import Document
 
 from lecture_processor.domains.elearning.model import ElearningError
 
+from .admin_repo import count_collection
 from .query_utils import apply_where
 
 _activity = Counter()
@@ -90,6 +91,11 @@ class ElearningStore:
         rows = [dict(decode(doc.to_dict()), _id=doc.id) for doc in query.stream()]
         record('reads', max(1, len(rows)))
         return rows
+
+    def count(self, collection: str, filters):
+        # Firestore answers count aggregations from the index, without loading session documents.
+        record('reads')
+        return count_collection(self.db, collection, filters)
 
     def atomic(self, operation):
         transaction = self.db.transaction()

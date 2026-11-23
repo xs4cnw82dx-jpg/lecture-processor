@@ -342,3 +342,125 @@ test('a new pilot group asks again and keeps earlier answers and visits out of i
     expect(Object.keys(post.answers)).not.toContain(old.id);
   }
 });
+
+test('an answer waits for a sharing decision and is sent when the learner keeps sharing', async ({ page }) => {
+  const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
+  course.shareOptions = { collectResponses: true, collectionVersion: 'pilot' };
+  const reflection = Model.createBlock('reflection');
+  reflection.data.prompt.nl = 'Mijn notitie';
+  course.modules[0].steps[0].blocks = [reflection];
+  const posts = [];
+  await openCourse(page, course);
+  page.on('request', req => { if (req.url().endsWith('/responses')) posts.push(req.postDataJSON()); });
+  await page.locator('.xped-hero-cta-row button').click();
+  await chooseSharing(page);
+  await expect.poll(() => posts.length).toBe(1);
+  await page.clock.install();
+  await page.getByRole('textbox', { name: 'Mijn notitie' }).fill('Verstuur na mijn keuze');
+  await page.getByRole('button', { name: Model.ui('nl', 'returnHome') }).click();
+  await page.getByRole('button', { name: Model.ui('nl', 'changeConsent') }).click();
+  await expect(page.getByText(/De makers houden de antwoorden die je al hebt gedeeld/)).toBeVisible();
+  await page.clock.runFor(800);
+  expect(posts).toHaveLength(1);
+  await chooseSharing(page);
+  await page.clock.runFor(800);
+  await expect.poll(() => posts.map(body => body.answers[reflection.id])).toContain('Verstuur na mijn keuze');
+  expect(new Set(posts.map(body => body.sessionId)).size).toBe(1);
+});
+
+test('two open groups resume their own drafts and sharing choices independently', async ({ page, context }) => {
+  const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
+  course.shareOptions = { collectResponses: true, collectionVersion: 'pilot' };
+  const answer = Model.createBlock('reflection');
+  answer.data.prompt.nl = 'Mijn notitie';
+  course.modules[0].steps[0].blocks = [answer];
+  const postsA = [];
+  const postsB = [];
+  const other = await context.newPage();
+  page.on('request', req => { if (req.url().endsWith('/responses')) postsA.push(req.postDataJSON()); });
+  other.on('request', req => { if (req.url().endsWith('/responses')) postsB.push(req.postDataJSON()); });
+  await openCourse(page, course, '?lang=nl&cohort=A');
+  await page.locator('.xped-hero-cta-row button').click();
+  await chooseSharing(page);
+  const first = page.getByRole('textbox', { name: 'Mijn notitie' });
+  const second = other.getByRole('textbox', { name: 'Mijn notitie' });
+  await first.fill('Notitie van A');
+  await expect.poll(() => postsA.at(-1)?.answers[answer.id]).toBe('Notitie van A');
+  await openCourse(other, course, '?lang=nl&cohort=B');
+  await other.locator('.xped-hero-cta-row button').click();
+  await chooseSharing(other, 'private');
+  await second.fill('Privé in groep B');
+  await expect(first).toBeVisible();
+  await expect(first).toHaveAccessibleDescription(Model.ui('nl', 'reflectionAccess'));
+  await page.reload();
+  await page.locator('.xped-hero-cta-row button').click();
+  await expect(first).toHaveValue('Notitie van A');
+  await first.fill('Nieuwe notitie van A');
+  await expect.poll(() => postsA.at(-1)?.answers[answer.id]).toBe('Nieuwe notitie van A');
+  await other.reload();
+  await other.locator('.xped-hero-cta-row button').click();
+  await expect(second).toHaveValue('Privé in groep B');
+  await expect(second).toHaveAccessibleDescription('');
+  expect(postsB).toEqual([]);
+  expect(new Set(postsA.map(post => post.sessionId)).size).toBe(1);
+  expect(postsA.every(post => post.cohort === 'A' && post.answers[answer.id] !== 'Privé in groep B')).toBe(true);
+});
+
+test('a rejected response version asks again and creates a fresh shared session', async ({ page }) => {
+  const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
+  course.shareOptions = { collectResponses: true, collectionVersion: 'first' };
+  const old = Model.createBlock('reflection');
+  const fresh = Model.createBlock('reflection');
+  old.data.prompt.nl = 'Eerste vraag';
+  fresh.data.prompt.nl = 'Nieuwe vraag';
+  course.modules[0].steps[0].blocks = [old, fresh];
+  await openCourse(page, course);
+  const posts = [];
+  await page.route(apiPath + '/responses', async route => {
+    const body = route.request().postDataJSON();
+    posts.push(body);
+    if (body.collectionVersion === 'first' && body.answers[old.id]) {
+      course.shareOptions.collectionVersion = 'second';
+      await route.fulfill({ status: 409, json: { error: 'The response collection settings have changed.' } });
+    } else await route.fulfill({ json: { ok: true } });
+  });
+  await page.locator('.xped-hero-cta-row button').click();
+  await chooseSharing(page);
+  await page.getByRole('textbox', { name: 'Eerste vraag' }).fill('Onder oude voorwaarden');
+  await expect(page.getByRole('radio', { checked: true })).toHaveCount(0);
+  await chooseSharing(page);
+  await expect(page.getByRole('textbox', { name: 'Eerste vraag' })).toHaveValue('Onder oude voorwaarden');
+  await page.getByRole('textbox', { name: 'Nieuwe vraag' }).fill('Onder nieuwe voorwaarden');
+  await expect.poll(() => posts.find(post => post.collectionVersion === 'second' && post.answers[fresh.id])?.answers)
+    .toEqual({ [fresh.id]: 'Onder nieuwe voorwaarden' });
+  expect(posts.find(post => post.collectionVersion === 'second').sessionId).not.toBe(posts[0].sessionId);
+});
+
+test('a learner resumes their older course-wide draft as private work', async ({ page }) => {
+  const course = Model.createExpeditionPreset('blank', 'Op weg met pijn');
+  course.shareOptions = { collectResponses: true, collectionVersion: 'new-pilot' };
+  const old = Model.createBlock('reflection');
+  const fresh = Model.createBlock('reflection');
+  old.data.prompt.nl = 'Eerdere reflectie';
+  fresh.data.prompt.nl = 'Nieuwe reflectie';
+  const step = course.modules[0].steps[0];
+  step.blocks = [old, fresh];
+  await page.addInitScript(({stepId,blockId}) => {
+    const key = 'xped_el_progress_synthetic-route';
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, JSON.stringify({sessionId: 'old-session', visitedStepIds: [stepId],
+      answers: {[blockId]: 'Mijn bewaarde tekst'}, sharedAnswers: {[blockId]: 'Mijn bewaarde tekst'},
+      stepComments: [{comment: 'Oude opmerking'}]}));
+  }, {stepId:step.id, blockId:old.id});
+  const posts = [];
+  page.on('request', req => { if (req.url().endsWith('/responses')) posts.push(req.postDataJSON()); });
+  await openCourse(page, course, '?cohort=campus&lang=nl');
+  await page.getByRole('button', { name: 'Verder met je xPEDitie' }).click();
+  await chooseSharing(page);
+  const draft = page.getByRole('textbox', { name: 'Eerdere reflectie' });
+  await expect(draft).toHaveValue('Mijn bewaarde tekst');
+  await expect(draft).toHaveAccessibleDescription('');
+  await page.getByRole('textbox', { name: 'Nieuwe reflectie' }).fill('Deze deel ik');
+  await expect.poll(() => posts.at(-1)?.answers).toEqual({ [fresh.id]: 'Deze deel ik' });
+  expect(posts.every(post => post.sessionId !== 'old-session' && !post.stepComments)).toBe(true);
+});

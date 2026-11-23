@@ -532,9 +532,11 @@ def studio_statistics(runtime):
         if course.get('deleted') or course.get('copying'):
             continue
         eid = course['_id']
-        responses = db.list('elearning_responses', 'expedition_id', eid, limit=None, fields=['completed'])
-        rows.append({'id': eid, 'title': course['title'], 'sessions': len(responses),
-                     'completed': sum(1 for response in responses if response.get('completed'))})
+        course_filter = [('expedition_id', '==', eid)]
+        completed = db.count('elearning_responses', [*course_filter, ('completed', '==', True)])
+        sessions = db.count('elearning_responses', course_filter)
+        rows.append({'id': eid, 'title': course.get('title') or 'Untitled Expedition',
+                     'sessions': sessions, 'completed': completed})
     return jsonify(courses=sorted(rows, key=lambda row: row['title'].casefold()),
                    sessions=sum(row['sessions'] for row in rows), completed=sum(row['completed'] for row in rows))
 
@@ -543,8 +545,15 @@ def export_course_content(runtime, expedition_id: str):
     _, course, _, _, _ = access(runtime, expedition_id, required='edit')
     # The authoring schema is the allowlist, including hidden draft stations and translations.
     titles = dict(course.get('localizedTitle') or {})
-    titles[course.get('defaultLanguage', 'nl')] = course['title']
-    content = model.validate_authored_expedition({**course, 'title': titles})
+    lang = course.get('defaultLanguage', 'nl')
+    titles[lang] = course.get('title') or titles.get(lang) or 'Untitled Expedition'
+    raw = {**course, 'title': titles}
+    try:
+        content = model.validate_authored_expedition(raw)
+        exceeds_limits = False
+    except model.CourseSizeLimit:
+        content = model.normalize_stored_for_export(raw)
+        exceeds_limits = True
     excluded_uploads = len(model.media_ids(content))
     for ref in model.media_refs(content):
         if isinstance(ref, dict) and ref.get('kind') == 'asset':
@@ -558,7 +567,15 @@ def export_course_content(runtime, expedition_id: str):
                     block['data'].pop('slotId', None)
     # A localized title is accepted by the import API. Avoid dropping translated course titles.
     content['title'] = content.pop('localizedTitle')
-    return jsonify(course=content, excludedUploads=excluded_uploads)
+    if exceeds_limits:
+        # An oversized author note or design brief was removed from this download.
+        # Only flag the material if its portable fields still exceed an import limit.
+        try:
+            model.validate_authored_expedition(content)
+            exceeds_limits = False
+        except model.CourseSizeLimit:
+            pass
+    return jsonify(course=content, excludedUploads=excluded_uploads, exceedsImportLimits=exceeds_limits)
 
 
 def sharing(runtime, expedition_id: str, *, admin=False):
@@ -1003,6 +1020,8 @@ def public_submit_response(runtime, share_token: str):
         old = tx.get(path) or {}
         if old and (old.get('cohort') or 'default') != cohort:
             raise model.ElearningError('Start a new response session for this pilot group.', 409)
+        if old and old.get('consentVersion') != options['collectionVersion']:
+            raise model.ElearningError('Start a new response session for these collection settings.', 409)
         answers = dict(old.get('answers') or {})
         peer_answers = dict(old.get('peerAnswers') or {})
         disclosed = body.get('peerDisclosureTypes')

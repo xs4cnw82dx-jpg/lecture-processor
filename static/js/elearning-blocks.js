@@ -190,26 +190,57 @@
     return svg;
   }
 
+  function linkDestination(line, start) {
+    var depth = 0;
+    var url = '';
+    for (var i = start; i < line.length; i++) {
+      var ch = line[i];
+      if (/\s/.test(ch)) break;
+      if (ch === '\\' && /[\\()]/.test(line[i + 1] || '')) {
+        url += line[++i];
+        continue;
+      }
+      if (ch === '(') depth++;
+      if (ch === ')' && depth-- === 0) {
+        var valid = root.XpedElearningModel.normalizeCitationLink(url);
+        return valid.url ? {url: valid.url, end: i + 1} : null;
+      }
+      url += ch;
+    }
+    return null;
+  }
+
   function appendInlineTokens(parent, line) {
-    // Safe DOM parser for **bold** and [label](https://...) with zero innerHTML
-    var regex = /\*\*([^*]+)\*\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    // Markup is interpreted only as text, emphasis or an HTTP(S) link.
+    // Escaped editor punctuation stays literal, including inside link labels.
+    var tokens = /\\([\\*[\]#.•()\-])|\*\*((?:\\.|[^*\\]|\*(?!\*))+?)\*\*|\[((?:\\.|[^\]\\])+)\]\((?=https?:\/\/)/gi;
     var last = 0;
     var m;
-    while ((m = regex.exec(line)) !== null) {
-      if (m.index > last) parent.appendChild(document.createTextNode(line.slice(last, m.index)));
+    while ((m = tokens.exec(line)) !== null) {
+      if (m.index > last) parent.append(document.createTextNode(line.slice(last, m.index)));
       if (m[1]) {
-        parent.appendChild(el('strong', '', m[1]));
-      } else if (m[2] && m[3]) {
-        var a = document.createElement('a');
-        a.href = m[3];
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.textContent = m[2];
-        parent.appendChild(a);
+        parent.append(document.createTextNode(m[1]));
+      } else if (m[2]) {
+        var strong = document.createElement('strong');
+        appendInlineTokens(strong, m[2]);
+        parent.appendChild(strong);
+      } else {
+        var destination = linkDestination(line, tokens.lastIndex);
+        if (destination && !parent.closest('a')) {
+          var link = document.createElement('a');
+          link.href = destination.url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          parent.appendChild(link);
+          appendInlineTokens(link, m[3]);
+          tokens.lastIndex = destination.end;
+        } else {
+          parent.append(document.createTextNode(m[0]));
+        }
       }
-      last = regex.lastIndex;
+      last = tokens.lastIndex;
     }
-    if (last < line.length) parent.appendChild(document.createTextNode(line.slice(last)));
+    if (last < line.length) parent.append(document.createTextNode(line.slice(last)));
   }
 
   function renderFormattedBody(text) {
@@ -266,12 +297,20 @@
   // The editor and the learner share the same portable Markdown subset.
   function richTextMarkdown(editor) {
     function serialize(node) {
-      if (node.nodeType === Node.TEXT_NODE) return node.textContent.replace(/\u00a0/g, ' ');
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent.replace(/\u00a0/g, ' ').replace(/[\\*[\]]/g, '\\$&')
+          .replace(/^([ \t]*)(#{2,3}|[-•]|\d+[.)])(?=\s|$)/gm, function (_, indent, marker) {
+            return indent + marker.slice(0, -1) + '\\' + marker.slice(-1);
+          });
+      }
       var text = Array.from(node.childNodes, serialize).join('');
       switch (node.nodeName) {
         case 'BR': return '\n';
         case 'STRONG': case 'B': return text ? '**' + text + '**' : '';
-        case 'A': return '[' + text + '](' + node.getAttribute('href') + ')';
+        case 'A': {
+          var url = root.XpedElearningModel.normalizeCitationLink(node.getAttribute('href')).url;
+          return url ? '[' + text + '](' + url.replace(/[\\()]/g, '\\$&') + ')' : text;
+        }
         case 'H2': return '## ' + text.trimEnd() + '\n';
         case 'H3': return '### ' + text.trimEnd() + '\n';
         case 'OL': case 'UL':
@@ -505,8 +544,12 @@
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
           closeLinkBox(true);
-          // DOM-built markup keeps the label literal and this insertion undoable.
-          document.execCommand('insertHTML', false, link.outerHTML);
+          // Keep formatting on a selected label, including bold within the link.
+          if (window.getSelection().toString() === label) {
+            document.execCommand('createLink', false, norm.url);
+          } else {
+            document.execCommand('insertHTML', false, link.outerHTML);
+          }
         });
         linkCancel.addEventListener('click', function (ev) {
           ev.stopPropagation();
@@ -1579,7 +1622,7 @@
       }
       var factors = data.factors || [];
       var vals = (answers[block.id] && typeof answers[block.id] === 'object') ? Object.assign({}, answers[block.id]) : {};
-      factors.forEach(function (f) { if (vals[f.id] === undefined) vals[f.id] = 1; });
+      factors.forEach(function (f) { vals[f.id] = Model.balanceScore(vals[f.id]) ?? 1; });
 
       var stageBox = el('div', 'xped-balance-stage');
       var visBand = el('div', 'xped-balance-visual-band');

@@ -24,13 +24,16 @@
   var comfortTrigger = document.getElementById('el-comfort-trigger');
 
   var storageKey = 'xped_el_progress_' + shareToken;
-  var consentKey = storageKey + '_consent';
+  var groupKeyPrefix = storageKey + ':group:';
+  var groupProgressKey = groupKeyPrefix + cohort;
+  var consentKey = groupProgressKey + ':consent';
   var state = {
     exp: null,
     lang: 'nl',
     hasSavedLanguage: false,
     canSaveLocally: true,
     responseQueue: Promise.resolve(),
+    resumeResponse: null,
     consent: null,
     consentStored: false,
     sharedAnswers: Object.create(null),
@@ -82,31 +85,36 @@
 
   function loadLocalProgress() {
     try {
-      var raw = localStorage.getItem(storageKey);
-      if (!raw) return;
-      var saved = JSON.parse(raw);
-      try { state.consent = JSON.parse(localStorage.getItem(consentKey)); }
-      catch (_err) { state.consent = null; }
-      if (state.consent && state.consent.cohort === cohort && state.consent.sessionId === saved.sessionId) {
-        state.sessionId = saved.sessionId;
+      var saved = JSON.parse(localStorage.getItem(groupProgressKey));
+      var sameGroup = !!saved;
+      if (!saved) {
+        // The course index previously contained the entire personal draft. A new
+        // group may continue that work, while its shared response starts empty.
+        saved = JSON.parse(localStorage.getItem(storageKey));
+        if (saved && saved.recentGroup) saved = JSON.parse(localStorage.getItem(groupKeyPrefix + saved.recentGroup));
+      }
+      if (!saved) return;
+      var grant;
+      if (sameGroup) {
+        try { grant = JSON.parse(localStorage.getItem(consentKey)); } catch (_err) { /* Keep personal progress when consent is unreadable. */ }
+      }
+      if (grant && grant.cohort === cohort && grant.sessionId === saved.sessionId) {
+        state.consent = grant;
+        state.sessionId = grant.sessionId;
         state.consentStored = true;
         state.sharedAnswers = Object.assign(Object.create(null), saved.sharedAnswers);
         state.sharedVisits = Array.isArray(saved.sharedVisits) ? saved.sharedVisits : [];
-      } else {
-        state.consent = null;
+        state.peerDisclosureTypes = Object.assign(Object.create(null), saved.peerDisclosureTypes);
+        state.stepComments = Array.isArray(saved.stepComments) ? saved.stepComments : [];
+        state.pilotSent = saved.pilotSent === true;
       }
       if (saved.answers && typeof saved.answers === 'object') state.answers = Object.assign(Object.create(null), saved.answers);
-      if (saved.peerDisclosureTypes && typeof saved.peerDisclosureTypes === 'object') {
-        state.peerDisclosureTypes = Object.assign(Object.create(null), saved.peerDisclosureTypes);
-      }
       if (Array.isArray(saved.navHistory)) state.navHistory = saved.navHistory.filter(function (id) { return typeof id === 'string'; });
       if (Array.isArray(saved.visitedStepIds)) state.visitedStepIds = saved.visitedStepIds;
       if (Array.isArray(saved.completedModuleIds)) state.completedModuleIds = saved.completedModuleIds;
-      if (Array.isArray(saved.stepComments)) state.stepComments = saved.stepComments;
       if (typeof saved.lastModIdx === 'number') state.lastModIdx = saved.lastModIdx;
       if (typeof saved.lastStepIdx === 'number') state.lastStepIdx = saved.lastStepIdx;
       if (saved.lang) { state.lang = saved.lang; state.hasSavedLanguage = true; }
-      state.pilotSent = saved.pilotSent === true;
       if (saved.textScale) setTextScale(saved.textScale);
       if (saved.themePref) state.themePref = saved.themePref;
     } catch (_err) {
@@ -116,7 +124,7 @@
 
   function saveLocalProgress() {
     try {
-      localStorage.setItem(storageKey, JSON.stringify({
+      localStorage.setItem(groupProgressKey, JSON.stringify({
         sessionId: state.sessionId,
         sharedAnswers: state.sharedAnswers,
         sharedVisits: state.sharedVisits,
@@ -133,6 +141,7 @@
         textScale: document.body.getAttribute('data-text-scale') || 'md',
         themePref: state.themePref,
       }));
+      localStorage.setItem(storageKey, JSON.stringify({ recentGroup: cohort }));
     } catch (_err) {
       state.canSaveLocally = false;
     }
@@ -144,7 +153,14 @@
       && state.consent.cohort === cohort && state.consent.version === options.collectionVersion && state.consent.sessionId === state.sessionId);
   }
 
+  function resumeQueuedResponse() {
+    if (!state.resumeResponse) return;
+    state.resumeResponse();
+    state.resumeResponse = null;
+  }
+
   function resetSharing() {
+    resumeQueuedResponse();
     clearTimeout(state.syncTimer);
     state.consent = null;
     state.consentStored = false;
@@ -168,7 +184,7 @@
   }
 
   function grantIsCurrent(grant) {
-    if (!isSharing() || state.view === 'consent' || grant !== state.consent) return false;
+    if (!isSharing() || grant !== state.consent) return false;
     if (!state.consentStored) return true;
     try { return localStorage.getItem(consentKey) === JSON.stringify(grant); }
     catch (_err) { return false; }
@@ -191,6 +207,11 @@
       stepComments: state.stepComments.length ? state.stepComments : undefined,
     });
     var request = state.responseQueue.then(async function () {
+      // Keep submitted answers or feedback queued until the learner leaves the
+      // sharing form, then recheck the grant in case either tab withdrew it.
+      while (state.view === 'consent' && grantIsCurrent(grant)) {
+        await new Promise(function (resolve) { state.resumeResponse = resolve; });
+      }
       if (!grantIsCurrent(grant)) return { ok: false };
       var response = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken) + '/responses', {
         method: 'POST',
@@ -879,6 +900,7 @@
   function render() {
     if (!state.exp) return;
     if (state.view !== 'start' && state.exp.shareOptions && state.exp.shareOptions.collectResponses && !state.consent) state.view = 'consent';
+    if (state.view !== 'consent') resumeQueuedResponse();
     document.documentElement.lang = state.lang;
     courseLabelEl.textContent = Model.getLocalized(state.exp.startPage && state.exp.startPage.title, state.lang, state.exp.defaultLanguage) || state.exp.title;
     mapBtn.textContent = '';
@@ -941,7 +963,7 @@
         state.lastModIdx = 0;
         state.lastStepIdx = 0;
         state.view = 'start';
-        try { localStorage.removeItem(storageKey); } catch (_e) {}
+        saveLocalProgress();
         Icons.closeDialogAnimated(routeDialog).then(showCurrentView);
       });
       foot.appendChild(resetB);
@@ -1055,10 +1077,10 @@
 
   window.addEventListener('storage', function (event) {
     if (!state.exp || (event.key !== null && event.key !== consentKey)) return;
-    if (event.newValue === JSON.stringify(state.consent)) return;
-    resetSharing();
     var updated;
-    try { updated = JSON.parse(event.newValue); } catch (_err) { updated = null; }
+    try { updated = JSON.parse(localStorage.getItem(consentKey)); } catch (_err) { updated = null; }
+    if (JSON.stringify(updated) === JSON.stringify(state.consent)) return;
+    resetSharing();
     if (updated && updated.cohort === cohort && updated.choice === 'private' && updated.version === (state.exp.shareOptions || {}).collectionVersion) {
       state.consent = updated;
       state.sessionId = updated.sessionId;

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 import re
 import secrets
 from contextvars import ContextVar
@@ -142,32 +143,51 @@ def identifier(value: object, label: str = 'identifier') -> str:
     return raw
 
 
-# Read-time normalization is also used for older stored documents. New author
-# writes use the same schema but report limits instead of clipping a draft.
-_strict_author_limits = ContextVar('elearning_strict_author_limits', default=False)
+# Old read paths truncate selected fields, new writes report an oversize field,
+# and a teaching-material export preserves the full stored content.
+_size_policy = ContextVar('elearning_size_policy', default='read')
 
 
-def validate_authored_expedition(raw: object) -> dict:
-    token = _strict_author_limits.set(True)
+class CourseSizeLimit(ElearningError):
+    """The course exceeds a current authoring size limit."""
+
+
+def _normalize_with_size_policy(raw, policy):
+    token = _size_policy.set(policy)
     try:
         return normalize_expedition_payload(raw)
     finally:
-        _strict_author_limits.reset(token)
+        _size_policy.reset(token)
+
+
+def validate_authored_expedition(raw: object) -> dict:
+    return _normalize_with_size_policy(raw, 'write')
+
+
+def normalize_stored_for_export(raw: object) -> dict:
+    return _normalize_with_size_policy(raw, 'export')
+
+
+def _apply_size_limit(value, limit, message, *, truncate_on_read=True):
+    if len(value) <= limit:
+        return value
+    policy = _size_policy.get()
+    if policy == 'export':
+        return value
+    if policy == 'write' or not truncate_on_read:
+        raise CourseSizeLimit(message, 400)
+    return value[:limit]
 
 
 def _bounded_items(items: list, limit: int, label: str) -> list:
-    if len(items) > limit and _strict_author_limits.get():
-        raise ElearningError(f'Use at most {limit} {label}.', 400)
-    return items[:limit]
+    return _apply_size_limit(items, limit, f'Use at most {limit} {label}.')
 
 
 def safe_text(value: object, max_len: int = 4000) -> str:
     if value is None:
         return ''
     text = str(value).replace('\r\n', '\n').replace('\r', '\n')
-    if len(text) > max_len and _strict_author_limits.get():
-        raise ElearningError(f'Text is {len(text)} characters long. Use at most {max_len}.', 400)
-    return text[:max_len]
+    return _apply_size_limit(text, max_len, f'Text is {len(text)} characters long. Use at most {max_len}.')
 
 
 def safe_email(value: object) -> str:
@@ -682,7 +702,7 @@ def normalize_block(raw: object, default_lang: str = 'nl') -> dict:
                 percentage = float(data.get('percentage', 50))
             except (TypeError, ValueError, OverflowError):
                 percentage = 50
-            norm_data['percentage'] = round(min(100, max(0, percentage)), 2)
+            norm_data['percentage'] = round(min(100, max(0, percentage)), 2) if math.isfinite(percentage) else 50
             norm_data['citation'] = normalize_localized(data.get('citation'), 600, default_lang)
             norm_data['sourceUrl'] = safe_external_url(data.get('sourceUrl', ''))
 
@@ -702,8 +722,8 @@ def normalize_step(raw: object, default_lang: str = 'nl') -> dict:
     if status not in VALID_STATUSES:
         status = 'draft'
     raw_blocks = raw.get('blocks') if isinstance(raw.get('blocks'), list) else []
-    if len(raw_blocks) > MAX_BLOCKS_PER_STEP:
-        raise ElearningError(f'A step can hold at most {MAX_BLOCKS_PER_STEP} blocks.', 400)
+    _apply_size_limit(raw_blocks, MAX_BLOCKS_PER_STEP, f'A step can hold at most {MAX_BLOCKS_PER_STEP} blocks.',
+                      truncate_on_read=False)
     blocks = [normalize_block(b, default_lang) for b in raw_blocks]
 
     raw_branching = raw.get('branching') if isinstance(raw.get('branching'), list) else []
@@ -752,8 +772,8 @@ def normalize_module(raw: object, default_lang: str = 'nl') -> dict:
     except (TypeError, ValueError):
         minutes = 5
     raw_steps = raw.get('steps') if isinstance(raw.get('steps'), list) else []
-    if len(raw_steps) > MAX_STEPS_PER_MODULE:
-        raise ElearningError(f'A module can hold at most {MAX_STEPS_PER_MODULE} steps.', 400)
+    _apply_size_limit(raw_steps, MAX_STEPS_PER_MODULE, f'A module can hold at most {MAX_STEPS_PER_MODULE} steps.',
+                      truncate_on_read=False)
     steps = [normalize_step(s, default_lang) for s in raw_steps]
     return {
         'id': mid,
@@ -825,8 +845,8 @@ def normalize_expedition_payload(raw: object) -> dict:
             start_page[key] = normalize_localized(raw_start[key], 1000, default_lang)
 
     raw_modules = raw.get('modules') if isinstance(raw.get('modules'), list) else []
-    if len(raw_modules) > MAX_MODULES:
-        raise ElearningError(f'An expedition can contain at most {MAX_MODULES} modules.', 400)
+    _apply_size_limit(raw_modules, MAX_MODULES, f'An expedition can contain at most {MAX_MODULES} modules.',
+                      truncate_on_read=False)
     modules = [normalize_module(m, default_lang) for m in raw_modules]
 
     title_raw = raw.get('title')

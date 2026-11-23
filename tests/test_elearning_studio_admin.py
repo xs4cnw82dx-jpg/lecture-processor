@@ -113,3 +113,42 @@ def test_multiple_general_admins_do_not_gain_studio_admin_access(studio, monkeyp
     monkeypatch.setattr(runtime.core, 'ADMIN_UIDS', set())
     monkeypatch.setattr(runtime.core, 'ADMIN_EMAILS', {'owner@example.com'})
     assert eligible('owner') and not eligible('other')
+
+
+def test_statistics_include_all_sessions_and_courses_without_a_title(studio, monkeypatch, runtime):
+    client, db = studio
+    monkeypatch.setattr(runtime.core, 'XPED_STUDIO_ADMIN_UID', 'owner')
+    monkeypatch.setattr(runtime.core, 'ADMIN_UIDS', {'owner'})
+    db.put('elearning_expeditions/older', {'owner_uid': 'owner'})
+    for index in range(215):
+        db.put(f'elearning_responses/r{index}', {'expedition_id': 'older', 'completed': index < 6})
+    db.put('elearning_responses/unfinished', {'expedition_id': 'older'})
+    stats = client.get('/api/elearning/admin/statistics', headers=auth_headers())
+    assert stats.status_code == 200
+    assert stats.json['courses'] == [{'id': 'older', 'title': 'Untitled Expedition', 'sessions': 216, 'completed': 6}]
+
+
+def test_export_preserves_over_limit_legacy_content_and_import_stays_strict(studio):
+    client, db = studio
+    course = _create_sample(client)
+    path = 'elearning_expeditions/' + course['id']
+    stored = db.get(path)
+    old_title = 'Oud hoofdstuk ' * 30
+    stored['startPage']['title']['nl'] = old_title
+    stored['startPage']['highlights'] = [{'id': f'hl_{n}', 'text': {'nl': str(n)}} for n in range(9)]
+    stored['startPage']['privateMetadata'] = 'ignore this'
+    db.put(path, stored)
+    response = client.get('/api/elearning/expeditions/' + course['id'] + '/content-export', headers=auth_headers())
+    assert response.status_code == 200
+    exported = response.json['course']
+    assert response.json['exceedsImportLimits']
+    assert exported['startPage']['title']['nl'] == old_title
+    assert len(exported['startPage']['highlights']) == 9
+    assert 'privateMetadata' not in response.text
+    assert 'authorNotes' not in response.text
+    assert db.get(path) == stored
+    assert client.post('/api/elearning/import-preview', json=exported, headers=auth_headers('receiver')).status_code == 400
+    assert client.post('/api/elearning/expeditions', json=exported, headers=auth_headers('receiver')).status_code == 400
+    exported['startPage']['title']['nl'] = 'Oud hoofdstuk'
+    exported['startPage']['highlights'].pop()
+    assert client.post('/api/elearning/import-preview', json=exported, headers=auth_headers('receiver')).status_code == 200

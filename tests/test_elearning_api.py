@@ -42,6 +42,10 @@ class MemoryStore:
                 rows = [r for r in rows if r.get(field) == value]
         return rows[:limit]
 
+    def count(self, collection, filters):
+        return sum(all(row.get(field) == value for field, _, value in filters)
+                   for row in self.list(collection, limit=None))
+
     def atomic(self, operation):
         with self.lock:
             before = deepcopy(self.data)
@@ -630,12 +634,12 @@ def test_peer_word_cloud_only_includes_answers_disclosed_when_first_entered(setu
     settings['showPeerResults'] = False
     db.put(path, course)
 
-    def answer(session, words, disclosed):
+    def answer(session, words, disclosed, expected_status=200):
         result = _post_pilot_response(client, url + '/responses', json={
             'sessionId': session, 'answers': {'cloud': words},
             'peerDisclosureTypes': {'cloud': 'wordcloud'} if disclosed else {},
         })
-        assert result.status_code == 200
+        assert result.status_code == expected_status
 
     answer('stored_private', ['private at entry'], True)
     db.put('elearning_responses/' + course['id'] + '__legacy_learner', {
@@ -644,7 +648,7 @@ def test_peer_word_cloud_only_includes_answers_disclosed_when_first_entered(setu
     db.put(path, course)
     # Replaying a full progress snapshot cannot promote a previously private answer.
     answer('stored_private', ['private at entry'], True)
-    answer('legacy_learner', ['legacy', 'added later'], True)
+    answer('legacy_learner', ['legacy', 'added later'], True, expected_status=409)
     # The learner who submitted after the change still saw the private course.
     answer('delayed_learner', ['delayed private'], False)
     answer('public_learner', ['shared'], True)
@@ -1135,3 +1139,36 @@ def test_a_response_session_cannot_be_moved_between_pilot_groups(setup):
     assert db.get(path) == saved
     assert _post_pilot_response(client, url, json={**second, 'sessionId': 'another_session'}).status_code == 200
     assert {record['cohort'] for record in db.list('elearning_responses')} == {'group-a', 'group-b'}
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_new_consent_records_start_separately_and_preserve_the_previous_record(setup, monkeypatch, legacy):
+    client, db = setup
+    course = _create_sample(client)
+    share = f"/api/elearning/expeditions/{course['id']}/sharing"
+    url = '/api/elearning/public/' + course['share']['token'] + '/responses'
+    old = {'sessionId': 'original_session', 'answers': {'blk_mf': 'myth'},
+           'visitedStepIds': ['stp_1'], 'pilotFeedback': {'comment': 'My original feedback'}}
+    monkeypatch.setattr(service, 'now', lambda: 100)
+    assert _post_pilot_response(client, url, json=old).status_code == 200
+    path = f"elearning_responses/{course['id']}__original_session"
+    saved = db.get(path)
+    if legacy:
+        saved.pop('consentVersion')
+        db.put(path, saved)
+    changed = client.post(share, headers=auth_headers(), json={'action': 'update_public', 'allowStepComments': True})
+    assert changed.status_code == 200
+    monkeypatch.setattr(service, 'now', lambda: 200)
+    assert _post_pilot_response(client, url, json={'sessionId': 'original_session', 'completed': True}).status_code == 409
+    assert db.get(path) == saved
+
+    fresh = {'sessionId': 'new_participation', 'completed': True}
+    assert _post_pilot_response(client, url, json=fresh).status_code == 200
+    new_path = f"elearning_responses/{course['id']}__new_participation"
+    record = db.get(new_path)
+    assert record['consentVersion'] == changed.json['share']['collectionVersion']
+    assert record['consented_at'] == 200
+    assert (record['answers'], record['visitedStepIds'], record['pilotFeedback']) == ({}, [], None)
+    monkeypatch.setattr(service, 'now', lambda: 300)
+    assert _post_pilot_response(client, url, json=fresh).status_code == 200
+    assert db.get(new_path)['consented_at'] == 200

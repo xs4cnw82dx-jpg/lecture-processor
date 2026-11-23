@@ -4107,17 +4107,28 @@
 
   function updateShareUrlAndQr() {
     var share = (state.shareData && state.shareData.share) || {};
-    var cohort = share.collectResponses ? document.getElementById('el-share-cohort').value.trim() : '';
+    var groupInput = document.getElementById('el-share-cohort');
+    var invalid = share.collectResponses && !groupInput.validity.valid;
+    groupInput.setAttribute('aria-invalid', String(!!invalid));
+    document.getElementById('el-share-cohort-error').hidden = !invalid;
+    var cohort = share.collectResponses ? groupInput.value : '';
     var url = window.location.origin + '/elearning/p/' + encodeURIComponent(share.token || '');
     if (cohort) url += '?cohort=' + encodeURIComponent(cohort);
+    if (invalid || !share.token) url = '';
     document.getElementById('el-share-url').value = url;
-    document.getElementById('el-share-open-link').href = url;
+    document.querySelector('button[commandfor="el-share-url"]').disabled = !url;
+    document.getElementById('el-share-qr-download').disabled = !url;
+    var openLink = document.getElementById('el-share-open-link');
+    openLink.setAttribute('aria-disabled', String(!url));
+    if (url) openLink.href = url;
+    else openLink.removeAttribute('href');
     var qrHost = document.getElementById('el-share-qr');
+    qrHost.closest('.el-qr-box').hidden = !url;
     qrHost.textContent = '';
-    if (share.token) qrHost.appendChild(QR.createSvgElement(url));
+    if (url) qrHost.appendChild(QR.createSvgElement(url));
     var cohortNote = document.getElementById('el-share-qr-cohort');
     if (cohortNote) {
-      cohortNote.hidden = !cohort;
+      cohortNote.hidden = !cohort || !url;
       cohortNote.textContent = cohort ? ('QR includes cohort tag: ' + cohort) : '';
     }
   }
@@ -4405,11 +4416,18 @@
         return;
       }
       var result = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/content-export');
-      if (result.excludedUploads && !(await showConfirmDialog(
-        'Export without uploaded files?',
-        'The file includes course text and library illustrations. Reattach your uploaded images and audio after importing.',
-        'Export course content'
-      ))) return;
+      var notices = [];
+      if (result.excludedUploads) {
+        notices.push('The file includes course text and library illustrations. Reattach your uploaded images and audio after importing.');
+      }
+      if (result.exceedsImportLimits) {
+        notices.push('The download includes older material that exceeds the current size limits. Shorten the course before importing it again.');
+      }
+      if (notices.length) {
+        var title = result.excludedUploads ? 'Export without uploaded files?' : 'Export course content';
+        var message = notices.map(function (note) { return window.LectureI18n ? window.LectureI18n.t(note) : note; }).join(' ');
+        if (!(await showConfirmDialog(title, message, 'Export course content'))) return;
+      }
       downloadCourseJson(result.course, '-content');
     } catch (err) { showToast(err.message, 'error'); }
   }
