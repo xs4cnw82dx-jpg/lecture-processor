@@ -7,6 +7,7 @@ on:
 jobs:
   playwright-shards:
     name: Playwright shard (${{ matrix.shard }}/4)
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +40,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browser
+        timeout-minutes: 15
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
