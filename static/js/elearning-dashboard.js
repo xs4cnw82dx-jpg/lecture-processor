@@ -22,6 +22,7 @@
   var auth;
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   var client = window.LectureProcessorAuth.createAuthClient(auth);
+  var admin = window.XpedStudioAdmin.create(api, loadList);
   var listRequest = 0;
   var importAttempt = 0;
   var coverCache = new Map();
@@ -219,7 +220,7 @@
       h2.appendChild(title);
       var badge = document.createElement('span');
       badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
-      badge.textContent = exp.deletionPending ? 'Removal pending' : (exp.shareEnabled ? 'Test link live' : 'Private draft');
+      badge.textContent = exp.deletionPending ? 'Removal pending' : (exp.shareEnabled ? (exp.collectResponses ? 'Pilot link active' : 'Learner link active') : 'Private draft');
       top.append(h2, badge);
 
       var meta = document.createElement('p');
@@ -298,7 +299,7 @@
       if (!exp.deletionPending && exp.role !== 'translate') {
         actions.appendChild(actionLink('Responses', '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
         if (exp.shareEnabled && exp.shareToken) {
-          menuItems.push({ label: 'Open test link', icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
+          menuItems.push({ label: 'Open learner link', icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
         }
         menuItems.push({ label: 'Duplicate', icon: 'copy', onClick: async function () {
           try {
@@ -341,6 +342,7 @@
       var data = await api('/api/elearning/expeditions');
       if (request !== listRequest) return;
       allExpeditions = data.expeditions || [];
+      admin.setCourses(data.studioAdmin === true, allExpeditions);
       renderExpeditions(allExpeditions);
     } catch (err) {
       if (request !== listRequest || err.code === 'auth/session-changed') return;
@@ -516,6 +518,7 @@
   retry.addEventListener('click', loadList);
 
   function accountChanged(user) {
+    admin.reset();
     ++listRequest;
     ++importAttempt;
     pendingImportPayload = null;

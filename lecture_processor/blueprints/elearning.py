@@ -94,6 +94,7 @@ def studio_dashboard_page():
         'elearning_dashboard.html',
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
+        elearning_admin_js=runtime.resolve_js_asset('js/elearning-admin.js'),
         elearning_dashboard_js=runtime.resolve_js_asset('js/elearning-dashboard.js'),
         **_shell_context(runtime=runtime, page_key='physio-elearning'),
     )
@@ -171,6 +172,21 @@ def api_expeditions():
     if request.method == 'POST':
         return service.create_expedition(runtime)
     return service.list_expeditions(runtime)
+
+
+@elearning_bp.get('/api/elearning/admin/statistics')
+def api_studio_statistics():
+    return service.studio_statistics(get_runtime())
+
+
+@elearning_bp.route('/api/elearning/admin/expeditions/<expedition_id>/sharing', methods=['GET', 'POST'])
+def api_studio_admin_sharing(expedition_id: str):
+    return service.sharing(get_runtime(), expedition_id, admin=True)
+
+
+@elearning_bp.get('/api/elearning/expeditions/<expedition_id>/content-export')
+def api_course_content_export(expedition_id: str):
+    return service.export_course_content(get_runtime(), expedition_id)
 
 
 @elearning_bp.route('/api/elearning/import-preview', methods=['POST'])

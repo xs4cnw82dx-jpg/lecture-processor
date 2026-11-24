@@ -21,6 +21,17 @@
       courseHighlights: 'Wat je kunt verwachten',
       answerPrivacy: 'Over je antwoorden',
       reflectionAccess: 'De makers van deze cursus kunnen je reflectie lezen.',
+      consentCohort: 'Bij je gedeelde antwoorden staat je groep: {group}.',
+      consentChangeNote: 'Je keuze geldt vanaf nu. De makers houden de antwoorden die je al hebt gedeeld.',
+      consentDetails: 'Wat deel ik nog meer als ik ja kies?',
+      consentTitle: "Maar eerst dit nog even…",
+      consentIntro: "Je kunt de hele expeditie volgen, welke keuze je ook maakt.",
+      consentQuestion: "Wil je je antwoorden delen met de cursusmakers?",
+      consentShare: "Ja, ik deel mijn antwoorden",
+      consentPrivate: "Nee, ik houd mijn antwoorden privé",
+      consentPrivateNote: "Je nieuwe antwoorden en je verdere voortgang blijven bij jou.",
+      consentFeedback: "Ook feedback die je instuurt, kunnen de makers lezen.",
+      changeConsent: "Mijn keuze voor gegevens delen wijzigen",
       authorAccess: 'De makers ontvangen je voortgang en antwoorden, ook ingevulde tekst, onder een sessiecode.',
       deviceResume: 'Dit apparaat bewaart je antwoorden zodat je later verder kunt gaan.',
       sharedResults: 'Bij vragen met gedeelde resultaten kunnen anderen groepsuitkomsten zien.',
@@ -50,9 +61,10 @@
       myth: 'Fabel',
       fact: 'Feit',
       rightLead: 'Klopt helemaal',
-      wrongMythLead: 'Veel mensen denken dit — zo zit het eigenlijk',
+      wrongMythLead: 'Toelichting',
       yourAnswer: 'Jouw keuze',
       correctChoice: 'Juist antwoord',
+      incorrectChoice: 'Onjuist antwoord',
       peerResults: 'Zo antwoordden anderen (anoniem)',
       responsesCount: '{n} reacties',
       addWordPlaceholder: 'Typ een woord en druk op Enter…',
@@ -72,7 +84,11 @@
       milestoneNextPreview: 'Volgende: {title} (~{min} min)',
       milestonePause: 'Even pauzeren · terug naar route',
       summaryTitle: 'Jouw persoonlijke xPEDitie-samenvatting',
-      summarySubtitle: 'Bewaar of print jouw balans, inzichten en mini-plan (ook handig voor bij je fysiotherapeut).',
+      summarySubtitle: 'Hieronder vind je wat je uit deze xPEDitie meeneemt.',
+      summaryEmpty: 'Je hebt deze xPEDitie afgerond.',
+      copySummary: 'Kopieer tekst',
+      summaryCopied: 'Tekst gekopieerd.',
+      summaryCopyManual: 'Selecteer en kopieer de tekst hieronder.',
       printSummary: 'Print / Bewaar als PDF',
       restart: 'Terug naar startpagina',
       replayFresh: 'Opnieuw beginnen',
@@ -121,6 +137,17 @@
       courseHighlights: 'What to expect',
       answerPrivacy: 'About your answers',
       reflectionAccess: 'Course authors can read your reflection.',
+      consentCohort: 'Shared answers include your group: {group}.',
+      consentChangeNote: 'Your choice applies from now on. The authors keep any answers you already shared.',
+      consentDetails: 'What else is included if I choose to share?',
+      consentTitle: "Before we begin…",
+      consentIntro: "You can take the whole course with either choice.",
+      consentQuestion: "Would you like to share your answers with the course authors?",
+      consentShare: "Yes, share my answers",
+      consentPrivate: "No, keep my answers private",
+      consentPrivateNote: "Your new answers and further progress stay with you.",
+      consentFeedback: "The authors can also read any feedback you send.",
+      changeConsent: "Change my sharing choice",
       authorAccess: 'Course authors receive your progress and answers, including written responses, under a session ID.',
       deviceResume: 'This device stores your answers so you can return later.',
       sharedResults: 'Other learners can see group results for questions where sharing is enabled.',
@@ -150,9 +177,10 @@
       myth: 'Myth',
       fact: 'Fact',
       rightLead: 'Spot on',
-      wrongMythLead: 'Many people think this — here is how it actually works',
+      wrongMythLead: 'Explanation',
       yourAnswer: 'Your choice',
       correctChoice: 'Correct answer',
+      incorrectChoice: 'Incorrect answer',
       peerResults: 'How others answered (anonymous)',
       responsesCount: '{n} responses',
       addWordPlaceholder: 'Type a word and press Enter…',
@@ -172,7 +200,11 @@
       milestoneNextPreview: 'Up next: {title} (~{min} min)',
       milestonePause: 'Take a break · back to route',
       summaryTitle: 'Your personal xPEDitie summary',
-      summarySubtitle: 'Save or print your balance, insights, and mini-plan (helpful to share with your physio).',
+      summarySubtitle: 'Here’s what you’re taking away from this expedition.',
+      summaryEmpty: 'You’ve completed this expedition.',
+      copySummary: 'Copy text',
+      summaryCopied: 'Text copied.',
+      summaryCopyManual: 'Select and copy the text below.',
       printSummary: 'Print / Save as PDF',
       restart: 'Return to start page',
       replayFresh: 'Start over',
@@ -221,6 +253,17 @@
       courseHighlights: 'Was dich erwartet',
       answerPrivacy: 'Über deine Antworten',
       reflectionAccess: 'Die Kursverantwortlichen können deine Reflexion lesen.',
+      consentCohort: 'Bei deinen geteilten Antworten steht deine Gruppe: {group}.',
+      consentChangeNote: 'Deine Wahl gilt ab jetzt. Bereits geteilte Antworten bleiben beim Kursteam.',
+      consentDetails: 'Was wird außerdem geteilt, wenn ich zustimme?',
+      consentTitle: "Bevor es losgeht…",
+      consentIntro: "Du kannst den gesamten Kurs mit beiden Optionen durchlaufen.",
+      consentQuestion: "Möchtest du deine Antworten mit dem Kursteam teilen?",
+      consentShare: "Ja, meine Antworten teilen",
+      consentPrivate: "Nein, meine Antworten bleiben privat",
+      consentPrivateNote: "Deine neuen Antworten und dein weiterer Fortschritt bleiben bei dir.",
+      consentFeedback: "Das Kursteam kann auch dein eingesendetes Feedback lesen.",
+      changeConsent: "Meine Auswahl zur Datenfreigabe ändern",
       authorAccess: 'Die Kursverantwortlichen erhalten deinen Fortschritt und deine Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
       deviceResume: 'Deine Antworten werden auf diesem Gerät gespeichert, damit du später weitermachen kannst.',
       sharedResults: 'Bei Fragen mit freigegebenen Ergebnissen können andere Teilnehmende Gruppenergebnisse sehen.',
@@ -250,9 +293,10 @@
       myth: 'Mythos',
       fact: 'Fakt',
       rightLead: 'Genau richtig',
-      wrongMythLead: 'Viele Menschen denken das — so funktioniert es wirklich',
+      wrongMythLead: 'Erläuterung',
       yourAnswer: 'Deine Wahl',
       correctChoice: 'Richtige Antwort',
+      incorrectChoice: 'Falsche Antwort',
       peerResults: 'So haben andere geantwortet (anonym)',
       responsesCount: '{n} Antworten',
       addWordPlaceholder: 'Wort eingeben und Enter drücken…',
@@ -272,7 +316,11 @@
       milestoneNextPreview: 'Als Nächstes: {title} (~{min} Min.)',
       milestonePause: 'Kurze Pause · zurück zur Route',
       summaryTitle: 'Deine persönliche xPEDitions-Übersicht',
-      summarySubtitle: 'Speichere oder drucke deine Balance, Erkenntnisse und deinen Mini-Plan.',
+      summarySubtitle: 'Hier findest du, was du aus dieser Expedition mitnimmst.',
+      summaryEmpty: 'Du hast diese Expedition abgeschlossen.',
+      copySummary: 'Text kopieren',
+      summaryCopied: 'Text kopiert.',
+      summaryCopyManual: 'Markiere und kopiere den folgenden Text.',
       printSummary: 'Drucken / Als PDF speichern',
       restart: 'Zur Startseite',
       replayFresh: 'Neu starten',
@@ -333,6 +381,11 @@
       label: 'Expeditie kaart',
       path: '/static/images/xped/xped-wandelaar-met-kaart.png',
       alt: {
+        nl: 'Een wandelaar met rugzak, kaart en wandelstok.',
+        en: 'A hiker carries a backpack, a map and a walking stick.',
+        de: 'Eine Person wandert mit Rucksack, Karte und Stock.',
+      },
+      previousAlt: {
         nl: 'Illustratie van een wandelaar met rugzak die een routekaart vasthoudt',
         en: 'Illustration of a hiker with a backpack holding a route map',
         de: 'Illustration einer wandernden Person mit Rucksack und Routenkarte',
@@ -343,6 +396,11 @@
       label: 'Jan',
       path: '/static/images/xped/xped-jan.png',
       alt: {
+        nl: 'Drie mensen verkennen de route. Een van hen kijkt vanuit een rolstoel door een verrekijker.',
+        en: 'Three people explore a route. One looks through binoculars from a wheelchair.',
+        de: 'Drei Menschen erkunden den Weg. Eine Person im Rollstuhl schaut durch ein Fernglas.',
+      },
+      previousAlt: {
         nl: 'Portretillustratie van Jan uit de xPEDitie Pijn-verhalen',
         en: 'Portrait illustration of Jan from the xPEDitie Pain stories',
         de: 'Porträtillustration von Jan aus den xPEDition-Schmerz-Geschichten',
@@ -353,6 +411,11 @@
       label: 'Inge',
       path: '/static/images/xped/xped-inge.png',
       alt: {
+        nl: 'Een oudere vrouw leest in een leunstoel. Haar wandelstokken en een kat zijn dichtbij.',
+        en: 'An older woman reads in an armchair with her walking poles and a cat nearby.',
+        de: 'Eine ältere Frau liest im Sessel. Ihre Gehstöcke und eine Katze sind in der Nähe.',
+      },
+      previousAlt: {
         nl: 'Portretillustratie van Inge uit de xPEDitie Pijn-verhalen',
         en: 'Portrait illustration of Inge from the xPEDitie Pain stories',
         de: 'Porträtillustration von Inge aus den xPEDition-Schmerz-Geschichten',
@@ -363,6 +426,11 @@
       label: 'Esther',
       path: '/static/images/xped/xped-esther.png',
       alt: {
+        nl: 'Een moeder ligt op haar rug en speelt vliegtuigje met haar kind.',
+        en: 'A mother lies on her back and lifts her child into the air to play aeroplane.',
+        de: 'Eine Mutter liegt auf dem Rücken und spielt mit ihrem Kind Flieger.',
+      },
+      previousAlt: {
         nl: 'Portretillustratie van Esther uit de xPEDitie Pijn-verhalen',
         en: 'Portrait illustration of Esther from the xPEDitie Pain stories',
         de: 'Porträtillustration von Esther aus den xPEDition-Schmerz-Geschichten',
@@ -373,6 +441,11 @@
       label: 'Arts & patiënt',
       path: '/static/images/xped/xped-arts.png',
       alt: {
+        nl: 'Een arts en een patiënt staan naast elkaar in gesprek.',
+        en: 'A clinician and a patient stand side by side in conversation.',
+        de: 'Eine Ärztin und ein Patient stehen nebeneinander im Gespräch.',
+      },
+      previousAlt: {
         nl: 'Illustratie van een zorgverlener in gesprek met een patiënt',
         en: 'Illustration of a clinician talking with a patient',
         de: 'Illustration einer Fachperson im Gespräch mit einer Patientin oder einem Patienten',
@@ -383,6 +456,11 @@
       label: 'Wandelen',
       path: '/static/images/xped/xped-wandelen.png',
       alt: {
+        nl: 'Twee volwassenen wandelen met een kind op de schouders. Een van de wandelaars draagt een beenprothese.',
+        en: 'Two adults walk with a child riding on shoulders. One walker wears a leg prosthesis.',
+        de: 'Zwei Erwachsene gehen spazieren, ein Kind sitzt auf den Schultern. Eine Person trägt eine Beinprothese.',
+      },
+      previousAlt: {
         nl: 'Illustratie van iemand die rustig buiten wandelt langs een pad',
         en: 'Illustration of a person walking calmly along an outdoor path',
         de: 'Illustration einer Person beim ruhigen Spaziergang auf einem Weg',
@@ -570,6 +648,7 @@
   };
 
   var FIELD_LABELS = {
+    'summaryTitle': 'Title', 'summaryIntro': 'Introduction', 'summaryPlanHeading': 'Mini-plan heading', 'summaryClosing': 'Closing text',
     heading: 'Heading',
     body: 'Body text',
     title: 'Title',
@@ -636,7 +715,7 @@
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { url: '', label: '', host: '' };
       var host = (parsed.hostname || '').replace(/^www\./, '');
       var label = host === 'doi.org' ? ('DOI: ' + parsed.pathname.replace(/^\/+/, '')) : host;
-      return { url: text, label: label, host: host };
+      return { url: parsed.href, label: label, host: host };
     } catch (_e) {
       return { url: '', label: '', host: '' };
     }
@@ -655,6 +734,12 @@
       return Object.keys(val).length > 0;
     }
     return false;
+  }
+
+  function balanceScore(raw) {
+    if (typeof raw !== 'number' && !(typeof raw === 'string' && raw.trim())) return null;
+    var score = Number(raw);
+    return Number.isFinite(score) ? Math.max(0, Math.min(3, Math.round(score))) : null;
   }
 
   function normalizeMiniPlanAnswer(raw, suggestions) {
@@ -1156,6 +1241,9 @@
       pushField('startPage.title', 'Start Page · Title', exp.startPage.title, '');
       pushField('startPage.subtitle', 'Start Page · Subtitle', exp.startPage.subtitle, '');
       pushField('startPage.ctaLabel', 'Start Page · Button', exp.startPage.ctaLabel, '');
+      ['summaryTitle', 'summaryIntro', 'summaryPlanHeading', 'summaryClosing'].forEach(function (key) {
+        pushField('startPage.' + key, 'Completion · ' + FIELD_LABELS[key], exp.startPage[key], '');
+      });
       (exp.startPage.highlights || []).forEach(function (hl, idx) {
         pushField('startPage.highlights.' + hl.id, 'Start Page · Highlight ' + (idx + 1), hl.text, '');
       });
@@ -1497,6 +1585,7 @@
     getBlockMeta: getBlockMeta,
     normalizeCitationLink: normalizeCitationLink,
     hasMeaningfulAnswer: hasMeaningfulAnswer,
+    balanceScore: balanceScore,
     normalizeMiniPlanAnswer: normalizeMiniPlanAnswer,
     deriveStepContentState: deriveStepContentState,
     uid: uid,

@@ -30,6 +30,7 @@ export const minifiedTargets = [
   { entry: 'static/js/elearning-qr.js', out: 'static/js/elearning-qr.min.js' },
   { entry: 'static/js/elearning-route-map.js', out: 'static/js/elearning-route-map.min.js' },
   { entry: 'static/js/elearning-blocks.js', out: 'static/js/elearning-blocks.min.js' },
+  { entry: 'static/js/elearning-admin.js', out: 'static/js/elearning-admin.min.js' },
   { entry: 'static/js/elearning-dashboard.js', out: 'static/js/elearning-dashboard.min.js' },
   { entry: 'static/js/elearning-builder.js', out: 'static/js/elearning-builder.min.js' },
   { entry: 'static/js/elearning-player.js', out: 'static/js/elearning-player.min.js' },

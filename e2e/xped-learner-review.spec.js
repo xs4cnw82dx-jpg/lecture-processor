@@ -160,47 +160,47 @@ async function select(page, label, option) {
 }
 test('format selected words, three lines and a DOI in place and inspect learner typography', async ({ page }) => {
   const rich = make('richtext', {body:local('one two three')});
-  await author(page, [rich]);
+  const fixture = await author(page, [rich]);
   const area = page.getByRole('textbox', {name:'Paragraph text'});
   const tool = name => page.getByRole('button', {name,exact:true});
-  await area.evaluate(input => {input.focus(); input.setSelectionRange(4,7);});
+  await area.evaluate(editor => {
+    editor.focus();
+    const word = document.createRange();
+    word.setStart(editor.firstChild.firstChild, 4);
+    word.setEnd(editor.firstChild.firstChild, 7);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(word);
+  });
   await tool('Bold text').click();
-  await expect(area).toHaveValue('one **two** three');
-  expect(await area.evaluate(input => input.value.slice(input.selectionStart, input.selectionEnd))).toBe('two');
+  await expect(area.locator('strong,b')).toHaveText('two');
   await tool('Bold text').click();
-  await expect(area).toHaveValue('one two three');
+  await expect(area.locator('strong,b')).toHaveCount(0);
   await tool('Insert link').click();
   await page.getByRole('textbox', {name:'Link URL'}).fill('10.3174/ajnr.A4173');
   await page.locator('.el-fmt-link-popover').getByRole('button', {name:'Insert link'}).click();
-  await tool('Preview formatted text').click();
-  await expect(inCanvas(page,rich).getByRole('link',{name:'two'})).toHaveAttribute('href','https://doi.org/10.3174/ajnr.A4173');
-  await tool('Edit paragraph text').click();
-  await area.fill('Start\nMiddle\nEnd');
-  await area.evaluate(input => input.select());
+  await expect(area.getByRole('link',{name:'two'})).toHaveAttribute('href','https://doi.org/10.3174/ajnr.A4173');
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.body.en)
+    .toBe('one [two](https://doi.org/10.3174/ajnr.A4173) three');
+  await area.fill('Start'); await area.press('Enter'); await page.keyboard.type('Middle'); await area.press('Enter'); await page.keyboard.type('End');
+  await area.press('ControlOrMeta+a');
   await tool('Bullet list (toggle selected lines)').click();
-  await tool('Preview formatted text').click();
-  await expect(inCanvas(page,rich).locator('ul li')).toHaveText(['Start','Middle','End']);
-  await tool('Edit paragraph text').click();
-  await area.evaluate(input => input.select());
+  await expect(area.locator('ul li')).toHaveText(['Start','Middle','End']);
+  await area.press('ControlOrMeta+a');
   await tool('Numbered list (toggle selected lines)').click();
-  await tool('Preview formatted text').click();
-  await expect(inCanvas(page,rich).locator('ol li')).toHaveCount(3);
-  await tool('Edit paragraph text').click();
+  await expect(area.locator('ol li')).toHaveCount(3);
   await area.fill('Findings'); await tool('Section heading').click();
-  await tool('Preview formatted text').click();
-  await expect(inCanvas(page,rich).getByRole('heading',{level:2,name:'Findings'})).toBeVisible();
-  await tool('Edit paragraph text').click();
+  await expect(area.getByRole('heading',{level:2,name:'Findings'})).toBeVisible();
   await tool('Paragraph (clear heading/list)').click();
-  await expect(area).toHaveValue('Findings');
+  await expect(area.getByText('Findings', { exact: true })).toHaveJSProperty('tagName', 'P');
   await area.press('ControlOrMeta+z');
-  await expect(area).toHaveValue('## Findings');
+  await expect(area.getByRole('heading',{level:2,name:'Findings'})).toBeVisible();
 });
 test('edit video trim as a pair, then explicitly choose a different video timestamp', async ({page}) => {
   const video = make('video', {url:'https://youtu.be/dQw4w9WgXcQ?t=90',videoId:'dQw4w9WgXcQ',provider:'youtube',embedUrl:'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',startSeconds:90,endSeconds:120});
   const fixture=await author(page,[video]); await inspect(page,video);
   const start=page.getByRole('textbox',{name:/Start Time/}); const end=page.getByRole('textbox',{name:/End Time/});
   await start.fill('1:15'); await end.fill('0:45');
-  await expect(page.locator('.el-insp-error')).toContainText('must be after');
+  await expect(page.getByText(/End time .* must be after Start time/)).toBeVisible();
   await expect.poll(()=>fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.endSeconds).toBe(120);
   const url=page.getByRole('textbox',{name:'YouTube or Vimeo URL'});
   await url.fill('https://youtu.be/abcdefghijk?t=15'); await url.press('Tab');
@@ -334,4 +334,116 @@ test('switching languages preserves a selected plan and a refused clipboard writ
   await expect(fallback).toBeFocused();
   expect(await fallback.inputValue()).toContain('Animate the breathing rhythm');
   expect(await fallback.evaluate(el=>el.selectionEnd-el.selectionStart)).toBe((await fallback.inputValue()).length);
+});
+
+test('station, balance factors and semantic question styles are editable on the canvas and survive save', async ({ page }) => {
+  const belief = make('myth_fact', {statement: local('An idea worth exploring')});
+  const balance = make('balance_scale');
+  const fixture = await author(page, [belief, balance]);
+  const saved = () => fixture.writes.at(-1)?.body.modules[0];
+  const title = page.getByRole('textbox', {name:'Station name', exact:true});
+  await title.fill('At the kitchen table');
+  await expect.poll(() => saved()?.title.en).toBe('At the kitchen table');
+  const statement = inCanvas(page, belief).getByText('An idea worth exploring');
+  await statement.focus();
+  await page.getByRole('button', {name:'Heading 2',exact:true}).click();
+  await expect(inCanvas(page, belief).getByRole('heading', {level:2,name:'An idea worth exploring'})).toBeFocused();
+  await expect.poll(() => saved()?.steps[0].blocks[0].settings.textStyles?.statement).toBe('h2');
+  const factor = inCanvas(page, balance).locator('.xped-balance-factor .el-inline-edit').first();
+  await factor.fill('A night of interrupted sleep');
+  await expect.poll(() => saved()?.steps[0].blocks[1].data.factors[0].label.en).toBe('A night of interrupted sleep');
+  await page.locator('#el-undo-btn').click();
+  await expect(factor).not.toHaveText('A night of interrupted sleep');
+  const column = inCanvas(page, balance).locator('.xped-balance-col-head').first();
+  await column.fill('What takes energy');
+  await expect.poll(() => saved()?.steps[0].blocks[1].data.loadLabel.en).toBe('What takes energy');
+  await page.locator('#el-notes-drawer summary').click();
+  await expect(page.getByLabel('Editors and translators can read these notes.')).toBeVisible();
+});
+
+test('frame a real story illustration, reset framing and inspect it on a narrow screen', async ({ page }) => {
+  const art = Model.XPED_ASSETS.find(asset => asset.id === 'esther');
+  const story = make('story', {media:{kind:'xped',staticPath:art.path},speakerName:'Esther',
+    quote: local('My daughter and I are playing on the rug.'),
+    speakerRole: local('Mother of a preschooler')});
+  const fixture = await author(page, [story]);
+  await inspect(page, story);
+  const zoom = page.getByRole('slider',{name:'Zoom',exact:true});
+  const horizontal = page.getByRole('slider',{name:'Horizontal position'});
+  await zoom.focus(); await zoom.press('End');
+  await horizontal.focus(); await horizontal.press('Home');
+  const image = inCanvas(page, story).locator('.xped-story-avatar img');
+  await expect(image).toHaveCSS('object-fit','contain');
+  await expect.poll(() => image.evaluate(node => new DOMMatrix(getComputedStyle(node).transform).a)).toBe(2.5);
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.portraitX).toBe(-75);
+  await page.getByRole('button',{name:'Reset framing'}).click();
+  await expect.poll(() => image.evaluate(node => new DOMMatrix(getComputedStyle(node).transform).a)).toBe(1);
+  await page.locator('.el-asset-library summary').click();
+  await expect(page.getByRole('button',{name:art.label,exact:true})).toHaveAccessibleDescription(art.alt.en);
+  if (process.env.XPED_AUTHORING_EVIDENCE) {
+    await page.screenshot({path:process.env.XPED_AUTHORING_EVIDENCE+'/scene-desktop.png',animations:'disabled'});
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('.el-pane-btn[data-pane=inspector]').click();
+  const choice = page.getByRole('button',{name:art.label,exact:true});
+  await choice.scrollIntoViewIfNeeded();
+  await expect(choice).toBeInViewport();
+  expect(await choice.locator('img').evaluate(node => node.getBoundingClientRect().height)).toBeGreaterThan(64);
+  if (process.env.XPED_AUTHORING_EVIDENCE) {
+    await page.screenshot({path:process.env.XPED_AUTHORING_EVIDENCE+'/scene-phone.png',animations:'disabled'});
+  }
+});
+
+test('the mini-plan picker lets an author leave custom steps out before insertion', async ({page}) => {
+  const fixture = await author(page, []);
+  await page.getByRole('button', {name:/Start building this step/}).click();
+  await page.getByRole('searchbox',{name:'Search blocks'}).fill('mini-plan');
+  const opt = page.getByRole('checkbox',{name:'Allow learners to add their own steps'});
+  await expect(opt).toBeChecked();
+  await opt.uncheck();
+  await page.locator('#el-picker-insert').click();
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.allowCustom).toBe(false);
+  const custom = page.locator('#el-canvas-card').getByRole('textbox',{name:Model.ui('en','customGoalPlaceholder')});
+  await expect(custom).toHaveCount(0);
+  await page.getByRole('checkbox',{name:'Allow learner custom step'}).check();
+  await expect(custom).toBeVisible();
+});
+
+test('literal Markdown and formatted DOI labels survive editing, saving and learner rendering', async ({page}) => {
+  const doi = 'https://doi.org/10.1000/study(2024)';
+  const handout = 'https://example.org/handouts/session one.pdf';
+  const rich = make('richtext', {body:local('[**Study** results](' + doi + '). [Handout](' + handout + ').')});
+  const fixture = await author(page, [rich]);
+  const area = page.getByRole('textbox', {name:'Paragraph text'});
+  await expect(area.getByRole('link', {name:'Handout'})).toHaveAttribute('href', new URL(handout).href);
+  const link = area.getByRole('link', {name:'Study results'});
+  await expect(link).toHaveAttribute('href', doi);
+  await expect(link.locator('strong')).toHaveText('Study');
+  await area.evaluate(editor => {
+    editor.focus();
+    window.getSelection().collapse(editor.lastChild, editor.lastChild.childNodes.length);
+  });
+  const lines = ['- item', '1. first', '2) second', '## literal heading', '**literal** and [label](https://example.org)'];
+  for (const line of lines) {
+    await area.press('Enter');
+    await page.keyboard.insertText(line);
+  }
+  await expect.poll(() => fixture.writes.at(-1)?.body.modules[0].steps[0].blocks[0].data.body.en).toContain('https://example.org');
+  const savedBlock = fixture.writes.at(-1).body.modules[0].steps[0].blocks[0];
+  await enter(page, [savedBlock]);
+  const body = page.locator('.xped-richtext-body');
+  await expect(body.locator('p')).toHaveText(['Study results. Handout.', ...lines]);
+  await expect(body.getByRole('link')).toHaveCount(2);
+  await expect(body.getByRole('link', {name:'Study results'})).toHaveAttribute('href', doi);
+  await expect(body.getByRole('link', {name:'Handout'})).toHaveAttribute('href', new URL(handout).href);
+  await expect(body.locator('a strong')).toHaveText('Study');
+});
+
+test('Dutch canvas text styles announce the paragraph option in Dutch', async ({page}) => {
+  const belief = make('myth_fact', {statement:local('A statement')});
+  await author(page, [belief]);
+  await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
+  await inCanvas(page, belief).getByText('A statement').focus();
+  await expect(page.getByRole('group', {name:'Tekststijl'}).getByRole('button',{name:'Alinea'})).toBeVisible();
 });

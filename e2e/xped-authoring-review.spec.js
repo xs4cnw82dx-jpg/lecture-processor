@@ -166,12 +166,12 @@ test('selected toolbar tracks editing focus, compatible insert positions and mov
   await stepRow(page, src).click();
   await expect(page.getByRole('button', { name: /^Add block before/ })).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'Add block at end' })).toHaveCount(1);
-  await blockNode(page, b).locator('textarea').fill('Last block');
+  await blockNode(page, b).getByRole('textbox', { name: 'Paragraph text' }).fill('Last block');
   await expect(page.locator('.el-block-toolbar')).toHaveCount(1);
   await expect(blockNode(page, a).locator('..')).not.toHaveClass(/is-selected/);
   await page.getByRole('button', { name: 'Duplicate block' }).click();
   await expect(page.locator('#el-canvas-card .xped-richtext-editor')).toHaveCount(3);
-  await expect(page.locator('#el-canvas-card .xped-richtext-editor').last()).toHaveValue('Last block');
+  await expect(page.locator('#el-canvas-card .xped-richtext-editor').last()).toHaveText('Last block');
   await blockNode(page, image).click();
   await choice(page, 'Move block to another step…', /Explanation & video/);
   await page.getByLabel('Insert position').selectOption('0');
@@ -209,7 +209,7 @@ test('branch destinations remain repairable and reveal restrictions are explaine
   await expect(stepRow(page, from).getByRole('img', { name: 'Jump destination missing' })).toHaveCount(0);
 });
 
-test('duration, missing alt and writing disclosures identify the exact published estimate and field', async ({ page }) => {
+test('duration validation, reading estimates and image descriptions remain available in the inspector', async ({ page }) => {
   const fixture = await author(page, exp => {
     const figures = Array.from({ length: 3 }, () => model.createBlock('image'));
     for (const [index, block] of figures.entries()) {
@@ -228,16 +228,10 @@ test('duration, missing alt and writing disclosures identify the exact published
   expect(fixture.writes).toHaveLength(0);
   await minutes.fill('8');
   await expect.poll(() => lastSave(fixture)?.modules[0].estimatedMinutes).toBe(8);
-  const checks = page.getByRole('button', { name: /Writing & Accessibility/ });
-  await checks.focus();
-  await checks.press('Space');
-  await expect(checks).toHaveAttribute('aria-expanded', 'true');
-  await checks.press('Space');
-  await expect(page.locator('#el-b1-coach-panel')).toBeHidden();
-  await checks.click();
-  await page.getByRole('button', { name: /needs an image description/ }).click();
-  await expect(properties(page).locator('[data-field-key=alt]')).toBeFocused();
-  await expect(blockNode(page, fixture.exp.modules[0].steps[0].blocks[1]).locator('..')).toHaveClass(/is-selected/);
+  await expect(page.getByRole('button', { name: /Writing & Accessibility/ })).toHaveCount(0);
+  await expect(page.locator('#el-readability-bar')).toContainText(/words · ~\d+ (sec|min) read/);
+  await blockNode(page, fixture.exp.modules[0].steps[0].blocks[1]).click();
+  await expect(properties(page).locator('[data-field-key=alt]')).toBeVisible();
 });
 
 test('palette is a private specimen until Apply, including on the live canvas', async ({ page }) => {
@@ -366,15 +360,15 @@ for (const variant of [
     await expect(page.locator('.el-canvas-block-wrap.is-selected')).toHaveCount(1);
     const editor = page.locator('.xped-richtext-editor');
     await editor.scrollIntoViewIfNeeded();
-    const text = await editor.inputValue();
+    const text = await editor.innerText();
     const box = await editor.boundingBox();
     await page.mouse.move(box.x + 16, box.y + 23);
     await page.mouse.down();
     await page.mouse.move(box.x + Math.min(110, box.width - 4), box.y + 23, { steps: 6 });
     await page.mouse.up();
-    const selection = await editor.evaluate(el => el.selectionEnd - el.selectionStart);
+    const selection = await editor.evaluate(() => window.getSelection().toString().length);
     expect(selection).toBeGreaterThan(1);
-    expect(await editor.inputValue()).toBe(text);
+    expect(await editor.innerText()).toBe(text);
     await expect(page.locator('#el-canvas-crumb')).toHaveText(/Station 1 · Step 1 of 3 · EN/);
     await expect(page.locator('#el-canvas-card .xped-step-crumb')).toHaveText('Station 1');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(variant.width);

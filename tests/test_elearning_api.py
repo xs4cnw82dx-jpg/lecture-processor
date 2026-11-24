@@ -42,6 +42,10 @@ class MemoryStore:
                 rows = [r for r in rows if r.get(field) == value]
         return rows[:limit]
 
+    def count(self, collection, filters):
+        return sum(all(row.get(field) == value for field, _, value in filters)
+                   for row in self.list(collection, limit=None))
+
     def atomic(self, operation):
         with self.lock:
             before = deepcopy(self.data)
@@ -137,12 +141,18 @@ def _create_sample(client, *, enable_public: bool = True):
     if enable_public:
         upd = client.post(
             f"/api/elearning/expeditions/{exp['id']}/sharing",
-            json={'action': 'update_public', 'enabled': True},
+            json={'action': 'update_public', 'enabled': True, 'collectResponses': True,
+                  'showPeerResults': True, 'collectPilotFeedback': True},
             headers=auth_headers('owner'),
         )
         assert upd.status_code == 200
         exp['share'] = upd.json['share']
     return exp
+
+
+def _post_pilot_response(client, url, *, json):
+    options = client.get(url.removesuffix('/responses')).json['expedition']['shareOptions']
+    return client.post(url, json={**json, 'consent': True, 'collectionVersion': options['collectionVersion']})
 
 
 def test_crud_coediting_lease_and_revision_conflict(setup):
@@ -284,7 +294,8 @@ def test_public_player_sanitization_responses_aggregates_and_scoped_csp(setup):
     assert 'members' not in pub_exp
 
     # Learner submits anonymous response + pilot usability feedback
-    sub = client.post(
+    sub = _post_pilot_response(
+        client,
         f'/api/elearning/public/{share_token}/responses',
         json={
             'sessionId': 'learner_session_001',
@@ -364,7 +375,8 @@ def test_v3_step_comments_glossary_reveal_and_review_status(setup):
     assert pub['shareOptions']['allowStepComments'] is True
 
     # Submit reviewer slide comment
-    sub = client.post(
+    sub = _post_pilot_response(
+        client,
         f'/api/elearning/public/{share_token}/responses',
         json={
             'sessionId': 'lrn_physio_rev1',
@@ -455,7 +467,7 @@ def test_collection_settings_and_session_progress_are_respected(setup):
     client.post(f'/api/elearning/expeditions/{eid}/sharing', headers=auth_headers(), json={
         'action': 'update_public', 'collectPilotFeedback': False, 'allowStepComments': False})
     for completed in (True, False):
-        result = client.post(url, json={'sessionId': 'learner_session', 'answers': {'blk_mf': 'myth', 'draft_answer': 'A'},
+        result = _post_pilot_response(client, url, json={'sessionId': 'learner_session', 'answers': {'blk_mf': 'myth', 'draft_answer': 'A'},
                                         'visitedStepIds': ['stp_1', 'stp_h'], 'completed': completed,
                                         'stepComments': [{'stepId': 'stp_1', 'comment': 'Comment'}],
                                         'pilotFeedback': {'clarity': 5}})
@@ -514,7 +526,7 @@ def test_account_portability_and_cleanup_preserve_collaborators_courses(setup, m
                     headers=auth_headers(owner))
     client.post(f'/api/elearning/expeditions/{owned_id}/sharing', headers=auth_headers(),
                 json={'action': 'create_grant', 'targetLanguage': 'de'})
-    client.post('/api/elearning/public/' + own['share']['token'] + '/responses',
+    _post_pilot_response(client, '/api/elearning/public/' + own['share']['token'] + '/responses',
                 json={'sessionId': 'learner_001', 'answers': {'blk_mf': 'fact'}})
     db.put('elearning_assets/shared_asset', {'id': 'shared_asset', 'expedition_id': fid, 'uploaded_by': 'owner'})
     exported, = accounts.collect(runtime, 'owner')
@@ -555,7 +567,7 @@ def test_spreadsheet_downloads_protect_authored_and_learner_text(setup):
     translated = client.get(url + '/translations/export.csv?target=de', headers=auth_headers())
     rows = list(csv.DictReader(io.StringIO(translated.data.decode('utf-8-sig'))))
     assert next(r for r in rows if r['field_key'] == 'startPage.title')['target_de'] == "'+ Eingang"
-    client.post('/api/elearning/public/' + own['share']['token'] + '/responses', json={
+    _post_pilot_response(client, '/api/elearning/public/' + own['share']['token'] + '/responses', json={
         'sessionId': 'learner_003', 'pilotFeedback': {'comment': '+ Helder'}})
     responses = client.get(url + '/responses/export.csv', headers=auth_headers())
     row, = csv.DictReader(io.StringIO(responses.data.decode('utf-8-sig')))
@@ -622,12 +634,12 @@ def test_peer_word_cloud_only_includes_answers_disclosed_when_first_entered(setu
     settings['showPeerResults'] = False
     db.put(path, course)
 
-    def answer(session, words, disclosed):
-        result = client.post(url + '/responses', json={
+    def answer(session, words, disclosed, expected_status=200):
+        result = _post_pilot_response(client, url + '/responses', json={
             'sessionId': session, 'answers': {'cloud': words},
             'peerDisclosureTypes': {'cloud': 'wordcloud'} if disclosed else {},
         })
-        assert result.status_code == 200
+        assert result.status_code == expected_status
 
     answer('stored_private', ['private at entry'], True)
     db.put('elearning_responses/' + course['id'] + '__legacy_learner', {
@@ -636,7 +648,7 @@ def test_peer_word_cloud_only_includes_answers_disclosed_when_first_entered(setu
     db.put(path, course)
     # Replaying a full progress snapshot cannot promote a previously private answer.
     answer('stored_private', ['private at entry'], True)
-    answer('legacy_learner', ['legacy', 'added later'], True)
+    answer('legacy_learner', ['legacy', 'added later'], True, expected_status=409)
     # The learner who submitted after the change still saw the private course.
     answer('delayed_learner', ['delayed private'], False)
     answer('public_learner', ['shared'], True)
@@ -665,7 +677,7 @@ def test_peer_results_cannot_reinterpret_an_existing_answer_as_public_words(setu
     course['modules'][0]['steps'][0]['blocks'] = [block]
     db.put(path, course)
     url = '/api/elearning/public/' + course['share']['token']
-    posted = client.post(url + '/responses', json={
+    posted = _post_pilot_response(client, url + '/responses', json={
         'sessionId': 'answer_session', 'answers': {bid: 'reflection content'},
         'peerDisclosureTypes': {bid: 'reflection'},
     })
@@ -952,10 +964,10 @@ def test_ux_review_backend_contracts(setup):
     assert l_same.json['granted'] is False and l_same.json['same_account'] is True
 
     # UX-115: Filtered CSV export respects cohort and language query params
-    client.post(f'/api/elearning/expeditions/{eid}/sharing', json={'action': 'update_public', 'enabled': True}, headers=auth_headers('owner'))
+    client.post(f'/api/elearning/expeditions/{eid}/sharing', json={'action': 'update_public', 'enabled': True, 'collectResponses': True}, headers=auth_headers('owner'))
     pub_url = '/api/elearning/public/' + exp['share']['token'] + '/responses'
-    client.post(pub_url, json={'sessionId': 'sess_nl_alpha', 'cohort': 'alpha', 'language': 'nl', 'answers': {'blk_mf': 'myth'}})
-    client.post(pub_url, json={'sessionId': 'sess_de_beta', 'cohort': 'beta', 'language': 'de', 'answers': {'blk_mf': 'fact'}})
+    _post_pilot_response(client, pub_url, json={'sessionId': 'sess_nl_alpha', 'cohort': 'alpha', 'language': 'nl', 'answers': {'blk_mf': 'myth'}})
+    _post_pilot_response(client, pub_url, json={'sessionId': 'sess_de_beta', 'cohort': 'beta', 'language': 'de', 'answers': {'blk_mf': 'fact'}})
     filtered = client.get(f'/api/elearning/expeditions/{eid}/responses/export.csv?cohort=alpha&language=nl', headers=auth_headers('owner'))
     assert filtered.status_code == 200
     assert 'alpha-nl.csv' in filtered.headers.get('Content-Disposition', '')
@@ -1047,7 +1059,7 @@ def test_report_and_download_apply_both_filters_and_agree_on_all_rows(setup):
     for language in ('nl', 'de'):
         for cohort in ('pilot-1', 'pilot-2'):
             session = f'pilot_{language}_{cohort}'
-            saved = client.post(f"/api/elearning/public/{exp['share']['token']}/responses",
+            saved = _post_pilot_response(client, f"/api/elearning/public/{exp['share']['token']}/responses",
                                 json={'language': language, 'cohort': cohort, 'sessionId': session,
                                       'answers': {'blk_mf': 'myth'}})
             assert saved.status_code == 200
@@ -1063,3 +1075,100 @@ def test_report_and_download_apply_both_filters_and_agree_on_all_rows(setup):
             if 'cohort=pilot-2' in filters:
                 assert row['cohort'] == 'pilot-2'
     assert 'pilot-2-de.csv' in download.headers['Content-Disposition']
+
+
+def test_publication_collection_and_current_consent_are_independent(setup):
+    client, db = setup
+    exp = _create_sample(client, enable_public=False)
+    share_url = f"/api/elearning/expeditions/{exp['id']}/sharing"
+    public_url = '/api/elearning/public/' + exp['share']['token']
+    response_url = public_url + '/responses'
+    body = {'sessionId': 'pilot_session', 'answers': {'blk_mf': 'myth'}, 'stepComments': [], 'completed': True}
+
+    def settings(**changes):
+        result = client.post(share_url, headers=auth_headers(), json={'action': 'update_public', **changes})
+        assert result.status_code == 200
+        return client.get(public_url).json['expedition']['shareOptions']
+
+    private = settings(enabled=True)
+    assert not private['collectResponses']
+    assert client.post(response_url, json={**body, 'consent': True, 'collectionVersion': private['collectionVersion']}).status_code == 403
+    first = settings(collectResponses=True, showPeerResults=True)
+    for unchecked in ({}, {'consent': False}, {'consent': 'true'}):
+        assert client.post(response_url, json={**body, **unchecked, 'collectionVersion': first['collectionVersion']}).status_code == 403
+    assert not db.list('elearning_responses')
+    accepted = {**body, 'consent': True, 'collectionVersion': first['collectionVersion']}
+    assert client.post(response_url, json=accepted).status_code == 200
+    off = settings(collectResponses=False)
+    assert not off['showPeerResults']
+    assert client.get(public_url + '/aggregates/blk_mf').status_code == 403
+    assert client.post(response_url, json=accepted).status_code == 403
+    again = settings(collectResponses=True)
+    assert again['collectionVersion'] != first['collectionVersion']
+    assert client.post(response_url, json=accepted).status_code == 409
+    assert len(db.list('elearning_responses')) == 1
+
+
+@pytest.mark.parametrize('pilot,peer,comments,active', [
+    (False, False, False, False), (True, False, False, True),
+    (False, True, False, True), (False, False, True, True),
+])
+def test_existing_learner_links_use_their_configured_pilot_features(setup, pilot, peer, comments, active):
+    client, db = setup
+    course = _create_sample(client)
+    course['share'].pop('collectResponses')
+    course['share'].update(collectPilotFeedback=pilot, showPeerResults=peer, allowStepComments=comments)
+    db.put('elearning_expeditions/' + course['id'], course)
+    public = '/api/elearning/public/' + course['share']['token']
+    assert client.get(public).json['expedition']['shareOptions']['collectResponses'] is active
+    result = client.post(public + '/responses', json={'sessionId': 'legacy_browser', 'answers': {'blk_mf': 'myth'}})
+    assert result.status_code == 403
+    assert not db.list('elearning_responses')
+
+
+def test_a_response_session_cannot_be_moved_between_pilot_groups(setup):
+    client, db = setup
+    course = _create_sample(client)
+    url = '/api/elearning/public/' + course['share']['token'] + '/responses'
+    first = {'sessionId': 'stable_session', 'cohort': 'group-a', 'answers': {'blk_mf': 'myth'}, 'visitedStepIds': ['stp_1']}
+    assert _post_pilot_response(client, url, json=first).status_code == 200
+    path = f"elearning_responses/{course['id']}__stable_session"
+    saved = db.get(path)
+    second = {**first, 'cohort': 'group-b', 'answers': {'blk_mf': 'fact'}, 'completed': True}
+    assert _post_pilot_response(client, url, json=second).status_code == 409
+    assert db.get(path) == saved
+    assert _post_pilot_response(client, url, json={**second, 'sessionId': 'another_session'}).status_code == 200
+    assert {record['cohort'] for record in db.list('elearning_responses')} == {'group-a', 'group-b'}
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_new_consent_records_start_separately_and_preserve_the_previous_record(setup, monkeypatch, legacy):
+    client, db = setup
+    course = _create_sample(client)
+    share = f"/api/elearning/expeditions/{course['id']}/sharing"
+    url = '/api/elearning/public/' + course['share']['token'] + '/responses'
+    old = {'sessionId': 'original_session', 'answers': {'blk_mf': 'myth'},
+           'visitedStepIds': ['stp_1'], 'pilotFeedback': {'comment': 'My original feedback'}}
+    monkeypatch.setattr(service, 'now', lambda: 100)
+    assert _post_pilot_response(client, url, json=old).status_code == 200
+    path = f"elearning_responses/{course['id']}__original_session"
+    saved = db.get(path)
+    if legacy:
+        saved.pop('consentVersion')
+        db.put(path, saved)
+    changed = client.post(share, headers=auth_headers(), json={'action': 'update_public', 'allowStepComments': True})
+    assert changed.status_code == 200
+    monkeypatch.setattr(service, 'now', lambda: 200)
+    assert _post_pilot_response(client, url, json={'sessionId': 'original_session', 'completed': True}).status_code == 409
+    assert db.get(path) == saved
+
+    fresh = {'sessionId': 'new_participation', 'completed': True}
+    assert _post_pilot_response(client, url, json=fresh).status_code == 200
+    new_path = f"elearning_responses/{course['id']}__new_participation"
+    record = db.get(new_path)
+    assert record['consentVersion'] == changed.json['share']['collectionVersion']
+    assert record['consented_at'] == 200
+    assert (record['answers'], record['visitedStepIds'], record['pilotFeedback']) == ({}, [], None)
+    monkeypatch.setattr(service, 'now', lambda: 300)
+    assert _post_pilot_response(client, url, json=fresh).status_code == 200
+    assert db.get(new_path)['consented_at'] == 200
