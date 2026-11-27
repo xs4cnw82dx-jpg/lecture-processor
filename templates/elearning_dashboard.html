@@ -1,18 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% extends '_base.html' %}
+{% block body_attrs %} class="el-library-body"{% endblock %}
+{% block title %}xPEDitie Pijn Studio · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
-  <title>xPEDitie Pijn Studio · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-admin.css') }}">
-</head>
-<body class="el-library-body">
+{% endblock %}
+{% block body %}
   {% set shell_title = 'xPEDitie Pijn Studio' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
@@ -125,5 +122,4 @@
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
-</body>
-</html>
+{% endblock %}

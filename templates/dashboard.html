@@ -1,16 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard · Lecture Processor</title>
+{% extends '_base.html' %}
+{% block title %}Dashboard · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-</head>
-<body>
+{% endblock %}
+{% block body %}
   {% set shell_title = 'Dashboard' %}
   {% include '_app_shell.html' %}
     <main class="app-shell-page dashboard-page" data-load-state="loading" aria-busy="true" id="main-content" tabindex="-1">
@@ -90,5 +86,4 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=dashboard_js_asset or 'js/dashboard.js') }}"></script>
-</body>
-</html>
+{% endblock %}

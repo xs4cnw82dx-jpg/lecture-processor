@@ -1,3 +1,4 @@
+{% extends '_base.html' %}
 {% if forced_mode == 'lecture-notes' %}
   {% set shell_title = ('Instant Batch · Lecture Notes' if instant_mode else 'Batch Processing · Lecture Notes') %}
 {% elif forced_mode == 'slides-only' %}
@@ -10,19 +11,15 @@
   {% set shell_title = ('Instant Batch · Combine Text' if instant_mode else 'Batch Processing · Combine Text') %}
 {% endif %}
 {% set mode_prefix = '/instant_batch_mode' if instant_mode else '/batch_mode' %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ shell_title }} · Lecture Processor</title>
+{% block body_attrs %} data-forced-mode="{{ forced_mode or '' }}" data-instant-batch="{{ '1' if instant_mode else '0' }}"{% endblock %}
+{% block title %}{{ shell_title }} · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-mode.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/batch-dashboard.css') }}">
-</head>
-<body data-forced-mode="{{ forced_mode or '' }}" data-instant-batch="{{ '1' if instant_mode else '0' }}">
+{% endblock %}
+{% block body %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page batch-page" id="main-content" tabindex="-1">
     <section class="batch-hero">
@@ -165,5 +162,4 @@
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=batch_status_js_asset or 'js/batch-status.js') }}"></script>
   <script src="{{ url_for('static', filename=batch_mode_js_asset or 'js/batch-mode.js') }}"></script>
-</body>
-</html>
+{% endblock %}

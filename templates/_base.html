@@ -1,17 +1,23 @@
-{# Shared page skeleton. Pages extend it and fill:
-   title  - the text before " · Lecture Processor"-style suffixes (the whole title text)
-   head   - page stylesheets and scripts, in cascade order (after theme.css from _preferences_head)
-   body   - everything inside <body> -#}
+{# Shared page skeleton. Pages extend it and fill these blocks:
+   title      - the full title text
+   head       - page meta, stylesheets and scripts, in cascade order (theme.css from
+                _preferences_head comes first)
+   body       - everything inside the body element
+   viewport   - optional, replaces the default viewport content
+   html_lang  - optional, e.g. nl for a page authored in Dutch
+   body_attrs - optional attributes for the body element, with a leading space
+   A page that must set a variable before _preferences_head (e.g. i18n_dutch_source)
+   sets it at its top level, outside any block. -#}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{% block html_lang %}en{% endblock %}">
 <head>
   <meta charset="UTF-8">
   {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="{% block viewport %}width=device-width, initial-scale=1.0{% endblock %}">
   <title>{% block title %}Lecture Processor{% endblock %}</title>
 {% block head %}{% endblock %}
 </head>
-<body>
+<body{% block body_attrs %}{% endblock %}>
 {% block body %}{% endblock %}
 </body>
 </html>

@@ -1,16 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  {% include '_preferences_head.html' %}
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings · Lecture Processor</title>
+{% extends '_base.html' %}
+{% block title %}Settings · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
-</head>
-<body>
+{% endblock %}
+{% block body %}
   {% set shell_title = 'Settings' %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page settings-page" id="main-content" tabindex="-1">
@@ -72,5 +68,4 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
-</body>
-</html>
+{% endblock %}

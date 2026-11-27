@@ -1,17 +1,13 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
+{% extends '_base.html' %}
+{% block title %}Shared Study Content · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shared Study Content · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   {% include '_study_stylesheets.html' %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-study.css') }}">
-</head>
-<body>
+{% endblock %}
+{% block body %}
   {% set shell_title = 'Shared Study' %}
   {% set shared_audio_note = 'Generated audio is not included in shared links. Ask the owner for a downloaded audio copy if you need it.' %}
   {% include '_app_shell.html' %}
@@ -125,5 +121,4 @@
     window.SharedStudyConfig = { shareToken: {{ share_token | tojson }} };
   </script>
   <script src="{{ url_for('static', filename=shared_study_js_asset or 'js/shared-study.js') }}"></script>
-</body>
-</html>
+{% endblock %}
