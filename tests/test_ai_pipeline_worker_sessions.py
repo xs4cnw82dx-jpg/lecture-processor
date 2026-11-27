@@ -377,3 +377,15 @@ def test_denied_job_does_not_open_session_or_use_provider(monkeypatch, tmp_path,
     assert harness.native_calls == [] and harness.refunds == [] and harness.database.packs() == []
     assert not any(path.exists() for path in harness.local_inputs)
     assert len(harness.logs) == 1
+
+
+def test_failed_interview_summary_keeps_sections_and_refunds_only_one_extra(monkeypatch, tmp_path):
+    harness = PipelineStages(monkeypatch, tmp_path, 'interview', features=True,
+                             failure=('generate', 'interview_summary_generation'))
+    harness.run()
+    assert_owned_lifecycle(harness)
+    assert harness.job['status'] == 'complete'
+    assert harness.job['interview_features_successful'] == ['sections']
+    assert harness.job['result'] == harness.job['interview_sections']
+    assert harness.job['extra_slides_refunded'] == 1
+    assert len(harness.refunds) == 1

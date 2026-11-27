@@ -113,8 +113,8 @@ def test_generation_failure_or_cancellation_closes_files_without_replacing_error
     assert len(harness.uploads) == len(harness.polls) == 3
     assert harness.deletes == ['files/synthetic-1', 'files/synthetic-2', 'files/synthetic-3']
     assert all(part.path.is_file() for part in files)
-    cleanup_warnings = [message for message in harness.warnings if message == ('Could not clean up a provider workflow file.',)]
-    assert len(cleanup_warnings) == (3 if cleanup_error else 0)
+    failed_files = [args[1] for args in harness.warnings if args[0] == 'Could not clean up provider file %s.']
+    assert failed_files == (harness.deletes if cleanup_error else [])
 
 
 def test_cleanup_failure_does_not_replace_a_successful_result(tmp_path):
