@@ -75,7 +75,9 @@ endpoint eligibility and credential errors terminate the operation. The job
 retains usage for discarded completions and records provider fallback in the
 application log. A request above 100,000 reported input tokens logs its stage
 and token count. Merged documents keep only informative placeholders grounded
-in the provided slide text, with a consistent English marker prefix.
+in the provided slide text. Notes merge uses the literal English marker prefix.
+Text combine uses the literal Dutch prefix required by its slide-input templates.
+The requested output language applies to the surrounding prose.
 
 ## Workflow file preparation
 

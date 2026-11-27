@@ -124,3 +124,21 @@ def test_caller_without_headroom_goes_straight_to_fallback_after_truncation(monk
     result = session.generate('notes_merge', [TextPart('source')], max_output_tokens=32)
     assert result.text == 'all'
     assert [(call[0], call[2]['max_output_tokens']) for call in calls] == [(MODEL, 32), ('gemini-synthetic', 32)]
+
+
+@pytest.mark.parametrize(('stage', 'prefix'), [
+    ('notes_merge', 'Informative Image/Table'), ('text_combine', 'Informatieve Afbeelding/Tabel'),
+])
+def test_document_marker_syntax_follows_stage_contract_and_preserves_source_description(monkeypatch, stage, prefix):
+    slides = '[Informatieve Afbeelding/Tabel: Meetlat 15 mm]'
+    reply = 'Measure carefully. [Informative Image/Table: Meetlat 15 mm] [Informative Image/Table: 15 mM]'
+    session, _ = setup_session(monkeypatch, stage, [response(reply)])
+    result = session.generate(stage, [TextPart('Write the surrounding text in English.')], source_slide_text=slides)
+    assert result.text == f'Measure carefully. [{prefix}: Meetlat 15 mm] '
+
+
+def test_transcript_only_cannot_introduce_a_slide_marker(monkeypatch):
+    session, _ = setup_session(monkeypatch, 'text_combine',
+                               [response('Tekst. [Informatieve Afbeelding/Tabel: Spier]')])
+    result = session.generate('text_combine', [TextPart('Transcript only.')])
+    assert result.text == 'Tekst. '

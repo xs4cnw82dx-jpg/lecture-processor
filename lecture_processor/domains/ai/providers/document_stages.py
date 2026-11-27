@@ -21,7 +21,8 @@ _INSTRUCTIONS = {
     'text_combine': (
         'Write all headings, instructions and closing text in the requested output language. Only '
         'verbatim source quotations, names and on-slide labels may remain in their original language. '
-        'Copy informative slide placeholders exactly, with the English prefix [Informative Image/Table: ...].'
+        'For supplied slide visuals use the literal marker [Informatieve Afbeelding/Tabel: ...] and copy '
+        'its source description exactly. Omit decorative markers. Use no visual markers for transcript-only input.'
     ),
 }
 DOCUMENT_STAGES = frozenset(_INSTRUCTIONS)
@@ -36,14 +37,14 @@ def document_parts(stage, parts):
     return (*parts, TextPart(_INSTRUCTIONS[stage]))
 
 
-def grounded_visuals(result, source_slide_text):
+def grounded_visuals(result, source_slide_text, prefix):
     """Keep only visual descriptions supplied by the slide source, using its exact wording."""
     source = {}
     for match in _VISUAL.finditer(source_slide_text):
         description = match.group('description')
         if description:
             key = ' '.join(description.split())
-            source[key] = f'[Informative Image/Table: {description.strip()}]'
+            source[key] = f'[{prefix}: {description.strip()}]'
 
     def grounded(match):
         description = match.group('description') or ''
@@ -56,5 +57,6 @@ def complete_document(stage, result, source_slide_text):
     if result.finish_reason != 'stop' or not isinstance(result.text, str):
         return None
     if stage != 'slides_extraction':
-        result = grounded_visuals(result, source_slide_text)
+        prefix = 'Informatieve Afbeelding/Tabel' if stage == 'text_combine' else 'Informative Image/Table'
+        result = grounded_visuals(result, source_slide_text, prefix)
     return result if result.text.strip() else None
