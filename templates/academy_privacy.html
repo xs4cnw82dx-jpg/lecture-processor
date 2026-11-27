@@ -19,7 +19,7 @@
     <p>The Studio uses Firebase Authentication for sign-in. Course records and pilot responses are stored in Firestore. Uploaded course media is stored in Supabase. Authors can grant collaborators access to an expedition and choose when to share a learner link.</p>
     <h2>Questions about your data</h2>
     <p>For questions about a pilot or a shared response, contact the course organizer who sent your expedition link.</p>
-    {% if legal_contact_email %}<p>For account or site privacy requests, email <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>{% endif %}
+    <p>For help accessing or deleting your Studio account, or for other privacy requests, email <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>
     <a href="/" class="el-back-link">Back to the Studio</a>
   </main>
 {% endblock %}

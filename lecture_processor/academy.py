@@ -22,7 +22,7 @@ from lecture_processor.runtime.environment import normalize_public_base_url, res
 from lecture_processor.runtime.http_security import apply_security_headers, build_content_security_policy
 from lecture_processor.runtime.proxy import apply_proxy_fix
 from lecture_processor.runtime.static_assets import register_static_versioning
-from lecture_processor.services import elearning_service, rate_limit_service
+from lecture_processor.services import auth_service, elearning_service, rate_limit_service
 
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -63,6 +63,10 @@ def _firebase_clients(project_id, credential_file):
     return firestore.client(app=app), app
 
 
+class AcademyEmailUnverified(Exception):
+    """A valid Academy identity still needs to verify its email address."""
+
+
 class AcademyRuntime:
     """Capabilities used by Studio routes, bound to the Academy Firebase project."""
 
@@ -98,8 +102,11 @@ class AcademyRuntime:
             user = auth.verify_id_token(token, app=self.firebase_app, check_revoked=True)
         except (ValueError, exceptions.FirebaseError):
             return None
-        if user.get('uid') and user.get('email') and user.get('email_verified') is True:
-            return user
+        if user.get('uid') and user.get('email'):
+            if user.get('email_verified') is True:
+                return user
+            if user.get('email_verified') is False:
+                raise AcademyEmailUnverified
         return None
 
     def is_admin_user(self, user):
@@ -140,6 +147,11 @@ def create_app():
         for pattern in _STATIC_ASSETS for file in static_root.glob(pattern) if file.is_file()
     }
 
+    @app.errorhandler(AcademyEmailUnverified)
+    def verify_email_required(_error):
+        return jsonify(error='Please verify your email address before continuing.',
+                       error_code=auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR), 403
+
     @app.get('/')
     def index():
         return redirect(url_for('elearning.studio_dashboard_page'))
@@ -178,7 +190,7 @@ def create_app():
         return {
             'academy_mode': True,
             'academy_firebase_config': public_config,
-            'legal_contact_email': os.environ.get('LEGAL_CONTACT_EMAIL', '').strip(),
+            'legal_contact_email': os.environ.get('LEGAL_CONTACT_EMAIL', '').strip() or 'ijacco2004@gmail.com',
             'csp_nonce': getattr(g, 'csp_nonce', ''),
         }
 

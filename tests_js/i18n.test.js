@@ -83,7 +83,7 @@ test('static template interface copy is catalogued (brand names, formats and sho
   const context = {};
   context.window = context;
   vm.createContext(context);
-  ['i18n-catalog.js', 'i18n-supplement.js', 'i18n-dynamic.js', 'i18n-dynamic-learning.js', 'i18n-dynamic-tools.js'].forEach(name => {
+  ['i18n-catalog.js', 'i18n-supplement.js', 'i18n-dynamic.js', 'i18n-dynamic-learning.js', 'i18n-dynamic-tools.js', 'i18n-academy.js'].forEach(name => {
     const filename = path.join(__dirname, '../static/js', name);
     if (fs.existsSync(filename)) vm.runInContext(fs.readFileSync(filename, 'utf8'), context);
   });
@@ -132,7 +132,7 @@ test('catalog files register each translation once per language', () => {
     },
   });
   vm.createContext(context);
-  for (activeFile of ['i18n-catalog.js', 'i18n-dynamic.js', 'i18n-dynamic-learning.js', 'i18n-dynamic-tools.js', 'i18n-supplement.js']) {
+  for (activeFile of ['i18n-catalog.js', 'i18n-dynamic.js', 'i18n-dynamic-learning.js', 'i18n-dynamic-tools.js', 'i18n-supplement.js', 'i18n-academy.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/js', activeFile), 'utf8'), context);
   }
   assert.deepEqual(duplicates, []);
