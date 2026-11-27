@@ -346,3 +346,56 @@ def test_existing_lazy_generation_still_builds_config_before_upload(tmp_path):
             adapter.generate(MODEL, [local_parts(tmp_path)[0]])
     assert raised.value is failure
     assert harness.uploads == harness.polls == harness.generations == harness.deletes == []
+
+
+def sized_pdf(tmp_path, size, name='large.pdf'):
+    path = tmp_path / name
+    with path.open('wb') as stream:
+        stream.truncate(size)
+    return PdfPart(path)
+
+
+@pytest.mark.parametrize('extra_bytes', [1, 0], ids=['over-limit', 'at-limit'])
+def test_openrouter_pdf_over_the_request_limit_uses_the_stage_gemini_model(tmp_path, monkeypatch, extra_bytes):
+    from lecture_processor.domains.ai.providers import openrouter
+
+    harness = Harness()
+    harness.runtime.MODEL_SLIDES = 'synthetic-gemini-slides'
+    harness.runtime.logger = SimpleNamespace(warning=lambda *args: harness.warnings.append(args))
+    sent = []
+
+    def openrouter_generate(_self, model, parts, **_kwargs):
+        sent.append(model)
+        return 'openrouter-result'
+
+    monkeypatch.setattr(openrouter.OpenRouterProvider, 'generate', openrouter_generate)
+    part = sized_pdf(tmp_path, 10 * 1024 * 1024 + extra_bytes)
+    with session_for(harness.runtime, monkeypatch, route=openrouter_route()) as session:
+        session.upload_file(STAGE, part, operation_name=UPLOAD)
+        session.wait_for_file(STAGE, part, operation_name=PROCESSING)
+        result = session.generate(STAGE, [part, TextPart('Synthetic prompt')], operation_name=GENERATE)
+    if extra_bytes:
+        assert sent == []
+        assert (result.provider, result.model) == ('gemini', 'synthetic-gemini-slides')
+        assert len(harness.uploads) == len(harness.polls) == len(harness.generations) == 1
+        assert harness.deletes == ['files/synthetic-1']
+        assert harness.warnings == [('PDF input exceeds the OpenRouter request limit; using Gemini for %s.', STAGE)]
+    else:
+        assert result == 'openrouter-result' and sent == ['anthropic/claude-sonnet-5.5']
+        assert harness.uploads == harness.generations == harness.warnings == []
+    assert part.path.is_file()
+
+
+def test_openrouter_pdf_limit_counts_every_attachment(tmp_path, monkeypatch):
+    from lecture_processor.domains.ai.providers import openrouter
+
+    harness = Harness()
+    harness.runtime.MODEL_SLIDES = 'synthetic-gemini-slides'
+    monkeypatch.setattr(openrouter.OpenRouterProvider, 'generate',
+                        lambda *_args, **_kwargs: pytest.fail('Combined attachments exceed the OpenRouter limit'))
+    pdf = sized_pdf(tmp_path, 10 * 1024 * 1024)
+    image = tmp_path / 'synthetic.png'
+    image.write_bytes(b'x')
+    with session_for(harness.runtime, monkeypatch, route=openrouter_route()) as session:
+        result = session.generate(STAGE, [ImagePart(image, 'image/png'), pdf], operation_name=GENERATE)
+    assert result.provider == 'gemini' and len(harness.uploads) == 2

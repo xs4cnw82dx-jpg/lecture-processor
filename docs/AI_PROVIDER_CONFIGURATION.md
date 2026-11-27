@@ -91,7 +91,9 @@ OpenRouter slide route, the row supplies that local PDF directly. For a
 Gemini slide route, it uses its existing Gemini Files reference.
 
 OpenRouter requests containing a PDF accept up to 10 MiB of combined raw
-attachments. Base64 encoding and SDK JSON serialization both consume memory.
+attachments. A larger PDF request on an OpenRouter route uses that
+stage's Gemini model instead, which uploads the file rather than inlining it,
+so decks up to the 50 MB upload limit keep working on either provider. Base64 encoding and SDK JSON serialization both consume memory.
 In a local single-request measurement with synthetic files and a mock HTTP
 transport, 10, 20 and 50 MiB inputs added about 50, 101 and 251 MiB respectively
 to the adapter process's peak RSS. Worker baseline memory and concurrent

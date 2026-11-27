@@ -1,9 +1,12 @@
 """Workflow-local generation selected from an immutable routing snapshot."""
+import logging
 from pathlib import Path
 
 from .contracts import AudioPart, PreparedFilePart
 from .gemini import GeminiProvider, validate_file_part
-from .routing import AUDIO_STAGES, STAGES, default_models, load_routing, validate_openrouter_options
+from .openrouter_request import exceeds_pdf_request_limit
+from .routing import (AUDIO_STAGES, STAGE_MODEL_ATTRIBUTES, STAGES, Route, default_models, load_routing,
+                      validate_openrouter_options)
 
 
 class _ClientRuntime:
@@ -78,6 +81,13 @@ class ProviderSession:
     def generate(self, stage, parts, *, schema=None, max_output_tokens=65536,
                  retry_tracker=None, operation_name=None):
         route = self._route(stage)
+        if route.provider == 'openrouter':
+            parts = tuple(parts)
+            if exceeds_pdf_request_limit(parts):
+                # Gemini uploads the file instead of inlining it, so large documents stay supported.
+                logger = getattr(self.runtime, 'logger', None) or logging.getLogger(__name__)
+                logger.warning('PDF input exceeds the OpenRouter request limit; using Gemini for %s.', stage)
+                route = Route('gemini', getattr(self.runtime, STAGE_MODEL_ATTRIBUTES[stage]))
         options = None
         if route.provider == 'openrouter':
             options = validate_openrouter_options(route.model, route.options)
