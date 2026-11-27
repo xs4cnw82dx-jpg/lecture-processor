@@ -34,6 +34,24 @@ def _read_file(path, max_bytes):
     return data
 
 
+def exceeds_pdf_request_limit(parts):
+    """Whether a PDF request's attachments are too large to send to OpenRouter.
+
+    Unreadable or malformed parts are left to request preparation, which rejects them.
+    """
+    if not any(isinstance(part, PdfPart) for part in parts):
+        return False
+    total = 0
+    for part in parts:
+        if isinstance(part, TextPart):
+            continue
+        try:
+            total += Path(part.path).stat().st_size
+        except (AttributeError, OSError, TypeError, ValueError):
+            return False
+    return total > _MAX_PDF_REQUEST_BYTES
+
+
 def prepare_request(model, parts, *, options, max_output_tokens, schema=None):
     options = validate_openrouter_options(model, options)
     if type(max_output_tokens) is not int or max_output_tokens <= 0:
