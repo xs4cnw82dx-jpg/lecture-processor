@@ -1,0 +1,10 @@
+{# The Academy Studio's design foundation. Include last in the head block so it
+   layers over the shared and Studio stylesheets. General Sans 400/700 are
+   self-hosted; 500/600 load from Fontshare because its licence forbids
+   redistributing the files through this public repository. Learner pages do not
+   include this partial. #}
+{% if academy_mode %}
+  <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+  <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@500,600&amp;display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-foundation.css') }}">
+{% endif %}
