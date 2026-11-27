@@ -442,3 +442,26 @@ def test_notes_retry_sends_larger_reviewed_cap_and_accounts_for_both_responses(a
     assert {key: val['cost_usd'] for key, val in usage['token_usage_by_stage'].items()} == {
         'notes_merge_incomplete_1': 0.125, 'merge': 0.125,
     }
+
+
+def test_truncated_non_document_schema_records_partial_usage_before_failure(adapter_runtime):
+    from lecture_processor.domains.ai.provider import TokenAccumulator
+    from lecture_processor.domains.ai.providers.factory import ProviderSession
+    from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
+
+    partial = success()
+    partial['choices'][0].update(finish_reason='length', message={'content': '{"answer":'})
+    partial['usage']['cost'] = 0.004
+    transport = _Transport(lambda _: (200, partial))
+    snapshot = RoutingSnapshot({'interview_coding': Route('openrouter', MODEL, OPTIONS)})
+    tokens = TokenAccumulator(runtime=adapter_runtime)
+    with ProviderSession(adapter_runtime, routes=snapshot) as session:
+        session._forced = False
+        session._adapters['openrouter'] = OpenRouterProvider(adapter_runtime, transport=transport, api_key=KEY)
+        with pytest.raises(ProviderRequestError, match='INCOMPLETE'):
+            session.generate('interview_coding', [TextPart('fixture')], schema={'type': 'object'},
+                             record_discarded=tokens.record_result)
+    assert len(transport.requests) == 1
+    usage = tokens.as_dict()
+    assert usage['token_total'] == 37
+    assert usage['token_usage_by_stage']['interview_coding_incomplete']['cost_usd'] == 0.004

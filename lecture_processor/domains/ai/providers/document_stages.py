@@ -1,5 +1,6 @@
 """Output and prompt policies for OpenRouter document stages."""
 from dataclasses import replace
+import logging
 import re
 
 from .contracts import TextPart
@@ -37,8 +38,9 @@ def document_parts(stage, parts):
     return (*parts, TextPart(_INSTRUCTIONS[stage]))
 
 
-def grounded_visuals(result, source_slide_text, prefix):
+def grounded_visuals(result, source_slide_text, stage):
     """Keep only visual descriptions supplied by the slide source, using its exact wording."""
+    prefix = 'Informatieve Afbeelding/Tabel' if stage == 'text_combine' else 'Informative Image/Table'
     source = {}
     for match in _VISUAL.finditer(source_slide_text):
         description = match.group('description')
@@ -46,17 +48,24 @@ def grounded_visuals(result, source_slide_text, prefix):
             key = ' '.join(description.split())
             source[key] = f'[{prefix}: {description.strip()}]'
 
+    dropped = 0
     def grounded(match):
+        nonlocal dropped
         description = match.group('description') or ''
-        return source.get(' '.join(description.split()), '')
+        marker = source.get(' '.join(description.split()), '')
+        if description and not marker:
+            dropped += 1
+        return marker
 
-    return replace(result, text=_VISUAL.sub(grounded, result.text))
+    text = _VISUAL.sub(grounded, result.text)
+    if dropped:
+        logging.getLogger(__name__).info('Dropped %d unsupported informative markers for %s.', dropped, stage)
+    return replace(result, text=text)
 
 
 def complete_document(stage, result, source_slide_text):
     if result.finish_reason != 'stop' or not isinstance(result.text, str):
         return None
     if stage != 'slides_extraction':
-        prefix = 'Informatieve Afbeelding/Tabel' if stage == 'text_combine' else 'Informative Image/Table'
-        result = grounded_visuals(result, source_slide_text, prefix)
+        result = grounded_visuals(result, source_slide_text, stage)
     return result if result.text.strip() else None
