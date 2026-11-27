@@ -205,6 +205,8 @@
     if (view !== 'signin' && view !== 'signup' && view !== 'reset') {
       view = 'signin';
     }
+    var academy = global.document && global.document.querySelector && global.document.querySelector('meta[name="academy-signin"]');
+    if (academy) return '/signin?next=' + encodeURIComponent(normalizeReturnPath(nextPath));
     return '/lecture-notes?auth=' + encodeURIComponent(view)
       + '&next=' + encodeURIComponent(normalizeReturnPath(nextPath));
   }

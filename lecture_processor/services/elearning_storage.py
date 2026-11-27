@@ -58,7 +58,7 @@ def erase_asset(db, meta, *, upload_finished=False):
     db.atomic(release)
 
 
-def store_asset(db, meta, data):
+def store_asset(db, meta, data, *, authorize=None):
     root = 'elearning_expeditions/' + meta['expedition_id']
     key = 'elearning_assets/' + meta['id']
     if not book_storage.configured():
@@ -66,6 +66,8 @@ def store_asset(db, meta, data):
     meta = {**meta, 'size': len(data), 'ready': False, 'reserved': True, 'upload_until': time.time() + 120}
 
     def reserve(tx):
+        if authorize:
+            authorize(tx)
         course = tx.get(root)
         if not course or course.get('deleted'):
             raise ElearningError('This expedition is unavailable.', 404)
@@ -80,6 +82,8 @@ def store_asset(db, meta, data):
         tx.put(key, meta)
 
     def finish(tx):
+        if authorize:
+            authorize(tx)
         current = tx.get(key)
         course = tx.get(root)
         if not current or current.get('removing') or not course or course.get('deleted'):
@@ -108,10 +112,12 @@ def read_asset(db, meta):
     return data
 
 
-def delete_expedition(db, eid, uid):
+def delete_expedition(db, eid, uid, *, authorize=None):
     root = 'elearning_expeditions/' + eid
 
     def close(tx):
+        if authorize:
+            authorize(tx)
         course = tx.get(root)
         if not course or course.get('owner_uid') != uid:
             raise ElearningError('This expedition is unavailable.', 404)

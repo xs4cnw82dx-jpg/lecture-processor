@@ -5,7 +5,7 @@
   data-grant-token="{{ grant_token }}"
   data-initial-mode="{{ initial_mode }}"
 {% endblock %}
-{% block title %}xPEDitie Pijn Studio · Lecture Processor{% endblock %}
+{% block title %}xPEDitie Pijn Studio{% if not academy_mode %} · Lecture Processor{% endif %}{% endblock %}
 {% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">

@@ -17,7 +17,7 @@ def _sentry_connect_source(sentry_frontend_dsn: str = '') -> str:
     return f'{scheme}://{hostname}'
 
 
-def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str = '', extra_frame_sources=None):
+def _security_policy_sources(*, sentry_frontend_dsn, script_nonce, extra_frame_sources, firebase_auth_origin):
     script_sources = [
         "'self'",
         'https://www.gstatic.com',
@@ -28,7 +28,7 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str
     if safe_nonce:
         script_sources.insert(1, f"'nonce-{safe_nonce}'")
     frame_sources = [
-        'https://lecture-processor-cdff6.firebaseapp.com',
+        firebase_auth_origin,
         'https://accounts.google.com',
     ]
     for src in (extra_frame_sources or ()):
@@ -77,12 +77,16 @@ def _security_policy_sources(*, sentry_frontend_dsn: str = '', script_nonce: str
     return sources
 
 
-def build_content_security_policy(*, sentry_frontend_dsn: str = '', script_nonce: str = '', extra_frame_sources=None):
+def build_content_security_policy(
+    *, sentry_frontend_dsn: str = '', script_nonce: str = '', extra_frame_sources=None,
+    firebase_auth_origin='https://lecture-processor-cdff6.firebaseapp.com',
+):
     parts = []
     for directive, values in _security_policy_sources(
         sentry_frontend_dsn=sentry_frontend_dsn,
         script_nonce=script_nonce,
         extra_frame_sources=extra_frame_sources,
+        firebase_auth_origin=firebase_auth_origin,
     ).items():
         unique_values = []
         for value in values:

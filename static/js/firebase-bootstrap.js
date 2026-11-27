@@ -10,15 +10,40 @@
     appId: '1:374793454161:web:c68b21590e9a1fafa32e70',
   };
 
+  var academy = !!global.document?.querySelector?.('meta[name="academy-signin"]');
+  var firebaseConfig = academy ? academyConfig() : FIREBASE_CONFIG;
+
+  function academyConfig() {
+    try {
+      var node = global.document.getElementById('academy-firebase-config');
+      var config = node && JSON.parse(node.textContent);
+      if (!config || !['projectId', 'apiKey', 'authDomain', 'appId'].every(function (key) {
+        return typeof config[key] === 'string' && config[key].trim() !== '';
+      })) return null;
+      if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(config.projectId)
+          || config.projectId === FIREBASE_CONFIG.projectId
+          || config.authDomain !== config.projectId + '.firebaseapp.com') return null;
+      return Object.freeze(config);
+    } catch (_) {
+      return null;
+    }
+  }
+
   function ensureFirebaseApp() {
+    if (!firebaseConfig) throw new Error('Academy sign-in is not configured.');
     if (!global.firebase) {
       throw new Error('Firebase SDK is not loaded.');
     }
+    var app;
     try {
-      return global.firebase.app();
+      app = global.firebase.app();
     } catch (_error) {
-      return global.firebase.initializeApp(FIREBASE_CONFIG);
+      return global.firebase.initializeApp(firebaseConfig);
     }
+    if (academy && !['projectId', 'authDomain', 'apiKey', 'appId'].every(function (key) {
+      return app.options && app.options[key] === firebaseConfig[key];
+    })) throw new Error('The Firebase app does not match the configured Academy project.');
+    return app;
   }
 
   function getAuth() {
@@ -197,7 +222,7 @@
 
   global.LectureProcessorBootstrap = {
     authStateReady: authStateReady,
-    firebaseConfig: FIREBASE_CONFIG,
+    firebaseConfig: firebaseConfig,
     ensureFirebaseApp: ensureFirebaseApp,
     getAuthState: getAuthState,
     getAuth: getAuth,

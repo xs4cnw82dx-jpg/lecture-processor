@@ -7,6 +7,7 @@
     var course = el('course');
     var controls = el('controls');
     var shareForm = el('share-form');
+    var authorForm = el('author-form');
     var generation = 0;
     var courses = [];
     var view = 'access';
@@ -18,6 +19,10 @@
       course.replaceChildren();
       ['members', 'grants', 'totals', 'breakdown'].forEach(function (id) { el(id).replaceChildren(); });
       ['member-form', 'grant-form', 'share-form'].forEach(function (id) { el(id).reset(); });
+      if (authorForm) {
+        authorForm.reset();
+        el('author-list').replaceChildren();
+      }
       confirmedShare = {};
       el('link').value = '';
       el('report').removeAttribute('href');
@@ -87,14 +92,19 @@
       return item;
     }
 
-    function removeAction(label, payload) {
+    function removeAction(label, onRemove, message) {
       return action(label, function (event) {
         var button = event.currentTarget;
         var actions = button.parentElement;
         var originals = Array.from(actions.children);
         var cancel = action('Cancel', function () { actions.replaceChildren.apply(actions, originals); button.focus(); });
-        var confirm = action('Confirm removal', function () { update(payload); });
+        var confirm = action('Confirm removal', onRemove);
         actions.replaceChildren(cancel, confirm);
+        if (message) {
+          var warning = document.createElement('small');
+          warning.textContent = t(message);
+          actions.prepend(warning);
+        }
         cancel.focus();
       });
     }
@@ -108,13 +118,13 @@
             el('role').value = member.role;
             el('role').focus();
           }),
-          removeAction('Remove', { action: 'remove_member', email: member.email }),
+          removeAction('Remove', function () { update({ action: 'remove_member', email: member.email }); }),
         ]);
       }));
       el('grants').replaceChildren.apply(el('grants'), data.grants.map(function (grant) {
         return row(grant.label, grant.targetLanguage.toUpperCase(), [
           action('Copy link', function () { copy(grant.urlPath); }),
-          removeAction('Revoke', { action: 'revoke_grant', grantId: grant.id }),
+          removeAction('Revoke', function () { update({ action: 'revoke_grant', grantId: grant.id }); }),
         ]);
       }));
       var share = data.share;
@@ -174,6 +184,33 @@
       }
     }
 
+    async function authors(actionName, email) {
+      var current = ++generation;
+      var panel = el('author-controls');
+      panel.disabled = true;
+      el('retry').hidden = true;
+      el('status').textContent = t(actionName ? 'Saving…' : 'Loading authors…');
+      try {
+        if (actionName) {
+          await api('/api/academy/authors', { method: 'POST', body: JSON.stringify({ action: actionName, email: email }) });
+          if (current !== generation) return;
+          authorForm.reset();
+        }
+        var data = await api('/api/academy/authors');
+        if (current !== generation) return;
+        el('author-list').replaceChildren(...data.authors.map(function (address) {
+          return row(address, '', [removeAction('Revoke', function () { authors('revoke', address); },
+            'This author will lose access to their own expeditions until you restore access.')]);
+        }));
+        el('status').textContent = data.authors.length ? (actionName ? t('Saved') : '') : t('No invited authors yet.');
+        panel.disabled = false;
+      } catch (err) {
+        if (current !== generation) return;
+        el('status').textContent = err.message;
+        el('retry').hidden = false;
+      }
+    }
+
     function metric(label, value) {
       var cell = document.createElement('div');
       var term = document.createElement('dt');
@@ -211,12 +248,14 @@
 
     function tab(next) {
       view = next;
-      ['access', 'stats'].forEach(function (id) {
+      var sections = authorForm ? ['access', 'authors', 'stats'] : ['access', 'stats'];
+      sections.forEach(function (id) {
         var active = view === id;
         el(id).hidden = !active;
         el(id + '-tab').setAttribute('aria-pressed', String(active));
       });
       if (next === 'stats') statistics();
+      else if (next === 'authors') authors();
       else loadSharing();
     }
 
@@ -239,6 +278,13 @@
       loadSharing();
     });
     el('access-tab').addEventListener('click', function () { tab('access'); });
+    if (authorForm) {
+      el('authors-tab').addEventListener('click', function () { tab('authors'); });
+      authorForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!el('author-controls').disabled) authors('grant', el('author-email').value.trim());
+      });
+    }
     el('stats-tab').addEventListener('click', function () { tab('stats'); });
     el('retry').addEventListener('click', function () { tab(view); });
     el('member-form').addEventListener('submit', function (event) {

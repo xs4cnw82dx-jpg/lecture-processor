@@ -17,10 +17,16 @@
   var allExpeditions = [];
   var justDuplicatedId = '';
   var actionsEl = document.getElementById('el-author-actions');
+  var academy = !!document.querySelector('meta[name="academy-signin"]');
+  var canCreate = !academy;
   var retry = document.getElementById('el-retry');
   var signIn = document.getElementById('el-signin');
   var auth;
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  if (!auth && academy) {
+    statusEl.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
+    return;
+  }
   var client = window.LectureProcessorAuth.createAuthClient(auth);
   var admin = window.XpedStudioAdmin.create(api, loadList);
   var listRequest = 0;
@@ -103,6 +109,7 @@
   }
 
   function openCreateDialog() {
+    if (!canCreate) return;
     document.getElementById('el-create-error').hidden = true;
     titleInput.value = '';
     document.getElementById('el-create-progress').textContent = '';
@@ -141,16 +148,20 @@
       empty.className = 'el-dash-empty';
       var body = document.createElement('div');
       var h2 = document.createElement('h2');
-      h2.textContent = 'Create your first expedition';
+      h2.textContent = canCreate ? 'Create your first expedition' : 'Author access is by invitation';
       var p = document.createElement('p');
-      p.textContent = 'Start with a blank station, a three-station BPS skeleton, or explore an interactive example.';
-      // UX-001: Direct primary CTA inside empty state
-      var cta = document.createElement('button');
-      cta.type = 'button';
-      cta.className = 'btn primary';
-      cta.textContent = 'Create expedition';
-      cta.addEventListener('click', openCreateDialog);
-      body.append(h2, p, cta);
+      p.textContent = canCreate
+        ? 'Start with a blank station, a three-station BPS skeleton, or explore an interactive example.'
+        : 'To create expeditions, ask the Studio administrator to add your verified email address. To take an expedition, open the learner link you received.';
+      body.append(h2, p);
+      if (canCreate) {
+        var cta = document.createElement('button');
+        cta.type = 'button';
+        cta.className = 'btn primary';
+        cta.textContent = 'Create expedition';
+        cta.addEventListener('click', openCreateDialog);
+        body.appendChild(cta);
+      }
       empty.appendChild(body);
       grid.appendChild(empty);
       return;
@@ -301,6 +312,8 @@
         if (exp.shareEnabled && exp.shareToken) {
           menuItems.push({ label: 'Open learner link', icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
         }
+      }
+      if (canCreate && !exp.deletionPending && exp.role !== 'translate') {
         menuItems.push({ label: 'Duplicate', icon: 'copy', onClick: async function () {
           try {
             var dupRes = await api('/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/duplicate', { method: 'POST', body: '{}' });
@@ -321,8 +334,10 @@
             document.getElementById('el-delete-cancel').focus();
           } });
         }
-        var menu = Icons.createDropdown({ ariaLabel: 'More actions for ' + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
-        actions.appendChild(menu.el);
+        if (menuItems.length) {
+          var menu = Icons.createDropdown({ ariaLabel: 'More actions for ' + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
+          actions.appendChild(menu.el);
+        }
       }
       card.append(mainWrap, actions);
       grid.appendChild(card);
@@ -342,6 +357,10 @@
       var data = await api('/api/elearning/expeditions');
       if (request !== listRequest) return;
       allExpeditions = data.expeditions || [];
+      canCreate = !academy || data.canCreate === true;
+      actionsEl.hidden = !canCreate && !data.studioAdmin;
+      document.getElementById('el-new-expedition-btn').hidden = !canCreate;
+      document.getElementById('el-import-json-btn').hidden = !canCreate;
       admin.setCourses(data.studioAdmin === true, allExpeditions);
       renderExpeditions(allExpeditions);
     } catch (err) {
@@ -542,7 +561,8 @@
     grid.replaceChildren();
     document.getElementById('el-delete-dialog-msg').textContent = '';
     titleInput.value = '';
-    actionsEl.hidden = !user;
+    canCreate = !academy;
+    actionsEl.hidden = !user || !canCreate;
     signIn.hidden = !!user;
     retry.hidden = true;
     statusEl.textContent = user ? 'Loading your expeditions…' : 'Sign in to view your expeditions.';

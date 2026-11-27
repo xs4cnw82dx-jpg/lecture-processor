@@ -1,6 +1,6 @@
 {% extends '_base.html' %}
-{% block body_attrs %} class="el-library-body"{% endblock %}
-{% block title %}xPEDitie Pijn Studio · Lecture Processor{% endblock %}
+{% block body_attrs %} class="el-library-body{% if academy_mode %} academy-body{% endif %}"{% endblock %}
+{% block title %}xPEDitie Pijn Studio{% if not academy_mode %} · Lecture Processor{% endif %}{% endblock %}
 {% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
@@ -11,7 +11,7 @@
 {% endblock %}
 {% block body %}
   {% set shell_title = 'xPEDitie Pijn Studio' %}
-  {% include '_app_shell.html' %}
+  {% include '_academy_header.html' if academy_mode else '_app_shell.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
       <header class="el-library-header">
         <div class="el-library-cover">
@@ -33,13 +33,17 @@
         <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">Loading your expeditions…</div>
         <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="Search expeditions…" aria-label="Search expeditions" hidden>
       </div>
-      <a class="btn" id="el-signin" href="/lecture-notes?auth=signin" data-sign-in-return hidden>Sign in</a>
+      <a class="btn" id="el-signin" href="{{ '/signin?next=' ~ (request.path|urlencode) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>Sign in</a>
       <button type="button" class="btn small" id="el-retry" hidden>Try again</button>
       <section class="el-exp-list" id="el-dash-grid" aria-label="Expeditions"></section>
     </main>
-    {% include '_shell_footer.html' %}
-  </div>
-  </div>
+    {% if academy_mode %}
+      {% include '_academy_footer.html' %}
+    {% else %}
+      {% include '_shell_footer.html' %}
+      </div>
+      </div>
+    {% endif %}
 
   {% include '_elearning_admin.html' %}
   <dialog class="el-dialog" id="el-create-dialog" closedby="any" aria-labelledby="el-create-dialog-title">
@@ -113,11 +117,13 @@
 
   {% include '_firebase_scripts.html' %}
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  {% if not academy_mode %}
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
+  {% endif %}
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+  {% if not academy_mode %}<script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>{% endif %}
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>

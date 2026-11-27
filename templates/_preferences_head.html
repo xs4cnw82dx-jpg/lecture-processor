@@ -1,12 +1,18 @@
 {# Synchronous appearance bootstrap prevents a light flash on dark page loads. #}
 <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+{% if not academy_mode %}
 <script src="{{ url_for('static', filename='js/credit-utils.js') }}"></script>
+{% endif %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+{% if not academy_mode %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+{% endif %}
 {# Dutch catalogs load only for Dutch, or always for a page authored in Dutch (set i18n_dutch_source),
    whose English view is translated back from them. i18n.js fetches them on a later switch. #}
 <script src="{{ url_for('static', filename='js/i18n-loader.js') }}" data-i18n-always="{{ 'true' if i18n_dutch_source else '' }}" data-i18n-catalogs="{{ url_for('static', filename='js/i18n-catalog.js') }} {{ url_for('static', filename='js/i18n-supplement.js') }} {{ url_for('static', filename='js/i18n-dynamic.js') }} {{ url_for('static', filename='js/i18n-dynamic-learning.js') }} {{ url_for('static', filename='js/i18n-dynamic-tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/i18n.js') }}" defer></script>
+{% if not academy_mode %}
 <script src="{{ url_for('static', filename='js/preferences.js') }}" defer></script>
+{% endif %}

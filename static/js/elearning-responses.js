@@ -21,6 +21,10 @@
   var requestId = 0;
   var auth;
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  if (!auth && document.querySelector('meta[name="academy-signin"]')) {
+    status.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
+    return;
+  }
   var client = window.LectureProcessorAuth.createAuthClient(auth);
   cohortSelect.addEventListener('change', loadResponses);
   langSelect.addEventListener('change', loadResponses);

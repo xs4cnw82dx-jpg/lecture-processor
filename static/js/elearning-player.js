@@ -1063,7 +1063,7 @@
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, '', navLangs);
       }
       updateLangDropdown();
-      document.title = (state.exp.title || 'xPEDitie Pijn') + ' · Lecture Processor';
+      document.title = (state.exp.title || 'xPEDitie Pijn') + ' · ' + (document.body.dataset.siteTitle || 'Lecture Processor');
       render();
     } catch (_err) {
       mainEl.textContent = '';
