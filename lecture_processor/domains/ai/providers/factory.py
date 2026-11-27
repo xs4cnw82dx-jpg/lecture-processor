@@ -1,9 +1,12 @@
 """Workflow-local generation selected from an immutable routing snapshot."""
+import logging
 from pathlib import Path
 
 from .contracts import AudioPart, PreparedFilePart
 from .gemini import GeminiProvider, validate_file_part
-from .routing import AUDIO_STAGES, STAGES, default_models, load_routing, validate_openrouter_options
+from .openrouter_request import exceeds_pdf_request_limit
+from .routing import (AUDIO_STAGES, STAGE_MODEL_ATTRIBUTES, STAGES, Route, default_models, load_routing,
+                      validate_openrouter_options)
 
 
 class _ClientRuntime:
@@ -78,18 +81,24 @@ class ProviderSession:
     def generate(self, stage, parts, *, schema=None, max_output_tokens=65536,
                  retry_tracker=None, operation_name=None):
         route = self._route(stage)
-        options = None
         if route.provider == 'openrouter':
-            options = validate_openrouter_options(route.model, route.options)
-            if type(max_output_tokens) is not int or max_output_tokens <= 0:
-                raise ValueError('Invalid generation output limit.')
-            max_output_tokens = min(max_output_tokens, options['max_output_tokens'])
             parts = tuple(parts)
             if any(isinstance(part, AudioPart) for part in parts):
                 raise ValueError('Audio generation requires Gemini.')
             # Prepared parts are Gemini Files references; never fall back or re-read them elsewhere.
             if any(isinstance(part, PreparedFilePart) for part in parts):
                 raise ValueError('Prepared provider files require Gemini.')
+            if exceeds_pdf_request_limit(parts):
+                # Gemini uploads the file instead of inlining it, so large documents stay supported.
+                logger = getattr(self.runtime, 'logger', None) or logging.getLogger(__name__)
+                logger.warning('PDF input exceeds the OpenRouter request limit; using Gemini for %s.', stage)
+                route = Route('gemini', getattr(self.runtime, STAGE_MODEL_ATTRIBUTES[stage]))
+        options = None
+        if route.provider == 'openrouter':
+            options = validate_openrouter_options(route.model, route.options)
+            if type(max_output_tokens) is not int or max_output_tokens <= 0:
+                raise ValueError('Invalid generation output limit.')
+            max_output_tokens = min(max_output_tokens, options['max_output_tokens'])
         extra = {'options': options} if route.provider == 'openrouter' and not self._forced else {}
         return self._adapter(route).generate(
             route.model, parts, schema=schema, max_output_tokens=max_output_tokens,
