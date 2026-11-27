@@ -1,14 +1,13 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  {% include '_preferences_head.html' %}<meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Book Studio · Lecture Processor</title>
+{% extends '_base.html' %}
+{% block viewport %}width=device-width,initial-scale=1{% endblock %}
+{% block body_attrs %} class="book-app" data-book-id="{{ book_id }}" data-share-token="{{ share_token }}" data-chatgpt-url="{{ chatgpt_url }}"{% endblock %}
+{% block title %}Book Studio · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/book-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/book-color-picker.css') }}">
-</head>
-<body class="book-app" data-book-id="{{ book_id }}" data-share-token="{{ share_token }}" data-chatgpt-url="{{ chatgpt_url }}">
+{% endblock %}
+{% block body %}
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="book-topbar">
     <a class="book-brand" href="/books" aria-label="Book Studio library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5C8 2 4 3 2 4v15c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-1-7-2-10 1Zm0 0v14"/></svg><span>Book Studio</span></a>
@@ -50,5 +49,4 @@
   <script src="{{ url_for('static', filename='js/book-cloud-sync.js') }}"></script>
   <script src="{{ url_for('static', filename='js/book-zip.min.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename=book_js_asset or 'js/book-studio.js') }}"></script>
-</body>
-</html>
+{% endblock %}

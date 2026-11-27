@@ -1,16 +1,13 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Overlay Builder · Lecture Processor</title>
+{% extends '_base.html' %}
+{% block body_attrs %} class="overlay-builder-fullscreen"{% endblock %}
+{% block title %}Video Overlay Builder · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/video-overlay-builder.css') }}">
-</head>
-<body class="overlay-builder-fullscreen">
+{% endblock %}
+{% block body %}
   <a class="skip-link" href="#main-content">Skip to content</a>
   <main class="overlay-builder-page" id="main-content" tabindex="-1">
     <header class="overlay-builder-topbar" aria-label="Video overlay builder header">
@@ -169,5 +166,4 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/video-overlay-builder-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=video_overlay_builder_js_asset or 'js/video-overlay-builder.js') }}"></script>
-</body>
-</html>
+{% endblock %}
