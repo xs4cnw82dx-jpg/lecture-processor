@@ -18,6 +18,9 @@
       ++generation;
       course.replaceChildren();
       ['members', 'grants', 'totals', 'breakdown'].forEach(function (id) { el(id).replaceChildren(); });
+      var split = document.getElementById('el-admin-split');
+      if (split) split.replaceChildren();
+      lastStats = null;
       ['member-form', 'grant-form', 'share-form'].forEach(function (id) { el(id).reset(); });
       if (authorForm) {
         authorForm.reset();
@@ -211,8 +214,9 @@
       }
     }
 
-    function metric(label, value) {
+    function metric(label, value, className) {
       var cell = document.createElement('div');
+      cell.className = 'el-split-figure' + (className ? ' ' + className : '');
       var term = document.createElement('dt');
       var number = document.createElement('dd');
       term.textContent = t(label);
@@ -221,26 +225,117 @@
       return cell;
     }
 
+    // Statistics labels follow the interface language; numbers use its locale.
+    var NOT_COMPLETED = { nl: 'Niet voltooid', de: 'Nicht abgeschlossen', en: 'Not completed' };
+    function uiLanguage() {
+      var lang = (root.LectureI18n && root.LectureI18n.getLanguage && root.LectureI18n.getLanguage()) || document.documentElement.lang;
+      return NOT_COMPLETED[lang] ? lang : 'en';
+    }
+    function share(part, whole) {
+      if (!whole) return '—';
+      var locale = { nl: 'nl-NL', de: 'de-DE', en: 'en-GB' }[uiLanguage()];
+      return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(part / whole);
+    }
+    function sessions(count) { return t(count + (count === 1 ? ' session' : ' sessions')); }
+    // Bars are <progress> elements: the page policy forbids inline styles.
+    function bar(className, value, max) {
+      var node = document.createElement('progress');
+      node.className = 'el-chart-bar ' + className;
+      node.max = max || 100;
+      node.value = Math.max(0, Math.min(node.max, Number(value) || 0));
+      node.setAttribute('aria-hidden', 'true');
+      return node;
+    }
+    function splitDetails() {
+      var node = document.getElementById('el-admin-split');
+      if (!node) {
+        node = document.createElement('div');
+        node.id = 'el-admin-split';
+        el('totals').after(node);
+      }
+      return node;
+    }
+
+    // Completion across all expeditions as one split bar.
+    function renderTotals(data) {
+      var total = Number(data.sessions) || 0;
+      var completed = Number(data.completed) || 0;
+      var rest = metric('Not completed', share(total - completed, total));
+      rest.querySelector('dt').textContent = NOT_COMPLETED[uiLanguage()];
+      rest.querySelector('dt').setAttribute('translate', 'no');
+      el('totals').classList.add('el-split-figures');
+      el('totals').replaceChildren(metric('Completed', share(completed, total), 'is-good'), rest);
+      var split = bar('el-split-bar' + (total ? '' : ' is-empty'), total ? 100 * completed / total : 0);
+      var counts = document.createElement('div');
+      counts.className = 'el-split-counts';
+      counts.hidden = !total;
+      var left = document.createElement('span');
+      left.textContent = sessions(completed);
+      var right = document.createElement('span');
+      right.textContent = sessions(Math.max(0, total - completed));
+      counts.append(left, right);
+      var figures = document.createElement('dl');
+      figures.className = 'el-split-stats';
+      figures.append(metric('Recorded sessions', String(total)));
+      splitDetails().replaceChildren(split, counts, figures);
+    }
+
+    // One row per expedition: the bar length is its share of the busiest
+    // expedition's sessions, and the mint part shows how many were completed.
+    function courseRow(item, busiest) {
+      var entry = document.createElement('li');
+      entry.className = 'el-admin-chart-row';
+      var name = document.createElement('span');
+      name.className = 'el-chart-label';
+      name.setAttribute('translate', 'no');
+      name.textContent = item.title;
+      var value = document.createElement('span');
+      value.className = 'el-chart-value';
+      var count = document.createElement('strong');
+      count.textContent = String(item.sessions);
+      var rate = document.createElement('span');
+      rate.textContent = item.sessions ? share(item.completed, item.sessions) : '';
+      value.append(count, ' ', rate);
+      value.title = t('{completed} of {total} sessions completed', { completed: item.completed, total: item.sessions });
+      var track = document.createElement('span');
+      track.className = 'el-chart-stack';
+      track.append(bar('is-rest', item.sessions, busiest || 1), bar('is-good is-overlay', item.completed, busiest || 1));
+      var detail = document.createElement('span');
+      detail.className = 'sr-only';
+      detail.textContent = value.title;
+      var report = document.createElement('a');
+      report.className = 'el-action-link';
+      report.href = '/physio/elearning/' + encodeURIComponent(item.id) + '/responses';
+      report.textContent = t('Responses');
+      entry.append(name, value, report, track, detail);
+      return entry;
+    }
+
+    var lastStats = null;
+    function renderStats(data) {
+      renderTotals(data);
+      var busiest = data.courses.reduce(function (most, item) { return Math.max(most, Number(item.sessions) || 0); }, 0);
+      el('breakdown').replaceChildren.apply(el('breakdown'), data.courses.map(function (item) { return courseRow(item, busiest); }));
+    }
+    // Numbers and the labels localized here follow a later catalog switch.
+    root.addEventListener('lp:language-changed', function () {
+      if (lastStats && view === 'stats' && !el('stats').hidden) renderStats(lastStats);
+    });
+
     async function statistics() {
       var current = ++generation;
+      lastStats = null;
       el('totals').replaceChildren();
       el('breakdown').replaceChildren();
+      splitDetails().replaceChildren();
       el('status').textContent = t('Loading statistics…');
       el('retry').hidden = true;
       try {
         var data = await api('/api/elearning/admin/statistics');
         if (current !== generation) return;
         el('status').textContent = '';
-        el('totals').replaceChildren(metric('Recorded sessions', data.sessions), metric('Completed', data.completed),
-          metric('Completion rate', data.sessions ? Math.round(100 * data.completed / data.sessions) + '%' : '—'));
-        data.courses.forEach(function (item) {
-          var report = document.createElement('a');
-          report.className = 'el-action-link';
-          report.href = '/physio/elearning/' + encodeURIComponent(item.id) + '/responses';
-          report.textContent = t('Responses');
-          var detail = t('{completed} of {total} sessions completed', { completed: item.completed, total: item.sessions });
-          el('breakdown').appendChild(row(item.title, detail, [report]));
-        });
+        lastStats = data;
+        renderStats(data);
       } catch (err) {
         if (current === generation) { el('status').textContent = err.message; el('retry').hidden = false; }
       }

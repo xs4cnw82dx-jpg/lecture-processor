@@ -435,51 +435,63 @@ input[type="file"]::file-selector-button { padding:9px 13px; margin-right:12px; 
   --btn-primary-hover-start: #3470f5;
   --btn-primary-hover-end: #2859d8;
   --btn-primary-shadow: 0 7px 16px rgba(37, 88, 217, .23);
+  /* A product theme (the Academy Studio) tunes the recipe through these tokens;
+     the defaults are the Lecture Processor values. */
+  --btn-font-size: .86rem;
+  --btn-font-weight: 700;
+  --btn-padding: 10px 14px;
+  --btn-shadow: 0 2px 5px rgba(31, 48, 83, .045);
+  --btn-hover-shadow: 0 6px 14px rgba(30, 49, 85, .09);
+  --btn-hover-lift: -1px;
+  --btn-primary-ink: #fff;
+  --btn-small-font-size: .8rem;
+  --btn-small-padding: 7px 11px;
+  --btn-small-radius: 9px;
 }
 .btn, .primary-btn, .secondary-btn, .ghost-btn {
   align-items: center;
   appearance: none;
   background: var(--theme-surface);
-  border: 1px solid var(--theme-accent-line);
+  border: 1px solid var(--btn-border, var(--theme-accent-line));
   border-radius: var(--btn-radius);
-  box-shadow: 0 2px 5px rgba(31, 48, 83, .045);
-  color: var(--theme-ink-soft);
+  box-shadow: var(--btn-shadow);
+  color: var(--btn-ink, var(--theme-ink-soft));
   cursor: pointer;
   display: inline-flex;
   font: inherit;
-  font-size: .86rem;
-  font-weight: 700;
+  font-size: var(--btn-font-size);
+  font-weight: var(--btn-font-weight);
   gap: 7px;
   justify-content: center;
   line-height: 1.15;
   min-height: var(--control-height);
-  padding: 10px 14px;
+  padding: var(--btn-padding);
   text-decoration: none;
   transition: border-color .16s ease, box-shadow .16s ease, color .16s ease, transform .16s ease, background .16s ease;
 }
 .btn:hover, .primary-btn:hover, .secondary-btn:hover, .ghost-btn:hover {
-  border-color: var(--theme-control-border);
-  box-shadow: 0 6px 14px rgba(30, 49, 85, .09);
-  color: var(--theme-accent-ink);
-  transform: translateY(-1px);
+  border-color: var(--btn-hover-border, var(--theme-control-border));
+  box-shadow: var(--btn-hover-shadow);
+  color: var(--btn-hover-ink, var(--theme-accent-ink));
+  transform: translateY(var(--btn-hover-lift));
 }
 .btn:active, .primary-btn:active, .secondary-btn:active, .ghost-btn:active { box-shadow: none; transform: translateY(0); }
 .btn.primary, .primary-btn {
   background: linear-gradient(135deg, var(--btn-primary-start), var(--btn-primary-end));
   border-color: var(--btn-primary-end);
   box-shadow: var(--btn-primary-shadow);
-  color: #fff;
+  color: var(--btn-primary-ink);
 }
 .btn.primary:hover, .primary-btn:hover {
   background: linear-gradient(135deg, var(--btn-primary-hover-start), var(--btn-primary-hover-end));
   border-color: var(--btn-primary-end);
-  color: #fff;
+  color: var(--btn-primary-ink);
 }
 .btn.danger { border-color: var(--theme-danger-line); color: var(--theme-danger-ink); }
 .btn.danger:hover { border-color: var(--theme-danger-ink); background: var(--theme-danger-soft); color: var(--theme-danger-ink); }
 .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
 .btn.ghost:hover { background: var(--theme-surface-soft); border-color: var(--theme-line); box-shadow: none; }
-.btn.small { min-height: var(--control-height-small); padding: 7px 11px; font-size: .8rem; border-radius: 9px; }
+.btn.small { min-height: var(--control-height-small); padding: var(--btn-small-padding); font-size: var(--btn-small-font-size); border-radius: var(--btn-small-radius); }
 .btn:disabled, .btn[aria-disabled="true"],
 .primary-btn:disabled, .secondary-btn:disabled, .ghost-btn:disabled { box-shadow: none; cursor: not-allowed; opacity: .55; transform: none; }
 .btn:focus-visible, .primary-btn:focus-visible, .secondary-btn:focus-visible, .ghost-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
