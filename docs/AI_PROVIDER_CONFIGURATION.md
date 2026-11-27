@@ -136,3 +136,19 @@ boundary, so a reported charge takes precedence.
 
 SDK references: [pinned usage documentation](https://github.com/openai/openai-python/tree/v2.54.0)
 and [OpenRouter SDK guidance](https://openrouter.ai/docs/guides/community/openai-sdk).
+
+## Overnight document stages
+
+An overnight job uses normal OpenRouter requests for document stages routed to
+that provider. Its requests use the same pinned endpoint, ZDR settings, file
+limits, output ceilings and completion checks as synchronous jobs. Private
+overnight requests stay on the selected provider even after errors or
+truncation. Audio continues through Gemini Batch. When a lecture uses private
+slide extraction, the worker completes Gemini audio before sending the local PDF.
+
+The worker claims a mixed-provider batch before preparing files. Each private
+result is committed against the active worker and row. Cancellation or recovery
+prevents a later result from publishing. If a worker disappears after a request
+was sent, stale recovery settles unfinished rows and refunds eligible credits.
+A second worker cannot replay the same request. Provider accounting uses standard
+rates for normal requests. User credits still use the overnight price.
