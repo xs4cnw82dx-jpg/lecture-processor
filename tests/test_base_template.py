@@ -10,7 +10,12 @@ BASE_PAGES = {
     '/dashboard': 'Dashboard', '/settings': 'Settings', '/buy_credits': 'Buy Credits', '/tools': 'More Tools',
     '/study': 'Study Library', '/voice-notes': 'Voice Notes', '/physio': 'Physio', '/batch_status': 'Batch Status',
     '/lecture-notes': 'Lecture Notes', '/batch_mode': 'Batch Processing', '/shared/demo-token': 'Shared Study',
+    '/plan': 'Study Plan', '/general-transcriber': 'General Transcriber', '/lecture-downloader': 'Lecture Downloader',
+    '/document-reader': 'Document Reader', '/physio/elearning': 'xPEDitie Pijn Studio',
+    '/physio/elearning/x/responses': 'Pilot responses',
 }
+# Pages authored in Dutch declare it; everything else is English.
+DUTCH_PAGES = {'/physio'}
 
 
 @pytest.mark.parametrize(('path', 'title_text'), BASE_PAGES.items())
@@ -20,7 +25,7 @@ def test_base_pages_render_charset_first_one_title_and_theme_before_page_styles(
     head = html[html.index('<head>'):html.index('</head>')]
 
     assert html.startswith('<!DOCTYPE html>')
-    assert re.search(r'<html lang="(en|nl)">', html)
+    assert f'<html lang="{"nl" if path in DUTCH_PAGES else "en"}">' in html
     # The charset declaration comes before any resource the browser has to fetch.
     assert head.index('<meta charset="UTF-8">') < min(head.index(tag) for tag in ('<link', '<script'))
     assert re.search(r'<meta name="viewport" content="width=device-width, initial-scale=1[^"]*">', head)
