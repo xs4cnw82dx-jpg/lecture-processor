@@ -1,0 +1,115 @@
+.academy-body {
+  min-height: 100dvh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--theme-canvas);
+  color: var(--theme-ink);
+  font-family: var(--xped-font-body);
+}
+.academy-header {
+  background: #062940;
+  color: #fff;
+}
+.academy-nav {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1160px, 100%);
+  padding: 12px clamp(16px, 3vw, 32px);
+  margin-inline: auto;
+}
+.academy-brand {
+  display: inline-flex;
+  min-height: 44px;
+  gap: 12px;
+  align-items: center;
+  color: inherit;
+  font: 700 1.15rem var(--xped-font-display);
+  text-decoration: none;
+}
+.academy-brand img { display: block; width: 41px; height: auto; }
+.academy-brand-name { display: grid; gap: 2px; border-inline-start: 1px solid #527082; padding-inline-start: 10px; }
+.academy-brand-name span { font: 700 .8rem var(--xped-font-body); }
+.academy-brand:hover strong { text-decoration: underline; }
+.academy-footer, .academy-player-footer {
+  margin-top: auto;
+  padding: 12px clamp(16px, 3vw, 32px);
+  text-align: center;
+}
+.academy-footer a, .academy-player-footer a { display: inline-block; padding: 8px; color: inherit; }
+.academy-player-footer { color: var(--xped-ink-muted); font-size: .9rem; }
+.academy-auth, .academy-document {
+  box-sizing: border-box;
+  width: min(calc(100% - 32px), 440px);
+  margin: clamp(24px, 7vh, 72px) auto;
+  padding: clamp(22px, 4vw, 36px);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-line);
+  border-radius: var(--xped-radius-lg);
+}
+.academy-document { width: min(calc(100% - 32px), 720px); line-height: 1.65; }
+.academy-auth h1, .academy-document h1 { margin: 0; font: 700 clamp(1.7rem, 4vw, 2.2rem)/1.15 var(--xped-font-display); }
+.academy-document h2 { margin-top: 1.5em; font-size: 1.18rem; }
+.academy-auth p { line-height: 1.5; }
+#academy-auth-intro { margin: 8px 0 24px; color: var(--theme-muted-strong); }
+#academy-google { width: 100%; margin-bottom: 18px; }
+#academy-auth-form, #academy-verify { display: grid; gap: 8px; }
+#academy-auth-form label { font-size: .93rem; font-weight: 700; }
+#academy-auth-form input {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--theme-control-border);
+  border-radius: 8px;
+  color: var(--theme-ink);
+  background: var(--theme-surface);
+  font: inherit;
+}
+.academy-auth-links { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.academy-auth-links button {
+  border: 0;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--theme-accent-ink);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+  font-size: .9rem;
+}
+#academy-auth-status { margin-bottom: 0; }
+#academy-auth-status:empty { margin: 0; }
+.academy-nav-actions { display: flex; align-items: center; gap: clamp(6px, 2vw, 14px); }
+.academy-preferences { position: relative; font-size: .9rem; }
+.academy-header .academy-nav details.academy-preferences > summary {
+  cursor: pointer;
+  padding: 8px 11px;
+  color: var(--xped-navy-deep);
+  background: #fff;
+}
+.academy-header .academy-preferences .app-disclosure-chevron { stroke: currentColor; }
+
+.academy-preferences-panel {
+  position: absolute;
+  z-index: 10;
+  color: var(--theme-ink);
+  inset-inline-end: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+  padding: 14px;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-line);
+  border-radius: 10px;
+  box-shadow: var(--xped-shadow-md);
+}
+.academy-preferences-panel select { padding: 6px; font: inherit; color: var(--theme-ink); background: var(--theme-surface); }
+.academy-preferences-panel label:not(:first-child) { margin-top: 6px; }
+@media (max-width: 375px) {
+  .academy-nav { padding-inline: 10px; }
+  .academy-brand { gap: 6px; }
+  .academy-brand-name { padding-inline-start: 6px; }
+  .academy-header .academy-nav details.academy-preferences > summary { padding: 6px; font-size: .8rem; }
+}

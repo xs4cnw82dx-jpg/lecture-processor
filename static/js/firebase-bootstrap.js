@@ -17,7 +17,9 @@
     try {
       return global.firebase.app();
     } catch (_error) {
-      return global.firebase.initializeApp(FIREBASE_CONFIG);
+      var configNode = global.document && global.document.getElementById('academy-firebase-config');
+      var config = configNode ? JSON.parse(configNode.textContent) : FIREBASE_CONFIG;
+      return global.firebase.initializeApp(config);
     }
   }
 

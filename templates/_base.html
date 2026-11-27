@@ -12,7 +12,7 @@
 <html lang="{% block html_lang %}en{% endblock %}">
 <head>
   <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
+  {% include '_academy_head.html' if academy_mode else '_preferences_head.html' %}
   <meta name="viewport" content="{% block viewport %}width=device-width, initial-scale=1.0{% endblock %}">
   <title>{% block title %}Lecture Processor{% endblock %}</title>
 {% block head %}{% endblock %}

@@ -1,18 +1,17 @@
-from .blueprints import account_bp, admin_bp, auth_bp, payments_bp, physio_bp, study_bp, upload_bp
-from .blueprints.books import books_bp
-from .blueprints.elearning import elearning_bp
-from .config import load_config
-from .extensions import init_extensions
-from .logging_config import configure_logging
-from .runtime.container import build_runtime
-from .runtime.hooks import register_runtime_hooks
-from .runtime.proxy import apply_proxy_fix
-from .runtime.settings import load_runtime_settings
-from .web import health_bp, pages_bp
-
-
 def create_app():
     """Canonical app-factory entrypoint for the modular runtime."""
+
+    from .blueprints import account_bp, admin_bp, auth_bp, payments_bp, physio_bp, study_bp, upload_bp
+    from .blueprints.books import books_bp
+    from .blueprints.elearning import elearning_bp
+    from .config import load_config
+    from .extensions import init_extensions
+    from .logging_config import configure_logging
+    from .runtime.container import build_runtime
+    from .runtime.hooks import register_runtime_hooks
+    from .runtime.proxy import apply_proxy_fix
+    from .runtime.settings import load_runtime_settings
+    from .web import health_bp, pages_bp
 
     config = load_config()
     configure_logging(config.log_level)

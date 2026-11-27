@@ -25,6 +25,7 @@ def main() -> None:
     force_isolated_provider_environment()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=int(os.getenv('PORT', '5123')))
+    parser.add_argument('--academy', action='store_true', help='Preview the standalone xPED Academy')
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error('port must be between 1024 and 65535')
@@ -44,6 +45,11 @@ def main() -> None:
     # Changing cwd BEFORE importing the runtime isolates its relative uploads.
     with tempfile.TemporaryDirectory(prefix='lecture-ui-preview-') as storage:
         os.chdir(storage)
+        if args.academy:
+            from scripts.academy_preview import academy_preview
+            with academy_preview(Path(storage) / 'synthetic-firebase.json') as academy_app:
+                academy_app.run(host='127.0.0.1', port=args.port, debug=False, use_reloader=False, threaded=True)
+            return
         from lecture_processor import create_app
         from lecture_processor.runtime.bootstrap import FirebaseInitResult
 

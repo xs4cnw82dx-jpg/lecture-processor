@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from lecture_processor.config import AppConfig
 from lecture_processor.runtime.environment import env_text, log_level, resolve_runtime_environment
+
+if TYPE_CHECKING:
+    from lecture_processor.config import AppConfig
 
 
 @dataclass(frozen=True)

@@ -322,16 +322,22 @@ def test_processing_template_defaults_optional_sections_to_collapsed_state():
     assert 'id="advanced-settings-toggle" aria-expanded="false"' in index_template
 
 
-def test_page_titles_share_one_format_and_pages_have_one_h1():
+def test_page_titles_share_one_format_and_pages_have_one_h1(client):
     import re
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "templates"
     # _base.html only holds the default title; pages extending it are checked in test_base_template.
     brand_first = {"landing.html", "admin.html", "_base.html"}
+    studio_routes = {
+        "elearning_builder.html": "/physio/elearning/example/edit",
+        "elearning_player.html": "/elearning/p/example",
+    }
     for path in sorted(root.glob("*.html")):
         source = path.read_text(encoding="utf-8")
-        head = source.split("<body", 1)[0]
+        # The standalone Studio uses the same templates with a different site title.
+        rendered = client.get(studio_routes[path.name]).text if path.name in studio_routes else source
+        head = rendered.split("<body", 1)[0]
         for title in re.findall(r"<title>(.*?)</title>", head, flags=re.S):
             if path.name in brand_first:
                 continue

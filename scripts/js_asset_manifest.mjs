@@ -62,6 +62,8 @@ export const intentionallyUnminifiedScripts = [
   'static/js/app-shell.js',
   'static/js/tools-hub.js',
   'static/js/auth-utils.js',
+  'static/js/academy-account.js',
+  'static/js/academy-signin.js',
   'static/js/display-format-utils.js',
   'static/js/credit-utils.js',
   'static/js/download-utils.js',

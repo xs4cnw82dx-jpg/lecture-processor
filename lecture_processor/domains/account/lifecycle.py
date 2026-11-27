@@ -1,7 +1,6 @@
 import os
 
 from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
-from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.upload import import_audio as upload_import_audio
 from lecture_processor.repositories.query_utils import apply_where
 
@@ -553,6 +552,8 @@ def collect_user_export_payload(uid, email, runtime=None):
 
     for feed in study_calendar_feeds:
         feed.pop('secret_hash', None)
+
+    from lecture_processor.domains.study import audio as study_audio
 
     for pack in study_packs:
         audio_key = study_audio.get_audio_storage_key_from_pack(pack, runtime=resolved_runtime)

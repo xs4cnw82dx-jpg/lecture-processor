@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
-from flask import Blueprint, g, jsonify, render_template, request
+from flask import Blueprint, current_app, g, jsonify, render_template, request
 from google.api_core.exceptions import GoogleAPICallError
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -14,7 +14,6 @@ from lecture_processor.domains.rate_limit import limiter
 from lecture_processor.runtime.container import get_runtime
 from lecture_processor.runtime.http_security import build_content_security_policy
 from lecture_processor.services import elearning_service as service
-from lecture_processor.web.pages import _shell_context
 
 elearning_bp = Blueprint('elearning', __name__)
 logger = logging.getLogger(__name__)
@@ -51,7 +50,7 @@ def _guard_rate_limits():
 def _apply_video_frame_csp(response):
     response.headers['Cache-Control'] = 'private, no-store'
     response.headers['Referrer-Policy'] = 'strict-origin'
-    if not request.path.startswith('/api/'):
+    if not request.path.startswith('/api/') and not current_app.config.get('XPED_ACADEMY'):
         runtime = get_runtime()
         response.headers['Content-Security-Policy'] = build_content_security_policy(
             sentry_frontend_dsn=runtime.SENTRY_FRONTEND_DSN,
@@ -87,6 +86,15 @@ def _handle_unavailable(error):
 
 # --- Page Routes ---
 
+
+def _studio_context(runtime):
+    if current_app.config.get('XPED_ACADEMY'):
+        return {}
+    from lecture_processor.web.pages import _shell_context
+
+    return _shell_context(runtime=runtime, page_key='physio-elearning')
+
+
 @elearning_bp.route('/physio/elearning')
 def studio_dashboard_page():
     runtime = get_runtime()
@@ -96,7 +104,7 @@ def studio_dashboard_page():
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_admin_js=runtime.resolve_js_asset('js/elearning-admin.js'),
         elearning_dashboard_js=runtime.resolve_js_asset('js/elearning-dashboard.js'),
-        **_shell_context(runtime=runtime, page_key='physio-elearning'),
+        **_studio_context(runtime),
     )
 
 
@@ -114,7 +122,7 @@ def studio_builder_page(expedition_id: str):
         elearning_route_map_js=runtime.resolve_js_asset('js/elearning-route-map.js'),
         elearning_blocks_js=runtime.resolve_js_asset('js/elearning-blocks.js'),
         elearning_builder_js=runtime.resolve_js_asset('js/elearning-builder.js'),
-        **_shell_context(runtime=runtime, page_key='physio-elearning'),
+        **_studio_context(runtime),
     )
 
 
@@ -132,7 +140,7 @@ def translator_page(grant_token: str):
         elearning_route_map_js=runtime.resolve_js_asset('js/elearning-route-map.js'),
         elearning_blocks_js=runtime.resolve_js_asset('js/elearning-blocks.js'),
         elearning_builder_js=runtime.resolve_js_asset('js/elearning-builder.js'),
-        **_shell_context(runtime=runtime, page_key='physio-elearning'),
+        **_studio_context(runtime),
     )
 
 
@@ -145,7 +153,7 @@ def studio_responses_page(expedition_id: str):
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_responses_js=runtime.resolve_js_asset('js/elearning-responses.js'),
-        **_shell_context(runtime=runtime, page_key='physio-elearning'),
+        **_studio_context(runtime),
     )
 
 
