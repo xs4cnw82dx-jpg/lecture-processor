@@ -23,7 +23,7 @@ The in-process rate limiter shares state across threads in one worker. The deplo
 | `ACADEMY_FIREBASE_PROJECT_ID`, `ACADEMY_FIREBASE_API_KEY`, `ACADEMY_FIREBASE_APP_ID` | Web app configuration from the Academy Firebase project. |
 | `ACADEMY_FIREBASE_CREDENTIALS` | Server-only JSON for the Academy runtime service account. A Render secret file referenced by `GOOGLE_APPLICATION_CREDENTIALS` is also supported. |
 | `BOOK_STORAGE_URL`, `BOOK_STORAGE_KEY`, `BOOK_STORAGE_BUCKET` | Academy Supabase project URL, server-only key for that project, and private media bucket name. |
-| `LEGAL_CONTACT_EMAIL` | Public Academy privacy and account support mailbox. Defaults to ijacco2004@gmail.com. |
+| `LEGAL_CONTACT_EMAIL` | Set the public privacy and account support mailbox in the Academy service environment. The privacy page displays it when configured. |
 | `XPED_STUDIO_ADMIN_EMAIL` | Verified sign-in email for the Studio administrator. Setting `XPED_STUDIO_ADMIN_UID` pins access to that Firebase UID and takes precedence over the email. |
 
 Enable Google and email/password in Firebase Auth and authorize the Academy hostnames. Use a fresh Firestore database with the server-only rules in `firestore.rules`. The runtime service account needs Firestore data access and read-only Firebase Authentication access. Generate new secrets for each deployment environment and keep the production values in Render.

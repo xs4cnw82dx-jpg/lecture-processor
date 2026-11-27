@@ -141,8 +141,11 @@ def test_inline_service_account_and_firestore_use_the_same_named_project(monkeyp
     assert app is sdk_app and database is firestore_client.return_value
 
 
-def test_privacy_has_a_public_account_contact_with_or_without_an_override(academy_client, monkeypatch):
-    for configured, expected in [('contact@example.test', 'contact@example.test'), ('', 'ijacco2004@gmail.com')]:
-        monkeypatch.setenv('LEGAL_CONTACT_EMAIL', configured)
-        page = html.fromstring(academy_client.get('/privacy').data)
-        assert page.xpath('//a[@href=$mail]', mail='mailto:' + expected)
+def test_privacy_contact_uses_only_the_deployment_mailbox(academy_client, monkeypatch):
+    monkeypatch.setenv('LEGAL_CONTACT_EMAIL', 'support@example.test')
+    page = html.fromstring(academy_client.get('/privacy').data)
+    assert page.xpath('//a[@href="mailto:support@example.test"]')
+
+    monkeypatch.delenv('LEGAL_CONTACT_EMAIL')
+    page = html.fromstring(academy_client.get('/privacy').data)
+    assert not page.xpath('//a[starts-with(@href, "mailto:")]')

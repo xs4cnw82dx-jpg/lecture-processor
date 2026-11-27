@@ -190,7 +190,7 @@ def create_app():
         return {
             'academy_mode': True,
             'academy_firebase_config': public_config,
-            'legal_contact_email': os.environ.get('LEGAL_CONTACT_EMAIL', '').strip() or 'ijacco2004@gmail.com',
+            'legal_contact_email': os.environ.get('LEGAL_CONTACT_EMAIL', '').strip(),
             'csp_nonce': getattr(g, 'csp_nonce', ''),
         }
 
