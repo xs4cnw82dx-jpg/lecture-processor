@@ -46,8 +46,12 @@ from application retry and job deadlines.
 The adapter requires explicit reasoning effort and an output limit in each
 OpenRouter route. It fixes the provider to `google-vertex/global`, disables
 fallback routing, requires supported parameters and ZDR routing, and requests
-no data collection. Plugins are explicitly disabled except the native PDF
-parser when a PDF part is present. These request settings do not establish
+no data collection. The adapter sends `enabled: false` for plugins that support that
+field, except the file parser, which uses the native PDF engine when a PDF is
+present. It omits plugins without an enable switch, including alignment,
+which requires at least one rule. Keep those plugins off in workspace defaults
+for this deployment. [OpenRouter plugin settings](https://openrouter.ai/docs/guides/features/plugins/overview)
+and the [API schema](https://openrouter.ai/openapi.json) describe these controls. These request settings do not establish
 account-level privacy settings or prove provider-side enforcement. Account
 settings, endpoint eligibility and request acceptance must be verified before
 any route is activated. There is no OpenRouter Batch API integration.

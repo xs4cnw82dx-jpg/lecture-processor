@@ -10,9 +10,9 @@ from lecture_processor.domains.ai.providers.openrouter_request import prepare_re
 MODEL = 'anthropic/claude-sonnet-5.5'
 OPTIONS = {'reasoning_effort': 'medium', 'max_output_tokens': 32768}
 EXPECTED_PLUGINS = (
-    'alignment', 'armor', 'auto-beta-router', 'auto-router', 'context-compression',
-    'file-parser', 'fusion', 'jev-router', 'moderation', 'pareto-router',
-    'response-healing', 'switchyard-router', 'web-fetch', 'web',
+    'armor', 'auto-beta-router', 'auto-router', 'context-compression',
+    'file-parser', 'fusion', 'pareto-router',
+    'response-healing', 'web',
 )
 
 

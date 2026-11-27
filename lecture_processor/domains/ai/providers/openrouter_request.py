@@ -6,10 +6,11 @@ from pathlib import Path
 from .contracts import AudioPart, ImagePart, PdfPart, TextPart
 from .routing import validate_openrouter_options
 
-PLUGIN_IDS = (
-    'alignment', 'armor', 'auto-beta-router', 'auto-router', 'context-compression',
-    'file-parser', 'fusion', 'jev-router', 'moderation', 'pareto-router',
-    'response-healing', 'switchyard-router', 'web-fetch', 'web',
+# Only these plugin schemas accept a per-request enabled flag.
+SWITCHABLE_PLUGIN_IDS = (
+    'armor', 'auto-beta-router', 'auto-router', 'context-compression',
+    'file-parser', 'fusion', 'pareto-router',
+    'response-healing', 'web',
 )
 _IMAGE_TYPES = frozenset({'image/png', 'image/jpeg', 'image/webp', 'image/gif'})
 _MAX_FILE_BYTES = 50 * 1024 * 1024
@@ -85,9 +86,9 @@ def prepare_request(model, parts, *, options, max_output_tokens, schema=None):
             content.append({'type': 'image_url', 'image_url': {
                 'url': f'data:{part.mime_type};base64,{encoded}',
             }})
-    plugins = [{'id': plugin, 'enabled': False} for plugin in PLUGIN_IDS]
+    plugins = [{'id': plugin, 'enabled': False} for plugin in SWITCHABLE_PLUGIN_IDS]
     if has_pdf:
-        plugins[PLUGIN_IDS.index('file-parser')] = {
+        plugins[SWITCHABLE_PLUGIN_IDS.index('file-parser')] = {
             'id': 'file-parser', 'enabled': True, 'pdf': {'engine': 'native'},
         }
     request = {

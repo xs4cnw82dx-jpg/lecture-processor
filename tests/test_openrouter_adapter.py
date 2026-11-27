@@ -24,9 +24,9 @@ OPTIONS = {'reasoning_effort': 'medium', 'max_output_tokens': 32768}
 PRIVATE = 'synthetic-private-body-marker'
 KEY = 'synthetic-private-key-marker'
 PLUGINS = {
-    'alignment', 'armor', 'auto-beta-router', 'auto-router', 'context-compression',
-    'file-parser', 'fusion', 'jev-router', 'moderation', 'pareto-router',
-    'response-healing', 'switchyard-router', 'web-fetch', 'web',
+    'armor', 'auto-beta-router', 'auto-router', 'context-compression',
+    'file-parser', 'fusion', 'pareto-router',
+    'response-healing', 'web',
 }
 
 
@@ -137,7 +137,7 @@ def test_sdk_wire_policy_order_native_pdf_schema_and_environment(adapter_runtime
                                 'require_parameters': True, 'data_collection': 'deny', 'zdr': True}
     assert body['reasoning'] == {'effort': 'medium', 'exclude': True}
     plugins = {item['id']: item for item in body['plugins']}
-    assert set(plugins) == PLUGINS and len(body['plugins']) == 14
+    assert set(plugins) == PLUGINS and len(body['plugins']) == len(PLUGINS)
     assert plugins.pop('file-parser') == {'id': 'file-parser', 'enabled': True, 'pdf': {'engine': 'native'}}
     assert all(item['enabled'] is False for item in plugins.values())
     content = body['messages'][0]['content']
