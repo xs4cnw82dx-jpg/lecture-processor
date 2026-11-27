@@ -1,14 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}<meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Features · Lecture Processor</title>
+{% extends '_base.html' %}
+{% block title %}Features · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/features.css') }}">
-</head>
-<body>
+{% endblock %}
+{% block body %}
   {% set public_page = 'features' %}{% include '_public_header.html' %}
   <main id="main-content" tabindex="-1">
     <section class="feature-hero feature-width">
@@ -45,5 +42,4 @@
   </main>
   <footer class="footer">{% include '_footer_links.html' %}</footer>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script><script src="{{ url_for('static', filename='js/features.js') }}"></script>
-</body>
-</html>
+{% endblock %}
