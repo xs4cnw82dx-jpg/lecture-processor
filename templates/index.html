@@ -1,16 +1,13 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% if forced_mode == 'lecture-notes' %}Lecture Notes{% elif forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Processing{% endif %} · Lecture Processor</title>
+{% extends '_base.html' %}
+{% block body_attrs %} data-forced-mode="{{ forced_mode or '' }}"{% endblock %}
+{% block title %}{% if forced_mode == 'lecture-notes' %}Lecture Notes{% elif forced_mode == 'slides-only' %}Slides Extraction{% elif forced_mode == 'interview' %}Interview Transcription{% else %}Processing{% endif %} · Lecture Processor{% endblock %}
+{% block head %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
-</head>
-<body data-forced-mode="{{ forced_mode or '' }}">
+{% endblock %}
+{% block body %}
     {% if forced_mode == 'lecture-notes' %}
         {% set shell_title = 'Lecture Notes' %}
     {% elif forced_mode == 'slides-only' %}
@@ -310,5 +307,4 @@
     <script src="{{ url_for('static', filename=index_language_js_asset or 'js/index-language.js') }}"></script>
     <script src="{{ url_for('static', filename=index_audio_js_asset or 'js/index-audio.js') }}"></script>
     <script src="{{ url_for('static', filename=index_js_asset or 'js/index-app.js') }}"></script>
-</body>
-</html>
+{% endblock %}

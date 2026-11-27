@@ -1,15 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+{% extends '_base.html' %}
+{% block viewport %}width=device-width, initial-scale=1, viewport-fit=cover{% endblock %}
+{% block body_attrs %} class="voice-notes-body"{% endblock %}
+{% block title %}Voice Notes · Lecture Processor{% endblock %}
+{% block head %}
   <meta name="theme-color" content="#2558d9">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Voice Notes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Voice Notes · Lecture Processor</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
@@ -17,9 +14,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/voice-notes.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/media-player.css') }}">
-</head>
-
-<body class="voice-notes-body">
+{% endblock %}
+{% block body %}
   {% set shell_title = 'Voice Notes' %}
   {% include '_app_shell.html' %}
   <main class="app-shell-page voice-page" id="main-content" tabindex="-1">
@@ -223,6 +219,4 @@
   <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
   <script src="{{ url_for('static', filename=voice_notes_utils_js_asset or 'js/voice-notes-utils.js') }}"></script>
   <script src="{{ url_for('static', filename=voice_notes_js_asset or 'js/voice-notes.js') }}"></script>
-</body>
-
-</html>
+{% endblock %}

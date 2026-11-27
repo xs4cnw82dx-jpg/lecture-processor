@@ -327,7 +327,8 @@ def test_page_titles_share_one_format_and_pages_have_one_h1():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "templates"
-    brand_first = {"landing.html", "admin.html"}
+    # _base.html only holds the default title; pages extending it are checked in test_base_template.
+    brand_first = {"landing.html", "admin.html", "_base.html"}
     for path in sorted(root.glob("*.html")):
         source = path.read_text(encoding="utf-8")
         head = source.split("<body", 1)[0]
