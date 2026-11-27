@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from lecture_processor.domains.ai.providers import factory
-from lecture_processor.domains.ai.providers.contracts import AudioPart, ImagePart, PdfPart, TextPart
+from lecture_processor.domains.ai.providers.contracts import AudioPart, ImagePart, PdfPart, PreparedFilePart, TextPart
 from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.ai.providers.gemini import GeminiProvider
 from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
@@ -399,3 +399,15 @@ def test_openrouter_pdf_limit_counts_every_attachment(tmp_path, monkeypatch):
     with session_for(harness.runtime, monkeypatch, route=openrouter_route()) as session:
         result = session.generate(STAGE, [ImagePart(image, 'image/png'), pdf], operation_name=GENERATE)
     assert result.provider == 'gemini' and len(harness.uploads) == 2
+
+
+@pytest.mark.parametrize('other', [AudioPart('synthetic.wav', 'audio/wav'),
+                                   PreparedFilePart('fake://prepared', 'application/pdf')],
+                         ids=['audio', 'prepared'])
+def test_openrouter_only_input_rules_apply_before_the_size_fallback(tmp_path, monkeypatch, other):
+    harness = Harness()
+    harness.runtime.MODEL_SLIDES = 'synthetic-gemini-slides'
+    with session_for(harness.runtime, monkeypatch, route=openrouter_route()) as session:
+        with pytest.raises(ValueError, match='Gemini'):
+            session.generate(STAGE, [sized_pdf(tmp_path, 10 * 1024 * 1024 + 1), other], operation_name=GENERATE)
+    assert harness.uploads == harness.generations == []

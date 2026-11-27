@@ -83,6 +83,11 @@ class ProviderSession:
         route = self._route(stage)
         if route.provider == 'openrouter':
             parts = tuple(parts)
+            if any(isinstance(part, AudioPart) for part in parts):
+                raise ValueError('Audio generation requires Gemini.')
+            # Prepared parts are Gemini Files references; never fall back or re-read them elsewhere.
+            if any(isinstance(part, PreparedFilePart) for part in parts):
+                raise ValueError('Prepared provider files require Gemini.')
             if exceeds_pdf_request_limit(parts):
                 # Gemini uploads the file instead of inlining it, so large documents stay supported.
                 logger = getattr(self.runtime, 'logger', None) or logging.getLogger(__name__)
@@ -94,12 +99,6 @@ class ProviderSession:
             if type(max_output_tokens) is not int or max_output_tokens <= 0:
                 raise ValueError('Invalid generation output limit.')
             max_output_tokens = min(max_output_tokens, options['max_output_tokens'])
-            parts = tuple(parts)
-            if any(isinstance(part, AudioPart) for part in parts):
-                raise ValueError('Audio generation requires Gemini.')
-            # Prepared parts are Gemini Files references; never fall back or re-read them elsewhere.
-            if any(isinstance(part, PreparedFilePart) for part in parts):
-                raise ValueError('Prepared provider files require Gemini.')
         extra = {'options': options} if route.provider == 'openrouter' and not self._forced else {}
         return self._adapter(route).generate(
             route.model, parts, schema=schema, max_output_tokens=max_output_tokens,
