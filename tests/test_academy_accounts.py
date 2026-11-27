@@ -178,3 +178,39 @@ def test_a_new_invitation_waits_until_firebase_has_confirmed_identity_deletion(a
         db.atomic(lambda tx: studio._allow_invitation(runtime, tx, email))
     assert db.get(lock) is None
     assert db.get(receipt) == {'status': 'deleted'}
+
+
+def test_an_empty_account_can_delete_when_no_recipient_is_available(accounts, monkeypatch):
+    from lecture_processor.services import academy_accounts as service
+    client, _, _, remote, _ = accounts
+    destination = Mock(side_effect=AssertionError('An empty account has no courses to transfer'))
+    monkeypatch.setattr(service, '_admin', destination)
+    assert submit(client).json == {'complete': True}
+    remote.assert_called_once()
+    destination.assert_not_called()
+
+
+def test_course_created_just_before_the_tombstone_is_picked_up_on_retry(accounts, monkeypatch):
+    from lecture_processor.services import academy_accounts as service
+    client, store, claims, remote, _ = accounts
+    start = service._start
+
+    def interleaved(*args):
+        if not store.get('account_deletions/author-1'):
+            store.put('elearning_expeditions/raced', {'owner_uid': claims['uid']})
+        return start(*args)
+    monkeypatch.setattr(service, '_start', interleaved)
+    assert submit(client).status_code == 202
+    remote.assert_not_called()
+    assert submit(client).json == {'complete': True}
+    assert store.get('elearning_expeditions/raced')['owner_uid'] == 'studio-owner'
+
+
+def test_each_transfer_checks_its_recipient_is_still_available(accounts):
+    client, store, claims, remote, _ = accounts
+    store.put('account_deletions/author-1', {'status': 'transferring', 'email': claims['email'], 'admin_uid': 'studio-owner'})
+    store.put('account_deletions/studio-owner', {'status': 'transferring'})
+    store.put('elearning_expeditions/one', {'owner_uid': claims['uid']})
+    assert submit(client).status_code == 409
+    assert store.get('elearning_expeditions/one')['owner_uid'] == claims['uid']
+    remote.assert_not_called()

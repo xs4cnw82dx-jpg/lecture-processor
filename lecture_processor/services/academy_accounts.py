@@ -127,21 +127,32 @@ def _delete_signin(token):
     raise ElearningError('Sign-in removal could not be confirmed. Please try again.', 503)
 
 
+def _check_recipient(tx, uid):
+    marker = tx.get('account_deletions/' + uid) or {}
+    if marker and marker.get('status') != 'cancelled':
+        raise ElearningError('The Studio administrator is unavailable. Please try again.', 409)
+
+
 def _start(db, uid, email, destination):
     marker = 'account_deletions/' + uid
+    admin_uid = destination['uid'] if destination else ''
 
     def begin(tx):
         state = tx.get(marker) or {}
-        if state and state.get('status') != 'cancelled':
-            if state.get('status') not in ('transferring', 'auth_delete_pending', 'deleted'):
-                raise ElearningError('An account change is already in progress.', 409)
-            if state.get('status') == 'transferring' and state.get('admin_uid') != destination['uid']:
-                raise ElearningError('The transfer destination changed. Contact Studio support before continuing.', 409)
+        if state.get('status') in ('auth_delete_pending', 'deleted'):
             return state
-        admin_marker = tx.get('account_deletions/' + destination['uid']) or {}
-        if admin_marker and admin_marker.get('status') != 'cancelled':
-            raise ElearningError('The Studio administrator is unavailable. Please try again.', 409)
-        state = {'status': 'transferring', 'admin_uid': destination['uid'], 'email': email}
+        if admin_uid:
+            _check_recipient(tx, admin_uid)
+        if state.get('status') == 'transferring':
+            if admin_uid and state.get('admin_uid') != admin_uid:
+                if state.get('admin_uid'):
+                    raise ElearningError('The transfer destination changed. Contact Studio support before continuing.', 409)
+                state['admin_uid'] = admin_uid
+                tx.put(marker, state)
+            return state
+        if state and state.get('status') != 'cancelled':
+            raise ElearningError('An account change is already in progress.', 409)
+        state = {'status': 'transferring', 'admin_uid': admin_uid, 'email': email}
         tx.put(marker, state)
         if email:
             tx.delete(studio._author_key(email))
@@ -153,7 +164,6 @@ def _start(db, uid, email, destination):
 
 def _move(db, course_id, uid, email, destination):
     key = 'elearning_expeditions/' + course_id
-    folder = 'academy_users/' + destination['uid'] + '/folders/account-review'
 
     def transfer(tx):
         course = tx.get(key)
@@ -167,6 +177,8 @@ def _move(db, course_id, uid, email, destination):
         if not owned and not own_membership and not has_lease:
             return
         if owned:
+            _check_recipient(tx, destination['uid'])
+            folder = 'academy_users/' + destination['uid'] + '/folders/account-review'
             folder_exists = tx.get(folder)
             course.update(owner_uid=destination['uid'], owner_email=destination['email'], folder_id='account-review')
             if not folder_exists:
@@ -204,6 +216,10 @@ def _transfer_page(db, uid, email, destination):
         if not value:
             continue
         courses = db.list('elearning_expeditions', field, value, op, limit=remaining, fields=[field])
+        if field == 'owner_uid' and courses and not destination:
+            # A create transaction may have committed between the initial
+            # ownership query and our tombstone. Resolve a recipient on retry.
+            return False
         for row in courses:
             _move(db, row['_id'], uid, email, destination)
         remaining -= len(courses)
@@ -255,8 +271,9 @@ def delete():
     marker = 'account_deletions/' + uid
     state = db.get(marker) or {}
     if state.get('status') != 'auth_delete_pending' and state.get('status') != 'deleted':
-        destination = _admin(runtime)
-        if destination['uid'] == uid:
+        has_courses = db.list('elearning_expeditions', 'owner_uid', uid, fields=['owner_uid'], limit=1)
+        destination = _admin(runtime) if has_courses else None
+        if destination and destination['uid'] == uid:
             raise ElearningError('Assign a successor as Studio administrator before deleting this account.', 409)
         state = _start(db, uid, studio._verified_member_email(user), destination)
         if state['status'] == 'transferring':
