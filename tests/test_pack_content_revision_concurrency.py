@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from lecture_processor.services import study_library_service as library
+from lecture_processor.repositories.books_repo import BookStore
 from tests.support.pack_content_revision_concurrency import (
     add_picture,
     pack,
@@ -15,15 +15,16 @@ from tests.support.pack_content_revision_concurrency import (
 
 
 def interleave_after_snapshot(monkeypatch, state, second):
-    """Commit the other request after the first handler read but before its transaction."""
+    """Commit a competing edit after request preparation but before the write transaction."""
     replies = []
+    atomic = BookStore.atomic
 
-    def run_other_request(*_args, **_kwargs):
-        monkeypatch.setattr(library.study_audio, 'get_audio_storage_key_from_pack', lambda *_a, **_k: '')
+    def interleave(db, operation):
+        monkeypatch.setattr(BookStore, 'atomic', atomic)
         replies.append(second())
-        return ''
+        return atomic(db, operation)
 
-    monkeypatch.setattr(library.study_audio, 'get_audio_storage_key_from_pack', run_other_request)
+    monkeypatch.setattr(BookStore, 'atomic', interleave)
     return replies
 
 

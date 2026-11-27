@@ -332,12 +332,9 @@ def test_rejected_patch_does_not_hydrate_legacy_audio_or_recreate_a_pack(editor,
     monkeypatch.setattr(library.study_audio, 'ensure_pack_audio_storage_key', ensure_pack_audio_storage_key)
     monkeypatch.setattr(library.study_audio, 'audio_storage_key_has_file', audio_storage_key_has_file)
 
-    def read_key(current, runtime):
-        if change == 'deleted':
-            editor.store.documents.pop(('study_packs', 'pack'), None)
-        return get_audio_storage_key_from_pack(current, runtime=runtime)
-
-    monkeypatch.setattr(library.study_audio, 'get_audio_storage_key_from_pack', read_key)
+    monkeypatch.setattr(library.study_audio, 'get_audio_storage_key_from_pack', get_audio_storage_key_from_pack)
+    if change == 'deleted':
+        editor.store.documents.pop(('study_packs', 'pack'))
     result = replace(editor, old, notes_markdown='# Stale draft')
 
     if change == 'stale':
@@ -366,3 +363,25 @@ def test_picture_permission_is_rechecked_when_commit_retries(editor, monkeypatch
     )
     assert editor.store.documents == replies[0]
     assert editor.deleted_objects == []
+
+
+def test_retry_uses_current_pack_audio_and_a_single_pack_read_per_attempt(editor, monkeypatch):
+    monkeypatch.setattr(library.study_audio, 'get_audio_storage_key_from_pack',
+                        lambda current, **_: current.get('audio_storage_key', ''))
+    monkeypatch.setattr(library.study_audio, 'audio_storage_key_has_file', lambda key, **_: key == 'new.mp3')
+    reference = type(editor.runtime.db.collection('study_packs').document('pack'))
+    original = reference.get
+    reads = []
+
+    def observe(ref, *args, **kwargs):
+        if ref.path == ('study_packs', 'pack'):
+            reads.append(kwargs.get('transaction') is not None)
+        return original(ref, *args, **kwargs)
+
+    monkeypatch.setattr(reference, 'get', observe)
+    race_at_commit(monkeypatch, editor, lambda: editor.store.documents[('study_packs', 'pack')].update(
+        {'audio_storage_key': 'new.mp3', 'has_audio_playback': True}))
+
+    assert patch(editor, title='Updated')[0] == 200
+    assert pack(editor)['has_audio_playback'] is True
+    assert reads == [True, True]

@@ -13,6 +13,7 @@ from flask import jsonify, send_file
 from lecture_processor.services import access_service
 from lecture_processor.domains.account import lifecycle as account_lifecycle
 from lecture_processor.domains.books.model import BookError
+from lecture_processor.domains.study import audio as study_audio
 from lecture_processor.domains.study.content_revision import fingerprint
 from lecture_processor.domains.study.picture_refs import IMAGE_ID, PENDING_PICTURES, card_image_ids
 from lecture_processor.repositories.books_repo import BookStore
@@ -114,8 +115,7 @@ def _require_writable_account(tx, uid):
         deletion = tx.get(account_lifecycle.ACCOUNT_DELETIONS_COLLECTION + '/' + uid)
         if not isinstance(user, dict) or str(user.get('account_status', '')).strip().lower() in {'deleting', 'delete_requested', 'deleted'}:
             raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
-        if deletion is not None and str(deletion.get('status') or deletion.get('phase') or '').strip().lower() != 'cancelled':
-            raise account_lifecycle.AccountUnavailableError('Account is unavailable.')
+        account_lifecycle.require_deletion_state_access(deletion)
         return user
     except Exception as error:
         raise account_lifecycle.AccountUnavailableError('Account is unavailable.') from error
@@ -138,7 +138,12 @@ def update_pack_and_collect_removed(runtime, uid, pack_id, updates, *, base_cont
             # when this request's fields already match after a lost response.
             raise ContentRevisionConflict(current_revision)
         pending = set(pack.get(PENDING_PICTURES, []))
-        saved = {**pack, **updates}
+        has_audio = study_audio.pack_audio_file_exists(pack, runtime=runtime)
+        saved = {**pack, **updates, 'has_audio_playback': has_audio}
+        if 'notes_audio_map' in updates:
+            saved['has_audio_sync'] = bool(has_audio and updates['notes_audio_map'])
+        elif not has_audio:
+            saved['has_audio_sync'] = False
         if 'flashcards' in updates:
             next_ids = card_image_ids(updates['flashcards'])
             if next_ids and user.get('study_pictures_enabled') is not True:
