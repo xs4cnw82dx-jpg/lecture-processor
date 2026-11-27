@@ -313,3 +313,25 @@ for (const [language, message] of [
     await expect(page.locator('#status-text')).toHaveText(message);
   });
 }
+
+test('batch audio import shows typed verification guidance from polling without resubmitting', async ({ page }) => {
+  await fixture(page);
+  let posts = 0, polls = 0;
+  await page.route('**/api/import-audio-url', route => {
+    posts++;
+    return route.fulfill({ status: 202, json: { job_id: 'verification-job' } });
+  });
+  await page.route('**/api/import-audio-url/verification-job', route => {
+    polls++;
+    return route.fulfill({ status: 403, json: { error_code: 'email_not_verified', error: 'Email not verified' } });
+  });
+  await page.goto('/batch_mode');
+  await expect(page.locator('#submit-batch-btn')).toBeEnabled();
+  const row = page.locator('.batch-row').first();
+  await row.locator('.row-url-import > summary').click();
+  await row.locator('[data-field="m3u8"]').fill('https://example.test/synthetic');
+  await row.locator('[data-action="import-audio-url"]').click();
+  await expect(row.locator('[data-field="m3u8-status"]')).toHaveText('Verify your email address before continuing.');
+  expect(posts).toBe(1);
+  expect(polls).toBe(2);
+});

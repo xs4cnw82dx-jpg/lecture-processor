@@ -1,6 +1,18 @@
 (function (global) {
   'use strict';
 
+  function isVerificationDenial(response, payload) {
+    return response.status === 403 && payload && payload.error_code === 'email_not_verified';
+  }
+
+  function verificationError(response, payload) {
+    if (!isVerificationDenial(response, payload)) return null;
+    var message = 'Verify your email address before continuing.';
+    var error = new Error(global.LectureI18n && global.LectureI18n.t ? global.LectureI18n.t(message) : message);
+    error.code = 'email_not_verified';
+    return error;
+  }
+
   function createAuthClient(auth, options) {
     var opts = options || {};
     var cachedToken = null;
@@ -130,7 +142,7 @@
     function authFetch(url, options, fetchOptions) {
       var requestOptions = options || {};
       var settings = fetchOptions || {};
-      var retryOn401 = settings.retryOn401 !== false;
+      var allowRefresh = settings.retryOn401 !== false;
       var ensureJsonContentType = !!settings.ensureJsonContentType;
       var session = captureSession();
 
@@ -145,10 +157,15 @@
       }
 
       return send(false)
-        .then(function (response) {
+        .then(async function (response) {
           session.assertCurrent();
-          if (response.status === 401 && retryOn401) {
-            return send(true);
+          if (!allowRefresh) return response;
+          if (response.status === 401) return send(true);
+          if (response.status === 403 && typeof response.clone === 'function') {
+            // Only an explicit rejection of an out-of-date verification claim is retryable.
+            var payload = await response.clone().json().catch(function () { return null; });
+            session.assertCurrent();
+            if (isVerificationDenial(response, payload)) return send(true);
           }
           return response;
         }).then(function (response) {
@@ -222,6 +239,7 @@
 
   global.LectureProcessorAuth = {
     createAuthClient: createAuthClient,
+    verificationError: verificationError,
     buildSignInUrl: buildSignInUrl,
     getCurrentReturnPath: getCurrentReturnPath,
     normalizeReturnPath: normalizeReturnPath,

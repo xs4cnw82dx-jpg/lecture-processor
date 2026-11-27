@@ -514,7 +514,7 @@ async function pollAudioImportJob(jobId) {
         const response = await authenticatedFetch(`/api/import-audio-url/${encodeURIComponent(safeJobId)}`);
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(String(payload.error || 'Could not read audio import status.'));
+            throw window.LectureProcessorAuth?.verificationError(response, payload) || new Error(String(payload.error || 'Could not read audio import status.'));
         }
         const status = String(payload.status || '').trim().toLowerCase();
         if (status === 'complete' && payload.audio_import_token) {
@@ -614,7 +614,7 @@ async function importAudioFromUrl(options = {}) {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             const retryAfter = getRetryAfterSeconds(response, data);
-            const errorText = String(data.error || 'Could not import audio from URL.');
+            const errorText = String(window.LectureProcessorAuth?.verificationError(response, data)?.message || data.error || 'Could not import audio from URL.');
             if (response.status === 429 && retryAfter > 0) {
                 setAudioImportStatus(`${errorText} Try again in ${formatRetryDelay(retryAfter)}.`, true);
             } else {
@@ -637,7 +637,7 @@ async function importAudioFromUrl(options = {}) {
         return applied;
     } catch (e) {
         captureClientError(e, 'import_audio_url');
-        setAudioImportStatus('Could not import audio from URL. Please try again.', true);
+        setAudioImportStatus(e.code === 'email_not_verified' ? e.message : 'Could not import audio from URL. Please try again.', true);
         return false;
     } finally {
         audioImportInFlight = false;
@@ -697,7 +697,7 @@ function downloadImportedAudioPreview() {
     }).then((response) => {
         if (!response.ok) {
             return response.json().catch(() => ({})).then((payload) => {
-                throw new Error(payload.error || 'Could not download imported audio.');
+                throw new Error(window.LectureProcessorAuth?.verificationError(response, payload)?.message || payload.error || 'Could not download imported audio.');
             });
         }
         if (downloadUtils.downloadResponseBlob) {

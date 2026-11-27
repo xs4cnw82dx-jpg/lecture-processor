@@ -412,7 +412,7 @@
           schedulePoll(jobId, 1500);
           return;
         }
-        setStatus(creditError(payload, 'Transcription failed.'), 'error');
+        setStatus(authUtils.verificationError(response, payload)?.message || creditError(payload, 'Transcription failed.'), 'error');
         finishRun();
         await refreshUserState(true);
         return;
@@ -479,7 +479,7 @@
       var payload = await response.json().catch(function () { return {}; });
       session.assertCurrent();
       if (!response.ok) {
-        setStatus(creditError(payload, 'Transcription failed.'), 'error');
+        setStatus(authUtils.verificationError(response, payload)?.message || creditError(payload, 'Transcription failed.'), 'error');
         finishRun();
         await refreshUserState(true);
         return;
