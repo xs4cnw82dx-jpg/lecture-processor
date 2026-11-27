@@ -14,6 +14,7 @@ from firebase_admin import auth, credentials, exceptions, firestore
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
 from google.api_core.exceptions import GoogleAPICallError
 
+from lecture_processor.blueprints.academy_folders import academy_folders_bp
 from lecture_processor.blueprints.elearning import elearning_bp
 from lecture_processor.domains.elearning.model import ElearningError
 from lecture_processor.repositories import users_repo
@@ -134,6 +135,7 @@ def create_app():
     apply_proxy_fix(app, 1)
     register_static_versioning(app)
     app.register_blueprint(elearning_bp)
+    app.register_blueprint(academy_folders_bp)
     static_root = Path(app.static_folder)
     public_assets = {
         file.relative_to(static_root).as_posix()

@@ -119,3 +119,14 @@
 #el-admin-authors h3 { margin: 0 0 .4rem; }
 #el-admin-author-list .el-admin-row-actions { flex-wrap: wrap; }
 #el-admin-author-list .el-admin-row-actions small { flex-basis: 100%; }
+
+.academy-folder-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-block: 20px 8px;
+}
+.academy-folder-bar[hidden] { display: none; }
+.academy-folder-bar label { font-weight: 650; }
+.academy-folder-bar select { width: min(100%, 18rem); min-width: 0; }

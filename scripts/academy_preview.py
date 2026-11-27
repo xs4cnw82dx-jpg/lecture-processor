@@ -25,6 +25,8 @@ def academy_preview(credential_path):
     }
     # A missing document and an empty query emulate the fresh project.
     database = Mock()
+    database.collection.return_value.stream.return_value = ()
+    database.collection.return_value.where.return_value.stream.return_value = ()
     database.collection.return_value.document.return_value.get.return_value.exists = False
     database.collection.return_value.where.return_value.limit.return_value.stream.return_value = ()
     database.document.return_value.get.return_value.exists = False

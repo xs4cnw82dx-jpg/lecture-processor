@@ -42,6 +42,8 @@ class MemoryStore:
                 rows = [r for r in rows if r.get(field) == value]
         return rows[:limit]
 
+    stream = list
+
     def count(self, collection, filters):
         return sum(all(row.get(field) == value for field, _, value in filters)
                    for row in self.list(collection, limit=None))

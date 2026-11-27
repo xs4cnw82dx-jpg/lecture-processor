@@ -48,7 +48,7 @@ def test_academy_accepts_its_own_identity_and_starts_with_an_empty_library(acade
     assert academy_client.get(library, headers={'Authorization': 'Bearer unrelated-project'}).status_code == 401
     response = academy_client.get(library, headers={'Authorization': 'Bearer academy-preview-token'})
     assert response.status_code == 200, response.text
-    assert response.json == {'expeditions': [], 'storageAvailable': True, 'studioAdmin': True, 'canCreate': True}
+    assert response.json == {'expeditions': [], 'storageAvailable': True, 'studioAdmin': True, 'canCreate': True, 'folders': []}
     assert academy_client.get('/api/elearning/admin/statistics').status_code == 401
 
 
