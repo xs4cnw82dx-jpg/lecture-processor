@@ -1,16 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
+{% extends '_base.html' %}
+{% block title %}Terms of Service · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Terms of Service · Lecture Processor</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/legal-pages.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
-</head>
-<body>
+{% endblock %}
+{% block body %}
   {% set public_page = 'legal' %}
   {% include '_public_header.html' %}
   <div class="container">
@@ -103,5 +99,4 @@
       <div class="footer">{% include '_footer_links.html' %}</div>
     </main>
   </div>
-</body>
-</html>
+{% endblock %}

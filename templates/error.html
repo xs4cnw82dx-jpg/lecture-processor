@@ -1,15 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  {% include '_preferences_head.html' %}
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ error_code }} {{ error_title }} · Lecture Processor</title>
+{% extends '_base.html' %}
+{% block title %}{{ error_code }} {{ error_title }} · Lecture Processor{% endblock %}
+{% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public-header.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/error.css') }}">
-</head>
-<body>
+{% endblock %}
+{% block body %}
   {% set public_page = '' %}
   {% include '_public_header.html' %}
   <main class="error-page" id="main-content" tabindex="-1">
@@ -19,5 +15,4 @@
     <p>{{ error_message }}</p>
     <div class="error-actions"><a href="/dashboard" class="error-primary">Go to your workspace <span aria-hidden="true">↗</span></a><a href="/helpcenter">Visit the Help Center</a></div>
   </main>
-</body>
-</html>
+{% endblock %}

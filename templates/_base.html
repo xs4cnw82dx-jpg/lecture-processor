@@ -1,0 +1,17 @@
+{# Shared page skeleton. Pages extend it and fill:
+   title  - the text before " · Lecture Processor"-style suffixes (the whole title text)
+   head   - page stylesheets and scripts, in cascade order (after theme.css from _preferences_head)
+   body   - everything inside <body> #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  {% include '_preferences_head.html' %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Lecture Processor{% endblock %}</title>
+{% block head %}{% endblock %}
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>
