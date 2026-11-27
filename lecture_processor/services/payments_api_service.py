@@ -62,6 +62,22 @@ def _checkout_failure_response(app_ctx, status):
     return app_ctx.jsonify({'error': 'Could not grant credits.'}), 500
 
 
+def _find_checkout_refund(stripe, payment_intent, session_id):
+    # Stripe can discard an idempotency key after 24 hours. Refund objects retain
+    # their session metadata and can still be used after a lost database write.
+    refunds = stripe.Refund.list(payment_intent=payment_intent, limit=100)
+    unresolved = None
+    for refund in refunds.auto_paging_iter():
+        metadata = refund.get('metadata') or {}
+        if (refund.get('payment_intent') == payment_intent
+                and metadata.get('checkout_session_id') == session_id
+                and metadata.get('reason') == 'account_deleted'):
+            if refund.get('status') == 'succeeded':
+                return refund
+            unresolved = refund
+    return unresolved
+
+
 def _refund_deleted_account_checkout(app_ctx, session):
     session_id = str(session.get('id', '') or '').strip()
     payment_intent = session.get('payment_intent')
@@ -75,12 +91,18 @@ def _refund_deleted_account_checkout(app_ctx, session):
         )
         return False
     try:
-        refund = app_ctx.stripe.Refund.create(
-            payment_intent=payment_intent,
-            metadata={'reason': 'account_deleted', 'checkout_session_id': session_id},
-            idempotency_key=f'deleted-account-checkout-{session_id}',
-        )
-        refund_id = str(getattr(refund, 'id', '') or (refund.get('id', '') if isinstance(refund, dict) else ''))
+        refund = _find_checkout_refund(app_ctx.stripe, payment_intent, session_id)
+        if refund is None:
+            refund = app_ctx.stripe.Refund.create(
+                payment_intent=payment_intent,
+                metadata={'reason': 'account_deleted', 'checkout_session_id': session_id},
+                idempotency_key=f'deleted-account-checkout-{session_id}',
+            )
+        refund_id = refund.get('id')
+        if not refund_id or refund.get('status') != 'succeeded':
+            app_ctx.logger.warning('Deleted-account checkout %s has an unsettled refund %s (status %s).',
+                                   session_id, refund_id, refund.get('status'))
+            return False
         app_ctx.repositories.purchases.set_doc(
             app_ctx.db,
             session_id,
