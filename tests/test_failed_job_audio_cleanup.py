@@ -117,8 +117,8 @@ class AudioBatch(AudioPipeline):
         if failure == 'external_stop':
             upload = batch._upload_row_files
 
-            def stop_after_upload(row, runtime=None):
-                upload(row, runtime=runtime)
+            def stop_after_upload(row, runtime=None, *, upload_slides=True):
+                upload(row, runtime=runtime, upload_slides=upload_slides)
                 assert self.persisted.is_file()
                 self.batch.update(status='error', error='Synthetic external stop', provider_state='EXTERNAL_STOP')
 
