@@ -45,3 +45,31 @@ test('a restored account processes imported audio in its chosen language', async
   expect(form.get('output_language')).toBe('spanish');
   expect(browserErrors).toEqual([]);
 });
+
+test('an interview author can select audio from an imported URL', async ({ page }) => {
+  const { browserErrors } = await installAccountFixture(page);
+  const preferences = { onboarding_completed: true };
+  await page.route('**/api/verify-email', route => route.fulfill({ json: { allowed: true } }));
+  await page.route('**/api/auth/user', route => route.fulfill({ json: {
+    uid: 'a', preferences, credits: { interview_short: 1 },
+  } }));
+  await page.route('**/api/user-preferences', route => route.fulfill({ json: { preferences } }));
+  const imports = [];
+  await page.route('**/api/import-audio-url', route => {
+    imports.push(route.request().postDataJSON().url);
+    return route.fulfill({ status: 202, json: { job_id: 'interview-import' } });
+  });
+  await page.route('**/api/import-audio-url/interview-import', route => route.fulfill({ json: {
+    status: 'complete', audio_import_token: 'interview-token', file_name: 'interview.mp3', size_bytes: 2400,
+  } }));
+
+  await page.goto('/interview-transcription');
+  await expect(page.locator('#sign-in-required')).toBeHidden();
+  await page.locator('#other-audio-toggle').click();
+  const url = 'https://example.test/interview.m3u8';
+  await page.locator('#audio-url-input').fill(url);
+  await page.locator('#audio-url-fetch-btn').click();
+  await expect(page.locator('#audio-name')).toHaveText('interview.mp3', { timeout: 4000 });
+  expect(imports).toEqual([url]);
+  expect(browserErrors).toEqual([]);
+});

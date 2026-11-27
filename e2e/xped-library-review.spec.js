@@ -148,7 +148,10 @@ function reportData() {
   ];
   return { expedition: { id: 'visual', title: 'Course draft', modules: stations, defaultLanguage: 'nl' },
     cohorts: ['pilot-1', 'pilot-2'], summary: { totalSessions: 12, completionRate: 75, medianSeconds: 300 },
-    funnel: [], blockStats: {
+    funnel: [
+      { moduleId: 'mod1', moduleTitle: loc('Opening'), stepId: 'first', stepTitle: loc('Check-in'), reached: 12 },
+      { moduleId: 'mod2', moduleTitle: loc('Follow-up'), stepId: 'second', stepTitle: loc('Check-in'), reached: 6 },
+    ], blockStats: {
       poll: { count: 2, counts: { a: 2, b: 1 } },
       writing: { count: 12, samples: Array.from({ length: 12 }, (_, i) => 'Reflection ' + (i + 1)), sampleTotal: 12 },
       bal1: { count: 1, avgLoad: 2, avgResource: 2 }, bal2: { count: 1, avgLoad: 3, avgResource: 2 },
@@ -182,9 +185,19 @@ test('response filters keep their scope, counts and comment destinations clear',
   await page.goto(base + '/visual/responses');
   const stats = page.locator('#el-resp-blocks');
   await expect(stats).toContainText('Share of 2 respondents');
-  await expect(stats.getByText('2 (100%)', { exact: true })).toBeVisible();
-  await expect(stats.getByText('1 (50%)', { exact: true })).toBeVisible();
-  await expect(stats.getByText('0 (0%)', { exact: true })).toBeVisible();
+  const choice = name => stats.locator('.el-chart-row').filter({ hasText: name }).locator('.el-chart-value');
+  await expect(choice('Choice a')).toHaveText('2 100%');
+  await expect(choice('Choice b')).toHaveText('1 50%');
+  await expect(choice('Choice c')).toHaveText('0 0%');
+  const completion = page.locator('#el-resp-kpis');
+  await expect(completion.getByRole('heading', { name: 'Completion rate' })).toBeVisible();
+  await expect(completion.locator('.el-split-figures')).toContainText('Completed75%');
+  await expect(completion.locator('.el-split-figures')).toContainText('Not completed25%');
+  await expect(completion.locator('.el-split-counts')).toHaveText('9 sessions3 sessions');
+  const reach = page.locator('#el-resp-funnel');
+  await expect(reach.locator('.el-chart-group-title')).toHaveText(['Opening', 'Follow-up']);
+  await expect(reach.locator('.el-chart-group').filter({ hasText: 'Follow-up' }).locator('.el-chart-value')).toHaveText('6 50%');
+  await expect(reach.locator('.el-chart-note')).toHaveText('n = 12');
   await expect(stats).toContainText('Showing 8 of 12 reflection excerpts');
   await stats.getByRole('button', { name: 'Show 12 excerpts' }).click();
   await expect(stats).toContainText('Showing 12 of 12 reflection excerpts');

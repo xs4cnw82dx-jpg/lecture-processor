@@ -27,17 +27,18 @@
 #el-admin-dialog #el-admin-extra { padding-left: 1.45rem; margin-bottom: .75rem; }
 #el-admin-extra:disabled { opacity: .6; }
 #el-admin-stats h3 { margin: 0 0 .4rem; }
-#el-admin-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: 1rem 0; }
-#el-admin-totals > div { display: flex; flex-direction: column; padding: .7rem .85rem; border-radius: .65rem; background: var(--theme-surface-soft); }
-#el-admin-totals dt { color: var(--theme-muted-strong); font-size: .8rem; }
-#el-admin-totals dd { margin: auto 0 0; padding-top: .2rem; color: var(--theme-ink); font-size: 1.4rem; font-weight: 700; }
+#el-admin-totals { margin: 1.25rem 0 0; }
+#el-admin-split:empty { display: none; }
+#el-admin-breakdown { display: grid; gap: .9rem; margin-top: 1.5rem; }
+.el-admin-list li.el-admin-chart-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 7px 12px; padding: 0; border: 0; }
+.el-admin-list .el-admin-chart-row .el-chart-value strong { display: inline; }
+.el-admin-chart-row .el-action-link { min-height: 0; padding: 2px 6px; font-size: .82rem; }
 #el-admin-status:not(:empty) { margin: .85rem 0 .35rem; }
 #el-admin-status:empty { margin: 0; }
 @media (max-width: 580px) {
   .el-admin-form { grid-template-columns: minmax(0, 1fr) auto; }
   .el-admin-form label:first-child { grid-column: 1/-1; }
   .el-admin-section { padding: .75rem; }
-  #el-admin-totals > div { padding: .55rem; }
 }
 
 #el-admin-dialog .el-admin-reset { border: 0; margin-top: .5rem; }
