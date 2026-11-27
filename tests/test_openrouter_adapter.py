@@ -274,9 +274,9 @@ def test_file_prepared_once_for_retries_and_client_closed_once(adapter_runtime, 
     reads = []
     read = openrouter_request._read_file
 
-    def counted(path):
+    def counted(path, max_bytes):
         reads.append(path)
-        return read(path)
+        return read(path, max_bytes)
 
     monkeypatch.setattr(openrouter_request, '_read_file', counted)
     outcomes = iter([(503, {'error': {'message': PRIVATE}}), (200, success())])

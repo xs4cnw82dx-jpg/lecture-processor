@@ -436,7 +436,7 @@ test('mobile tool and signed-in shell controls never widen the page', async ({ p
     account.hidden = false;
     signin.hidden = true;
     credits.hidden = false;
-    document.querySelector('#shell-account-name').textContent = 'ijacco2004';
+    document.querySelector('#shell-account-name').textContent = 'student042';
     document.querySelector('#shell-credits-total').textContent = 'Unlimited credits';
   });
 
