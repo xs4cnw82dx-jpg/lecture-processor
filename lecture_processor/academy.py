@@ -12,14 +12,17 @@ import time
 import firebase_admin
 from firebase_admin import auth, credentials, exceptions, firestore
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
+from google.api_core.exceptions import GoogleAPICallError
 
 from lecture_processor.blueprints.elearning import elearning_bp
+from lecture_processor.domains.elearning.model import ElearningError
 from lecture_processor.repositories import users_repo
+from lecture_processor.runtime.container import get_runtime
 from lecture_processor.runtime.environment import normalize_public_base_url, resolve_js_asset
 from lecture_processor.runtime.http_security import apply_security_headers, build_content_security_policy
 from lecture_processor.runtime.proxy import apply_proxy_fix
 from lecture_processor.runtime.static_assets import register_static_versioning
-from lecture_processor.services import rate_limit_service
+from lecture_processor.services import elearning_service, rate_limit_service
 
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -144,6 +147,15 @@ def create_app():
     @app.get('/healthz')
     def healthz():
         return jsonify(status='ok')
+
+    @app.route('/api/academy/authors', methods=['GET', 'POST'])
+    def authors():
+        try:
+            return elearning_service.academy_authors(get_runtime())
+        except ElearningError as error:
+            return jsonify(error=str(error)), error.status
+        except GoogleAPICallError:
+            return jsonify(error='Cloud saving is temporarily unavailable. Please try again in a moment.'), 503
 
     @app.get('/signin')
     def signin():

@@ -48,7 +48,7 @@ def test_academy_accepts_its_own_identity_and_starts_with_an_empty_library(acade
     assert academy_client.get(library, headers={'Authorization': 'Bearer unrelated-project'}).status_code == 401
     response = academy_client.get(library, headers={'Authorization': 'Bearer academy-preview-token'})
     assert response.status_code == 200, response.text
-    assert response.json == {'expeditions': [], 'storageAvailable': True, 'studioAdmin': True}
+    assert response.json == {'expeditions': [], 'storageAvailable': True, 'studioAdmin': True, 'canCreate': True}
     assert academy_client.get('/api/elearning/admin/statistics').status_code == 401
 
 
@@ -100,7 +100,7 @@ def test_unverified_email_cannot_use_studio_admin(academy_client, monkeypatch):
     })
     client = academy.create_app().test_client()
     response = client.get('/api/elearning/admin/statistics', headers={'Authorization': 'Bearer unverified'})
-    assert response.status_code in (401, 403)
+    assert response.status_code == 401
 
 
 def test_invalid_inline_credential_is_rejected_without_disclosing_its_value(monkeypatch, tmp_path):

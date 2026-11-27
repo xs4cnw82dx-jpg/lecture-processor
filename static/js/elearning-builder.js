@@ -13,7 +13,12 @@
   var initialMode = bodyData.initialMode || 'edit';
   var ux = window.LectureProcessorUx;
   var bootstrap = window.LectureProcessorBootstrap;
-  var auth = grantToken ? null : bootstrap.getAuth();
+  var auth = null;
+  if (!grantToken) {
+    try { auth = bootstrap.getAuth(); } catch (error) {
+      if (!document.querySelector('meta[name="academy-signin"]')) throw error;
+    }
+  }
   var authClient = grantToken ? null : window.LectureProcessorAuth.createAuthClient(auth);
   var accountSession = null;
   var activeUser = null;
@@ -5006,7 +5011,7 @@
     var panel = document.createElement('p');
     panel.className = 'el-editor-unavailable';
     panel.textContent = message;
-    if (!grantToken && !activeUser) {
+    if (auth && !grantToken && !activeUser) {
       var link = document.createElement('a');
       link.href = window.LectureProcessorAuth.buildSignInUrl(window.location.pathname);
       link.textContent = 'Sign in';
@@ -5104,6 +5109,8 @@
   });
   if (grantToken) {
     loadExpedition();
+  } else if (!auth) {
+    showUnavailable('Sign-in is temporarily unavailable. Reload this page to try again.');
   } else {
     bootstrap.onAuthStateReady(auth, function (user) {
       if (loadedAccount && (activeUser?.uid || '') !== (user?.uid || '')) {

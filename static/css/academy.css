@@ -113,3 +113,9 @@
   .academy-brand-name { padding-inline-start: 6px; }
   .academy-header .academy-nav details.academy-preferences > summary { padding: 6px; font-size: .8rem; }
 }
+.academy-body .el-admin-nav { flex-wrap: wrap; }
+#el-admin-author-form { grid-template-columns: minmax(0, 1fr) auto; }
+#el-admin-author-form label { grid-column: auto; }
+#el-admin-authors h3 { margin: 0 0 .4rem; }
+#el-admin-author-list .el-admin-row-actions { flex-wrap: wrap; }
+#el-admin-author-list .el-admin-row-actions small { flex-basis: 100%; }

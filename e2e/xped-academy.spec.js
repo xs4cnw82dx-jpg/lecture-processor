@@ -123,3 +123,81 @@ test('an author can request a reset and receive a verification prompt after sign
   await page.getByRole('button', { name: 'Use another account' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
 });
+
+test('author pages report unavailable sign-in when the Academy configuration is missing', async ({ page }) => {
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => {
+      const config = document.getElementById('academy-firebase-config');
+      if (!config) return;
+      config.remove();
+      observer.disconnect();
+    });
+    observer.observe(document, { subtree: true, childList: true });
+  });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  for (const path of ['/signin', '/physio/elearning', '/physio/elearning/example/edit', '/physio/elearning/example/responses']) {
+    await page.goto(academy + path);
+    await expect(page.getByText('Sign-in is temporarily unavailable. Reload this page to try again.', { exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => window.LectureProcessorBootstrap.firebaseConfig)).toBeNull();
+  }
+  expect(errors).toEqual([]);
+});
+
+async function signInToLibrary(page) {
+  await page.goto(academy + '/signin');
+  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(academy + '/physio/elearning');
+}
+
+test('the Studio administrator can grant and revoke author access before creating a course', async ({ page }) => {
+  const calls = [];
+  const authors = new Set();
+  await page.route('**/api/academy/authors', async route => {
+    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      calls.push(body);
+      if (body.action === 'grant') authors.add(body.email.toLowerCase());
+      else if (body.action === 'revoke') authors.delete(body.email);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: { authors: [...authors] } });
+  });
+  await signInToLibrary(page);
+  await page.getByRole('button', { name: 'Admin', exact: true }).click();
+  await page.getByRole('button', { name: 'Studio authors' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('status')).toHaveText('No invited authors yet.');
+  await dialog.getByLabel('Email address', { exact: true }).filter({ visible: true }).fill('Author@example.test');
+  await dialog.getByRole('button', { name: 'Add author' }).click();
+  await expect(dialog.getByText('author@example.test', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Revoke' }).click();
+  await dialog.getByRole('button', { name: 'Confirm removal' }).click();
+  await expect(dialog.getByRole('status')).toHaveText('No invited authors yet.');
+  await expect(dialog.getByText('author@example.test', { exact: true })).toHaveCount(0);
+  expect(calls).toEqual([{ action: 'grant', email: 'Author@example.test' }, { action: 'revoke', email: 'author@example.test' }]);
+});
+
+test('author invitations enable creation independently of course collaboration', async ({ page }) => {
+  const library = { expeditions: [], canCreate: false, studioAdmin: false };
+  await page.route('**/api/elearning/expeditions', route => route.fulfill({ json: library }));
+  await signInToLibrary(page);
+  await expect(page.getByRole('heading', { name: 'Author access is by invitation' })).toBeVisible();
+  for (const name of ['Admin', 'New expedition', 'Import JSON', 'Create expedition']) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+  library.expeditions = [{ id: 'shared', title: 'Shared project', moduleCount: 0, stepCount: 0, role: 'edit' }];
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Open Builder' })).toHaveAttribute('href', '/physio/elearning/shared/edit');
+  await expect(page.getByRole('button', { name: /^More actions/ })).toHaveCount(0);
+  library.canCreate = true;
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'New expedition' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Import JSON' })).toBeVisible();
+  await page.getByRole('button', { name: /^More actions/ }).click();
+  await expect(page.getByText('Duplicate', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+});

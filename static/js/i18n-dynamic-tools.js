@@ -3,6 +3,18 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "This author will lose access to their own expeditions until you restore access.": "Deze auteur heeft geen toegang meer tot de eigen expedities totdat je de toegang herstelt.",
+  "Studio authors": "Studio-auteurs",
+  "Manage Studio authors": "Studio-auteurs beheren",
+  "Grant someone permission to create their own expeditions. They must sign in with the verified email address you add here.": "Geef iemand toestemming om eigen expedities te maken. Deze persoon moet inloggen met het bevestigde e-mailadres dat je hier toevoegt.",
+  "An author invitation is required for this action.": "Voor deze actie heb je een uitnodiging als auteur nodig.",
+  "The Studio administrator already has author access.": "De beheerder van de Studio heeft al auteursrechten.",
+  "Choose grant or revoke.": "Kies of je de toegang wilt verlenen of intrekken.",
+  "Add author": "Auteur toevoegen",
+  "Loading authors…": "Auteurs laden…",
+  "No invited authors yet.": "Er zijn nog geen auteurs uitgenodigd.",
+  "Author access is by invitation": "Auteur worden kan op uitnodiging",
+  "To create expeditions, ask the Studio administrator to add your verified email address. To take an expedition, open the learner link you received.": "Wil je expedities maken? Vraag de beheerder van de Studio om je bevestigde e-mailadres toe te voegen. Wil je een expeditie volgen? Open dan de deelnemerslink die je hebt ontvangen.",
   "Studio": "Studio",
   "Studio navigation": "Studionavigatie",
   "xPED Academy": "xPED Academy",

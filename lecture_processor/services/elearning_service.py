@@ -103,6 +103,28 @@ def _verified_member_email(user):
     return str(user.get('email') or '').strip().lower()
 
 
+def _author_key(email):
+    return 'academy_authors/' + _digest(email)
+
+
+def _can_author(runtime, user, unit=None):
+    if not current_app.config.get('XPED_ACADEMY'):
+        return True
+    email = _verified_member_email(user)
+    if not email:
+        return False
+    if _is_studio_admin(runtime, user):
+        return True
+    db = unit if unit is not None else _store(runtime)
+    invite = db.get(_author_key(email))
+    return bool(invite and invite.get('email') == email)
+
+
+def _require_author(runtime, user, unit=None):
+    if not _can_author(runtime, user, unit):
+        raise model.ElearningError('An author invitation is required for this action.', 403)
+
+
 def _role_rank(role: str) -> int:
     return {'owner': 3, 'edit': 2, 'translate': 1}.get(role, 0)
 
@@ -126,6 +148,7 @@ def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
     }
 
     if uid and exp.get('owner_uid') == uid:
+        _require_author(runtime, user, db)
         role = 'owner'
     elif email and email in (exp.get('members') or {}):
         member_role = str(exp['members'][email])
@@ -241,7 +264,8 @@ def list_expeditions(runtime):
     user = identity(runtime, required=True)
     db = _store(runtime)
     email = _verified_member_email(user)
-    owned = db.list('elearning_expeditions', 'owner_uid', user['uid'])
+    can_create = _can_author(runtime, user, db)
+    owned = db.list('elearning_expeditions', 'owner_uid', user['uid']) if can_create else []
     shared = db.list('elearning_expeditions', 'member_emails', email, 'array_contains') if email else []
     combined = {}
     for exp in owned + shared:
@@ -251,22 +275,27 @@ def list_expeditions(runtime):
         if not eid:
             continue
         role = 'owner' if exp.get('owner_uid') == user['uid'] else str((exp.get('members') or {}).get(email, ''))
-        if not role:
+        if not role or (role == 'owner' and not can_create):
             continue
         combined[eid] = _summary_card(exp, role)
     items = sorted(combined.values(), key=lambda x: x.get('updatedAt', 0), reverse=True)
-    return jsonify(expeditions=items, storageAvailable=book_storage.configured(), studioAdmin=_is_studio_admin(runtime, user))
+    capabilities = {'canCreate': can_create} if current_app.config.get('XPED_ACADEMY') else {}
+    return jsonify(expeditions=items, storageAvailable=book_storage.configured(),
+                   studioAdmin=_is_studio_admin(runtime, user), **capabilities)
 
 
-def _insert_expedition(db, doc):
+def _insert_expedition(runtime, user, db, doc, *, source_id=None):
     if not doc.get('copying') and model.media_ids(doc):
         raise model.ElearningError('Create the expedition before attaching uploaded media.', 400)
 
     def insert(tx):
+        _require_author(runtime, user, tx)
+        if source_id and current_app.config.get('XPED_ACADEMY'):
+            access(runtime, source_id, 'edit', unit=tx)
         owner = doc['owner_uid']
-        user = tx.get('users/' + owner) or {}
+        profile = tx.get('users/' + owner) or {}
         deleting = tx.get(lifecycle.ACCOUNT_DELETIONS_COLLECTION + '/' + owner) or {}
-        if user.get('account_status') in ('deleting', 'deleted') or (deleting and deleting.get('status') != 'cancelled'):
+        if profile.get('account_status') in ('deleting', 'deleted') or (deleting and deleting.get('status') != 'cancelled'):
             raise model.ElearningError('This account is being removed.', 409)
         tx.put(_exp_path(doc['id']), doc)
         tx.put('elearning_share_index/' + doc['share']['token'], {
@@ -276,7 +305,7 @@ def _insert_expedition(db, doc):
 
 
 def preview_import(runtime):
-    identity(runtime, required=True)
+    _require_author(runtime, identity(runtime, required=True))
     raw = payload()
     if not isinstance(raw.get('modules'), list):
         raise model.ElearningError('Choose an expedition JSON file containing a list of stations.', 400)
@@ -304,6 +333,7 @@ def preview_import(runtime):
 
 def create_expedition(runtime):
     user = identity(runtime, required=True)
+    _require_author(runtime, user)
     raw = payload()
     if raw.get('modules') is not None or raw.get('startPage') is not None:
         normalized = model.validate_authored_expedition(raw)
@@ -340,7 +370,7 @@ def create_expedition(runtime):
         'lease': {},
     }
     db = _store(runtime)
-    _insert_expedition(db, doc)
+    _insert_expedition(runtime, user, db, doc)
     return jsonify(expedition=_public_studio_view(doc, 'owner')), 201
 
 
@@ -436,12 +466,16 @@ def save_expedition(runtime, expedition_id: str):
 
 def delete_expedition(runtime, expedition_id: str):
     user = identity(runtime, required=True)
-    elearning_storage.delete_expedition(_store(runtime), model.identifier(expedition_id), user['uid'])
+    elearning_storage.delete_expedition(
+        _store(runtime), model.identifier(expedition_id), user['uid'],
+        authorize=lambda unit: _require_author(runtime, user, unit),
+    )
     return jsonify(deleted=True)
 
 
 def duplicate_expedition(runtime, expedition_id: str):
     user = identity(runtime, required=True)
+    _require_author(runtime, user)
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     copy_payload = model.normalize_expedition_payload(exp)
     copy_payload['title'] = (copy_payload['title'] + ' (Copy)')[:200]
@@ -472,7 +506,7 @@ def duplicate_expedition(runtime, expedition_id: str):
     asset_ids = model.media_ids(doc)
     if asset_ids:
         doc['copying'] = True
-    _insert_expedition(db, doc)
+    _insert_expedition(runtime, user, db, doc, source_id=expedition_id)
     if asset_ids:
         try:
             cloned = {}
@@ -487,6 +521,7 @@ def duplicate_expedition(runtime, expedition_id: str):
                 elearning_storage.store_asset(db, meta, elearning_storage.read_asset(db, original))
                 cloned[source_id] = aid
             def publish_copy(unit):
+                _require_author(runtime, user, unit)
                 access(runtime, expedition_id, 'edit', unit=unit)
                 copy = unit.get(_exp_path(new_eid))
                 if not copy or copy.get('deleted'):
@@ -520,6 +555,27 @@ def _require_studio_admin(runtime):
     if not _is_studio_admin(runtime, user):
         raise model.ElearningError('Studio admin access is required.', 403)
     return user
+
+
+def academy_authors(runtime):
+    admin = _require_studio_admin(runtime)
+    db = _store(runtime)
+    if request.method == 'GET':
+        invites = db.list('academy_authors', limit=None, fields=['email'])
+        admin_email = _verified_member_email(admin)
+        return jsonify(authors=sorted(row['email'] for row in invites if row['email'] != admin_email))
+    request.max_content_length = 4096
+    body = payload()
+    email = model.safe_email(body.get('email'))
+    if email == _verified_member_email(admin):
+        raise model.ElearningError('The Studio administrator already has author access.', 400)
+    if body.get('action') == 'grant':
+        db.put(_author_key(email), {'email': email})
+    elif body.get('action') == 'revoke':
+        db.delete(_author_key(email))
+    else:
+        raise model.ElearningError('Choose grant or revoke.', 400)
+    return jsonify(ok=True)
 
 
 def studio_statistics(runtime):
@@ -831,7 +887,12 @@ def upload_asset(runtime, expedition_id: str):
         ext = 'webp'
         meta.update(kind='image', content_type='image/webp', width=size_xy[0], height=size_xy[1])
     meta['path'] = f'elearning/{expedition_id}/{aid}.{ext}'
-    elearning_storage.store_asset(db, meta, data)
+    # Check course membership and the author's invitation in the same transactions
+    # that reserve and publish media, including when access changes mid-upload.
+    def authorize_upload(unit):
+        if current_app.config.get('XPED_ACADEMY'):
+            access(runtime, expedition_id, required='translate', unit=unit)
+    elearning_storage.store_asset(db, meta, data, authorize=authorize_upload)
     return jsonify(asset={
         'id': aid,
         'kind': meta['kind'],

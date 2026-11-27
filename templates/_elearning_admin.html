@@ -5,6 +5,7 @@
   </header>
   <nav class="el-admin-nav" aria-label="Studio admin sections">
       <button class="btn small" type="button" id="el-admin-access-tab" aria-pressed="true">Access &amp; data</button>
+      {% if academy_mode %}<button class="btn small" type="button" id="el-admin-authors-tab" aria-pressed="false">Studio authors</button>{% endif %}
       <button class="btn small" type="button" id="el-admin-stats-tab" aria-pressed="false">Statistics</button>
   </nav>
   <div class="el-dialog-body">
@@ -74,6 +75,20 @@
         </details>
       </fieldset>
     </div>
+    {% if academy_mode %}
+    <section id="el-admin-authors" hidden aria-labelledby="el-admin-authors-title">
+      <h3 id="el-admin-authors-title">Studio authors</h3>
+      <p>Grant someone permission to create their own expeditions. They must sign in with the verified email address you add here.</p>
+      <fieldset id="el-admin-author-controls">
+        <legend class="sr-only">Manage Studio authors</legend>
+        <form id="el-admin-author-form" class="el-admin-form">
+          <label>Email address<input class="xped-input" id="el-admin-author-email" type="email" required maxlength="254" autocomplete="off"></label>
+          <button class="btn" type="submit">Add author</button>
+        </form>
+        <ul id="el-admin-author-list" class="el-admin-list"></ul>
+      </fieldset>
+    </section>
+    {% endif %}
     <section id="el-admin-stats" hidden aria-label="Overall statistics">
       <h3>Overall statistics</h3>
       <p>Completion counts sessions that reached the end, out of all recorded sessions in your expeditions. Private participation is excluded.</p>
