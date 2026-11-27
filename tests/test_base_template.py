@@ -16,8 +16,8 @@ BASE_PAGES = {
     # Full-screen tools.
     '/books': 'Book Studio', '/video-overlay-builder': 'Video Overlay Builder', '/physio/elearning/x/edit': 'xPEDitie Pijn Studio',
 }
-# Full-screen editors have no page header, so no skip link.
-FULL_SCREEN_TOOLS = {'/books', '/physio/elearning/x/edit'}
+# The full-screen Studio editor has no page header, so no skip link.
+FULL_SCREEN_TOOLS = {'/physio/elearning/x/edit'}
 # Pages authored in Dutch declare it; everything else is English.
 DUTCH_PAGES = {'/physio'}
 
