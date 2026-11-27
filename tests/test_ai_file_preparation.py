@@ -266,9 +266,9 @@ def test_openrouter_noop_defers_missing_file_validation_until_generation(tmp_pat
     attempted_reads = []
     original = openrouter_request._read_file
 
-    def read_file(path):
+    def read_file(path, max_bytes):
         attempted_reads.append(path)
-        return original(path)
+        return original(path, max_bytes)
 
     def no_client(_self):
         pytest.fail('Missing file validation must precede SDK creation or key access')
