@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+  {% include '_academy_foundation.html' %}
 {% endblock %}
 {% block body %}
   {% set shell_title = 'Responses & Pilot Analytics' %}
@@ -37,7 +38,7 @@
       <button class="btn small" id="el-resp-retry" type="button" hidden>Try again</button>
       <a class="btn" id="el-signin" href="{{ '/signin?next=' ~ (request.path|urlencode) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>Sign in</a>
       <div id="el-response-report" hidden>
-      <section class="el-kpi-grid" id="el-resp-kpis"></section>
+      <section class="el-exp-card el-split-card" id="el-resp-kpis" aria-labelledby="el-resp-kpis-title"></section>
       <section class="el-exp-card" id="el-resp-funnel-card">
         <h2>Step Completion Funnel</h2>
         <div id="el-resp-funnel"></div>
