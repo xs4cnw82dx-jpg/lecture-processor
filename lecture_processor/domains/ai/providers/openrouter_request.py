@@ -14,22 +14,42 @@ SWITCHABLE_PLUGIN_IDS = (
 )
 _IMAGE_TYPES = frozenset({'image/png', 'image/jpeg', 'image/webp', 'image/gif'})
 _MAX_FILE_BYTES = 50 * 1024 * 1024
+# Bound raw attachment bytes before base64 and SDK JSON serialization.
+_MAX_PDF_REQUEST_BYTES = 10 * 1024 * 1024
 _INVALID_INPUT = 'Invalid generation input.'
 
 
-def _read_file(path):
+def _read_file(path, max_bytes):
     data = None
     try:
         path = Path(path)
-        if path.is_file() and path.stat().st_size <= _MAX_FILE_BYTES:
+        if path.is_file() and path.stat().st_size <= max_bytes:
             with path.open('rb') as source:
-                data = source.read(_MAX_FILE_BYTES + 1)
+                data = source.read(max_bytes + 1)
     except (OSError, TypeError, ValueError):
         pass
-    if data is None or not data or len(data) > _MAX_FILE_BYTES:
+    if data is None or not data or len(data) > max_bytes:
         # Do not attach filesystem exceptions, which can contain private paths.
         raise ValueError(_INVALID_INPUT)
     return data
+
+
+def exceeds_pdf_request_limit(parts):
+    """Whether a PDF request's attachments are too large to send to OpenRouter.
+
+    Unreadable or malformed parts are left to request preparation, which rejects them.
+    """
+    if not any(isinstance(part, PdfPart) for part in parts):
+        return False
+    total = 0
+    for part in parts:
+        if isinstance(part, TextPart):
+            continue
+        try:
+            total += Path(part.path).stat().st_size
+        except (AttributeError, OSError, TypeError, ValueError):
+            return False
+    return total > _MAX_PDF_REQUEST_BYTES
 
 
 def prepare_request(model, parts, *, options, max_output_tokens, schema=None):
@@ -70,14 +90,18 @@ def prepare_request(model, parts, *, options, max_output_tokens, schema=None):
         }}
 
     content = []
-    has_pdf = False
+    has_pdf = any(isinstance(part, PdfPart) for part in parts)
+    remaining = _MAX_PDF_REQUEST_BYTES if has_pdf else _MAX_FILE_BYTES
     for index, part in enumerate(parts):
         if isinstance(part, TextPart):
             content.append({'type': 'text', 'text': part.text})
             continue
-        encoded = base64.b64encode(_read_file(part.path)).decode('ascii')
+        data = _read_file(part.path, remaining)
+        if has_pdf:
+            remaining -= len(data)
+        encoded = base64.b64encode(data).decode('ascii')
+        del data
         if isinstance(part, PdfPart):
-            has_pdf = True
             content.append({'type': 'file', 'file': {
                 'filename': f'document-{index + 1}.pdf',
                 'file_data': f'data:application/pdf;base64,{encoded}',
