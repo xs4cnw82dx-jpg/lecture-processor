@@ -285,6 +285,7 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
             max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='slide_extraction',
+            record_discarded=tokens.record_result,
         )
         tokens.record_result('slide_extraction', response, input_modality='text')
         slide_text = response.text
@@ -369,6 +370,8 @@ def process_lecture_notes(job_id, pdf_path, audio_path, runtime=None):
             max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='notes_merge',
+            source_slide_text=slide_text,
+            record_discarded=tokens.record_result,
         )
         tokens.record_result('merge', response, input_modality='text')
         merged_notes = response.text
@@ -485,6 +488,7 @@ def process_slides_only(job_id, pdf_path, runtime=None):
             max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='slide_extraction',
+            record_discarded=tokens.record_result,
         )
         tokens.record_result('slide_extraction', response, input_modality='text')
 

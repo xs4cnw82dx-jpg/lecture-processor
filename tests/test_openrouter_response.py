@@ -24,7 +24,7 @@ def test_top_level_error_wins_over_otherwise_valid_choices(code):
 
 
 @pytest.mark.parametrize('body', [None, [], {}, {'choices': []}, {'choices': [None]},
-                                 payload('', 'stop'), payload(' ', 'length'),
+                                 payload('', 'stop'), payload([], 'length'),
                                  payload('synthetic', 'content_filter'), payload('synthetic', 'tool_calls')])
 def test_invalid_success_envelopes_do_not_become_retryable(body):
     with pytest.raises(ProviderRequestError) as caught:
@@ -71,3 +71,12 @@ def test_invalid_usage_values_cannot_add_counts_or_invent_reported_cost():
     body['usage'] = {'prompt_tokens': True, 'completion_tokens': 3, 'total_tokens': -1,
                      'completion_tokens_details': {'reasoning_tokens': 100}, 'cost': float('nan')}
     assert parse_response(body, model=MODEL).usage == Usage(0, 3, 0, 3, None)
+
+
+@pytest.mark.parametrize('text', ['', ' ', None])
+def test_reasoning_only_truncation_keeps_usage_and_completion_reason(text):
+    body = payload(text, 'length')
+    body['usage'] = {'completion_tokens': 64, 'total_tokens': 79}
+    result = parse_response(body, model=MODEL)
+    assert result.finish_reason == 'length' and not result.text.strip()
+    assert result.usage.output_tokens == 64

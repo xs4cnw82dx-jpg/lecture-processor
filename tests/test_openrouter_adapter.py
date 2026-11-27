@@ -408,3 +408,37 @@ logger.warning('application-control-after')
     assert 'Transient provider error' in combined and 'HTTP_503' in combined
     assert PRIVATE not in combined and KEY not in combined
     assert 'Request options:' not in combined
+
+
+def test_notes_retry_sends_larger_reviewed_cap_and_accounts_for_both_responses(adapter_runtime):
+    from lecture_processor.domains.ai.provider import TokenAccumulator
+    from lecture_processor.domains.ai.providers.factory import ProviderSession
+    from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
+
+    options = {**OPTIONS, 'retry_max_output_tokens': 65536}
+    snapshot = RoutingSnapshot({'notes_merge': Route('openrouter', MODEL, options)})
+
+    def respond(request):
+        body = json.loads(request.content)
+        assert body['provider']['only'] == ['google-vertex/global'] and body['provider']['zdr']
+        result = success()
+        if body['max_tokens'] == 32768:
+            result['choices'][0] = {'finish_reason': 'length', 'message': {'content': None}}
+        result['usage']['cost'] = 0.125
+        return 200, result
+
+    transport = _Transport(respond)
+    tokens = TokenAccumulator(runtime=adapter_runtime)
+    with ProviderSession(adapter_runtime, routes=snapshot) as session:
+        session._adapters['openrouter'] = OpenRouterProvider(adapter_runtime, transport=transport, api_key=KEY)
+        # The adapter already has an isolated transport and the fixture blocks all sockets.
+        session._forced = False
+        result = session.generate('notes_merge', [TextPart('synthetic')], record_discarded=tokens.record_result)
+        tokens.record_result('merge', result)
+
+    assert [json.loads(req.content)['max_tokens'] for req in transport.requests] == [32768, 65536]
+    usage = tokens.as_dict()
+    assert usage['token_total'] == 74
+    assert {key: val['cost_usd'] for key, val in usage['token_usage_by_stage'].items()} == {
+        'notes_merge_incomplete_1': 0.125, 'merge': 0.125,
+    }
