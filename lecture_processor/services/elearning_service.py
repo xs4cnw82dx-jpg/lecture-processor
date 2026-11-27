@@ -108,6 +108,26 @@ def _author_key(email):
     return 'academy_authors/' + _digest(email)
 
 
+def academy_removal_key(email):
+    return 'academy_account_removals/' + _digest(email)
+
+
+def _allow_invitation(runtime, unit, email):
+    if not current_app.config.get('XPED_ACADEMY'):
+        return
+    lock = unit.get(academy_removal_key(email))
+    if not lock:
+        return
+    # If Firebase removed the account but the response was lost before the
+    # database acknowledgment, a later explicit invitation can recover safely.
+    marker = unit.get(lifecycle.ACCOUNT_DELETIONS_COLLECTION + '/' + lock['uid']) or {}
+    if marker.get('status') == 'auth_delete_pending' and runtime.academy_identity_removed(lock['uid']):
+        unit.delete(academy_removal_key(email))
+        unit.put(lifecycle.ACCOUNT_DELETIONS_COLLECTION + '/' + lock['uid'], {'status': 'deleted'})
+        return
+    raise model.ElearningError('This account is being removed.', 409)
+
+
 def _can_author(runtime, user, unit=None):
     if not current_app.config.get('XPED_ACADEMY'):
         return True
@@ -139,6 +159,10 @@ def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
     user = identity(runtime, required=False)
     uid = user['uid'] if user else ''
     email = _verified_member_email(user)
+    if unit and uid and current_app.config.get('XPED_ACADEMY'):
+        marker = unit.get(lifecycle.ACCOUNT_DELETIONS_COLLECTION + '/' + uid)
+        if marker and marker.get('status') != 'cancelled':
+            raise model.ElearningError('This account is being removed.', 409)
     role = ''
     grant_lang = ''
     who = {
@@ -521,6 +545,10 @@ def duplicate_expedition(runtime, expedition_id: str):
     _insert_expedition(runtime, user, db, doc, source_id=expedition_id)
     if asset_ids:
         try:
+            def authorize_copy(unit):
+                access(runtime, expedition_id, 'edit', unit=unit)
+                _require_author(runtime, user, unit)
+
             cloned = {}
             for source_id in asset_ids:
                 original = db.get('elearning_assets/' + source_id)
@@ -530,7 +558,8 @@ def duplicate_expedition(runtime, expedition_id: str):
                 ext = original['path'].rsplit('.', 1)[-1]
                 meta = {**original, 'id': aid, 'expedition_id': new_eid, 'uploaded_by': user['uid'],
                         'created_at': ts, 'path': f'elearning/{new_eid}/{aid}.{ext}'}
-                elearning_storage.store_asset(db, meta, elearning_storage.read_asset(db, original))
+                elearning_storage.store_asset(db, meta, elearning_storage.read_asset(db, original),
+                                             authorize=authorize_copy if current_app.config.get('XPED_ACADEMY') else None)
                 cloned[source_id] = aid
             def publish_copy(unit):
                 _require_author(runtime, user, unit)
@@ -582,7 +611,10 @@ def academy_authors(runtime):
     if email == _verified_member_email(admin):
         raise model.ElearningError('The Studio administrator already has author access.', 400)
     if body.get('action') == 'grant':
-        db.put(_author_key(email), {'email': email})
+        def grant(tx):
+            _allow_invitation(runtime, tx, email)
+            tx.put(_author_key(email), {'email': email})
+        db.atomic(grant)
     elif body.get('action') == 'revoke':
         db.delete(_author_key(email))
     else:
@@ -709,6 +741,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
 
         if action == 'add_member':
             email = model.safe_email(body.get('email'))
+            _allow_invitation(runtime, unit, email)
             member_role = str(body.get('role') or 'edit').strip()
             if member_role not in ('edit', 'translate'):
                 raise model.ElearningError('Role must be edit or translate.', 400)

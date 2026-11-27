@@ -39,7 +39,12 @@ class MemoryStore:
             if operator == 'array_contains':
                 rows = [r for r in rows if value in (r.get(field) or [])]
             else:
-                rows = [r for r in rows if r.get(field) == value]
+                def field_value(row):
+                    selected = row
+                    for part in field.split('.'):
+                        selected = selected.get(part) if isinstance(selected, dict) else None
+                    return selected
+                rows = [r for r in rows if field_value(r) == value]
         return rows[:limit]
 
     stream = list
