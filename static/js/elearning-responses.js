@@ -54,13 +54,114 @@
     }
   }
 
-  function responseBar(percent, correct) {
+  // Chart cards: interface labels follow the interface language; numbers use its locale.
+  var NOT_COMPLETED = { nl: 'Niet voltooid', de: 'Nicht abgeschlossen', en: 'Not completed' };
+  function uiLanguage() {
+    var i18n = window.LectureI18n;
+    var lang = (i18n && i18n.getLanguage && i18n.getLanguage()) || document.documentElement.lang || 'en';
+    return NOT_COMPLETED[lang] ? lang : 'en';
+  }
+  function uiLocale() {
+    return { nl: 'nl-NL', de: 'de-DE', en: 'en-GB' }[uiLanguage()];
+  }
+  function formatPercent(value) {
+    var share = Math.max(0, Number(value) || 0) / 100;
+    return new Intl.NumberFormat(uiLocale(), { style: 'percent', maximumFractionDigits: 1 }).format(share);
+  }
+  function formatScore(value) {
+    return value === null || value === undefined ? '—' : new Intl.NumberFormat(uiLocale(), { maximumFractionDigits: 1 }).format(value);
+  }
+  function sessionsLabel(count) {
+    return count + (count === 1 ? ' session' : ' sessions');
+  }
+
+  // One labelled bar: the label left, the count and share right, the bar beneath.
+  function chartRow(name, count, percent, good) {
+    var row = document.createElement('div');
+    row.className = 'el-chart-row' + (good ? ' is-good' : '');
+    var label = document.createElement('span');
+    label.className = 'el-chart-label';
+    label.setAttribute('translate', 'no');
+    label.textContent = name;
+    var value = document.createElement('span');
+    value.className = 'el-chart-value';
+    var amount = document.createElement('strong');
+    amount.textContent = String(count);
+    var share = document.createElement('span');
+    share.className = 'el-chart-share';
+    share.dataset.percent = String(percent);
+    share.textContent = formatPercent(percent);
+    value.append(amount, ' ', share);
+    row.append(label, value, chartBar(percent, good ? 'is-good' : ''));
+    return row;
+  }
+
+  // Bars are <progress> elements: the page policy forbids inline styles.
+  function chartBar(value, className, max) {
     var bar = document.createElement('progress');
-    bar.className = 'el-response-bar' + (correct ? ' is-correct' : '');
-    bar.max = 100;
-    bar.value = percent;
+    bar.className = 'el-chart-bar' + (className ? ' ' + className : '');
+    bar.max = max || 100;
+    bar.value = Math.max(0, Math.min(bar.max, Number(value) || 0));
     bar.setAttribute('aria-hidden', 'true');
     return bar;
+  }
+
+  function chartNote(text) {
+    var note = document.createElement('p');
+    note.className = 'el-chart-note';
+    note.textContent = text;
+    return note;
+  }
+
+  function splitFigure(label, value, good, own) {
+    var item = document.createElement('div');
+    item.className = 'el-split-figure' + (good ? ' is-good' : '');
+    var term = document.createElement('dt');
+    term.textContent = label;
+    if (own) term.setAttribute('translate', 'no');
+    var amount = document.createElement('dd');
+    amount.textContent = value;
+    item.append(term, amount);
+    return item;
+  }
+
+  // Completion as two shares of one bar, with the supporting figures beneath.
+  var lastSummary = null;
+  function renderSummary(summary) {
+    lastSummary = summary;
+    var total = Number(summary.totalSessions) || 0;
+    var rate = summary.completionRate !== undefined && summary.completionRate !== null
+      ? Number(summary.completionRate) : (total ? 100 * (Number(summary.completedSessions) || 0) / total : 0);
+    var completed = summary.completedSessions !== undefined ? Number(summary.completedSessions) || 0 : Math.round(total * rate / 100);
+    var title = document.createElement('h2');
+    title.id = 'el-resp-kpis-title';
+    title.textContent = 'Completion rate';
+    var shares = document.createElement('dl');
+    shares.className = 'el-split-figures';
+    shares.append(
+      splitFigure('Completed', total ? formatPercent(rate) : '—', true),
+      splitFigure(NOT_COMPLETED[uiLanguage()], total ? formatPercent(100 - rate) : '—', false, true)
+    );
+    var bar = chartBar(total ? rate : 0, 'el-split-bar' + (total ? '' : ' is-empty'));
+    var counts = document.createElement('div');
+    counts.className = 'el-split-counts';
+    var left = document.createElement('span');
+    left.textContent = sessionsLabel(completed);
+    var right = document.createElement('span');
+    right.textContent = sessionsLabel(Math.max(0, total - completed));
+    counts.append(left, right);
+    counts.hidden = !total;
+    var figures = document.createElement('dl');
+    figures.className = 'el-split-stats';
+    var seconds = Number(summary.medianSeconds) || 0;
+    figures.append(
+      splitFigure('Testers', String(total)),
+      splitFigure('Median Time', seconds && seconds < 60 ? '<1 min' : Math.round(seconds / 60) + ' min')
+    );
+    if (summary.avgClarity !== null && summary.avgClarity !== undefined || summary.avgEngagement !== null && summary.avgEngagement !== undefined) {
+      figures.append(splitFigure('Clarity / Engagement', formatScore(summary.avgClarity) + ' / ' + formatScore(summary.avgEngagement)));
+    }
+    kpisEl.replaceChildren(title, shares, bar, counts, figures);
   }
 
   async function loadResponses() {
@@ -106,39 +207,30 @@
       report.hidden = false;
       hasLoadedOnce = true;
 
-      // KPIs
       var s = data.summary || {};
-      kpisEl.textContent = '';
-      [
-        ['Testers', String(s.totalSessions || 0)],
-        ['Completion Rate', (s.completionRate || 0) + '%'],
-        ['Median Time', Math.round((s.medianSeconds || 0) / 60) + ' min'],
-        ['Clarity / Engagement', (s.avgClarity || '—') + ' / ' + (s.avgEngagement || '—')],
-      ].forEach(function (pair) {
-        var card = document.createElement('div');
-        card.className = 'el-kpi-card';
-        var sp = document.createElement('span');
-        sp.textContent = pair[0];
-        var st = document.createElement('strong');
-        st.textContent = pair[1];
-        card.appendChild(sp);
-        card.appendChild(st);
-        kpisEl.appendChild(card);
-      });
+      renderSummary(s);
 
-      // Funnel
+      // Reach per step, grouped by station
       funnelEl.textContent = '';
       var maxReached = Math.max(1, s.totalSessions || 1);
+      var stationGroup = null;
+      var stationId = null;
       (data.funnel || []).forEach(function (row) {
+        if (!stationGroup || row.moduleId !== stationId) {
+          stationId = row.moduleId;
+          stationGroup = document.createElement('div');
+          stationGroup.className = 'el-chart-group';
+          var stationTitle = document.createElement('h3');
+          stationTitle.className = 'el-chart-group-title';
+          stationTitle.setAttribute('translate', 'no');
+          stationTitle.textContent = Model.getLocalized(row.moduleTitle, reportLang, courseLang);
+          stationGroup.appendChild(stationTitle);
+          funnelEl.appendChild(stationGroup);
+        }
         var pct = Math.round((row.reached / maxReached) * 100);
-        var div = document.createElement('div');
-        div.className = 'xped-bar-row';
-        var lbl = document.createElement('span');
-        lbl.setAttribute('translate', 'no');
-        lbl.textContent = Model.getLocalized(row.moduleTitle, reportLang, courseLang) + ' · ' + Model.getLocalized(row.stepTitle, reportLang, courseLang) + ' — ' + row.reached + ' (' + pct + '%)';
-        div.append(lbl, responseBar(pct));
-        funnelEl.appendChild(div);
+        stationGroup.appendChild(chartRow(Model.getLocalized(row.stepTitle, reportLang, courseLang), row.reached, pct));
       });
+      if (funnelEl.childElementCount) funnelEl.appendChild(chartNote('n = ' + (s.totalSessions || 0)));
 
       document.getElementById('el-resp-funnel-card').hidden = !funnelEl.childElementCount;
 
@@ -159,10 +251,8 @@
             var authoredTitle = Model.getLocalized(blk.data.question || blk.data.statement || blk.data.prompt || blk.data.title, reportLang, courseLang);
             h.textContent = authoredTitle || name + ' · ' + position;
             card.appendChild(h);
-            var sub = document.createElement('p');
-            sub.className = 'el-exp-meta';
-            sub.textContent = agg.count + (agg.count === 1 ? ' response' : ' responses') + (authoredTitle ? ' · ' + name + ' · ' + position : '');
-            card.appendChild(sub);
+            var sub = chartNote('n = ' + agg.count + (authoredTitle ? ' · ' + name + ' · ' + position : ''));
+            sub.setAttribute('translate', 'no');
             if (agg.average !== undefined && agg.average !== null) {
               var avg = document.createElement('strong');
               avg.textContent = 'Average score: ' + agg.average;
@@ -198,32 +288,24 @@
               }
               var choices = (blk.data.options || []).map(function (option) { return option.id; });
               var keys = Array.from(new Set(choices.concat(Object.keys(agg.counts))));
+              var rows = document.createElement('div');
+              rows.className = 'el-chart-rows';
               keys.forEach(function (k) {
                 var cnt = agg.counts[k] || 0;
                 var pct = Math.min(100, Math.round((cnt / denom) * 100));
-                var row = document.createElement('div');
-                row.className = 'xped-bar-row';
                 var opt = (blk.data.options || []).find(function (o) { return o.id === k; });
                 var isRight = (blk.type === 'myth_fact' && k === (blk.data.correctAnswer || 'myth')) || !!(opt && opt.isCorrect && blk.data.graded !== false);
                 var name = opt ? Model.getLocalized(opt.label, reportLang, courseLang) : (k === 'myth' || k === 'fact' ? Model.ui(reportLang, k) : k);
-                var head = document.createElement('div');
-                head.className = 'el-resp-bar-head';
-                var nSp = document.createElement('span');
-                nSp.className = 'el-resp-bar-name';
-                nSp.setAttribute('translate', 'no');
-                nSp.textContent = name;
+                var row = chartRow(name, cnt, pct, isRight);
                 if (isRight && window.XpedElearningIcons) {
                   var chkIco = window.XpedElearningIcons.icon('check', 14);
                   chkIco.classList.add('el-resp-check-ico');
-                  nSp.appendChild(chkIco);
+                  chkIco.setAttribute('aria-hidden', 'true');
+                  row.querySelector('.el-chart-label').appendChild(chkIco);
                 }
-                var pSp = document.createElement('span');
-                pSp.textContent = cnt + ' (' + pct + '%)';
-                head.appendChild(nSp);
-                head.appendChild(pSp);
-                row.append(head, responseBar(pct, isRight));
-                card.appendChild(row);
+                rows.appendChild(row);
               });
+              card.appendChild(rows);
             }
             if (Array.isArray(agg.words) && agg.words.length) {
               var tags = document.createElement('div');
@@ -274,6 +356,7 @@
               drawSamples();
               card.appendChild(samplesWrap);
             }
+            card.appendChild(sub);
             blocksEl.appendChild(card);
           });
         });
@@ -360,6 +443,16 @@
     }
   }
 
+  // The Dutch catalog can arrive after the first render: reformat numbers and
+  // the labels this script localizes itself, without fetching again.
+  window.addEventListener('lp:language-changed', function () {
+    if (!lastSummary || report.hidden) return;
+    renderSummary(lastSummary);
+    report.querySelectorAll('.el-chart-share[data-percent]').forEach(function (share) {
+      share.textContent = formatPercent(share.dataset.percent);
+    });
+  });
+
   if (exportFilteredBtn) exportFilteredBtn.addEventListener('click', function () { downloadCsv(true); });
   if (exportAllBtn) exportAllBtn.addEventListener('click', function () { downloadCsv(false); });
 
@@ -373,6 +466,7 @@
     retry.hidden = true;
     document.getElementById('el-signin').hidden = !!user;
     label.textContent = '';
+    lastSummary = null;
     [kpisEl, funnelEl, blocksEl, feedbackEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
     cohortSelect.replaceChildren(new Option('All cohorts', ''));
     langSelect.value = '';

@@ -1578,7 +1578,7 @@ def _prepare_row_slides_source(row, runtime=None):
         lease.release()
 
 
-def _upload_row_files(row, runtime=None):
+def _upload_row_files(row, runtime=None, *, upload_slides=True):
     resolved_runtime = _resolve_runtime(runtime)
     local_paths = row.setdefault('_local_paths', [])
     gemini_files = row.setdefault('_gemini_files', [])
@@ -1587,7 +1587,7 @@ def _upload_row_files(row, runtime=None):
     _prepare_row_audio_source(row, local_paths, runtime=resolved_runtime)
 
     slides_path = str(row.get('slides_local_path', '') or '').strip()
-    if slides_path and not row.get('slides_file_uri'):
+    if upload_slides and slides_path and not row.get('slides_file_uri'):
         if str(row.get('slides_source_path', '') or '').lower().endswith('.pptx'):
             _require_active_batch(row.get('batch_id', ''), runtime=resolved_runtime)
         pdf_file = ai_provider.run_with_provider_retry(
