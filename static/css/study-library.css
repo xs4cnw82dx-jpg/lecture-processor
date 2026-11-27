@@ -289,6 +289,7 @@
     .library-folders .item:hover { background:var(--theme-surface-soft); border-color:var(--theme-accent-line); transform:none; }
     .library-folders .item.active { background:var(--theme-accent-soft); border-color:var(--theme-accent-line); box-shadow:0 0 0 1px #2558d909; }
     .library-folders .item-title { overflow-wrap: anywhere; font-size: .86rem; line-height: 1.35 }
+    .library-folders .item-sub:not(.pinned-note):not(.pending-hint) { font-size:.75rem; }
     .library-content > .panel-body { padding:0; }
     .panel-head.library-content-head { padding:10px 18px; }
     .library-result-count { color:var(--theme-muted); font-size:.75rem; margin-left:10px; }
