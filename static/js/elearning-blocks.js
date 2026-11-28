@@ -51,7 +51,7 @@
   // Reuse bounded numeric rules on the course stylesheet for image positioning.
   var imageRules = new WeakMap();
   function imageProperty(image, property, value, unit) {
-    var sheet = document.querySelector('link[href*="/css/xped-theme.css"]')?.sheet;
+    var sheet = document.querySelector('link[data-elearning-styles]')?.sheet;
     if (!sheet) return;
     var rules = imageRules.get(sheet) || new Set();
     imageRules.set(sheet, rules);

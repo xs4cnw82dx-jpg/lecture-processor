@@ -105,11 +105,10 @@
   var layoutSerial = 0;
   function setLayoutStyles(element, values) {
     if (!element) return;
-    var layoutPath = academyBuild ? '/css/academy-base.css' : '/css/shared-ui.css';
-    var sheet = Array.from(document.styleSheets).find(function (entry) {
+    var sheet = academyBuild ? document.querySelector('link[data-elearning-styles]')?.sheet : Array.from(document.styleSheets).find(function (entry) {
       if (!entry.href) return false;
       var url = new URL(entry.href, global.location.href);
-      return url.origin === global.location.origin && url.pathname.endsWith(layoutPath);
+      return url.origin === global.location.origin && url.pathname.endsWith('/css/shared-ui.css');
     });
     if (!sheet) return;
     var record = layoutRules.get(element);

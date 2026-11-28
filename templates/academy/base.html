@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="{% block viewport %}width=device-width, initial-scale=1{% endblock %}">
-  <link rel="stylesheet" href="{{ academy_stylesheet(academy_style|default('studio')) }}">
+  <link rel="stylesheet" data-elearning-styles href="{{ academy_stylesheet(academy_style|default('studio')) }}">
   {% include '_academy_head.html' %}
   <script type="application/json" id="academy-firebase-config">{{ academy_firebase_config|tojson }}</script>
   <script src="{{ url_for('static', filename='js/academy-runtime.min.js') }}"></script>

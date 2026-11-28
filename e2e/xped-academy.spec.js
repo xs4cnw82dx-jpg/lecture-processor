@@ -458,7 +458,9 @@ for (const width of [390, 1440]) {
   test('learner chooses privacy with visible keyboard focus and finishes at ' + width + 'px', async ({ page }, testInfo) => {
     const Model = require('../static/js/elearning-model');
     const course = Model.createExpeditionPreset('blank', 'Pijn begrijpen', 'nl', { academy: true });
-    course.modules[0].steps[0].blocks = [Model.createBlock('richtext')];
+    const illustration = Model.createBlock('image');
+    Object.assign(illustration.data, { media: { kind: 'xped', staticPath: Model.XPED_ASSETS[1].path }, crop: true, focalX: 27, focalY: 76 });
+    course.modules[0].steps[0].blocks = [Model.createBlock('richtext'), illustration];
     course.modules.push(Model.createModule('blank', 1));
     const submissions = [];
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
@@ -503,6 +505,7 @@ for (const width of [390, 1440]) {
     await consent.locator('input[value=private]').check();
     await expect(consent.getByRole('alert')).toBeHidden();
     await next.click();
+    await expect(page.locator('.xped-image-figure img.is-cropped')).toHaveCSS('object-position', '27% 76%');
     await page.locator('.el-player-nav .xped-btn-primary').click();
     await page.locator('.el-milestone-card .xped-btn').first().click();
     await page.locator('.el-player-nav .xped-btn-primary').click();

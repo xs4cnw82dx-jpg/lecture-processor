@@ -12,7 +12,7 @@
 
   <script src="{{ url_for('static', filename='js/academy-controls.js') }}" defer></script>
 
-  <link rel="stylesheet" href="{{ academy_stylesheet('player') }}">
+  <link rel="stylesheet" data-elearning-styles href="{{ academy_stylesheet('player') }}">
 </head>
 <body class="el-player-body xped-surface-scope" data-site-title="xPED Academy" data-share-token="{{ share_token }}" data-xped-theme="xped-warm-sand" data-text-scale="md">
   {% include 'academy/player_controls.html' %}
