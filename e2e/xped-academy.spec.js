@@ -152,6 +152,70 @@ async function signInToLibrary(page) {
   await expect(page).toHaveURL(academy + '/physio/elearning');
 }
 
+for (const layout of [
+  { label: 'phone in dark mode', width: 390, height: 844, theme: 'dark' },
+  { label: 'desktop in light mode', width: 1280, height: 900, theme: 'light' },
+]) {
+  test('author organizes courses and reviews transfers on ' + layout.label, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: layout.width, height: layout.height });
+    await page.addInitScript(theme => localStorage.setItem('lp-preferences', JSON.stringify({ theme })), layout.theme);
+    const folders = [{ id: 'account-review', name: 'Account review' }];
+    const course = { id: 'one', title: 'Synthetic course', role: 'owner', moduleCount: 0, stepCount: 0, folderId: 'account-review' };
+    const shared = { ...course, role: 'edit', id: 'two', title: 'Shared workshop', folderId: undefined };
+    await page.route('**/api/elearning/expeditions', route => route.fulfill({
+      json: { canCreate: true, studioAdmin: true, folders, expeditions: [course, shared] },
+    }));
+    await page.route('**/api/academy/folders', route => {
+      folders.push({ id: 'personal', name: route.request().postDataJSON().name });
+      return route.fulfill({ status: 201, json: { id: 'personal' } });
+    });
+    await page.route('**/api/academy/folders/personal', route => {
+      if (route.request().method() === 'DELETE') {
+        folders.pop();
+        course.folderId = '';
+      } else folders[1].name = route.request().postDataJSON().name;
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.route('**/api/academy/expeditions/one/folder', route => {
+      course.folderId = route.request().postDataJSON().folderId;
+      return route.fulfill({ json: { ok: true } });
+    });
+    await signInToLibrary(page);
+    const filter = page.getByLabel('Folder', { exact: true });
+    const dialog = page.getByRole('dialog');
+    await filter.selectOption('account-review');
+    await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Delete folder' })).toBeHidden();
+    await page.getByRole('button', { name: 'New folder' }).click();
+    await dialog.getByLabel('Folder name').fill('Placements');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(filter).toHaveValue('personal');
+    await expect(page.getByRole('heading', { name: 'No expeditions in this folder' })).toBeVisible();
+    await page.getByRole('button', { name: 'Rename folder' }).click();
+    await dialog.getByLabel('Folder name').fill('Archive');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(filter.locator('option:checked')).toHaveText('Archive');
+    await filter.selectOption('account-review');
+    await page.getByRole('button', { name: 'More actions for ' + course.title }).click();
+    await page.getByRole('menuitem', { name: 'Move to folder' }).click();
+    await dialog.getByLabel('Destination folder').selectOption('personal');
+    await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'No expeditions in this folder' })).toBeVisible();
+    await filter.selectOption('personal');
+    await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await testInfo.attach('folder-library', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await page.getByRole('button', { name: 'Delete folder' }).click();
+    await expect(dialog).toContainText('Learner links and responses stay available');
+    await dialog.getByRole('button', { name: 'Delete folder' }).click();
+    await expect(filter).toHaveValue('*');
+    await filter.selectOption('');
+    await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
+  });
+}
+
 test('the Studio administrator can grant and revoke author access before creating a course', async ({ page }) => {
   const calls = [];
   const authors = new Set();

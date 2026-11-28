@@ -80,7 +80,7 @@ class ElearningStore:
         record('writes')
         self.ref(path).delete()
 
-    def list(self, collection: str, field=None, value=None, operator: str = '==', limit: int | None = 200, fields=None):
+    def stream(self, collection: str, field=None, value=None, operator: str = '==', limit: int | None = 200, fields=None):
         query = self.db.collection(collection)
         if field:
             query = apply_where(query, field, operator, value)
@@ -88,9 +88,16 @@ class ElearningStore:
             query = query.select(fields)
         if limit is not None:
             query = query.limit(limit)
-        rows = [dict(decode(doc.to_dict()), _id=doc.id) for doc in query.stream()]
-        record('reads', max(1, len(rows)))
-        return rows
+        count = 0
+        try:
+            for doc in query.stream():
+                count += 1
+                yield dict(decode(doc.to_dict()), _id=doc.id)
+        finally:
+            record('reads', max(1, count))
+
+    def list(self, collection: str, field=None, value=None, operator: str = '==', limit: int | None = 200, fields=None):
+        return list(self.stream(collection, field, value, operator, limit, fields))
 
     def count(self, collection: str, filters):
         # Firestore answers count aggregations from the index, without loading session documents.
