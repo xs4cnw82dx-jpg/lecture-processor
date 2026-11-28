@@ -3,6 +3,7 @@
 {% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  {% include '_academy_foundation.html' %}
 {% endblock %}
 {% block body_attrs %} class="academy-body"{% endblock %}
 {% block body %}
@@ -15,11 +16,13 @@
     <h2>Sharing in a pilot</h2>
     <p>If an expedition collects responses, you can participate privately or choose to share your progress, answers and feedback with the course authors. Shared responses are associated with a session ID. The player shows when other learners can see group results or submitted words.</p>
     <p>You can switch to private participation during the expedition. The authors keep the responses you shared before switching. Clearing your browser’s saved course progress removes your local copy.</p>
+    <h2>Fonts in the Studio</h2>
+    <p>Studio pages for authors load two weights of the General Sans typeface from Fontshare, a service of the Indian Type Foundry. Opening these pages sends your IP address and browser details to Fontshare's servers. Learner pages do not load these fonts.</p>
     <h2>Author accounts and courses</h2>
     <p>The Studio uses Firebase Authentication for sign-in. Course records and pilot responses are stored in Firestore. Uploaded course media is stored in Supabase. Authors can grant collaborators access to an expedition and choose when to share a learner link.</p>
     <h2>Questions about your data</h2>
     <p>For questions about a pilot or a shared response, contact the course organizer who sent your expedition link.</p>
-    {% if legal_contact_email %}<p>For account or site privacy requests, email <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>{% endif %}
+    {% if legal_contact_email %}<p>For help accessing or deleting your Studio account, or for other privacy requests, email <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>{% endif %}
     <a href="/" class="el-back-link">Back to the Studio</a>
   </main>
 {% endblock %}

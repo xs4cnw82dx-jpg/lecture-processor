@@ -73,8 +73,8 @@ def is_transient_provider_error(error, runtime=None):
     resolved_runtime = _resolve_runtime(runtime)
     status_code = get_provider_status_code(error, runtime=resolved_runtime)
     transient_codes = getattr(resolved_runtime, 'PROVIDER_TRANSIENT_STATUS_CODES', {408, 409, 425, 429, 500, 502, 503, 504})
-    if status_code in transient_codes:
-        return True
+    if status_code is not None and 400 <= status_code < 600:
+        return status_code in transient_codes
     if isinstance(error, (TimeoutError, ConnectionError)):
         return True
     hints = getattr(

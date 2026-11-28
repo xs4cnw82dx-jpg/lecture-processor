@@ -5,6 +5,8 @@
   'use strict';
   var script = document.currentScript;
   var urls = String((script && script.getAttribute('data-i18n-catalogs')) || '').split(' ').filter(Boolean);
+  var pageCatalog = document.querySelector('meta[name="i18n-page-catalog"]');
+  if (pageCatalog && pageCatalog.content) urls.push(pageCatalog.content);
   window.LectureI18nCatalogUrls = urls;
   // Pages authored in Dutch always need them: their English view is translated back.
   var preload = { dutchSource: Boolean(script && script.getAttribute('data-i18n-always')), complete: false };

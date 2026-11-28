@@ -48,6 +48,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/i18n-dynamic.js',
   'static/js/i18n-dynamic-learning.js',
   'static/js/i18n-dynamic-tools.js',
+  'static/js/i18n-academy.js',
 
   'static/js/book-zip.min.js',
   'static/js/vendor/dompurify-3.3.2/purify.min.js',

@@ -28,7 +28,12 @@
   var auth;
   try { auth = bootstrap.getAuth(); } catch (_) { return; }
 
-  bootstrap.onAuthStateReady(auth, function (user) { button.hidden = !user; });
+  var verify = document.getElementById('academy-verify-email');
+  verify.href = '/signin?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+  bootstrap.onAuthStateReady(auth, function (user) {
+    button.hidden = !user;
+    verify.hidden = !user || user.emailVerified !== false;
+  });
   button.addEventListener('click', async function () {
     button.disabled = true;
     try {
