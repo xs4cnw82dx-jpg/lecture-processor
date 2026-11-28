@@ -69,7 +69,7 @@
 .el-split-figures .el-split-figure:last-child > dd.academy-metric-definition { margin-inline-start: auto; }
 .academy-metric-info { display: inline-grid; place-items: center; flex: none; width: 1.5rem; height: 1.5rem; padding: 0; border: 1px solid var(--theme-control-border); border-radius: 50%; background: var(--theme-surface); color: var(--theme-muted-strong); font: italic 600 .72rem/1 Georgia, "Times New Roman", serif; cursor: pointer; }
 .academy-metric-info:hover, .academy-metric-info[aria-expanded="true"] { border-color: var(--theme-ink); color: var(--theme-ink); }
-.academy-metric-info:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.academy-metric-info:focus-visible { outline: var(--ac-focus-width) solid var(--focus-ring); outline-offset: var(--ac-focus-offset); }
 @media (pointer: coarse) { .academy-metric-info { width: 2rem; height: 2rem; } }
 
 /* 62: a step summary appears on hover and keyboard focus, and stays inline on touch screens. */
