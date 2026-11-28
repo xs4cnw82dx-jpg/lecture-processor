@@ -15,8 +15,16 @@
   {% include '_academy_foundation.html' %}
 {% endblock %}
 {% block body %}
+  {% if academy_mode and not grant_token %}
+    {% set academy_editor_focus = true %}
+    {% include '_academy_header.html' %}
+  {% endif %}
   <header class="el-topbar">
     <div class="el-topbar-left">
+      {% if academy_mode and not grant_token %}
+        {% from 'academy/_shell_icons.html' import icon %}
+        <button type="button" id="ac-nav-toggle" class="ac-icon ac-editor-menu" aria-expanded="false" aria-controls="ac-rail" aria-label="{{ xped_copy('Navigatie openen','Navigation öffnen') if xped_copy is defined else 'Navigatie openen' }}">{{ icon('menu',18) }}</button>
+      {% endif %}
       <a href="/physio/elearning" class="el-icon-btn" id="el-back-link" aria-label="Back to Expeditions" title="Back to Expeditions"><span>Expeditions</span></a>
       <div class="el-title-wrap">
         <textarea rows="1" class="el-title-input" id="el-exp-title" aria-label="Expedition title" maxlength="200"></textarea>

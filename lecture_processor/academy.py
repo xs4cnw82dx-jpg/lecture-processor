@@ -30,7 +30,7 @@ from lecture_processor.services import auth_service, elearning_service, rate_lim
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC_ASSETS = (
     'brand/books/xped/mark-white.png',
-    'css/academy.css', 'css/app-shell.css', 'css/elearning-*.css', 'css/motion.css',
+    'css/academy-shell.css', 'css/academy.css', 'css/app-shell.css', 'css/elearning-*.css', 'css/motion.css',
     'css/shared-ui.css', 'css/theme.css', 'css/xped-theme.css', 'fonts/books/xped-*',
     'images/xped/*', 'js/academy-*.js', 'js/auth-utils.js', 'js/download-utils.js',
     'js/elearning-*.js', 'js/firebase-bootstrap.js', 'js/i18n*.js', 'js/theme.js',

@@ -1,25 +1,60 @@
-<a class="skip-link" href="#main-content">Skip to content</a>
-<header class="academy-header">
-  <nav class="academy-nav" aria-label="Studio navigation">
-    <a class="academy-brand" href="/" aria-label="xPEDitie Pijn Studio">
-      <img src="{{ url_for('static', filename='brand/books/xped/mark-white.png') }}" width="41" height="23" alt="">
-      <span class="academy-brand-name"><span>xPEDitie Pijn</span><strong>Studio</strong></span>
-    </a>
-    {% if academy_show_account|default(true) %}
-      <div class="academy-nav-actions">
-        <details class="academy-preferences">
-          <summary>Settings</summary>
-          <div class="academy-preferences-panel">
-            <label for="academy-language">Interface language</label>
-            <select id="academy-language" translate="no"><option value="en">English</option><option value="nl">Nederlands</option></select>
-            <label for="academy-theme">Appearance</label>
-            <select id="academy-theme"><option value="light">Light</option><option value="dark">Dark</option></select>
-            <a href="/account">Studio account</a>
-          </div>
-        </details>
-        <a href="/signin" id="academy-verify-email" hidden>Verify your email</a>
-        <button type="button" class="btn small" id="academy-signout" hidden>Sign out</button>
-      </div>
-    {% endif %}
+{% from 'academy/_shell_icons.html' import icon %}
+{% macro say(nl, de) -%}{{ xped_copy(nl, de) if xped_copy is defined else nl }}{%- endmacro %}
+{% set public = not academy_show_account|default(true) or request.path == '/privacy' %}
+{% set path = request.path.rstrip('/') or '/' %}
+{% set courses = path.startswith('/expedities/') or (path.startswith('/physio/elearning/') and expedition_id is defined) %}
+{% set sections = [
+  ('/', 'home', 'Overzicht', 'Übersicht'),
+  ('/expedities', 'map', 'Expedities', 'Expeditionen'),
+  ('/resultaten', 'chart', 'Resultaten', 'Ergebnisse'),
+  ('/vertalingen', 'translate', 'Vertalingen', 'Übersetzungen'),
+  ('/team', 'team', 'Team', 'Team')] %}
+{% set current = '/expedities' if courses or path == '/physio/elearning' else '/instellingen' if path in ['/account','/instellingen'] else path %}
+{% set labels = {'/':say('Overzicht','Übersicht'),'/expedities':say('Expedities','Expeditionen'),'/resultaten':say('Resultaten','Ergebnisse'),'/vertalingen':say('Vertalingen','Übersetzungen'),'/team':'Team','/instellingen':say('Instellingen','Einstellungen')} %}
+{% macro brand() %}<a class="ac-brand" href="/" aria-label="{{ say('xPED Academy, naar overzicht','xPED Academy, zur Übersicht') }}"><img class="ac-brand-wordmark" src="{{ url_for('static', filename='images/xped/academy-mark.webp' if academy_locale|default('nl') == 'de' else 'images/xped/logo_nl.svg') }}" alt="{{ say('xPEDitie Pijn','xPED') }}"><img class="ac-brand-short" src="{{ url_for('static', filename='images/xped/academy-mark.webp') }}" alt=""><span class="ac-brand-product">Academy</span></a>{% endmacro %}
+<a class="skip-link" href="#{{ 'el-mode-edit' if academy_editor_focus|default(false) else 'main-content' }}">{{ say('Naar de inhoud','Zum Inhalt') }}</a>
+{% if not public %}
+<aside class="ac-rail" id="ac-rail" aria-label="{{ say('Werkruimte','Arbeitsbereich') }}">
+  <div class="ac-rail-top">{{ brand() }}<button class="ac-mobile-close ac-icon" type="button" data-ac-close-nav aria-label="{{ say('Navigatie sluiten','Navigation schließen') }}">{{ icon('close') }}</button></div>
+  <nav class="ac-rail-nav" aria-label="{{ say('Hoofdnavigatie','Hauptnavigation') }}">
+    {% for href, glyph, nl, de in sections %}<a class="ac-route" href="{{ href }}" {% if current == href %}aria-current="{{ 'location' if courses else 'page' }}"{% endif %} title="{{ say(nl,de) }}">{{ icon(glyph) }}<span>{{ say(nl,de) }}</span></a>{% endfor %}
   </nav>
+  <div class="ac-rail-bottom">
+    <a class="ac-route" href="/instellingen" title="{{ say('Instellingen','Einstellungen') }}" {% if current == '/instellingen' %}aria-current="page"{% endif %}>{{ icon('settings') }}<span>{{ say('Instellingen','Einstellungen') }}</span></a>
+    <button class="ac-route ac-fold" id="ac-fold" type="button" aria-controls="ac-rail" aria-expanded="true" data-expand="{{ say('Zijbalk uitklappen','Seitenleiste ausklappen') }}" data-collapse="{{ say('Zijbalk inklappen','Seitenleiste einklappen') }}">{{ icon('rail') }}<span>{{ say('Zijbalk inklappen','Seitenleiste einklappen') }}</span></button>
+  </div>
+</aside>
+<button class="ac-nav-backdrop" type="button" tabindex="-1" hidden data-ac-close-nav aria-label="{{ say('Navigatie sluiten','Navigation schließen') }}"></button>
+{% endif %}
+{% if not academy_editor_focus|default(false) %}
+<header class="ac-bar{% if public %} ac-bar-public{% endif %}" data-ac-header>
+  <div class="ac-bar-inner">
+    {% if public %}{{ brand() }}{% else %}
+      <button type="button" class="ac-icon ac-nav-toggle" id="ac-nav-toggle" aria-label="{{ say('Navigatie openen','Navigation öffnen') }}" aria-controls="ac-rail" aria-expanded="false">{{ icon('menu') }}</button>
+      <nav class="ac-crumbs" aria-label="{{ say('Kruimelpad','Brotkrumennavigation') }}"><a href="/">Academy</a>{{ icon('chevron',13) }}
+        {% if courses %}<a href="/expedities">{{ labels['/expedities'] }}</a>{{ icon('chevron',13) }}<span aria-current="page">{{ say('Resultaten','Ergebnisse') if path.endswith(('/resultaten','/responses')) else say('Bewerken','Bearbeiten') if path.endswith(('/edit','/bewerken')) else say('Expeditie','Expedition') }}</span>
+        {% else %}<span aria-current="page">{{ labels.get(current, 'Academy') }}</span>{% endif %}
+      </nav>
+    {% endif %}
+    <div class="ac-bar-actions">
+      {% if not public %}<button type="button" class="ac-search-trigger" id="ac-search-trigger" aria-haspopup="dialog" aria-controls="ac-search" aria-label="{{ say('Zoek een pagina','Seite suchen') }}">{{ icon('search',16) }}<span>{{ say('Ga naar…','Gehe zu…') }}</span><kbd>⌘ K</kbd></button>{% endif %}
+      <button type="button" class="ac-settings-trigger" id="ac-settings-toggle" aria-controls="ac-settings-popover" aria-expanded="false">{{ icon('settings',17) }}<span>{{ say('Instellingen','Einstellungen') }}</span>{{ icon('down',13) }}</button>
+      <div class="ac-popover" id="ac-settings-popover" hidden aria-labelledby="ac-settings-toggle">
+        <div class="ac-pop-group"><span class="ac-pop-label" id="ac-pop-language">{{ say('Taal','Sprache') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-pop-language"><button type="button" data-academy-language="nl" lang="nl" aria-pressed="{{ 'false' if academy_locale|default('nl') == 'de' else 'true' }}">Nederlands</button><button type="button" data-academy-language="de" lang="de" aria-pressed="{{ 'true' if academy_locale|default('nl') == 'de' else 'false' }}">Deutsch</button></div></div>
+        <div class="ac-pop-group"><span class="ac-pop-label" id="ac-pop-theme">{{ say('Weergave','Darstellung') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-pop-theme"><button type="button" data-academy-theme="light">{{ icon('sun',15) }}{{ say('Licht','Hell') }}</button><button type="button" data-academy-theme="dark">{{ icon('moon',15) }}{{ say('Donker','Dunkel') }}</button></div></div>
+        {% if not public %}<div class="ac-pop-links"><a href="/instellingen">{{ icon('user',16) }}{{ say('Mijn account','Mein Konto') }}</a><a href="/signin" id="academy-verify-email" hidden>{{ say('E-mailadres bevestigen','E-Mail-Adresse bestätigen') }}</a><button type="button" id="academy-signout" hidden>{{ icon('logout',16) }}{{ say('Uitloggen','Abmelden') }}</button></div>{% endif %}
+        <a class="ac-privacy-link" href="/privacy">{{ icon('privacy',14) }}{{ say('Privacy','Datenschutz') }}</a>
+      </div>
+    </div>
+  </div>
 </header>
+{% endif %}
+{% if not public %}
+<dialog id="ac-search" class="ac-search-dialog" aria-labelledby="ac-search-label">
+  <div class="ac-search-input">{{ icon('search') }}<label class="sr-only" for="ac-jump" id="ac-search-label">{{ say('Zoek een pagina','Seite suchen') }}</label><input id="ac-jump" type="search" placeholder="{{ say('Zoek een pagina…','Seite suchen…') }}" autocomplete="off"><button type="button" class="ac-icon" data-ac-close-search aria-label="{{ say('Sluiten','Schließen') }}">{{ icon('close',18) }}</button></div>
+  <nav class="ac-search-results" aria-label="{{ say('Zoekresultaten','Suchergebnisse') }}">
+    {% for href, glyph, nl, de in sections + [('/instellingen','settings','Instellingen','Einstellungen')] %}<a href="{{ href }}">{{ icon(glyph,18) }}<span>{{ say(nl,de) }}</span>{{ icon('arrow',15) }}</a>{% endfor %}
+    <p hidden data-ac-no-results>{{ say('Geen pagina gevonden. Probeer een andere zoekterm.','Keine Seite gefunden. Versuchen Sie einen anderen Suchbegriff.') }}</p>
+  </nav>
+</dialog>
+{% endif %}
