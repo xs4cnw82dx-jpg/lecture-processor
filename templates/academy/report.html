@@ -3,7 +3,7 @@
 {% from '_academy_copy.html' import tr with context %}
 {% from 'academy/_loading.html' import loading %}
 {% block body_attrs %} class="el-library-body academy-body" data-expedition-id="{{ expedition_id }}"{% endblock %}
-{% block title %}{{ 'Ergebnisse' if academy_locale == 'de' else 'Resultaten' }} · xPED Academy{% endblock %}
+{% block title %}{{ tr('report.title') }} · xPED Academy{% endblock %}
 {% block body %}
   {% set shell_title = 'Responses & Pilot Analytics' %}
   {% include '_academy_header.html' %}
@@ -16,7 +16,7 @@
         </div>
         <div class="el-dash-actions" id="el-response-actions" hidden>
 
-          <details class="academy-filter-menu"><summary>{{ 'Gruppen' if academy_locale == 'de' else 'Groepen' }}</summary><fieldset id="academy-report-groups"><legend>{{ 'Gruppen auswählen' if academy_locale == 'de' else 'Groepen kiezen' }}</legend></fieldset></details>
+          <details class="academy-filter-menu"><summary>{{ tr('report.groups') }}</summary><fieldset id="academy-report-groups"><legend>{{ tr('report.chooseGroups') }}</legend></fieldset></details>
 
           <select data-app-select id="el-resp-lang" aria-label="{{ tr("Filter by language") }}">
             <option value="">{{ tr("All languages") }}</option>
@@ -27,19 +27,19 @@
 
           {# Option labels and the accessible name are set by the page script in the interface language. #}
           <select data-app-select id="el-resp-period" translate="no">
-            <option value="">{{ 'Gesamter Zeitraum' if academy_locale == 'de' else 'Alle tijd' }}</option>
-            <option value="7">{{ 'Letzte 7 Tage' if academy_locale == 'de' else 'Laatste 7 dagen' }}</option>
-            <option value="30">{{ 'Letzte 30 Tage' if academy_locale == 'de' else 'Laatste 30 dagen' }}</option>
-            <option value="90">{{ 'Letzte 90 Tage' if academy_locale == 'de' else 'Laatste 90 dagen' }}</option>
+            <option value="">{{ tr('All time') }}</option>
+            <option value="7">{{ tr('report.days7') }}</option>
+            <option value="30">{{ tr('report.days30') }}</option>
+            <option value="90">{{ tr('report.days90') }}</option>
           </select>
-          <details class="academy-filter-menu"><summary>{{ 'Datumsbereich' if academy_locale == 'de' else 'Datumbereik' }}</summary>
-            <form id="academy-date-filter"><label>{{ 'Von' if academy_locale == 'de' else 'Van' }} <input name="from" type="date"></label>
-              <label>{{ 'Bis' if academy_locale == 'de' else 'Tot en met' }} <input name="to" type="date"></label>
-              <button class="btn" type="submit">{{ 'Übernehmen' if academy_locale == 'de' else 'Toepassen' }}</button></form>
+          <details class="academy-filter-menu"><summary>{{ tr('report.dateRange') }}</summary>
+            <form id="academy-date-filter"><label>{{ tr('report.from') }} <input name="from" type="date"></label>
+              <label>{{ tr('report.through') }} <input name="to" type="date"></label>
+              <button class="btn" type="submit">{{ tr('report.apply') }}</button></form>
           </details>
-          <details class="academy-report-exports"><summary>{{ 'Exportieren' if academy_locale == 'de' else 'Exporteren' }}</summary>
-            <button type="button" class="btn" id="el-resp-export-csv">{{ 'CSV herunterladen' if academy_locale == 'de' else 'CSV downloaden' }}</button>
-            <button type="button" class="btn" id="el-resp-export-xlsx">{{ 'Excel-Datei (.xlsx)' if academy_locale == 'de' else 'Excel-bestand (.xlsx)' }}</button>
+          <details class="academy-report-exports"><summary>{{ tr('report.export') }}</summary>
+            <button type="button" class="btn" id="el-resp-export-csv">{{ tr('report.downloadCSV') }}</button>
+            <button type="button" class="btn" id="el-resp-export-xlsx">{{ tr('report.downloadExcel') }}</button>
           </details>
 
         </div>
@@ -76,13 +76,13 @@
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
 
   <dialog class="academy-step-details" id="academy-step-details" aria-labelledby="academy-step-title">
-    <header><span data-detail-parent></span><form method="dialog"><button class="btn" value="close">{{ 'Schließen' if academy_locale == 'de' else 'Sluiten' }}</button></form></header>
+    <header><span data-detail-parent></span><form method="dialog"><button class="btn" value="close">{{ tr('report.close') }}</button></form></header>
     <h2 id="academy-step-title" tabindex="-1"></h2>
     <div data-detail-body></div>
     <footer>
-      <button class="btn" type="button" data-detail-prev>{{ 'Zurück' if academy_locale == 'de' else 'Vorige' }}</button>
-      <button class="btn" type="button" data-detail-next>{{ 'Weiter' if academy_locale == 'de' else 'Volgende' }}</button>
-      <a class="btn" data-detail-edit>{{ 'Im Editor öffnen' if academy_locale == 'de' else 'Openen in de editor' }}</a>
+      <button class="btn" type="button" data-detail-prev>{{ tr('report.previous') }}</button>
+      <button class="btn" type="button" data-detail-next>{{ tr('report.next') }}</button>
+      <a class="btn" data-detail-edit>{{ tr('report.openEditor') }}</a>
     </footer>
   </dialog>
   <script src="{{ url_for('static', filename='js/academy-report-details.js') }}"></script>

@@ -66,6 +66,9 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     const time = page.locator('#el-resp-time');
     await expect(time.getByRole('heading',{name:'Tijdsbesteding'})).toBeVisible();
     await expect(time.locator('.el-time-figures')).toContainText('15 min');
+    const shares = time.getByRole('table', { name: 'Aandeel in de gemeten actieve tijd per station' });
+    await expect(shares.getByRole('row', { name: /Opening/ })).toContainText('60%');
+    await expect(shares.getByRole('row', { name: /Plan/ })).toContainText('40%');
     const opening = time.locator('details').filter({hasText:'Opening'});
     await opening.locator('summary').click();
     await expect(opening.locator('.el-time-steps')).toContainText('7:45');
