@@ -1,6 +1,8 @@
 (function () {
   'use strict';
-  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message, values) {
+    return values ? message.replace(/\{(\w+)\}/g, function (field, name) { return values[name] ?? field; }) : message;
+  };
   var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
   var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
   var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
@@ -537,14 +539,19 @@
         workspace.inert = true;
         var edName = (res.editor && res.editor.name) || uiText('A collaborator');
         var agoSec = (res.editor && res.editor.updated_at) ? Math.max(1, Math.round(Date.now() / 1000 - res.editor.updated_at)) : 0;
-        var agoTxt = agoSec ? (uiText(' (active ') + (agoSec < 60 ? (agoSec + 's') : (Math.round(agoSec / 60) + 'm')) + uiText(' ago)')) : '';
+        var agoTxt = '';
+        if (agoSec) {
+          var relativeTime = window.Xped && window.Xped.i18n ? window.Xped.i18n.relative(res.editor.updated_at) :
+            ((agoSec < 60 ? agoSec + 's' : Math.round(agoSec / 60) + 'm') + ' ago');
+          agoTxt = uiText(' (active {time})', {time: relativeTime});
+        }
         if (res.same_account) {
-          leaseMsg.textContent = uiText('You already have this expedition open in another browser tab or window') + agoTxt + '. Taking over stops saves from that tab. Save pending edits there first.';
+          leaseMsg.textContent = uiText('You already have this expedition open in another browser tab or window{activity}. Taking over stops saves from that tab. Save pending edits there first.', {activity: agoTxt});
         } else {
-          leaseMsg.textContent = edName + uiText(' is currently editing this expedition') + agoTxt + '. Preview is available. Taking over stops their unsaved changes from being saved.';
+          leaseMsg.textContent = uiText('{name} is currently editing this expedition{activity}. Preview is available. Taking over stops their unsaved changes from being saved.', {name: edName, activity: agoTxt});
         }
         leaseBanner.hidden = false;
-        saveStateEl.textContent = res.same_account ? uiText('Open in another tab') : (edName + uiText(' editing'));
+        saveStateEl.textContent = res.same_account ? uiText('Open in another tab') : uiText('{name} editing', {name: edName});
         saveStateEl.className = 'el-save-chip is-warn';
       }
     } catch (err) {
@@ -776,7 +783,7 @@
             var moved = state.exp.modules.splice(from, 1)[0];
             state.exp.modules.splice(targetIdx, 0, moved);
           }, { label: 'reorder station' });
-          announceOutline('Moved ' + modTitle + ' to station ' + (targetIdx + 1) + ' of ' + state.exp.modules.length);
+          announceOutline(uiText('Moved {title} to station {position} of {total}', {title: modTitle, position: targetIdx + 1, total: state.exp.modules.length}));
         });
       }
 
@@ -859,7 +866,7 @@
             arr[mIdx] = t;
           }, { label: 'move station up' });
           restoreOutlineFocus('[data-move-mod="' + CSS.escape(mod.id) + '"][data-dir="up"]');
-          announceOutline('Moved ' + modTitle + ' to station ' + mIdx + ' of ' + state.exp.modules.length);
+          announceOutline(uiText('Moved {title} to station {position} of {total}', {title: modTitle, position: mIdx, total: state.exp.modules.length}));
         });
         var mDn = document.createElement('button');
         mDn.type = 'button';
@@ -879,7 +886,7 @@
             arr[mIdx] = t;
           }, { label: 'move station down' });
           restoreOutlineFocus('[data-move-mod="' + CSS.escape(mod.id) + '"][data-dir="down"]');
-          announceOutline('Moved ' + modTitle + ' to station ' + (mIdx + 2) + ' of ' + state.exp.modules.length);
+          announceOutline(uiText('Moved {title} to station {position} of {total}', {title: modTitle, position: mIdx + 2, total: state.exp.modules.length}));
         });
         modMove.appendChild(mUp);
         modMove.appendChild(mDn);
@@ -944,7 +951,7 @@
               mod.steps.splice(targetIdx, 0, moved);
               state.selectedTarget = { type: 'step', moduleId: mod.id, stepId: moved.id };
             }, { label: 'move step' });
-            announceOutline('Moved step to position ' + (targetIdx + 1) + ' in ' + modTitle);
+            announceOutline(uiText('Moved step to position {position} in {station}', {position: targetIdx + 1, station: modTitle}));
           });
         }
 
@@ -983,7 +990,7 @@
               mod.steps[sIdx] = t;
             }, { label: 'move step up' });
             restoreOutlineFocus('[data-move-step="' + CSS.escape(step.id) + '"][data-dir="up"]');
-            announceOutline('Moved ' + cleanStepTitle + ' to step ' + sIdx + ' of ' + mod.steps.length);
+            announceOutline(uiText('Moved {title} to step {position} of {total}', {title: cleanStepTitle, position: sIdx, total: mod.steps.length}));
           });
           var sDn = document.createElement('button');
           sDn.type = 'button';
@@ -1002,7 +1009,7 @@
               mod.steps[sIdx] = t;
             }, { label: 'move step down' });
             restoreOutlineFocus('[data-move-step="' + CSS.escape(step.id) + '"][data-dir="down"]');
-            announceOutline('Moved ' + cleanStepTitle + ' to step ' + (sIdx + 2) + ' of ' + mod.steps.length);
+            announceOutline(uiText('Moved {title} to step {position} of {total}', {title: cleanStepTitle, position: sIdx + 2, total: mod.steps.length}));
           });
           stepMove.appendChild(sUp);
           stepMove.appendChild(sDn);
@@ -4255,7 +4262,7 @@
       rm.textContent = uiText('Remove');
       rm.setAttribute('aria-label', uiText('Remove collaborator ') + m.email);
       rm.addEventListener('click', async function () {
-        var ok = await showConfirmDialog(uiText('Remove collaborator?'), uiText('Remove ') + m.email + uiText(' from this expedition?'), uiText('Remove'));
+        var ok = await showConfirmDialog(uiText('Remove collaborator?'), uiText('Remove {email} from this expedition?', {email: m.email}), uiText('Remove'));
         if (!ok) return;
         var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
           method: 'POST',
@@ -4954,7 +4961,7 @@
   });
   document.getElementById('el-create-grant-btn').addEventListener('click', async function () {
     var lang = document.getElementById('el-grant-lang').value;
-    var label = document.getElementById('el-grant-label').value.trim() || (lang.toUpperCase() + ' translator');
+    var label = document.getElementById('el-grant-label').value.trim() || uiText('{language} translator', {language: lang.toUpperCase()});
     try {
       await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
         method: 'POST',

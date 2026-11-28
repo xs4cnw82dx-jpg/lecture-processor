@@ -465,6 +465,35 @@ test('review links open the requested field, approving its unchanged translation
   expect(course.startPage.title.en).toBe('Retained historical text');
 });
 
+test('Dutch exercise scores and German editing notices follow their own language', async ({ page, context }) => {
+  const model = require('../static/js/elearning-model.js');
+  const course = { ...model.createExpeditionPreset('blank', 'Oefening', 'nl'), id: 'balans', role: 'owner', revision: 1 };
+  const station = course.modules[0];
+  const step = station.steps[0];
+  const balance = model.createBlock('balance_scale');
+  balance.data.factors = [
+    { id: 'belasting', category: 'load', label: { nl: 'Belasting' } },
+    { id: 'herstel', category: 'resource', label: { nl: 'Herstel' } },
+  ];
+  step.blocks = [balance];
+  let granted = true;
+  await signInToLibrary(page);
+  await context.addCookies([{ url: academy, name: 'xped-language', value: 'de' }]);
+  await page.route('**/api/elearning/expeditions/balans', route => route.fulfill({ json: { expedition: course } }));
+  await page.route('**/api/elearning/expeditions/balans/lease', route => route.fulfill({ json: {
+    granted, lease_token: 'synthetic-edit', editor: { name: 'A. Auteur', updated_at: Math.floor(Date.now() / 1000) - 180 },
+  } }));
+  await page.goto(academy + '/expedities/balans/bewerken?module=' + station.id + '&step=' + step.id);
+  const activity = page.locator('.xped-balance-stage').first();
+  await expect(activity.locator('.xped-balance-status')).toContainText('In balans');
+  await activity.locator('.xped-range.is-resource').press('End');
+  await expect(activity.locator('.xped-balance-status')).toContainText('Sterke draagkracht');
+  granted = false;
+  await page.reload();
+  await expect(page.getByText('A. Auteur bearbeitet diese Expedition', { exact: false })).toContainText('vor 3 Minuten');
+  await expect(page.getByText('Sie können die Vorschau öffnen.', { exact: false })).toBeVisible();
+});
+
 test('dynamic interface labels use the scoped catalog and authored titles remain literal', async ({ page }) => {
   const literalTitle = 'Demo {do not translate}';
   await page.route('**/academy/messages/nl/library.js', async route => {
