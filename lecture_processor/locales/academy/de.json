@@ -800,6 +800,7 @@
     "Each module must be an object.": "Jede Station muss ein JSON-Objekt sein.",
     "Each step must be an object.": "Jeder Schritt muss ein JSON-Objekt sein.",
     "Een expeditie heeft al 20 teamleden.": "Eine der Expeditionen hat bereits 20 Teammitglieder.",
+    "English course text is archived. Choose Dutch or German to edit a translation.": "Englische Kurstexte bleiben im Archiv erhalten. Wählen Sie Niederländisch oder Deutsch, um eine Übersetzung zu bearbeiten.",
     "Expected a JSON object body.": "Die Anfrage muss ein JSON-Objekt enthalten.",
     "Expedition payload must be a JSON object.": "Die Expedition muss als JSON-Objekt übermittelt werden.",
     "File removal is pending. Retry to free the space.": "Die Datei wurde noch nicht gelöscht. Versuchen Sie es erneut, um Speicherplatz freizugeben.",
