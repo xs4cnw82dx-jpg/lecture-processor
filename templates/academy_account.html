@@ -1,0 +1,41 @@
+{% extends '_base.html' %}
+{% block title %}Studio account · xPED Academy{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  {% include '_academy_foundation.html' %}
+{% endblock %}
+{% block body_attrs %} class="academy-body"{% endblock %}
+{% block body %}
+  {% include '_academy_header.html' %}
+  <main class="academy-document academy-account-page" id="main-content" tabindex="-1">
+    <a href="/">Back to the Studio</a>
+    <h1>Studio account</h1>
+    <p id="acct-status" role="status" aria-live="polite"></p>
+    <a id="acct-signin" href="/signin?next=/account" hidden>Sign in to manage your Studio account.</a>
+    <section id="acct-controls" hidden>
+      <p id="acct-identity" translate="no"></p>
+      <h2>Download your account data</h2>
+      <p>Your JSON download includes your sign-in details, invitations, folders, course memberships and upload records. You can export course content from its Studio menu.</p>
+      <button type="button" class="btn" id="acct-export">Download account data</button>
+      <h2>Delete your Studio account</h2>
+      <p>Your expeditions and media transfer to the Studio administrator for review. Learner links and shared responses stay available. Your sign-in, folder names and author access are removed.</p>
+      <button type="button" class="btn danger" id="acct-begin" aria-expanded="false" aria-controls="acct-confirmation">Delete account</button>
+      <form id="acct-confirmation" hidden>
+        <p id="acct-deletion-effects">Once deletion starts, your author access ends and editing is blocked. If you leave this page, return here and confirm again to finish deleting your account.</p>
+        <label><input type="checkbox" id="acct-consent" aria-describedby="acct-deletion-effects" required> I understand that deleting my Studio account is permanent.</label>
+        <div class="acct-actions">
+          <button type="submit" class="btn danger">Permanently delete account</button>
+          <button type="button" class="btn" id="acct-cancel">Cancel</button>
+        </div>
+      </form>
+      <button type="button" class="btn" id="acct-reauth" hidden>Sign in again</button>
+    </section>
+    <noscript>Enable JavaScript to manage your Studio account.</noscript>
+  </main>
+  {% include '_academy_footer.html' %}
+  {% include '_firebase_scripts.html' %}
+  <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/academy-account-data.js') }}"></script>
+{% endblock %}

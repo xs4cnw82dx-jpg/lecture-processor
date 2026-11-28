@@ -13,7 +13,7 @@
     var importedAudioToken = String(settings.importedAudioToken || '').trim();
     var importedAudioSourceUrl = normalizeAudioImportUrl(settings.importedAudioSourceUrl);
 
-    if (mode !== 'lecture-notes') {
+    if (mode !== 'lecture-notes' && mode !== 'interview') {
       return { shouldImport: false, reason: 'unsupported-mode' };
     }
     if (!url) {

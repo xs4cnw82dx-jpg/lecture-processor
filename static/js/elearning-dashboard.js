@@ -29,6 +29,7 @@
   }
   var client = window.LectureProcessorAuth.createAuthClient(auth);
   var admin = window.XpedStudioAdmin.create(api, loadList);
+  var folders = academy && window.XpedAcademyFolders(api, loadList, function () { renderExpeditions(allExpeditions); });
   var listRequest = 0;
   var importAttempt = 0;
   var coverCache = new Map();
@@ -134,6 +135,7 @@
   }
 
   function renderExpeditions(items) {
+    if (folders && folders.selected()) items = items.filter(folders.matches);
     var q = searchInput ? searchInput.value.trim().toLowerCase() : '';
     if (searchInput) searchInput.hidden = items.length < 2 && !q;
     coverObserver.disconnect();
@@ -148,6 +150,13 @@
       empty.className = 'el-dash-empty';
       var body = document.createElement('div');
       var h2 = document.createElement('h2');
+      if (folders && folders.selected()) {
+        h2.textContent = 'No expeditions in this folder';
+        body.appendChild(h2);
+        empty.appendChild(body);
+        grid.appendChild(empty);
+        return;
+      }
       h2.textContent = canCreate ? 'Create your first expedition' : 'Author access is by invitation';
       var p = document.createElement('p');
       p.textContent = canCreate
@@ -325,6 +334,9 @@
       }
       if (exp.role !== 'translate') {
         if (exp.role === 'owner') {
+          if (folders && canCreate && !exp.deletionPending) {
+            menuItems.push({ label: 'Move to folder', onClick: function () { folders.move(exp); } });
+          }
           if (menuItems.length) menuItems.push({ divider: true });
           menuItems.push({ label: 'Delete', icon: 'trash', danger: true, onClick: function () {
             pendingDeleteExp = exp;
@@ -350,7 +362,7 @@
     }
   }
 
-  async function loadList() {
+  async function loadList(folderSelection) {
     var request = ++listRequest;
     retry.hidden = true;
     try {
@@ -358,6 +370,7 @@
       if (request !== listRequest) return;
       allExpeditions = data.expeditions || [];
       canCreate = !academy || data.canCreate === true;
+      if (folders) folders.update(data.folders, canCreate, typeof folderSelection === 'string' ? folderSelection : undefined);
       actionsEl.hidden = !canCreate && !data.studioAdmin;
       document.getElementById('el-new-expedition-btn').hidden = !canCreate;
       document.getElementById('el-import-json-btn').hidden = !canCreate;
@@ -538,6 +551,7 @@
 
   function accountChanged(user) {
     admin.reset();
+    if (folders) folders.reset();
     ++listRequest;
     ++importAttempt;
     pendingImportPayload = null;

@@ -1624,17 +1624,18 @@ def format_transcript_with_timestamps(segments):
         lines.append(f'[{start_ms}-{end_ms}] {text}')
     return '\n'.join(lines)
 
-def _audio_generation_mode(audio_file, provider_session):
+def _validate_audio_input(audio_file, audio_mime_type, provider_session):
     """Neutral audio parts need a caller-owned session; native handles must not get one."""
     is_neutral = isinstance(audio_file, (AudioPart, PreparedFilePart))
     if is_neutral != (provider_session is not None):
         raise ValueError('Audio input and provider session do not match.')
-    return is_neutral
+    if is_neutral and audio_file.mime_type != audio_mime_type:
+        raise ValueError('Audio input MIME type does not match its prepared resource.')
 
 
-def _generate_audio_text(audio_file, audio_mime_type, prompt, *, provider_session, stage, operation_name,
-                         retry_tracker, on_usage=None):
-    """Report each response before parsing it or attempting a timestamp fallback."""
+def _generate_audio_response(audio_file, audio_mime_type, prompt, *, provider_session, stage, operation_name,
+                         retry_tracker):
+    """Return the response and its usage before reading transcript text."""
     if provider_session is not None:
         response = provider_session.generate(
             stage, [audio_file, TextPart(prompt)], max_output_tokens=65536,
@@ -1652,80 +1653,90 @@ def _generate_audio_text(audio_file, audio_mime_type, prompt, *, provider_sessio
             ])], retry_tracker=retry_tracker, operation_name=operation_name,
         )
         usage = extract_token_usage(response)
-    if on_usage is not None:
-        # Keep the original stage key for the primary response. A fallback has its own cost.
-        usage_stage = 'audio_transcription' if operation_name == 'audio_transcription_timestamped' else operation_name
-        on_usage(usage_stage, usage, model=model)
-    return (getattr(response, 'text', '') or ''), usage
+    return response, usage, model
 
 
 def transcribe_audio_plain(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False,
                            *, provider_session=None, stage='audio_transcription', on_usage=None):
-    _audio_generation_mode(audio_file, provider_session)
+    _validate_audio_input(audio_file, audio_mime_type, provider_session)
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-    text, usage = _generate_audio_text(audio_file, audio_mime_type, prompt, provider_session=provider_session,
-                                       stage=stage, operation_name='audio_transcription', retry_tracker=retry_tracker,
-                                       on_usage=on_usage)
-    transcript = text.strip()
+    response, usage, model = _generate_audio_response(
+        audio_file, audio_mime_type, prompt, provider_session=provider_session, stage=stage,
+        operation_name='audio_transcription', retry_tracker=retry_tracker,
+    )
+    if on_usage is not None:
+        on_usage('audio_transcription', usage, model=model)
+    transcript = (getattr(response, 'text', '') or '').strip()
     if include_usage:
         return (transcript, usage)
     return transcript
 
+def _parse_timestamp_transcript(text):
+    parsed = extract_json_payload(text)
+    if not isinstance(parsed, dict):
+        raise ValueError('Timestamped transcription JSON not found')
+    raw_segments = parsed.get('transcript_segments', [])
+    full_transcript = str(parsed.get('full_transcript', '') or '').strip()
+    clean_segments = []
+    if isinstance(raw_segments, list):
+        for seg in raw_segments:
+            if not isinstance(seg, dict):
+                continue
+            text = str(seg.get('text', '') or '').strip()
+            if not text:
+                continue
+            try:
+                start_ms = int(seg.get('start_ms', 0) or 0)
+                end_ms = int(seg.get('end_ms', start_ms) or start_ms)
+            except Exception:
+                continue
+            clean_segments.append({'start_ms': max(0, start_ms), 'end_ms': max(start_ms, end_ms), 'text': text})
+    if not full_transcript and clean_segments:
+        full_transcript = '\n'.join([s['text'] for s in clean_segments]).strip()
+    if not full_transcript:
+        raise ValueError('Empty transcript')
+    return full_transcript, clean_segments
+
+
 def transcribe_audio_with_timestamps(audio_file, audio_mime_type, output_language='English', retry_tracker=None, include_usage=False,
                                      *, provider_session=None, on_usage=None):
     # Validate before the fallback path, so a mismatch is never retried as plain text.
-    _audio_generation_mode(audio_file, provider_session)
+    _validate_audio_input(audio_file, audio_mime_type, provider_session)
     output_language = OUTPUT_LANGUAGE_MAP.get(str(output_language).lower(), str(output_language))
     prompt = PROMPT_AUDIO_TRANSCRIPTION_TIMESTAMPED.format(output_language=output_language)
     usage = {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
     try:
-        text, usage = _generate_audio_text(
+        response, usage, model = _generate_audio_response(
             audio_file, audio_mime_type, prompt, provider_session=provider_session,
             stage='audio_transcription_timestamped', operation_name='audio_transcription_timestamped',
-            retry_tracker=retry_tracker, on_usage=on_usage,
+            retry_tracker=retry_tracker,
         )
-        parsed = extract_json_payload(text)
-        if not isinstance(parsed, dict):
-            raise ValueError('Timestamped transcription JSON not found')
-        raw_segments = parsed.get('transcript_segments', [])
-        full_transcript = str(parsed.get('full_transcript', '') or '').strip()
-        clean_segments = []
-        if isinstance(raw_segments, list):
-            for seg in raw_segments:
-                if not isinstance(seg, dict):
-                    continue
-                text = str(seg.get('text', '') or '').strip()
-                if not text:
-                    continue
-                try:
-                    start_ms = int(seg.get('start_ms', 0) or 0)
-                    end_ms = int(seg.get('end_ms', start_ms) or start_ms)
-                except Exception:
-                    continue
-                clean_segments.append({'start_ms': max(0, start_ms), 'end_ms': max(start_ms, end_ms), 'text': text})
-        if not full_transcript and clean_segments:
-            full_transcript = '\n'.join([s['text'] for s in clean_segments]).strip()
-        if not full_transcript:
-            raise ValueError('Empty transcript')
-        if include_usage:
-            return (full_transcript, clean_segments, usage)
-        return (full_transcript, clean_segments)
-    except Exception as e:
-        logger.warning(f'⚠️ Timestamp transcription failed, falling back to plain transcript: {e}')
-        fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
-        # The fallback reuses the same prepared audio resource and session.
-        fallback_text, fallback_usage = _generate_audio_text(
-            audio_file, audio_mime_type, fallback_prompt, provider_session=provider_session,
-            stage='audio_transcription', operation_name='audio_transcription_fallback',
-            retry_tracker=retry_tracker, on_usage=on_usage,
-        )
+    except Exception as error:
+        logger.warning('Timestamp generation failed, falling back to plain transcript: %s', error)
+    else:
+        if on_usage is not None:
+            on_usage('audio_transcription', usage, model=model)
+        try:
+            transcript, segments = _parse_timestamp_transcript(getattr(response, 'text', '') or '')
+            return (transcript, segments, usage) if include_usage else (transcript, segments)
+        except Exception as error:
+            logger.warning('Timestamp parsing failed, falling back to plain transcript: %s', error)
+
+    fallback_prompt = PROMPT_AUDIO_TRANSCRIPTION.format(output_language=output_language)
+    response, fallback_usage, model = _generate_audio_response(
+        audio_file, audio_mime_type, fallback_prompt, provider_session=provider_session,
+        stage='audio_transcription', operation_name='audio_transcription_fallback', retry_tracker=retry_tracker,
+    )
+    if on_usage is not None:
+        on_usage('audio_transcription_fallback', fallback_usage, model=model)
+    transcript = (getattr(response, 'text', '') or '').strip()
+    if include_usage:
         combined_usage = {key: usage.get(key, 0) + fallback_usage.get(key, 0)
                           for key in ('input_tokens', 'output_tokens', 'total_tokens')}
-        fallback_text = fallback_text.strip()
-        if include_usage:
-            return (fallback_text, [], combined_usage)
-        return (fallback_text, [])
+        return transcript, [], combined_usage
+    return transcript, []
+
 
 def ensure_study_audio_root():
     os.makedirs(STUDY_AUDIO_ROOT, exist_ok=True)

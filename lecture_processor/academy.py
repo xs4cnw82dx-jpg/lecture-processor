@@ -14,6 +14,7 @@ from firebase_admin import auth, credentials, exceptions, firestore
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
 from google.api_core.exceptions import GoogleAPICallError
 
+from lecture_processor.blueprints.academy_folders import academy_folders_bp
 from lecture_processor.blueprints.elearning import elearning_bp
 from lecture_processor.domains.elearning.model import ElearningError
 from lecture_processor.repositories import users_repo
@@ -22,7 +23,8 @@ from lecture_processor.runtime.environment import normalize_public_base_url, res
 from lecture_processor.runtime.http_security import apply_security_headers, build_content_security_policy
 from lecture_processor.runtime.proxy import apply_proxy_fix
 from lecture_processor.runtime.static_assets import register_static_versioning
-from lecture_processor.services import elearning_service, rate_limit_service
+from lecture_processor.services.academy_accounts import academy_account_bp
+from lecture_processor.services import auth_service, elearning_service, rate_limit_service
 
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -63,6 +65,10 @@ def _firebase_clients(project_id, credential_file):
     return firestore.client(app=app), app
 
 
+class AcademyEmailUnverified(Exception):
+    """A valid Academy identity still needs to verify its email address."""
+
+
 class AcademyRuntime:
     """Capabilities used by Studio routes, bound to the Academy Firebase project."""
 
@@ -90,7 +96,7 @@ class AcademyRuntime:
     def resolve_js_asset(filename):
         return resolve_js_asset(filename, project_root_dir=_ROOT)
 
-    def verify_firebase_token(self, req):
+    def decode_identity(self, req):
         scheme, _, token = req.headers.get('Authorization', '').partition(' ')
         if scheme.lower() != 'bearer' or not token:
             return None
@@ -98,9 +104,25 @@ class AcademyRuntime:
             user = auth.verify_id_token(token, app=self.firebase_app, check_revoked=True)
         except (ValueError, exceptions.FirebaseError):
             return None
-        if user.get('uid') and user.get('email') and user.get('email_verified') is True:
-            return user
+        return user if user.get('uid') else None
+
+    def verify_firebase_token(self, req):
+        user = self.decode_identity(req)
+        if user and user.get('email'):
+            if user.get('email_verified') is True:
+                return user
+            if user.get('email_verified') is False:
+                raise AcademyEmailUnverified
         return None
+
+    def academy_identity_removed(self, uid):
+        try:
+            auth.get_user(uid, app=self.firebase_app)
+        except auth.UserNotFoundError:
+            return True
+        except (ValueError, exceptions.FirebaseError):
+            return False
+        return False
 
     def is_admin_user(self, user):
         if self.ADMIN_UIDS:
@@ -134,11 +156,18 @@ def create_app():
     apply_proxy_fix(app, 1)
     register_static_versioning(app)
     app.register_blueprint(elearning_bp)
+    app.register_blueprint(academy_folders_bp)
+    app.register_blueprint(academy_account_bp)
     static_root = Path(app.static_folder)
     public_assets = {
         file.relative_to(static_root).as_posix()
         for pattern in _STATIC_ASSETS for file in static_root.glob(pattern) if file.is_file()
     }
+
+    @app.errorhandler(AcademyEmailUnverified)
+    def verify_email_required(_error):
+        return jsonify(error='Please verify your email address before continuing.',
+                       error_code=auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR), 403
 
     @app.get('/')
     def index():

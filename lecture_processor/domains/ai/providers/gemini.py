@@ -226,7 +226,7 @@ class GeminiProvider:
             except Exception:
                 logger = getattr(self.runtime, 'logger', None)
                 if logger is not None:
-                    logger.warning('Could not clean up a provider workflow file.')
+                    logger.warning('Could not clean up provider file %s.', getattr(uploaded, 'name', None))
         self._owned_files.clear()
         self._files.clear()
         self._pending_files.clear()
