@@ -14,7 +14,10 @@
       <h1 id="academy-auth-title">{{ tr("Sign in") }}</h1>
       <p id="academy-auth-intro">{{ tr("Open your expeditions in xPEDitie Pijn Studio.") }}</p>
       <section id="academy-auth-credentials" aria-labelledby="academy-auth-title">
-        <button type="button" class="btn" id="academy-google">{{ tr("Continue with Google") }}</button>
+        <button type="button" class="btn" id="academy-google">
+          <img src="{{ url_for('static', filename='images/xped/google-sign-in.svg') }}" alt="" width="18" height="18">
+          <span>{{ tr("Continue with Google") }}</span>
+        </button>
         <form id="academy-auth-form">
           <label for="academy-email">{{ tr("Email") }}</label>
           <input type="email" id="academy-email" autocomplete="username" required>

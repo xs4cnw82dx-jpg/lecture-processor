@@ -57,6 +57,8 @@
 .academy-auth p { line-height: 1.5; }
 #academy-auth-intro { margin: 8px 0 24px; color: var(--theme-muted-strong); }
 #academy-google { width: 100%; margin-bottom: 18px; }
+#academy-google:not([hidden]) { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+#academy-google img { flex: none; }
 #academy-auth-form, #academy-verify { display: grid; gap: 8px; }
 #academy-auth-form label { font-size: .93rem; font-weight: 700; }
 #academy-auth-form input {
