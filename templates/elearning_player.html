@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-base.css' if academy_mode else 'css/theme.css') }}">
   <title>xPEDitie Pijn · {{ 'xPED Academy' if academy_mode else 'Lecture Processor' }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-player.css') }}">
@@ -55,6 +55,7 @@
   </main>
 
   {% if academy_mode %}
+  <script type="application/json" id="academy-initial-course">{{ academy_initial_course|tojson }}</script>
   <footer class="academy-player-footer"><a href="/privacy">Privacy</a></footer>
   {% endif %}
 

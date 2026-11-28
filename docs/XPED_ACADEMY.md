@@ -1,6 +1,14 @@
 # xPED Academy
 
-The Academy is a standalone deployment of the Studio from this repository. The domain root opens the course library. Learners use published links. The Studio administrator manages author access by verified email. A course invitation grants collaboration on that course.
+The Academy is a standalone deployment of the Studio from this repository. The domain root opens the author dashboard. Learners use published links. The Studio administrator manages author access by verified email. A course invitation grants collaboration on that course.
+
+## Studio and learner addresses
+
+The Academy library is at `/expedities`. Each course has an overview at `/expedities/<id>`, an editor at `/expedities/<id>/bewerken` and a report at `/expedities/<id>/resultaten`. Authors enter via `/inloggen`. The workspace also has `/resultaten`, `/vertalingen`, `/team` and `/instellingen`.
+
+New learner links use `/start/<token>` and translation invitations use `/vertalen/<token>`. Existing Academy links under `/physio/elearning`, `/elearning/p/` and `/elearning/translate/` redirect on the same host, retaining the token, language and pilot-group query. The former `/signin` and `/account` addresses also redirect.
+
+Courses previously made on Lecture Processor stay on the original service. Authors and learners can keep using their existing Lecture Processor links, including printed QR codes. The Academy uses its own Firebase project and private media storage.
 
 ## Production service
 
@@ -32,7 +40,7 @@ For local UI verification, run `.venv/bin/python scripts/run_ui_preview.py --aca
 
 ## Studio accounts
 
-The account page at `/account` is available from Settings and Privacy. It exports the signed-in user's account and membership metadata as JSON. Individual course exports remain available from the library. Learners can open shared links without a Studio account.
+The account page at `/instellingen` is available from Settings and Privacy. It exports the signed-in user's account and membership metadata as JSON. Individual course exports remain available from the library. Learners can open shared links without a Studio account.
 
 Account deletion requires a sign-in within five minutes and explicit confirmation. Deleting an author transfers their draft and published expeditions in place to the verified Studio administrator's **Account review** folder. Course IDs, media, learner links, responses and other collaborators remain attached to the course. Previously requested course deletions and incomplete unpublished copies finish cleanup. The departing account loses author and collaboration access, and its folders and upload attribution are removed. A minimal UID tombstone prevents work from restarting. Firebase removes the sign-in with the user's own ID token. The runtime needs only its existing Auth viewer permissions.
 

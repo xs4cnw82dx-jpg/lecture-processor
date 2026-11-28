@@ -1,5 +1,9 @@
 (function () {
   'use strict';
+  var platformDownload = window.Xped ? window.Xped.download : window.LectureProcessorDownload;
+  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
+  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
+  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
 
   var Model = window.XpedElearningModel;
   var expeditionId = document.body.dataset.expeditionId || '';
@@ -24,12 +28,12 @@
   var hasLoadedOnce = false;
   var requestId = 0;
   var auth;
-  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  try { auth = platformBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   if (!auth && document.querySelector('meta[name="academy-signin"]')) {
     status.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
     return;
   }
-  var client = window.LectureProcessorAuth.createAuthClient(auth);
+  var client = platformAuth.createAuthClient(auth);
   cohortSelect.addEventListener('change', loadResponses);
   langSelect.addEventListener('change', loadResponses);
   periodSelect.addEventListener('change', loadResponses);
@@ -738,7 +742,7 @@
             jump.className = 'el-action-link';
             var qJump = new URLSearchParams({ step: item.stepId, from: 'responses' });
             qJump.set('module', station.id);
-            jump.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/edit?' + qJump.toString();
+            jump.href = Model.coursePaths(expeditionId).edit + '?' + qJump.toString();
             jump.textContent = 'Open in builder →';
             c.appendChild(jump);
           } else {
@@ -787,9 +791,9 @@
       var resp = await client.authFetch(url);
       if (!resp.ok) throw new Error('Could not export responses.');
       var suffix = filtered && qs.size ? ('-' + Array.from(qs.values()).join('-')) : '';
-      await window.LectureProcessorDownload.downloadResponseBlob(resp, 'xped-responses-' + expeditionId + suffix + '.csv');
+      await platformDownload.downloadResponseBlob(resp, 'xped-responses-' + expeditionId + suffix + '.csv');
     } catch (err) {
-      if (err.code !== 'auth/session-changed') window.LectureProcessorUx.toast(err.message, { type: 'error' });
+      if (err.code !== 'auth/session-changed') platformUx.toast(err.message, { type: 'error' });
     }
   }
 

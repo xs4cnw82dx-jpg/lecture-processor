@@ -127,9 +127,10 @@ FIELD_LOCATION_LABELS = {
 
 
 class ElearningError(Exception):
-    def __init__(self, message: str, status: int = 400):
+    def __init__(self, message: str, status: int = 400, *, code: str = ''):
         super().__init__(message)
         self.status = status
+        self.code = code
 
 
 def new_id(prefix: str = 'el') -> str:

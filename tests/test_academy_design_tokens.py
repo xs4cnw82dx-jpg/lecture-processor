@@ -44,3 +44,16 @@ def test_academy_chart_colours_stand_out_from_their_track():
     for values in _palettes():
         for token in ('--chart-fill', '--chart-good'):
             assert _contrast(values[token], values['--chart-track']) >= 3, (token, values[token])
+
+
+def test_academy_components_use_palette_tokens_and_supported_font_weights():
+    """Academy styles own their color palette and use the weights shipped for the Studio."""
+    files = set(FOUNDATION.parent.glob('academy*.css')) | set(FOUNDATION.parent.glob('elearning-academy-*.css')) | {FOUNDATION}
+    properties = re.compile(r'(?:^|[;{])\s*([\w-]+)\s*:\s*([^{};]+)(?=[;}])', re.M)
+    for path in sorted(files):
+        css = re.sub(r'/\*.*?\*/', '', path.read_text(), flags=re.S)
+        for prop, value in properties.findall(css):
+            if not prop.startswith('--'):
+                assert not re.search(r'#[a-fA-F0-9]{3,8}\b', value), (path.name, prop, value)
+            if prop == 'font-weight' or prop.startswith('--font-weight'):
+                assert value.strip() not in ('800', '900'), (path.name, prop, value)

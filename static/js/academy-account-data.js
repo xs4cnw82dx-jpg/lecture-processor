@@ -4,11 +4,11 @@
   const status = byId('status');
   const form = byId('confirmation');
   let auth;
-  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) {
+  try { auth = window.Xped.bootstrap.getAuth(); } catch (_) {
     status.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
     return;
   }
-  const api = window.LectureProcessorAuth.createAuthClient(auth);
+  const api = window.Xped.auth.createAuthClient(auth);
   let busy = false;
   let confirmedUser = null;
 
@@ -20,7 +20,7 @@
     if (show) byId('consent').focus();
   }
 
-  window.LectureProcessorBootstrap.onAuthStateReady(auth, function (user) {
+  window.Xped.bootstrap.onAuthStateReady(auth, function (user) {
     confirmDeletion(false);
     byId('reauth').hidden = true;
     byId('signin').hidden = Boolean(user);
@@ -52,14 +52,14 @@
   byId('export').addEventListener('click', () => run(async () => {
     const response = await api.authFetch('/api/academy/account/export');
     await checkResponse(response);
-    await window.LectureProcessorDownload.downloadResponseBlob(response, 'xped-academy-account.json');
+    await window.Xped.download.downloadResponseBlob(response, 'xped-academy-account.json');
     status.textContent = 'Your account download is ready.';
   }));
   byId('begin').addEventListener('click', () => confirmDeletion(form.hidden));
   byId('cancel').addEventListener('click', () => { confirmDeletion(false); byId('begin').focus(); });
   byId('reauth').addEventListener('click', () => run(async () => {
     await auth.signOut();
-    window.location.assign('/signin?next=/account');
+    window.location.assign('/inloggen?next=/instellingen');
   }));
   form.addEventListener('submit', event => {
     event.preventDefault();

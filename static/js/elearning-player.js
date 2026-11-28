@@ -1049,9 +1049,11 @@
     document.documentElement.lang = state.lang;
     updateComfortLabels();
     try {
-      var resp = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
-      var data = await resp.json().catch(function () { return {}; });
-      if (!resp.ok) {
+      var initialCourse = document.getElementById('academy-initial-course');
+      var first = initialCourse && JSON.parse(initialCourse.textContent);
+      var resp = first ? null : await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
+      var data = first ? { expedition: first } : await resp.json().catch(function () { return {}; });
+      if (resp && !resp.ok) {
         if (resp.status !== 404 && resp.status !== 410 && resp.status !== 403) throw new Error('Course unavailable');
         mainEl.textContent = '';
         var errCard = document.createElement('div');
@@ -1059,9 +1061,12 @@
         var h1 = document.createElement('h1');
         h1.textContent = Model.ui(state.lang, 'unavailable');
         var p = document.createElement('p');
-        p.textContent = resp.status === 410 ? (data.error || Model.ui(state.lang, 'pausedFallback')) : Model.ui(state.lang, 'notFound');
-        errCard.appendChild(h1);
-        errCard.appendChild(p);
+        var message = Model.ui(state.lang, 'notFound');
+        if (resp.status === 410 && data.error_code !== 'link_expired') {
+          message = data.error_code === 'link_paused' ? Model.ui(state.lang, 'pausedFallback') : (data.error || Model.ui(state.lang, 'pausedFallback'));
+        }
+        p.textContent = message;
+        errCard.append(h1, p);
         mainEl.appendChild(errCard);
         return;
       }

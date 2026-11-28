@@ -16,12 +16,13 @@ def academy_client(tmp_path):
 def test_academy_root_and_pages_use_the_fresh_firebase_project(academy_client):
     dashboard = academy_client.get('/', follow_redirects=True)
     assert dashboard.status_code == 200
-    assert dashboard.request.path == '/physio/elearning'
-    for path in ('/signin', '/physio/elearning', '/physio/elearning/course/edit', '/physio/elearning/course/responses'):
+    assert dashboard.request.path == '/'
+    assert not dashboard.history
+    for path in ('/inloggen', '/expedities', '/expedities/course/bewerken', '/expedities/course/resultaten'):
         response = academy_client.get(path)
         assert response.status_code == 200
         page = html.fromstring(response.data)
-        assert 'xPEDitie Pijn Studio' in page.findtext('.//title')
+        assert 'xPED' in page.findtext('.//title')
         assert 'Lecture Processor' not in page.findtext('.//title')
         config = json.loads(page.get_element_by_id('academy-firebase-config').text)
         assert config['projectId'] == 'demo-xped-academy'
@@ -36,7 +37,9 @@ def test_academy_root_and_pages_use_the_fresh_firebase_project(academy_client):
 
 def test_academy_excludes_lecture_processor_pages_and_apis(academy_client):
     for path in ('/dashboard', '/lecture-notes', '/admin', '/study', '/api/books', '/api/auth/user',
-                 '/static/js/app-shell.js', '/static/css/admin.css'):
+                 '/static/js/app-shell.js', '/static/css/admin.css', '/static/css/theme.css', '/static/css/shared-ui.css',
+                 '/static/css/motion.css', '/static/js/firebase-bootstrap.js', '/static/js/auth-utils.js',
+                 '/static/js/i18n.js', '/static/js/preferences.js'):
         assert academy_client.get(path).status_code == 404, path
     assert academy_client.post('/api/tools/extract').status_code == 404
     assert academy_client.get('/healthz').status_code == 200
@@ -53,9 +56,9 @@ def test_academy_accepts_its_own_identity_and_starts_with_an_empty_library(acade
 
 
 def test_learner_page_is_public_but_unknown_course_is_unavailable(academy_client):
-    player = academy_client.get('/elearning/p/synthetic-course-token')
-    assert player.status_code == 200
-    assert html.fromstring(player.data).findtext('.//title') == 'xPEDitie Pijn · xPED Academy'
+    player = academy_client.get('/start/synthetic-course-token')
+    assert player.status_code == 404
+    assert 'Deze leerlink is niet actief' in html.fromstring(player.data).findtext('.//title')
     assert academy_client.get('/api/elearning/public/synthetic-course-token').status_code == 404
     assert academy_client.get('/privacy').status_code == 200
 

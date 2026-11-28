@@ -1,4 +1,8 @@
 export const minifiedTargets = [
+  {
+    entry: 'scripts/entries/academy-runtime.js', out: 'static/js/academy-runtime.min.js',
+    bundle: true, format: 'iife', define: { XPED_ACADEMY_BUILD: 'true' },
+  },
   { entry: 'static/js/batch-status.js', out: 'static/js/batch-status.min.js' },
   { entry: 'static/js/book-zip.js', out: 'static/js/book-zip.min.js', bundle: true, format: 'iife' },
   { entry: 'static/js/book-studio.js', out: 'static/js/book-studio.min.js', bundle: true, format: 'esm' },
