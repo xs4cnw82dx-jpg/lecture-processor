@@ -81,3 +81,48 @@ test('every keyboard stop on the overview shows the shared focus ring', async ({
   expect(seen.length).toBeGreaterThan(5);
   expect(seen.filter(stop => !stop.visible)).toEqual([]);
 });
+
+test('a long-running create action shows one announced busy state and returns to normal on failure', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route(origin + '/api/elearning/expeditions', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await held;
+    return route.fulfill({ status: 503, json: { error: 'Tijdelijk niet beschikbaar.' } });
+  });
+  await page.goto(origin + '/expedities');
+  await page.locator('#el-new-expedition-btn').click();
+  await page.locator('#el-new-title').fill('Een rustige start');
+  const confirm = page.locator('#el-create-confirm');
+  // Layout width, unaffected by the dialog's opening scale animation.
+  const width = await confirm.evaluate(button => button.offsetWidth);
+  await confirm.click();
+  await expect(confirm).toHaveAttribute('aria-busy', 'true');
+  await expect(confirm).toBeDisabled();
+  await expect(page.getByRole('status').filter({ hasText: /^Bezig: / })).toBeAttached();
+  expect(await confirm.evaluate(button => button.offsetWidth)).toBe(width);
+  release();
+  await expect(confirm).not.toHaveAttribute('aria-busy', 'true');
+  await expect(confirm).toBeEnabled();
+});
+
+test('Academy disclosures share one animated open state and keep native keyboard behaviour', async ({ page }) => {
+  await page.goto(origin + '/expedities');
+  const timing = await page.evaluate(() => {
+    const details = document.createElement('details');
+    details.id = 'probe';
+    details.innerHTML = '<summary>Meer uitleg</summary><p>Uitleg</p>';
+    document.querySelector('main').append(details);
+    const content = getComputedStyle(details, '::details-content');
+    return { duration: content.transitionDuration, property: content.transitionProperty };
+  });
+  expect(timing.property).toContain('block-size');
+  expect(timing.duration.split(',')[0].trim()).toBe('0.18s');
+  const summary = page.locator('#probe > summary');
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#probe')).toHaveAttribute('open', '');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#probe')).not.toHaveAttribute('open', '');
+});
