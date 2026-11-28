@@ -99,7 +99,9 @@ body:has(> .ac-rail) .el-dash {
 .ac-settings-trigger { background: var(--ac-paper-detail); border-color: var(--ac-coast); }
 .ac-icon:hover,.ac-search-trigger:hover,.ac-settings-trigger:hover,.ac-settings-trigger[aria-expanded="true"] { background: var(--ac-selected); color: var(--ac-selected-ink); }
 .ac-bar-public .ac-brand { flex-direction: row; align-items: center; gap: 12px; }
-.ac-bar-public .ac-brand-wordmark { width: 126px; background:var(--ac-rail-bg); border-radius:5px; padding:8px; box-sizing:content-box; }
+.ac-brand-signature { display: inline-flex; align-items: center; gap: 5px; color: var(--theme-ink); }
+.ac-brand-symbol { display: block; width: 48px; height: auto; }
+.ac-brand-name { font: 500 14px/1.2 var(--ac-font); white-space: nowrap; }
 
 .ac-bar-public .ac-brand-product { padding-inline-start: 12px; border-inline-start: 1px solid var(--ac-coast); }
 .ac-bar-public .ac-bar-inner { max-width: 1280px; }
@@ -158,7 +160,8 @@ body:has(> .ac-rail) .el-dash {
   .ac-search-trigger :is(span,kbd) { display: none; }
   .ac-bar-actions { gap: 2px; }
   .ac-crumbs a:first-child,.ac-crumbs a:first-child + svg { display: none; }
-  .ac-bar-public .ac-brand-wordmark { width: 94px; }
+  .ac-brand-symbol { width: 40px; }
+  .ac-brand-name { font-size: 12px; }
   .ac-settings-trigger { padding-inline: 9px; }
   .ac-rail-nav { gap: 3px; }
   .ac-route { min-height: 44px; }
@@ -236,8 +239,8 @@ html[data-ac-drawer="open"] .ac-nav-backdrop { display: block; position: fixed; 
 
 .ac-mobile-brand { display:none; }
 @media(max-width:800px) {
-  .ac-mobile-brand { display:grid; place-items:center; width:34px; height:30px; flex:none; border-radius:5px; background:var(--ac-rail-bg); }
-  .ac-mobile-brand img { width:25px; max-height:24px; object-fit:contain; }
+  .ac-mobile-brand { display:grid; place-items:center; width:34px; height:30px; flex:none; }
+  .ac-mobile-brand img { width:32px; max-height:24px; object-fit:contain; }
 }
 
 .ac-search-results { max-height:min(60dvh,440px); overflow:auto; }
@@ -246,3 +249,13 @@ html[data-ac-drawer="open"] .ac-nav-backdrop { display: block; position: fixed; 
 .ac-finder-group .ac-finder-item { display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:0; border-radius:6px; background:none; color:inherit; text-align:start; text-decoration:none; cursor:pointer; }
 .ac-finder-item small { margin-inline-start:auto; color:var(--theme-muted-strong); }
 .ac-finder-item:is(:hover,:focus-visible) { background:var(--ac-selected); }
+
+@media (max-width: 440px) {
+  .ac-bar-public .ac-brand { gap: 7px; }
+  .ac-bar-public .ac-brand-product { padding-inline-start: 7px; }
+  .ac-brand-name { white-space: normal; }
+  .ac-brand-signature { gap: 3px; }
+}
+@media (max-width: 370px) {
+  .ac-bar-public .ac-brand-name { display: none; }
+}

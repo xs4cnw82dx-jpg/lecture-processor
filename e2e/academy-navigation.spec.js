@@ -112,3 +112,27 @@ test('the results and translation indexes show the courses available to each rol
   await expect(entries.getByRole('link',{name:/Te controleren/})).toHaveAttribute('href','/expedities/one/bewerken?modus=vertalen&taal=de');
   await expect(entries.getByRole('link',{name:/Eine Route/})).toHaveAttribute('href','/expedities/two/bewerken?modus=vertalen&taal=nl');
 });
+
+test('the public xPED wordmark follows the theme and fits beside the German settings button', async ({ page, academyOrigin }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.context().addCookies([{name:'xped-language', value:'de', url:academyOrigin}]);
+  await page.emulateMedia({colorScheme:'light'});
+  await page.goto(academyOrigin + '/privacy');
+  const header = page.locator('header');
+  const brand = header.getByRole('link', { name: 'xPED Academy, zur Übersicht' });
+  const name = brand.getByText('xPEDition Schmerz');
+  const mark = brand.locator('img');
+  await expect(name).toBeVisible();
+  await mark.evaluate(image => image.decode());
+  await expect(mark).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(brand).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const settings = header.getByRole('button',{name:'Einstellungen'});
+  const left = await brand.boundingBox(), right = await settings.boundingBox();
+  expect(left.x + left.width).toBeLessThanOrEqual(right.x);
+  expect(right.x + right.width).toBeLessThanOrEqual(390);
+  const lightInk = await name.evaluate(el => getComputedStyle(el).color);
+  await page.emulateMedia({colorScheme:'dark'});
+  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+  await expect(name).not.toHaveCSS('color',lightInk);
+  await expect(brand).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+});

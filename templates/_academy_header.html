@@ -12,7 +12,20 @@
   ('/team', 'team', 'Team', 'Team')] %}
 {% set current = '/expedities' if courses or path == '/physio/elearning' else '/instellingen' if path in ['/account','/instellingen'] else path %}
 {% set labels = {'/':say('Overzicht','Übersicht'),'/expedities':say('Expedities','Expeditionen'),'/resultaten':say('Resultaten','Ergebnisse'),'/vertalingen':say('Vertalingen','Übersetzungen'),'/team':'Team','/instellingen':say('Instellingen','Einstellungen')} %}
-{% macro brand() %}<a class="ac-brand" href="/" aria-label="{{ say('xPED Academy, naar overzicht','xPED Academy, zur Übersicht') }}"><img class="ac-brand-wordmark" src="{{ url_for('static', filename='images/xped/academy-mark.webp' if academy_locale|default('nl') == 'de' else 'images/xped/logo_nl.svg') }}" alt="{{ say('xPEDitie Pijn','xPED') }}"><img class="ac-brand-short" src="{{ url_for('static', filename='images/xped/academy-mark.webp') }}" alt=""><span class="ac-brand-product">{{ product_name }}</span></a>{% endmacro %}
+{% macro brand(on_header=false) %}
+<a class="ac-brand" href="/" aria-label="{{ say('xPED Academy, naar overzicht','xPED Academy, zur Übersicht') }}">
+  {% if on_header %}
+    <span class="ac-brand-signature">
+      <img class="ac-brand-symbol" src="{{ url_for('static', filename='images/xped/xped-beeldmerk-kleur.png') }}" width="307" height="154" alt="">
+      <span class="ac-brand-name">{{ say('xPEDitie Pijn','xPEDition Schmerz') }}</span>
+    </span>
+  {% else %}
+    <img class="ac-brand-wordmark" src="{{ url_for('static', filename='images/xped/academy-mark.webp' if academy_locale|default('nl') == 'de' else 'images/xped/logo_nl.svg') }}" alt="{{ say('xPEDitie Pijn','xPED') }}">
+    <img class="ac-brand-short" src="{{ url_for('static', filename='images/xped/academy-mark.webp') }}" alt="">
+  {% endif %}
+  <span class="ac-brand-product">{{ product_name }}</span>
+</a>
+{% endmacro %}
 <a class="skip-link" href="#{{ 'el-mode-edit' if academy_editor_focus|default(false) else 'main-content' }}">{{ say('Naar de inhoud','Zum Inhalt') }}</a>
 {% if not public %}
 <aside class="ac-rail" id="ac-rail" aria-label="{{ say('Werkruimte','Arbeitsbereich') }}">
@@ -30,9 +43,9 @@
 {% if not academy_editor_focus|default(false) %}
 <header class="ac-bar{% if public %} ac-bar-public{% endif %}" data-ac-header>
   <div class="ac-bar-inner">
-    {% if public %}{{ brand() }}{% else %}
+    {% if public %}{{ brand(on_header=true) }}{% else %}
       <button type="button" class="ac-icon ac-nav-toggle" id="ac-nav-toggle" aria-label="{{ say('Navigatie openen','Navigation öffnen') }}" aria-controls="ac-rail" aria-expanded="false">{{ icon('menu') }}</button>
-      <a class="ac-mobile-brand" href="/" aria-label="{{ say('Naar het overzicht','Zur Übersicht') }}"><img src="{{ url_for('static',filename='images/xped/academy-mark.webp') }}" alt="xPED"></a>
+      <a class="ac-mobile-brand" href="/" aria-label="{{ say('Naar het overzicht','Zur Übersicht') }}"><img src="{{ url_for('static',filename='images/xped/xped-beeldmerk-kleur.png') }}" alt="xPED"></a>
       <nav class="ac-crumbs" aria-label="{{ say('Kruimelpad','Brotkrumennavigation') }}"><a href="/">{{ product_name }}</a>{{ icon('chevron',13) }}
         {% if courses %}<a href="/expedities">{{ labels['/expedities'] }}</a>{{ icon('chevron',13) }}
           {% if path.endswith(('/resultaten','/responses','/bewerken','/edit')) %}
