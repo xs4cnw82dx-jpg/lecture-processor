@@ -74,7 +74,7 @@ body:has(> .ac-rail) .el-dash {
 .ac-route svg { flex: none; }
 .ac-route:where(:hover,:focus-visible) { background: var(--ac-rail-hover); color: var(--ac-rail-ink); }
 .ac-route[aria-current] { background: var(--ac-seafoam); color: var(--ac-dark-text); font-weight: 600; }
-.ac-route:focus-visible, .ac-rail :focus-visible { outline: 2px solid var(--ac-sunflower); outline-offset: 2px; }
+.ac-route:focus-visible, .ac-rail :focus-visible { outline: var(--ac-focus-width) solid var(--ac-sunflower); outline-offset: var(--ac-focus-offset); }
 .ac-fold { font-size: 13px; }
 .ac-bar { position: relative; z-index: 20; flex-shrink: 0; background: var(--theme-surface); border-bottom: 1px solid var(--ac-coast); }
 .ac-bar-inner {
@@ -182,7 +182,7 @@ html[data-ac-drawer="open"] .ac-nav-backdrop { display: block; position: fixed; 
   body:has(> .ac-rail) .el-dash { padding: 22px 16px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .ac-search-dialog[open] { animation: ac-appear 120ms ease-out; }
+  .ac-search-dialog[open] { animation: ac-appear var(--ac-motion-fast) ease-out; }
   @keyframes ac-appear { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
 }
 

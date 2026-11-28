@@ -11,7 +11,15 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
-:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+/* Items 85 and 86: shared motion durations and one focus ring for author pages and the learner player. */
+:root {
+  --ac-motion-fast: 120ms;
+  --ac-motion-medium: 180ms;
+  --ac-motion-slow: 240ms;
+  --ac-focus-width: 2px;
+  --ac-focus-offset: 2px;
+}
+:focus-visible { outline: var(--ac-focus-width) solid var(--focus-ring); outline-offset: var(--ac-focus-offset); }
 button, input, select, textarea { font: inherit; }
 button, summary { cursor: pointer; }
 button:disabled { cursor: default; }

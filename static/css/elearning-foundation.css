@@ -58,13 +58,6 @@
   --ac-scrim: rgb(6 41 64 / 38%);
   --ac-ring: 0 0 0 3px rgb(0 112 184 / 18%);
   --ac-ease: cubic-bezier(.2, .8, .2, 1);
-  /* Item 85: one set of durations for hover/press, popovers and dialogs. */
-  --ac-motion-fast: 120ms;
-  --ac-motion-medium: 180ms;
-  --ac-motion-slow: 240ms;
-  /* Item 86: one focus ring for every interactive element. */
-  --ac-focus-width: 2px;
-  --ac-focus-offset: 2px;
 
   /* Type */
   --ac-type-caption: 12px;
@@ -465,7 +458,7 @@
   color: var(--ac-on-navy);
   border-color: transparent;
 }
-[data-product="academy"] .academy-header :is(summary, .btn, a):focus-visible { outline-color: var(--ac-mint); }
+[data-product="academy"] .academy-header :is(summary, .btn, a):focus-visible { outline-color: var(--ac-sunflower); }
 [data-product="academy"] .academy-preferences-panel {
   top: calc(100% + 8px);
   min-width: 232px;
@@ -939,12 +932,12 @@
 
 [data-product="academy"] .el-picker-preview-head { text-transform:none; letter-spacing:normal; font-size:var(--ac-type-label); }
 
-/* Item 86: one visible focus ring, in brand blue on light surfaces and mint on navy. */
+/* Item 86: one visible focus ring (tokens in academy-base.css): brand blue on light surfaces, sunflower on navy. */
 [data-product="academy"] :is(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
   outline: var(--ac-focus-width) solid var(--focus-ring);
   outline-offset: var(--ac-focus-offset);
 }
-[data-product="academy"] :is(.academy-header, .ac-rail, .el-player-header) :is(a, button, summary, [tabindex]):focus-visible { outline-color: var(--ac-mint); }
+[data-product="academy"] :is(.academy-header, .ac-rail, .el-player-header) :is(a, button, summary, [tabindex]):focus-visible { outline-color: var(--ac-sunflower); }
 
 /* Item 36: tab rows scroll instead of wrapping, with a fade on each edge that hides more tabs. */
 [data-product="academy"] .academy-tab-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; scroll-padding-inline: 24px; }

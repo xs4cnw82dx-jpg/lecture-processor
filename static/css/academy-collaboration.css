@@ -109,7 +109,7 @@
 #xc-dialog-error:not(:empty) { color: var(--xc-danger); margin-top: 8px; }
 .xc-state { padding-block: 24px; }
 .xc-state p { margin: 10px 0 18px; }
-.xc-main :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.xc-main :focus-visible { outline: var(--ac-focus-width) solid var(--focus-ring); outline-offset: var(--ac-focus-offset); }
 @media(max-width:760px) {
   .xc-overview { grid-template-columns: 1fr; }
   .xc-main { padding: 24px 16px; }
