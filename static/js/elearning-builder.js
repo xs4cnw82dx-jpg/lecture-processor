@@ -4868,6 +4868,7 @@
       event.preventDefault();
       inspectorTabs[next].focus();
       inspectorTabs[next].click();
+      if (academyUi) inspectorTabs[next].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     });
   });
 
