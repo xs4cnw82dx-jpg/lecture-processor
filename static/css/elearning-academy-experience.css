@@ -35,7 +35,7 @@
   background: var(--theme-surface);
   box-shadow: 0 8px 32px rgb(6 41 64 / 7%);
 }
-.academy-auth-fields { min-width: 0; padding: clamp(28px, 4.2vw, 58px); align-self: center; }
+.academy-auth-fields { position: relative; z-index: 1; min-width: 0; padding: clamp(28px, 4.2vw, 58px); align-self: center; }
 [data-product="academy"] .academy-auth h1 {
   font: 700 clamp(2rem, 4.4vw, 2.9rem)/1.06 var(--xped-font-display);
   letter-spacing: -.015em;
@@ -45,6 +45,7 @@
   min-height: 44px;
 }
 .academy-auth-landscape {
+  pointer-events: none;
   overflow: hidden; position: relative; isolation: isolate;
   display: grid; align-items: end; justify-items: center;
   min-height: 390px; padding: 24px 14% 36px;

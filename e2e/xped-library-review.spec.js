@@ -196,8 +196,8 @@ test('response filters keep their scope, counts and comment destinations clear',
   await expect(completion.locator('.el-split-counts')).toHaveText('9 sessions3 sessions');
   const reach = page.locator('#el-resp-funnel');
   await expect(reach.locator('.el-chart-group-title')).toHaveText(['Opening', 'Follow-up']);
-  await expect(reach.locator('.el-chart-group').filter({ hasText: 'Follow-up' }).locator('.el-chart-value')).toHaveText('6 50% −6 (−50%)');
-  await expect(reach.locator('.el-chart-note')).toHaveText('n = 12 · After the dash: learners who reached the previous step but not this one.');
+  await expect(reach.locator('.el-chart-group').filter({ hasText: 'Follow-up' }).locator('.el-chart-value')).toHaveText('6 50%');
+  await expect(reach.locator('.el-chart-note')).toHaveText('n = 12');
   await expect(stats).toContainText('Showing 8 of 12 reflection excerpts');
   await stats.getByRole('button', { name: 'Show 12 excerpts' }).click();
   await expect(stats).toContainText('Showing 12 of 12 reflection excerpts');

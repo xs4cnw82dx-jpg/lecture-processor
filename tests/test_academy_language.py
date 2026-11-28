@@ -112,13 +112,20 @@ def test_every_academy_catalog_key_is_used_and_preserves_its_placeholders():
     # translates these known messages; an author's custom pause note stays literal.
     error_sources = (
         'lecture_processor/domains/elearning/model.py',
+        'lecture_processor/blueprints/academy_collaboration.py',
         'lecture_processor/services/academy_accounts.py',
         'lecture_processor/services/elearning_service.py',
         'lecture_processor/services/elearning_storage.py',
     )
     for path in (root / name for name in error_sources):
         for call in ast.walk(ast.parse(path.read_text())):
-            if not isinstance(call, ast.Call) or not call.args:
+            if not isinstance(call, ast.Call):
+                continue
+            if getattr(call.func, 'id', None) == 'jsonify':
+                for keyword in call.keywords:
+                    if keyword.arg == 'error' and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+                        expected.add(keyword.value.value)
+            if not call.args:
                 continue
             name = getattr(call.func, 'id', None) or getattr(call.func, 'attr', None)
             if name == 'ElearningError' and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
