@@ -1016,7 +1016,7 @@
     "report.resetChanged": "De expeditie of de statistieken zijn intussen gewijzigd. Controleer het bijgewerkte rapport voordat je opnieuw wist.",
     "report.resetConfirm": "Definitief wissen",
     "report.resetCount": "{count, plural, one {# gedeelde sessie in de hele expeditie.} other {# gedeelde sessies in de hele expeditie.}}",
-    "report.resetDescription": "Je wist de gedeelde sessies, antwoorden, tijdmetingen en feedback voor deze expeditie. Dit geldt voor alle groepen, talen en periodes, ook met een filter aan. De expeditie en de deelnemerslink blijven beschikbaar. Wissen kan niet ongedaan worden gemaakt.",
+    "report.resetDescription": "Je wist alle gedeelde sessies, antwoorden, tijdmetingen en feedback van deze expeditie, voor alle groepen, talen en periodes. Dit kan niet ongedaan worden gemaakt. De expeditie en de deelnemerslink blijven beschikbaar. Wie nu resultaten deelt, moet opnieuw toestemming geven om verder te delen.",
     "report.resetDone": "De statistieken van deze expeditie zijn gewist.",
     "report.resetFailed": "Het wissen kon niet worden bevestigd. Kies ‘Opnieuw proberen’ om verder te gaan.",
     "report.resetResume": "Wissen hervatten",
