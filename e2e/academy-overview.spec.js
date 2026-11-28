@@ -71,7 +71,24 @@ test('translator home, pending state, retry and a course-free invited account', 
   await expect(page.getByRole('heading',{name:'Mijn vertaalopdrachten'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Recente feedback'})).toBeHidden();
   await expect(page.getByRole('link',{name:'Gesunde Bewegung'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Te controleren (1) · DE · Gesunde Bewegung'})).toHaveAttribute('href','/expedities/pilot/bewerken?modus=vertalen&taal=de&filter=controleren');
   await page.reload();
   await expect(page.getByRole('heading',{name:'Toegang op uitnodiging'})).toBeVisible();
   await expect(page.locator('[data-preset]').first()).toBeHidden();
+});
+
+test('an admin can dismiss the archived-language notice for previously translated courses', async ({page,academyOrigin}) => {
+  const legacy = course('historisch','Historische expeditie');
+  legacy.enabledLanguages.push('en');
+  legacy.languageCoverage.en = {translated:2,total:3};
+  await page.route('**/api/academy/overview*',route=>route.fulfill({json:overview([legacy,course('nieuw','Nieuwe expeditie')])}));
+  await page.goto(academyOrigin);
+  const archive = page.getByRole('region',{name:'Eerder gemaakte Engelse vertalingen'});
+  await expect(archive.getByRole('link')).toHaveCount(1);
+  await expect(archive.getByRole('link',{name:'Historische expeditie'})).toHaveAttribute('href','/expedities/historisch');
+  await archive.getByRole('button',{name:'Melding verbergen'}).click();
+  await expect(archive).toBeHidden();
+  await page.reload();
+  await expect(page.getByRole('link',{name:'Nieuwe expeditie',exact:true})).toBeVisible();
+  await expect(archive).toBeHidden();
 });

@@ -13,6 +13,7 @@
   const docs = new URLSearchParams(location.search);
   let generation = 0;
   let data, user, api, auth;
+  let dismissedArchive = new Set();
   let sorting = 'updatedAt';
   let ascending = false;
   let metricFilter = '';
@@ -46,10 +47,10 @@
   }
   function notice(text) { status.textContent = text; status.hidden = !text; }
   function hideContent() {
-    for (const id of ['library','welcome','start','stats','courses','feedback','retry','signin','contact']) {
+    for (const id of ['library','welcome','start','stats','courses','feedback','archive','retry','signin','contact']) {
       if (el(id)) el(id).hidden = true;
     }
-    for (const id of ['rows','feedback-list','kpis','completion','distribution']) el(id).replaceChildren();
+    for (const id of ['rows','feedback-list','archive-list','kpis','completion','distribution']) el(id).replaceChildren();
   }
   function welcome(title, body, action) {
     el('welcome-title').textContent = title; el('welcome-body').textContent = body;
@@ -158,9 +159,39 @@
       const label = code.toUpperCase() + ' ' + number(completed) + '/' + number(coverage.total || 0);
       const wrap=node('span',null,'ao-cell'); wrap.title=label;
       wrap.append(node('span',code.toUpperCase()),bar(completed,coverage.total,label)); td.append(wrap);
+      if (course.role === 'translate' && code !== course.defaultLanguage && coverage.needsReview > 0) {
+        const action = copy('Te controleren','Zu prüfen') + ' (' + number(coverage.needsReview) + ')';
+        const reviewLink = link(action,courseUrl(course.id) + '/bewerken?modus=vertalen&taal=' + code + '&filter=controleren','ao-review');
+        reviewLink.setAttribute('aria-label',action + ' · ' + code.toUpperCase() + ' · ' + course.title);
+        td.append(reviewLink);
+      }
     });
     return td;
   }
+  function archivedCourses() {
+    return data.courses.filter(course => course.enabledLanguages.includes('en') && course.languageCoverage.en?.translated > 0);
+  }
+  function showArchivedCourses() {
+    if (!data.studioAdmin) return;
+    const courses = archivedCourses().filter(course => !dismissedArchive.has(course.id));
+    const list = el('archive-list');
+    list.replaceChildren();
+    for (const course of courses) {
+      const item = node('li');
+      item.append(link(course.title,courseUrl(course.id)));
+      list.append(item);
+    }
+    el('archive').hidden = !courses.length;
+  }
+  el('archive-dismiss').addEventListener('click', () => {
+    if (!data?.studioAdmin || !user) return;
+    archivedCourses().forEach(course => dismissedArchive.add(course.id));
+    try { localStorage.setItem('xped.archive.seen.' + user.uid, JSON.stringify([...dismissedArchive])); } catch (_) { /* In-memory dismissal still works. */ }
+    el('archive').hidden = true;
+    el('courses-title').setAttribute('tabindex','-1');
+    el('courses-title').focus();
+  });
+
   function drawTable() {
     const htmlHead = el('table-head'), tbody=el('rows'); tbody.replaceChildren();
     const editorial = data.studioAdmin || data.canCreate || data.courses.some(c => c.role !== 'translate');
@@ -217,6 +248,7 @@
       return;
     }
     el('library').hidden=false; el('courses').hidden=false;
+    showArchivedCourses();
     if (!translationsOnly) {
       filterControls(); drawStats(); drawFeedback(); el('stats').hidden=false; el('feedback').hidden=false;
     }
@@ -283,6 +315,8 @@
     auth=xped.bootstrap.getAuth(); api=xped.auth.createAuthClient(auth);
     xped.bootstrap.onAuthStateReady(auth, next => {
       user=next; data=null; generation++; hideContent();
+      try { dismissedArchive = new Set(user && JSON.parse(localStorage.getItem('xped.archive.seen.' + user.uid)) || []); }
+      catch (_) { dismissedArchive = new Set(); }
       if (user) { refresh(); return; }
       notice(''); el('loading').hidden=true;
       welcome(copy('Welkom bij xPED Academy','Willkommen in der xPED Academy'),

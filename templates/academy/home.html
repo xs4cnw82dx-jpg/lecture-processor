@@ -53,6 +53,12 @@
     <div class="ao-table-wrap" tabindex="0" role="region" aria-labelledby="ao-courses-title"><table><thead id="ao-table-head"></thead><tbody id="ao-rows"></tbody></table></div>
     <p id="ao-table-empty" hidden>{{ tr('Geen expedities in deze selectie.','Keine Expeditionen in dieser Auswahl.') }}</p>
   </section>
+  <section class="ao-card ao-archive" id="ao-archive" hidden aria-labelledby="ao-archive-title">
+    <h2 id="ao-archive-title">{{ tr('Eerder gemaakte Engelse vertalingen','Frühere englische Übersetzungen') }}</h2>
+    <p>{{ tr('Deze expedities bevatten Engelse teksten. Je vindt ze in de JSON-export van de expeditie.','Diese Expeditionen enthalten englische Texte. Sie finden sie im JSON-Export der jeweiligen Expedition.') }}</p>
+    <ul id="ao-archive-list"></ul>
+    <button type="button" id="ao-archive-dismiss" class="ao-text-link">{{ tr('Melding verbergen','Hinweis ausblenden') }}</button>
+  </section>
   <section id="ao-feedback" class="ao-card" hidden><h2>{{ tr('Recente feedback','Aktuelle Rückmeldungen') }}</h2><ul id="ao-feedback-list"></ul><p id="ao-feedback-empty">{{ tr('Er is in deze periode nog geen feedback gedeeld.','In diesem Zeitraum wurden noch keine Rückmeldungen geteilt.') }}</p></section>
 </main>
 {% include '_academy_footer.html' %}

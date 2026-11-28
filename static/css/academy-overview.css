@@ -106,3 +106,6 @@
 
 #ao-distribution .ao-track::-webkit-progress-value { background:var(--theme-accent-ink); }
 #ao-distribution .ao-track::-moz-progress-bar { background:var(--theme-accent-ink); }
+
+.ao-review, .ao-archive a { color:var(--theme-accent-ink); text-underline-offset:.15em; }
+.ao-archive ul { padding-inline-start:1.35rem; }
