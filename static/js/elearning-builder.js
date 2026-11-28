@@ -3492,8 +3492,8 @@
         copySrc.disabled = !row.source.trim() || state.trSource === state.trTarget;
         copySrc.title = uiText('Use ') + state.trSource.toUpperCase() + uiText(' text in the ') + state.trTarget.toUpperCase() + uiText(' translation');
         copySrc.appendChild(Icons.icon('copy', 13));
-        var sourceNames = { nl: 'Use Dutch text', de: 'Use German text', en: 'Use English text' };
-        copySrc.appendChild(document.createTextNode(uiText(sourceNames[state.trSource])));
+        var sourceNames = { nl: uiText('Use Dutch text'), de: uiText('Use German text'), en: uiText('Use English text') };
+        copySrc.appendChild(document.createTextNode(sourceNames[state.trSource]));
         rightMeta.appendChild(st);
         rightMeta.appendChild(copySrc);
         rHead.appendChild(locSpan);
@@ -4434,7 +4434,7 @@
         });
         var result = await response.json();
         if (response.ok || result.removalPending || response.status === 404) forgetRemovedMedia(input.value);
-        if (!response.ok && response.status !== 404) throw new Error(uiText(result.error || 'Could not remove this file.'));
+        if (!response.ok && response.status !== 404) throw new Error(uiText(result.error) || uiText('Could not remove this file.'));
         input.closest('label').remove();
       }
       unusedDialog.close();

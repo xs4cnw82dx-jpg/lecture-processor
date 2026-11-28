@@ -8,7 +8,7 @@ from pathlib import Path
 from flask import Blueprint, Response, abort, g, jsonify, request
 from google.api_core.exceptions import GoogleAPICallError
 
-from lecture_processor.repositories.elearning_repo import ElearningStore
+from lecture_processor.services import elearning_service
 from lecture_processor.runtime.container import get_runtime
 
 academy_language_bp = Blueprint('academy_language', __name__)
@@ -50,7 +50,12 @@ def messages(language_code, section):
     if language_code not in LANGUAGES or section not in ('account', 'signin', 'library', 'builder', 'report', 'player', 'shared'):
         abort(404)
     groups = catalog(language_code)
-    selected = {**groups.get('shared', {}), **groups.get(section, {})}
+    selected = dict(groups.get('shared', {}))
+    if section in ('library', 'builder', 'report', 'player'):
+        selected.update(groups.get('model', {}))
+    if section in ('builder', 'player'):
+        selected.update(groups.get('activity', {}))
+    selected.update(groups.get(section, {}))
     body = 'window.XpedMessages=' + json.dumps(selected, ensure_ascii=False, separators=(',', ':')) + ';'
     result = Response(body, mimetype='text/javascript')
     result.cache_control.public = True
@@ -66,7 +71,7 @@ def account_preferences():
     if not user:
         return jsonify(error='Sign in required'), 401
     uid = user['uid']
-    store = ElearningStore(runtime.db)
+    store = elearning_service._store(runtime)
     profile_path = 'academy_users/' + uid
     try:
         if request.method == 'GET':

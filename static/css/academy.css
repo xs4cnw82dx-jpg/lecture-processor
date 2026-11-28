@@ -139,3 +139,20 @@
 .academy-account-page .acct-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 1em; }
 #acct-identity { overflow-wrap: anywhere; }
 #acct-status:empty { display: none; }
+
+/* Long field names and German actions share the narrow translation workspace. */
+[data-product="academy"] .el-tr-row-head .el-btn-row {
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 1;
+}
+@media (max-width: 640px) {
+  [data-product="academy"] .el-tr-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  [data-product="academy"] .el-tr-glossary summary {
+    align-items: start;
+    flex-wrap: wrap;
+    gap: .25rem .75rem;
+  }
+}

@@ -483,3 +483,13 @@ test('dynamic interface labels use the scoped catalog and authored titles remain
   await expect(page.getByRole('link', { name: '⟦Editor openen⟧' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText(/[▁�]/u);
 });
+
+test('creation presents localized starter descriptions before inserting any course material', async ({ page, context }) => {
+  await context.addCookies([{ url: academy, name: 'xped-language', value: 'de' }]);
+  await page.goto(academy + '/expedities');
+  await page.evaluate(() => sessionStorage.setItem('academy-preview-user', 'studio-owner'));
+  await page.reload();
+  await page.getByRole('button', { name: 'Neue Expedition', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Beginnen Sie mit einer neutralen Station und einem leeren Schritt.');
+  await expect(page.getByRole('dialog')).not.toContainText('Start from scratch');
+});

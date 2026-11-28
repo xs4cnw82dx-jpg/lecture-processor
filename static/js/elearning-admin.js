@@ -297,7 +297,7 @@
       var rate = document.createElement('span');
       rate.textContent = item.sessions ? share(item.completed, item.sessions) : '';
       value.append(count, ' ', rate);
-      value.title = t('{completed} of {total} sessions completed', { completed: item.completed, total: item.sessions });
+      value.title = t(uiText('{completed} of {total} sessions completed'), { completed: item.completed, total: item.sessions });
       var track = document.createElement('span');
       track.className = 'el-chart-stack';
       track.append(bar('is-rest', item.sessions, busiest || 1), bar('is-good is-overlay', item.completed, busiest || 1));
