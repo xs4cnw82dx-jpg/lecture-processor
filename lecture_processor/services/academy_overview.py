@@ -118,7 +118,6 @@ def dashboard(runtime, args):
     begin, stop, previous = _midnight(start), _midnight(end + timedelta(days=1)), _midnight(start - timedelta(days=days))
     cohort = args.get('cohort', '')
     current, prior = PeriodStatistics(), PeriodStatistics()
-    buckets = [PeriodStatistics() for _ in range(min(days, 7))]
     feedback, entries, options = [], [], set()
     for eid, exp, role in courses:
         if exp.get('deleted'):
@@ -146,8 +145,6 @@ def dashboard(runtime, args):
                 continue
             group.add(eid, row)
             current.add(eid, row)
-            day = datetime.fromtimestamp(row['started_at'], ZONE).date()
-            buckets[(day - start).days * len(buckets) // days].add(eid, row)
             visited = set(row.get('visitedStepIds') or [])
             # Compare the same sessions at both ends of each transition.
             for idx, sid in enumerate(ids):
@@ -163,4 +160,4 @@ def dashboard(runtime, args):
     return dict(canCreate=can_create, studioAdmin=studio._is_studio_admin(runtime, user),
                 courses=sorted(entries, key=lambda c: c['updatedAt'], reverse=True),
                 period={'from': start.isoformat(), 'to': end.isoformat()}, cohorts=sorted(options),
-                current=current.summary(), previous=prior.summary(), trend=[b.summary() for b in buckets], feedback=feedback)
+                current=current.summary(), previous=prior.summary(), feedback=feedback)

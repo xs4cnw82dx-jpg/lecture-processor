@@ -35,7 +35,6 @@ def test_dashboard_uses_calendar_periods_comparison_and_allows_only_permitted_re
     assert [x['id'] for x in data['courses']] == [own['id']]
     assert data['feedback'][0]['comment'] == 'Een helder voorbeeld.'
     assert 'shareToken' not in data['courses'][0]
-    assert sum(b['sessions'] for b in data['trend']) == 2
     cohort = studio.get(URL + '?from=2026-10-20&to=2026-10-26&cohort=group-a', headers=ADMIN).json
     assert cohort['current']['completion'] == 100 and cohort['previous']['sessions'] == 1
     other = studio.get(URL, headers=OTHER).json

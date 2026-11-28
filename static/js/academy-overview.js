@@ -75,45 +75,40 @@
     if (key === 'medianSeconds') return duration(value);
     return number(value);
   }
-  function sparkline(series) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.classList.add('ao-spark'); svg.setAttribute('viewBox','0 0 80 24'); svg.setAttribute('aria-hidden','true');
-    const path = document.createElementNS(svg.namespaceURI,'path');
-    const max = Math.max(1,...series.filter(n => n != null));
-    let move = true;
-    const d = series.map((v,i) => {
-      if (v == null) { move = true; return ''; }
-      const segment = (move ? 'M' : 'L') + (1 + 78*i/Math.max(1,series.length-1)) + ',' + (22 - 19*v/max);
-      move = false; return segment;
-    }).join(' ');
-    path.setAttribute('d',d); path.setAttribute('fill','none'); path.setAttribute('stroke','currentColor'); path.setAttribute('stroke-width','2');
-    svg.append(path); return svg;
-  }
   function drawStats() {
     const {current,previous} = data;
     const completion = el('completion'), distribution = el('distribution'), kpis = el('kpis');
     const periodName = copy(' · gedeelde sessies',' · geteilte Sitzungen');
     const legend = node('div',null,'ao-split-counts');
     legend.append(node('span',number(current.completed) + copy(' afgerond',' abgeschlossen')),node('span',number(current.sessions-current.completed) + copy(' open',' offen')));
-    completion.replaceChildren(node('div',percent(current.completion),'ao-metric-big'),
-      bar(current.completed,current.sessions,copy('Voltooiing','Abschlussquote')),legend,node('p','n = ' + number(current.sessions) + periodName,'ao-caption'));
+    completion.replaceChildren();
+    if (current.sessions) {
+      completion.append(node('div',percent(current.completion),'ao-metric-big'),
+        bar(current.completed,current.sessions,copy('Voltooiing','Abschlussquote')),legend,
+        node('p','n = ' + number(current.sessions) + periodName,'ao-caption'));
+    } else {
+      completion.append(node('p',copy('Er zijn in deze periode nog geen gedeelde sessies om de voltooiing te berekenen.',
+        'In diesem Zeitraum liegen noch keine geteilten Sitzungen für die Berechnung der Abschlussquote vor.')));
+    }
     const participants = data.courses.filter(c => c.metrics?.sessions > 0).sort((a,b) => b.metrics.sessions - a.metrics.sessions);
     distribution.replaceChildren();
     for (const course of participants.slice(0,5)) {
       const label = node('div',null,'ao-distribution-label');
       label.append(node('span',course.title),node('strong',number(course.metrics.sessions)));
-      distribution.append(label,bar(course.metrics.sessions,participants[0].metrics.sessions,course.title));
+      distribution.append(label);
+      if (participants.length > 1) distribution.append(bar(course.metrics.sessions,participants[0].metrics.sessions,course.title));
     }
     if (!participants.length) distribution.append(node('p',copy('Nog geen gedeelde sessies in deze periode.','In diesem Zeitraum wurden noch keine Sitzungen geteilt.')));
-    distribution.append(node('p','n = ' + number(current.sessions) + periodName,'ao-caption'));
+    if (participants.length) distribution.append(node('p','n = ' + number(current.sessions) + periodName,'ao-caption'));
     kpis.replaceChildren();
     metrics.forEach(([key,nl,de,desc,deDesc]) => {
       const b=node('button'); b.type='button'; b.title=copy(desc,deDesc); b.dataset.metric=key; b.setAttribute('aria-pressed',String(metricFilter === key));
-      const delta = current[key] == null || previous[key] == null ? null : current[key] - previous[key];
-      const change = delta == null ? '—' : (delta > 0 ? '+' : delta < 0 ? '−' : '') +
+      const delta = !previous.sessions || current[key] == null || previous[key] == null ? null : current[key] - previous[key];
+      const change = delta == null ? null : (delta > 0 ? '+' : delta < 0 ? '−' : '') +
         (key === 'completion' ? number(Math.abs(delta),{maximumFractionDigits:1}) + ' pp' : metricValue(key,Math.abs(delta)));
-      b.append(node('span',copy(nl,de)),node('strong',metricValue(key,current[key])),sparkline(data.trend.map(v => v[key])),
-        node('small',change + copy(' t.o.v. vorige periode',' zur Vorperiode')));
+      b.append(node('span',copy(nl,de)),node('strong',metricValue(key,current[key])),
+        node('small',change == null ? copy('Geen vergelijkingsgegevens','Keine Vergleichsdaten') :
+          change + copy(' t.o.v. vorige periode',' zur Vorperiode')));
       b.addEventListener('click',() => {
         metricFilter = metricFilter === key ? '' : key;
         drawStats(); drawTable(); el('courses').scrollIntoView({block:'nearest'}); el('kpis').querySelector('[data-metric="' + key + '"]').focus({preventScroll:true});
