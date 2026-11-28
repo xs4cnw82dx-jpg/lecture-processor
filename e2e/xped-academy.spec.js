@@ -40,7 +40,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     let app;
     const user = {
-      uid: 'studio-owner', email: 'studio@example.test', emailVerified: true,
+      uid: 'studio-owner', email: 'studio@example.test', emailVerified: sessionStorage.getItem('academy-preview-verified') !== 'false',
       getIdToken: async () => 'academy-preview-token',
     };
     const auth = {
@@ -200,4 +200,26 @@ test('author invitations enable creation independently of course collaboration',
   await page.getByRole('button', { name: /^More actions/ }).click();
   await expect(page.getByText('Duplicate', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+});
+
+test('an unverified author can reopen verification from the Studio', async ({ page }) => {
+  await page.goto(academy);
+  await page.evaluate(() => {
+    sessionStorage.setItem('academy-preview-user', 'studio-owner');
+    sessionStorage.setItem('academy-preview-verified', 'false');
+  });
+  await page.reload();
+  await page.getByRole('link', { name: 'Verify your email' }).click();
+  await expect(page.getByRole('heading', { name: 'Verify your email' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Resend verification email' })).toBeVisible();
+});
+
+test('Dutch privacy details include a working contact link on a small screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.addInitScript(() => localStorage.setItem('lp-preferences', JSON.stringify({ language: 'nl', theme: 'dark' })));
+  await page.goto(academy + '/privacy');
+  await expect(page.getByRole('heading', { name: 'Vragen over je gegevens' })).toBeVisible();
+  await expect(page.getByText('Voor hulp bij het openen', { exact: false })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'contact@example.test' })).toHaveAttribute('href', 'mailto:contact@example.test');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
