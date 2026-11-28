@@ -179,10 +179,10 @@ test('an Academy author can enable real outline results and retains the preferen
   expect(reads).toBe(0);
   await control.check();
   const result = page.locator('.academy-builder-metric').first();
-  await expect(result).toHaveText('1:40 · 80% bereikt');
+  await expect(result).toHaveText('1:40 min · 80% bereikt');
   await page.reload();
   await expect(control).toBeChecked();
-  await expect(result).toHaveText('1:40 · 80% bereikt');
+  await expect(result).toHaveText('1:40 min · 80% bereikt');
   await control.uncheck();
   await expect(result).toHaveCount(0);
 });
