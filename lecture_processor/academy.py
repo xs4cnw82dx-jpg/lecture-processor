@@ -29,7 +29,7 @@ from lecture_processor.runtime.environment import normalize_public_base_url, res
 from lecture_processor.runtime.http_security import apply_security_headers, build_content_security_policy
 from lecture_processor.runtime.proxy import apply_proxy_fix
 from lecture_processor.runtime.static_assets import register_static_versioning
-from lecture_processor.web.academy_styles import register_academy_styles
+from lecture_processor.academy_styles import register_academy_styles
 from lecture_processor.services.academy_accounts import academy_account_bp
 from lecture_processor.services import auth_service, elearning_service, rate_limit_service
 
