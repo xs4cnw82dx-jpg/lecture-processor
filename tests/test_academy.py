@@ -1,10 +1,29 @@
 """HTTP behavior of the standalone Studio with no real provider credentials."""
 import json
+import subprocess
+import sys
 
 from lxml import html
 import pytest
 
 from scripts.academy_preview import academy_preview
+
+
+def test_standalone_academy_starts_without_document_export_dependencies(tmp_path):
+    # A fresh interpreter exercises the same first import as the production worker.
+    probe = """
+import sys
+from pathlib import Path
+
+sys.modules['docx'] = None
+from scripts.academy_preview import academy_preview
+
+with academy_preview(Path(sys.argv[1])) as app:
+    client = app.test_client()
+    assert client.get('/healthz').json == {'status': 'ok'}
+    assert client.get('/hulp').status_code == 200
+"""
+    subprocess.run([sys.executable, '-c', probe, str(tmp_path / 'synthetic-firebase.json')], check=True)
 
 
 @pytest.fixture()
