@@ -1,18 +1,17 @@
 (function (root) {
   'use strict';
 
-  const de = document.documentElement.lang === 'de';
-  const uiText = root.Xped.i18n.t;
-  // A missing count shows as a dash, never as NaN.
-  const num = value => value === null || value === undefined || Number.isNaN(Number(value)) ? '—' : new Intl.NumberFormat(de ? 'de-DE' : 'nl-NL').format(value);
-  const pct = (n, d) => d ? new Intl.NumberFormat(de ? 'de-DE' : 'nl-NL', { style: 'percent', maximumFractionDigits: 1 }).format(n / d) : '—';
-  const duration = s => typeof s === 'number' ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : '—';
+  const i18n = root.Xped.i18n;
+  const uiText = i18n.t;
+  const num = value => Number.isFinite(value) ? i18n.number(value) : '—';
+  const pct = (count, total) => Number.isFinite(count) && total ? i18n.percent(100 * count / total) : '—';
+  const duration = seconds => i18n.duration(seconds, 'compact');
   const el = (tag, text) => {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
     return node;
   };
-  const local = value => root.XpedElearningModel.getLocalized(value, de ? 'de' : 'nl', state.expedition.defaultLanguage);
+  const local = value => root.XpedElearningModel.getLocalized(value, i18n.language, state.expedition.defaultLanguage);
   const host = document.getElementById('academy-station-report');
   const dialog = document.getElementById('academy-step-details');
   const columns = [
@@ -75,7 +74,7 @@
       section.append(el('p', uiText('report.noStepTime')));
       return section;
     }
-    const interval = bin => duration(bin.fromSeconds) + '–' + duration(bin.fromSeconds + 29);
+    const interval = bin => i18n.duration(bin.fromSeconds, 'clock') + '–' + i18n.duration(bin.fromSeconds + 29, 'clock');
     if (bins.length === 1) {
       const bin = bins[0];
       const noun = bin.sessionCount === 1 ? uiText('report.session') : uiText('report.sessions');
@@ -187,7 +186,7 @@
     if (sort) items.sort((a, b) => {
       const x = sortValue(a, sort), y = sortValue(b, sort);
       if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
-      return (typeof x === 'string' ? x.localeCompare(y, de ? 'de' : 'nl') : x - y) * (descending ? -1 : 1);
+      return (typeof x === 'string' ? x.localeCompare(y, i18n.language) : x - y) * (descending ? -1 : 1);
     });
     for (const row of items) {
       const trigger = button(local(row.moduleTitle), () => {

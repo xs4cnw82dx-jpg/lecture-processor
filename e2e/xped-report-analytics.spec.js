@@ -74,6 +74,7 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     await expect(opening.locator('.el-time-steps')).toContainText('7:45');
     const funnel = page.locator('#el-resp-funnel');
     await expect(funnel.locator('.el-chart-row').filter({hasText:'Explainer'})).toContainText('−12');
+    await expect(funnel.getByText(/Het getal na − telt deelnemers/)).toBeVisible();
     await funnel.locator('summary').click();
     const reach = funnel.getByRole('table');
     await expect(reach.getByRole('columnheader', {name:'Uitval vanuit de vorige stap'})).toBeVisible();

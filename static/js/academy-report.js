@@ -5,7 +5,8 @@
   var platformBootstrap = window.Xped.bootstrap;
   var platformAuth = window.Xped.auth;
 
-  var uiText = window.Xped.i18n ? window.Xped.i18n.t : function (text) { return text; };
+  var i18n = window.Xped.i18n;
+  var uiText = i18n.t;
   var Model = window.XpedElearningModel;
   var expeditionId = document.body.dataset.expeditionId || '';
   var kpisEl = document.getElementById('el-resp-kpis');
@@ -61,44 +62,32 @@
   periodSelect.addEventListener('change', function () { fromDate.value = toDate.value = ''; loadResponses(); });
   retry.addEventListener('click', loadResponses);
 
-  function activityName(type, lang) {
+  function activityName(type) {
     var names = {
-      mcq: ['Meerkeuzevraag', 'Multiple choice', 'Multiple-Choice-Frage'],
-      myth_fact: ['Feit of fabel', 'Myth or fact', 'Mythos oder Fakt'],
-      scale: ['Schaalvraag', 'Rating scale', 'Skalenfrage'],
-      wordcloud: ['Woordwolk', 'Word cloud', 'Wortwolke'],
-      ranking: ['Rangschikking', 'Ranking', 'Rangfolge'],
-      reflection: ['Reflectie', 'Reflection', 'Reflexion'],
-      balance_scale: ['Draagkracht en draaglast', 'Balance scale', 'Belastung und Ressourcen'],
-      mini_plan: ['Persoonlijk miniplan', 'Personal mini-plan', 'Persönlicher Mini-Plan'],
+      mcq: uiText('report.activity.mcq'),
+      myth_fact: uiText('report.activity.myth_fact'),
+      scale: uiText('report.activity.scale'),
+      wordcloud: uiText('report.activity.wordcloud'),
+      ranking: uiText('report.activity.ranking'),
+      reflection: uiText('report.activity.reflection'),
+      balance_scale: uiText('report.activity.balance_scale'),
+      mini_plan: uiText('report.activity.mini_plan'),
     };
-    return names[type] ? names[type][lang === 'nl' ? 0 : lang === 'de' ? 2 : 1] : Model.getBlockMeta(type).label;
+    return names[type] || Model.getBlockMeta(type).label;
   }
 
-  // Under a minute: seconds. Under ten minutes: m:ss. Then whole minutes, then hours.
   function formatDuration(seconds) {
-    var total = Math.max(0, Math.round(Number(seconds) || 0));
-    if (total < 60) return total + ' s';
-    if (total < 600) return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0') + ' min';
-    var minutes = Math.round(total / 60);
-    if (minutes < 60) return minutes + ' min';
-    return Math.floor(minutes / 60) + ' ' + uiText('h') + ' ' + String(minutes % 60).padStart(2, '0') + ' min';
+    return i18n.duration(seconds, 'compact');
   }
   function formatDurationRange(low, high) {
-    var a = Math.round(Number(low) || 0);
-    var b = Math.round(Number(high) || 0);
-    if (a >= 600 && b < 3600) return Math.round(a / 60) + '–' + Math.round(b / 60) + ' min';
-    return formatDuration(a) + ' – ' + formatDuration(b);
-  }
-  function uiLocale() {
-    return window.Xped.i18n.locale;
+    if (!Number.isFinite(low) || !Number.isFinite(high)) return '—';
+    return formatDuration(low) + ' – ' + formatDuration(high);
   }
   function formatPercent(value) {
-    var share = Math.max(0, Number(value) || 0) / 100;
-    return new Intl.NumberFormat(uiLocale(), { style: 'percent', maximumFractionDigits: 1 }).format(share);
+    return i18n.percent(value);
   }
   function formatScore(value) {
-    return value === null || value === undefined ? '—' : new Intl.NumberFormat(uiLocale(), { maximumFractionDigits: 1 }).format(value);
+    return value == null ? '—' : i18n.number(value, { maximumFractionDigits: 1 });
   }
   function sessionsLabel(count) {
     return count + (count === 1 ? uiText(' session') : uiText(' sessions'));
@@ -380,7 +369,7 @@
     return node;
   }
   function weekLabel(isoDate) {
-    return new Intl.DateTimeFormat(uiLocale(), { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(isoDate + 'T00:00:00Z'));
+    return i18n.date(new Date(isoDate + 'T00:00:00Z'), { day: 'numeric', month: 'short', timeZone: 'UTC' });
   }
 
   // Weekly starts (neutral) with completions (mint) drawn over them, plus a table for screen readers.
@@ -437,7 +426,7 @@
       if (week.revision) {
         var marker = svgNode('line', {x1: x+barWidth/2, x2: x+barWidth/2, y1: 4, y2: plot, class:'academy-report-revision'});
         var caption = svgNode('title');
-        caption.textContent = 'v' + week.revision.revision + ' · ' + new Intl.DateTimeFormat(uiLocale(), {dateStyle:'medium',timeZone:'UTC'}).format(week.revision.at*1000);
+        caption.textContent = 'v' + week.revision.revision + ' · ' + i18n.date(week.revision.at * 1000, { dateStyle: 'medium', timeZone: 'UTC' });
         marker.appendChild(caption);
         group.appendChild(marker);
       }
@@ -617,7 +606,7 @@
       if (sequence !== requestId) return;
       if (!resp.ok) throw new Error(data.error || uiText('Could not load responses.'));
       var courseLang = data.expedition.defaultLanguage || 'nl';
-      var reportLang = langSelect.value || document.documentElement.lang || courseLang;
+      var reportLang = langSelect.value || i18n.language;
       label.textContent = data.expedition.title || '';
       document.title = label.textContent ? uiText('report.title') + ' · ' + label.textContent + ' · xPED Academy' : pageTitle;
       document.dispatchEvent(new CustomEvent('academy:course-title',{detail:label.textContent}));
@@ -700,6 +689,7 @@
       });
       if (funnelEl.childElementCount) {
         let caption = 'n = ' + (s.totalSessions || 0);
+        if (drops.length > 1) caption += ' · ' + uiText('report.stepDropMeaning');
         if (largestDrop) {
           const steps = data.funnel.filter((row, i) => drops[i] === largestDrop)
             .map(row => Model.getLocalized(row.stepTitle,reportLang,courseLang));
@@ -719,7 +709,7 @@
           (step.blocks || []).forEach(function (blk) {
             var agg = statsMap[blk.id];
             if (!agg) return;
-            var name = activityName(blk.type, reportLang);
+            var name = activityName(blk.type);
             var position = uiText('Station ') + (mIdx + 1) + ' · ' + (reportLang === 'de' ? uiText('Schritt') : reportLang === 'nl' ? uiText('Stap') : uiText('Step')) + ' ' + (sIdx + 1);
             var card = document.createElement('article');
             card.className = 'el-exp-card';
