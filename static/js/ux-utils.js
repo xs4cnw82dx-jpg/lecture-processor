@@ -105,7 +105,12 @@
   var layoutSerial = 0;
   function setLayoutStyles(element, values) {
     if (!element) return;
-    var sheet = Array.from(document.styleSheets).find(function (entry) { return entry.href && entry.href.indexOf('/css/shared-ui.css') >= 0; });
+    var layoutPath = academyBuild ? '/css/academy-base.css' : '/css/shared-ui.css';
+    var sheet = Array.from(document.styleSheets).find(function (entry) {
+      if (!entry.href) return false;
+      var url = new URL(entry.href, global.location.href);
+      return url.origin === global.location.origin && url.pathname.endsWith(layoutPath);
+    });
     if (!sheet) return;
     var record = layoutRules.get(element);
     if (!record) { record = { id: 'app-layout-' + (++layoutSerial), values: {}, rule: null }; element.dataset.appLayout = record.id; layoutRules.set(element, record); }

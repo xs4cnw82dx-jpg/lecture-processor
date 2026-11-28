@@ -480,7 +480,7 @@
       row.insertCell().append(node('span', person.active || person.admin ? say('Actief','Aktiv') : workspace.profilesAvailable === false ? say('Onbekend','Unbekannt') : say('Uitgenodigd','Eingeladen'), 'xc-person-state' + (person.active || person.admin ? ' is-active' : '')));
       const actions = row.insertCell();
       if (person.author && !person.admin) {
-        const revokeBtn = action(say('Auteursrecht intrekken','Autor:innenrecht entziehen'), () => confirmInline(revokeBtn, say('Het recht om nieuwe expedities te maken intrekken?', 'Das Recht zum Erstellen neuer Expeditionen entziehen?'), async () => {
+        const revokeBtn = action(say('Auteursrecht intrekken','Autor:innenrecht entziehen'), () => confirmInline(revokeBtn, say('Deze auteur verliest ook toegang tot de eigen expedities totdat je het auteursrecht herstelt. Auteursrecht intrekken?', 'Die Person verliert auch den Zugriff auf ihre eigenen Expeditionen, bis Sie das Autor:innenrecht wiederherstellen. Recht entziehen?'), async () => {
           await api('/api/academy/authors', { action:'revoke', email: person.email });
           await refreshTeam();
           notice(say('Auteursrecht ingetrokken.','Autor:innenrecht entzogen.'), async () => {
