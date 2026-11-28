@@ -81,8 +81,6 @@ button:disabled { cursor: default; }
   visibility: hidden; pointer-events: none;
 }
 .app-toast.visible { visibility: visible; pointer-events: auto; }
-.academy-link-state { display: grid; justify-items: center; gap: 1rem; }
-.academy-link-state p { white-space: pre-line; }
 .field-error, .app-validation-error { color: var(--theme-danger-ink); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }

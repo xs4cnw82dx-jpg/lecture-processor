@@ -1041,18 +1041,17 @@
       if (resp && !resp.ok) {
         if (resp.status !== 404 && resp.status !== 410 && resp.status !== 403) throw new Error('Course unavailable');
         mainEl.textContent = '';
-        var errorTemplate = document.getElementById('academy-inactive-link');
-        var errCard = errorTemplate ? errorTemplate.content.firstElementChild.cloneNode(true) : document.createElement('div');
-        if (!errorTemplate) errCard.className = 'xped-card el-player-state';
-        var h1 = errCard.querySelector('h1') || document.createElement('h1');
+        var errCard = document.createElement('div');
+        errCard.className = 'xped-card el-player-state';
+        var h1 = document.createElement('h1');
         h1.textContent = Model.ui(state.lang, 'unavailable');
-        var p = errCard.querySelector('p') || document.createElement('p');
+        var p = document.createElement('p');
         var message = Model.ui(state.lang, 'notFound');
         if (resp.status === 410 && data.error_code !== 'link_expired') {
           message = data.error_code === 'link_paused' ? Model.ui(state.lang, 'pausedFallback') : (data.error || Model.ui(state.lang, 'pausedFallback'));
         }
         p.textContent = message;
-        if (!errorTemplate) errCard.append(h1, p);
+        errCard.append(h1, p);
         mainEl.appendChild(errCard);
         return;
       }
