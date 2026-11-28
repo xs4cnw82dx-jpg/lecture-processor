@@ -1279,6 +1279,7 @@
   function extractTranslationRows(exp, sourceLang, targetLang) {
     var src = sourceLang || 'nl';
     var tgt = targetLang || 'de';
+    var canRequireReview = !root.Xped || tgt !== (exp.defaultLanguage || 'nl');
     var altLang = SUPPORTED_LANGS.find(function (lang) { return lang !== src && lang !== tgt; });
     var rows = [];
     function pushField(key, location, locObj, blockId) {
@@ -1288,7 +1289,7 @@
       var tgtVal = String(locObj[tgt] || '');
       var anyVal = String(locObj.nl || '') + String(locObj.en || '') + String(locObj.de || '');
       if (!anyVal.trim()) return;
-      var needsReview = !!(locObj._review && locObj._review[tgt]);
+      var needsReview = canRequireReview && !!(locObj._review && locObj._review[tgt]);
       var status = needsReview ? 'needs_review' : (tgtVal.trim() ? 'translated' : 'untranslated');
       rows.push({
         key: key,
