@@ -109,7 +109,7 @@
   "Total Tokens": "Totaal tokens",
   "Refunds needing attention": "Terugbetalingen die aandacht vragen",
   "Review these refunds in Stripe. Up to 20 unresolved checkouts are shown across all dates.": "Controleer deze terugbetalingen in Stripe. Je ziet maximaal 20 openstaande betalingen uit alle perioden.",
-  "For a refund on the original payment, set the Stripe refund metadata reason to account_deleted and checkout_session_id to the checkout session shown below. The next delivery of the original checkout webhook clears the alert after a matching refund succeeds.": "Vul bij de terugbetaling van de oorspronkelijke betaling in Stripe de metadata in. Zet reason op account_deleted en checkout_session_id op de betaalsessie hieronder. De melding verdwijnt zodra de oorspronkelijke checkout-webhook opnieuw is ontvangen en de bijbehorende terugbetaling is gelukt.",
+  "If the original payment has already been refunded, update the existing successful refund in Stripe. In its metadata, set only reason to account_deleted and checkout_session_id to the session shown below. The next delivery of the original checkout webhook clears the alert.": "Is de oorspronkelijke betaling al terugbetaald? Werk dan de bestaande, geslaagde terugbetaling in Stripe bij. Zet in de metadata alleen reason op account_deleted en checkout_session_id op de betaalsessie hieronder. De melding verdwijnt zodra de oorspronkelijke checkout-webhook opnieuw is ontvangen.",
   "Checkout session": "Betaalsessie",
   "Refund ID": "Terugbetalings-ID",
   "Last status needing review": "Laatste status die aandacht vraagt",

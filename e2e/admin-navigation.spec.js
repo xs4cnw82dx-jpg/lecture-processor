@@ -183,6 +183,7 @@ test('admin purchases shows unresolved deleted-account refunds for Stripe review
   ] });
   const panel = page.locator('#refund-review-panel');
   await expect(panel).toBeVisible();
+  await expect(panel).toContainText('existing successful refund');
   await expect(panel).toContainText('checkout_session_id');
   await expect(panel).toContainText('account_deleted');
   await expect(panel.getByRole('cell', { name: 're_synthetic' })).toBeVisible();

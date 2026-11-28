@@ -207,7 +207,7 @@
                 <section class="panel" id="refund-review-panel" hidden>
                     <h2>Refunds needing attention</h2>
                     <p>Review these refunds in Stripe. Up to 20 unresolved checkouts are shown across all dates.</p>
-                    <p>For a refund on the original payment, set the Stripe refund metadata reason to account_deleted and checkout_session_id to the checkout session shown below. The next delivery of the original checkout webhook clears the alert after a matching refund succeeds.</p>
+                    <p>If the original payment has already been refunded, update the existing successful refund in Stripe. In its metadata, set only reason to account_deleted and checkout_session_id to the session shown below. The next delivery of the original checkout webhook clears the alert.</p>
                     <div class="table-wrap">
                         <table>
                             <thead><tr><th>Checkout session</th><th>Refund ID</th><th>Last status needing review</th></tr></thead>
