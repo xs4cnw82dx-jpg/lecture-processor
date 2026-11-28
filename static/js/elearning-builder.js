@@ -5335,7 +5335,7 @@
             reportURL.search = urlParams.get('filters') || '';
             backLink.href = reportURL.href;
           }
-          retLink.href = reportURL.href;
+          retLink.href = reportURL.pathname + reportURL.search;
           retBar.hidden = false;
         }
       }
