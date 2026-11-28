@@ -3,7 +3,8 @@
 
   const doc = document;
   const studio = doc.documentElement.dataset.product === 'academy';
-  const segmentSelector = '.el-text-scale-group, .el-theme-toggle-group';
+  // Item 35: comfort, preview-width and preview-appearance switches share one single-choice behaviour.
+  const segmentSelector = '.el-text-scale-group, .el-theme-toggle-group, .el-vp-switch';
   const optionSelector = 'select:not([multiple]):not([size]):not([data-app-select]):not([hidden])';
 
   function enhanceSelects(scope) {
@@ -168,7 +169,7 @@
     let lastAt = 0;
     doc.addEventListener('keydown', event => {
       if (event.key.length !== 1 || event.key === ' ' || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
-      const menu = event.target.closest?.('[role="menu"]');
+      const menu = event.target.closest?.('[role="menu"], .el-dd-menu[role="listbox"]');
       if (!menu) return;
       const lang = doc.documentElement.lang;
       const now = Date.now();
@@ -177,10 +178,11 @@
       current = menu;
       lastAt = now;
       letters += letter;
-      const items = [...menu.querySelectorAll('[role="menuitem"]:not([disabled]):not([aria-disabled="true"])')];
+      const items = [...menu.querySelectorAll(':is([role="menuitem"], [role="option"]):not([disabled]):not([aria-disabled="true"])')];
       const previous = items.indexOf(doc.activeElement);
       const ordered = letters.length === 1 ? items.slice(previous + 1).concat(items.slice(0, previous + 1)) : items;
-      const match = ordered.find(item => item.textContent.trim().toLocaleLowerCase(lang).startsWith(letters));
+      const match = ordered.find(item => (item.firstElementChild?.textContent || item.textContent).trim().toLocaleLowerCase(lang).startsWith(letters)
+        || item.textContent.trim().toLocaleLowerCase(lang).startsWith(letters));
       if (!match) return;
       event.preventDefault();
       match.focus();

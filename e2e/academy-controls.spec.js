@@ -126,3 +126,52 @@ test('Academy disclosures share one animated open state and keep native keyboard
   await page.keyboard.press('Enter');
   await expect(page.locator('#probe')).not.toHaveAttribute('open', '');
 });
+
+test('an editor value picker opens as a listbox on the chosen value and jumps by typing', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(origin + '/expedities/' + course.id + '/bewerken');
+  await page.locator('#el-inspector').getByRole('tab', { name: 'Talen', exact: true }).click();
+  const trigger = page.getByRole('button', { name: 'Standaardtaal bij ontbrekende vertaling' });
+  await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const list = page.getByRole('listbox');
+  await expect(list).toBeVisible();
+  const chosen = list.getByRole('option', { selected: true });
+  await expect(chosen).toHaveCount(1);
+  await expect(chosen).toBeFocused();
+  const chosenLabel = (await chosen.textContent()).trim();
+  const labels = (await list.getByRole('option').allTextContents()).map(text => text.trim());
+  const initial = label => label[0].toLocaleLowerCase('nl');
+  const target = labels.find(label => label && initial(label) !== initial(chosenLabel));
+  await page.keyboard.press(initial(target));
+  await expect(list.getByRole('option', { name: target, exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(list).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText(chosenLabel);
+});
+
+test('preview switches are single-choice groups that follow the arrow keys', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(origin + '/expedities/' + course.id + '/bewerken');
+  await page.locator('[data-mode=preview]').click();
+  const width = page.locator('.el-vp-width-switch');
+  await expect(width).toHaveAttribute('role', 'radiogroup');
+  const [available, phone] = [width.getByRole('radio').first(), width.getByRole('radio').last()];
+  await expect(available).toHaveAttribute('aria-checked', 'true');
+  await expect(phone).toHaveAttribute('tabindex', '-1');
+  await available.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(phone).toHaveAttribute('aria-checked', 'true');
+  await expect(phone).toBeFocused();
+  await expect(available).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('#el-preview-container')).toHaveClass(/is-mobile/);
+  const look = page.locator('.el-vp-switch').filter({ has: page.locator('[data-academy-preview-appearance]') });
+  const dark = look.getByRole('radio').last();
+  await look.getByRole('radio', { checked: true }).focus();
+  await page.keyboard.press('End');
+  await expect(dark).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#el-preview-container')).toHaveAttribute('data-learner-appearance', 'dark');
+});
