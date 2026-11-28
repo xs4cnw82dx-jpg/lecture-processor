@@ -47,7 +47,7 @@
       } catch (_) {
         if (requestVersion === preferenceVersion) {
           checkControls(languageControls, 'academyLanguage', locale.language);
-          const ux = window.Xped.ux || window.LectureProcessorUx;
+          const ux = window.Xped.ux;
           if (ux) ux.toast(locale.copy('Je taalkeuze is niet opgeslagen. Probeer het opnieuw.',
             'Ihre Spracheinstellung wurde nicht gespeichert. Bitte versuchen Sie es erneut.'), { type: 'error' });
         }

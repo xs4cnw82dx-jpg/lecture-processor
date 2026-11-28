@@ -1,16 +1,9 @@
 {% extends 'academy/base.html' %}
+{% set academy_style = 'library' %}
 {% from '_academy_copy.html' import tr with context %}
 {% from 'academy/_loading.html' import loading %}
 {% block body_attrs %} class="el-library-body academy-body"{% endblock %}
 {% block title %}{{ 'Expeditionen' if academy_locale == 'de' else 'Expedities' }} · xPED Academy{% endblock %}
-{% block head %}
-
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
-
-  {% include '_academy_foundation.html' %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-library.css') }}">
-{% endblock %}
 {% block body %}
   {% include '_academy_header.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">

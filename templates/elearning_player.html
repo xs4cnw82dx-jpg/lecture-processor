@@ -12,9 +12,10 @@
 
 </head>
 <body class="el-player-body xped-surface-scope"  data-share-token="{{ share_token }}" data-xped-theme="xped-warm-sand" data-text-scale="md">
-  {% include 'elearning/player_controls.html' %}
+  {% include 'elearning/lecture_processor/player_controls.html' %}
 
   {% include 'elearning/player_route_dialog.html' %}
+  <script src="{{ url_for('static', filename='js/elearning-publishing-host.js') }}"></script>
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_route_map_js) }}"></script>

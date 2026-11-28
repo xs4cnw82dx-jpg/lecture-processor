@@ -103,7 +103,7 @@
                   <span class="el-copy-tip" role="status"></span>
                 </span>
                 <a href="#" target="_blank" rel="noopener" class="el-btn el-btn-sm" id="el-share-open-link">{{ tr("Open Link") }}</a>
-                {% if not academy_mode %}<button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">{{ tr("Reset Link") }}</button>{% endif %}
+                {% block inline_rotate %}{% endblock %}
               </div>
             </div>
             <div class="el-qr-box">
@@ -132,13 +132,7 @@
               <span>{{ tr("Enable Physio / PhD reviewer comments on each step") }}</span>
             </label>
           </div>
-        {% if academy_mode %}
-          <details class="academy-link-reset" id="academy-link-reset" hidden>
-            <summary>{{ 'Gefahrenzone' if academy_locale == 'de' else 'Gevarenzone' }}</summary>
-            <p>{{ 'Ein neuer Link macht den bisherigen Link und alle gedruckten QR-Codes ungültig.' if academy_locale == 'de' else 'Als je een nieuwe link maakt, vervallen de huidige link en alle gedrukte QR-codes.' }}</p>
-            <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">{{ 'Link erneuern' if academy_locale == 'de' else 'Link vernieuwen' }}</button>
-          </details>
-          {% endif %}
+        {% block rotate_confirmation %}{% endblock %}
         </section>
 
         <section class="el-share-panel" id="el-panel-collaborators" role="tabpanel" aria-labelledby="el-tab-collaborators" data-share-panel="collaborators" hidden>
@@ -159,7 +153,7 @@
           <div class="el-share-inline-row">
             <input type="text" aria-label="{{ tr("Translator link label") }}" id="el-grant-label" class="xped-input" placeholder="{{ tr("Recipient name") }}">
             <select class="xped-input" id="el-grant-lang" aria-label="{{ tr("Target translation language") }}">
-              <option value="de">DE · Deutsch</option>{% if not academy_mode %}<option value="en">EN · English</option>{% endif %}<option value="nl">NL · Nederlands</option>
+              <option value="de">DE · Deutsch</option>{% block english_grant_option %}{% endblock %}<option value="nl">NL · Nederlands</option>
             </select>
             <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">{{ tr("Create Link") }}</button>
           </div>

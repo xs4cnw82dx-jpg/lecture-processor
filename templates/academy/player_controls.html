@@ -1,0 +1,11 @@
+{% extends 'elearning/player_controls.html' %}
+{% block player_brand %}
+{% set brand_language = 'de' if academy_locale == 'de' else 'nl' %}
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="{{ url_for('static', filename='images/xped/logo_' ~ brand_language ~ '.svg') }}">
+  <img src="{{ url_for('static', filename='images/xped/logo_' ~ brand_language ~ '_light.svg') }}" alt="">
+</picture>
+<span class="el-player-product">Academy</span>
+<span id="el-player-course-label">{{ learner_title }}</span>
+{% endblock %}
+{% block player_heading %}{{ learner_title }}{% endblock %}

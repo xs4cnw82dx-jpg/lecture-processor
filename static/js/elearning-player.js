@@ -1125,7 +1125,7 @@
       }
       updateLangDropdown();
       var courseTitle = academyLocale && Model.getLocalized(state.exp.startPage && state.exp.startPage.title, state.lang, state.exp.defaultLanguage);
-      document.title = (courseTitle || state.exp.title || 'xPEDitie Pijn') + ' · ' + (document.body.dataset.siteTitle || 'Lecture Processor');
+      document.title = (courseTitle || state.exp.title || 'xPEDitie Pijn') + ' · ' + (document.body.dataset.siteTitle || window.ElearningHost.siteTitle);
       render();
     } catch (_err) {
       mainEl.textContent = '';

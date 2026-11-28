@@ -1,0 +1,8 @@
+{% extends 'elearning/builder_dialogs.html' %}
+{% block rotate_confirmation %}
+<details class="academy-link-reset" id="academy-link-reset" hidden>
+  <summary>{{ 'Gefahrenzone' if academy_locale == 'de' else 'Gevarenzone' }}</summary>
+  <p>{{ 'Ein neuer Link macht den bisherigen Link und alle gedruckten QR-Codes ungültig.' if academy_locale == 'de' else 'Als je een nieuwe link maakt, vervallen de huidige link en alle gedrukte QR-codes.' }}</p>
+  <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">{{ 'Link erneuern' if academy_locale == 'de' else 'Link vernieuwen' }}</button>
+</details>
+{% endblock %}

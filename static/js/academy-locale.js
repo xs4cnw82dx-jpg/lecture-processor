@@ -67,5 +67,13 @@
   applyAppearance();
   systemAppearance?.addEventListener('change', applyAppearance);
   root.Xped = root.Xped || {};
+  root.ElearningHost = root.Xped;
+  root.Xped.siteTitle = 'xPED Academy';
+  root.Xped.coursePaths = function (id) {
+    const base = '/expedities/' + encodeURIComponent(id);
+    return { overview: base, edit: base + '/bewerken', report: base + '/resultaten' };
+  };
+  root.Xped.learnerPath = token => '/start/' + encodeURIComponent(token);
+  root.Xped.translatorPath = token => '/vertalen/' + encodeURIComponent(token);
   root.Xped.i18n = Object.freeze({ language, locale, copy, t, courseStatus, number, date, relative, theme: () => selectedTheme, setLanguage, setTheme });
 })(window);

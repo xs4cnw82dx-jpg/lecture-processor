@@ -26,12 +26,7 @@
         <span>{{ tr("Stations") }}</span>
         <button type="button" class="el-btn el-btn-sm" id="el-add-module-btn">{{ tr("Add station") }}</button>
       </div>
-      {% if academy_mode %}
-      <label class="academy-outline-toggle" id="academy-outline-toggle" hidden>
-        <input type="checkbox"> {{ 'Ergebnisse in der Übersicht' if academy_locale == 'de' else 'Resultaten in het overzicht' }}
-      </label>
-      <small id="academy-outline-status" role="status"></small>
-      {% endif %}
+      {% block outline_metrics %}{% endblock %}
       <div id="el-outline-modules"></div>
     </aside>
 

@@ -39,7 +39,9 @@ def test_academy_excludes_lecture_processor_pages_and_apis(academy_client):
     for path in ('/dashboard', '/lecture-notes', '/admin', '/study', '/api/books', '/api/auth/user',
                  '/static/js/app-shell.js', '/static/css/admin.css', '/static/css/theme.css', '/static/css/shared-ui.css',
                  '/static/css/motion.css', '/static/js/firebase-bootstrap.js', '/static/js/auth-utils.js',
-                 '/static/js/i18n.js', '/static/js/preferences.js'):
+                 '/static/js/i18n.js', '/static/js/preferences.js', '/static/css/app-shell.css',
+                 '/static/css/elearning-admin.css', '/static/js/elearning-admin.js',
+                 '/static/js/elearning-responses.min.js', '/static/js/elearning-publishing-host.js'):
         assert academy_client.get(path).status_code == 404, path
     assert academy_client.post('/api/tools/extract').status_code == 404
     assert academy_client.get('/healthz').status_code == 200

@@ -1,0 +1,7 @@
+{% extends 'elearning/builder_workspace.html' %}
+{% block outline_metrics %}
+<label class="academy-outline-toggle" id="academy-outline-toggle" hidden>
+  <input type="checkbox"> {{ 'Ergebnisse in der Übersicht' if academy_locale == 'de' else 'Resultaten in het overzicht' }}
+</label>
+<small id="academy-outline-status" role="status"></small>
+{% endblock %}

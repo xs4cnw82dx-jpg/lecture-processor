@@ -1636,25 +1636,12 @@
     return { expedition: expedition, conflicts: conflicts };
   }
 
-  // Share the Studio domain model across deployments; links stay on their data-owning site.
-  function coursePaths(id) {
-    var component = encodeURIComponent(id);
-    var academy = !!(root.Xped && root.Xped.bootstrap);
-    var base = (academy ? '/expedities/' : '/physio/elearning/') + component;
-    return {
-      overview: academy ? base : base + '/edit',
-      edit: base + (academy ? '/bewerken' : '/edit'),
-      report: base + (academy ? '/resultaten' : '/responses'),
-    };
-  }
-
-  function learnerPath(token) {
-    return ((root.Xped && root.Xped.bootstrap) ? '/start/' : '/elearning/p/') + encodeURIComponent(token);
-  }
-
+  // Browsers get links from the host that owns the course. Standalone Node consumers
+  // keep the original publishing routes when importing the domain model directly.
+  var host = root.ElearningHost || (typeof module === 'object' && module.exports && module.require('./elearning-publishing-host.js'));
   var api = {
-    coursePaths: coursePaths,
-    learnerPath: learnerPath,
+    coursePaths: function (id) { return host.coursePaths(id); },
+    learnerPath: function (token) { return host.learnerPath(token); },
     mergeCourseEdits: mergeCourseEdits,
     SUPPORTED_LANGS: SUPPORTED_LANGS,
     LANG_LABELS: LANG_LABELS,

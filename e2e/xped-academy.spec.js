@@ -380,21 +380,53 @@ test('switching identity invalidates an open deletion confirmation', async ({ pa
 
 for (const signedIn of [false, true]) {
   test('Academy page links and browser identity stay on the Academy when ' + (signedIn ? 'signed in' : 'signed out'), async ({ page }) => {
+    test.setTimeout(120000);
+    const headers = { Authorization: 'Bearer academy-preview-token' };
+    const Model = require('../static/js/elearning-model');
+    const course = Model.createExpeditionPreset('blank', 'Routecontrole', 'nl', { academy: true });
+    const created = await page.request.post(academy + '/api/elearning/expeditions', { headers, data: course });
+    expect(created.status()).toBe(201);
+    const id = (await created.json()).expedition.id;
+    const coursePath = '/expedities/' + id;
+    const endpoint = academy + '/api/elearning/expeditions/' + id + '/sharing';
+    const shared = await page.request.post(endpoint, { headers, data: { action: 'update_public', enabled: true } });
+    expect(shared.status()).toBe(200);
+    const token = (await shared.json()).share.token;
+    const activePlayer = '/start/' + token;
+    const grant = await page.request.post(endpoint, { headers, data: { action: 'create_grant', targetLanguage: 'de' } });
+    expect(grant.status()).toBe(201);
+    const grantPath = (await grant.json()).grant.urlPath;
     if (signedIn) {
       await page.goto(academy + '/inloggen');
       await page.evaluate(() => sessionStorage.setItem('academy-preview-user', 'studio-owner'));
     }
     const requested = [];
     page.on('request', request => requested.push(new URL(request.url())));
-    const paths = ['/', '/expedities', '/expedities/sample', '/expedities/sample/bewerken?modus=vertalen',
-      '/expedities/sample/resultaten', '/resultaten', '/vertalingen', '/team', '/instellingen', '/hulp', '/privacy',
-      '/inloggen', '/vertalen/synthetic-grant', '/account', '/signin', '/physio/elearning/sample/edit'];
+    const editor = coursePath + '/bewerken';
+    const report = coursePath + '/resultaten';
+    const aliases = {
+      '/account': '/instellingen', '/signin': '/inloggen', '/physio/elearning': '/expedities',
+      ['/physio/elearning/' + id + '/edit']: editor, ['/physio/elearning/' + id + '/responses']: report,
+      ['/elearning/p/' + token]: activePlayer, [grantPath.replace('/vertalen/', '/elearning/translate/')]: grantPath,
+    };
+    for (const [alias, target] of Object.entries(aliases)) {
+      const redirect = await page.request.get(academy + alias + '?lang=de', { maxRedirects: 0 });
+      expect(redirect.status()).toBe(301);
+      expect(redirect.headers().location).toBe(target + '?lang=de');
+    }
+    const paths = ['/', '/expedities', coursePath, editor, coursePath + '#delen', editor + '?modus=vertalen',
+      report, '/resultaten', '/vertalingen', '/team', '/instellingen', '/hulp', '/privacy', '/inloggen', grantPath,
+      activePlayer, '/start/expired-preview-token', '/missing-preview-page'];
     for (const path of paths) {
       const response = await page.goto(academy + path);
-      expect(response.status()).toBe(200);
-      expect(new URL(page.url()).origin).toBe(academy);
+      const missing = ['/start/expired-preview-token', '/missing-preview-page'].includes(path);
+      expect(response.status(), path).toBe(missing ? 404 : 200);
+      await page.waitForLoadState('networkidle');
+      const finalUrl = new URL(page.url());
+      expect(finalUrl.origin).toBe(academy);
+      expect(paths.map(item => item.split(/[?#]/)[0])).toContain(finalUrl.pathname);
       const state = await page.evaluate(() => ({
-        project: window.Xped.bootstrap.firebaseConfig.projectId,
+        project: window.Xped?.bootstrap?.firebaseConfig?.projectId,
         authenticated: window.firebase.auth().currentUser !== null,
         legacyRuntime: Boolean(window.LectureProcessorAuth || window.LectureProcessorBootstrap || window.LectureI18n),
         links: [
@@ -403,16 +435,21 @@ for (const signedIn of [false, true]) {
           ...Array.from(document.querySelectorAll('[formaction]'), control => control.formAction),
         ],
       }));
-      expect(state.project).toBe('demo-xped-academy');
+      if (path.startsWith('/start/')) expect(state.project).toBeUndefined();
+      else expect(state.project).toBe('demo-xped-academy');
       expect(state.authenticated).toBe(signedIn);
       expect(state.legacyRuntime).toBe(false);
       for (const href of state.links) {
         const url = new URL(href);
-        if (url.protocol === 'mailto:' || url.protocol === 'blob:') continue;
+        if (url.protocol === 'mailto:') { expect(url.pathname).toBe('contact@example.test'); continue; }
+        if (url.protocol === 'blob:') { expect(url.origin).toBe(academy); continue; }
+        if (url.origin === 'https://xped.net') { expect(url.pathname).toMatch(/^\/(?:nl|de)\/$/); continue; }
         expect(url.origin, href).toBe(academy);
-        expect(url.pathname, href).not.toMatch(/^\/(?:lecture-notes|dashboard|study|admin|physio)(?:\/|$)/);
+        expect(url.pathname, href).toMatch(/^\/(?:$|(?:inloggen|instellingen|team|hulp|privacy|resultaten|vertalingen|expedities)$|expedities\/[^/]+(?:\/(?:bewerken|resultaten))?$|(?:start|vertalen)\/[^/]+$|missing-preview-page$)/);
       }
     }
+    const removed = await page.request.delete(academy + '/api/elearning/expeditions/' + id, { headers });
+    expect(removed.status()).toBe(200);
     expect(requested.some(url => url.hostname.includes('lecture-processor') || /\/(?:firebase-bootstrap|auth-utils|app-shell|shared-ui)\.(?:js|css)$/.test(url.pathname))).toBe(false);
   });
 }

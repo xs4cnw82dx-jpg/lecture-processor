@@ -3,9 +3,9 @@
   var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message, values) {
     return values ? message.replace(/\{(\w+)\}/g, function (field, name) { return values[name] ?? field; }) : message;
   };
-  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
-  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
-  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
+  var platformUx = window.ElearningHost.ux;
+  var platformBootstrap = window.ElearningHost.bootstrap;
+  var platformAuth = window.ElearningHost.auth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -3180,7 +3180,7 @@
 
   /* ---- Split-Screen German Translation Studio with Live Slide Preview & Autosave ---- */
   function translationLocation(location) {
-    var i18n = academyUi || window.LectureI18n;
+    var i18n = window.ElearningHost.i18n;
     if (!i18n) return location;
     return location.split(' · ').map(function (part) {
       var number = part.match(/^(.*?) (#[0-9]+|[0-9]+)$/);
@@ -4453,7 +4453,7 @@
     grants.forEach(function (g) {
       var row = document.createElement('div');
       row.className = 'el-member-row';
-      var url = window.location.origin + (g.urlPath || ((window.Xped ? '/vertalen/' : '/elearning/translate/') + encodeURIComponent(g.token || '')));
+      var url = window.location.origin + (g.urlPath || window.ElearningHost.translatorPath(g.token || ''));
       var grantName = (g.label || uiText('Translator')) + ' (' + String(g.targetLanguage || 'de').toUpperCase() + ')';
       var inp = document.createElement('input');
       inp.type = 'text';
@@ -4651,7 +4651,7 @@
       }
       if (notices.length) {
         var title = result.excludedUploads ? uiText('Export without uploaded files?') : uiText('Export course content');
-        var message = notices.map(function (note) { return academyUi ? uiText(note) : window.LectureI18n ? window.LectureI18n.t(note) : note; }).join(' ');
+        var message = notices.map(function (note) { return window.ElearningHost.i18n?.t(note) || note; }).join(' ');
         if (!(await showConfirmDialog(title, message, uiText('Export course content')))) return;
       }
       downloadCourseJson(result.course, '-content');

@@ -1,15 +1,9 @@
 {% extends 'academy/base.html' %}
+{% set academy_style = 'report' %}
 {% from '_academy_copy.html' import tr with context %}
 {% from 'academy/_loading.html' import loading %}
 {% block body_attrs %} class="el-library-body academy-body" data-expedition-id="{{ expedition_id }}"{% endblock %}
 {% block title %}{{ 'Ergebnisse' if academy_locale == 'de' else 'Resultaten' }} · xPED Academy{% endblock %}
-{% block head %}
-
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-report.css') }}">
-  {% include '_academy_foundation.html' %}
-{% endblock %}
 {% block body %}
   {% set shell_title = 'Responses & Pilot Analytics' %}
   {% include '_academy_header.html' %}

@@ -1,10 +1,6 @@
 {% extends 'academy/base.html' %}
 {% from 'academy/_shell_icons.html' import icon %}
 {% block title %}{{ xped_copy('Instellingen','Einstellungen') }} · xPED Academy{% endblock %}
-{% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
-  {% include '_academy_foundation.html' %}
-{% endblock %}
 {% block body_attrs %} class="academy-body"{% endblock %}
 {% block body %}
   {% include '_academy_header.html' %}

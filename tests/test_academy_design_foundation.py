@@ -23,18 +23,19 @@ def _stylesheets(page):
 
 
 @pytest.mark.parametrize('path', STUDIO_PAGES)
-def test_academy_author_pages_layer_the_foundation_last(academy_client, path):
+def test_academy_author_pages_load_one_versioned_foundation(academy_client, path):
     response = academy_client.get(path)
     assert response.status_code == 200
     page = html.fromstring(response.data)
     assert page.get('data-product') == 'academy'
     sheets = _stylesheets(page)
     assert FONTSHARE_STYLESHEET in sheets
-    paths = [sheet.split('?')[0] for sheet in sheets]
-    assert paths.index('/static/css/academy-base.css') < paths.index('/static/css/elearning-foundation.css')
-    for sheet in sheets:
-        if sheet.startswith('/static/'):
-            assert academy_client.get(sheet).status_code == 200, sheet
+    local, = [sheet for sheet in sheets if sheet.startswith('/static/')]
+    css = academy_client.get(local)
+    assert css.status_code == 200 and css.mimetype == 'text/css'
+    assert css.cache_control.immutable and css.get_etag()[0]
+    assert academy_client.get(local, headers={'If-None-Match': css.headers['ETag']}).status_code == 304
+    assert not academy_client.get(local.split('?')[0]).cache_control.immutable
 
 
 def test_academy_policy_allows_only_the_fontshare_hosts_the_studio_uses(academy_client):

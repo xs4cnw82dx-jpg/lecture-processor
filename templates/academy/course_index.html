@@ -3,10 +3,6 @@
 {% set results = index_kind == 'results' %}
 {% set title = xped_copy('Resultaten','Ergebnisse') if results else xped_copy('Vertalingen','Übersetzungen') %}
 {% block title %}{{ title }} · xPED Academy{% endblock %}
-{% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
-  {% include '_academy_foundation.html' %}
-{% endblock %}
 {% block body_attrs %} class="academy-body"{% endblock %}
 {% block body %}
   {% include '_academy_header.html' %}

@@ -1,9 +1,9 @@
 (function () {
   'use strict';
   var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
-  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
-  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
-  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
+  var platformUx = window.ElearningHost.ux;
+  var platformBootstrap = window.ElearningHost.bootstrap;
+  var platformAuth = window.ElearningHost.auth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
