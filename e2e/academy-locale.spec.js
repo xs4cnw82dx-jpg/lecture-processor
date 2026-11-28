@@ -65,8 +65,34 @@ test('German week starts on Monday and choosing a date submits the real filter',
   await expect(page).toHaveURL(/from=2026-11-02/);
 });
 
+test('pseudo-locale marks dynamic messages and preserves course titles in real lists', async ({academyPage: page, academyOrigin, request}, testInfo) => {
+  const course = await seedCourse(request, academyOrigin);
+  await page.route('**/academy/messages/nl/*.js', async route => {
+    const response = await route.fetch();
+    const body = await response.text();
+    const catalog = JSON.parse(body.slice('window.XpedMessages='.length, -1));
+    const pseudo = text => '⟦' + text.replaceAll('e', 'ë').replaceAll('a', 'á') + '⟧';
+    for (const [key, message] of Object.entries(catalog)) {
+      // Preserve named variables and only accent translator-provided copy.
+      const mark = text => text.split(/(\{\w+\})/g).map(part => part.startsWith('{') ? part : pseudo(part)).join('');
+      if (typeof message === 'string') catalog[key] = mark(message);
+      else for (const form of Object.keys(message.choices)) message.choices[form] = mark(message.choices[form]);
+    }
+    await route.fulfill({response, body:'window.XpedMessages=' + JSON.stringify(catalog) + ';'});
+  });
+  await page.goto(academyOrigin+'/expedities');
+  const row = page.locator('[data-expedition-row="'+course.id+'"]');
+  await expect(row.locator('h2')).toHaveText(course.title);
+  await expect(row.locator('[data-column=stepCount]')).toContainText('⟦1 státion⟧⟦1 stáp⟧');
+  await page.goto(academyOrigin+'/resultaten');
+  const entry = page.locator('#ac-index-list a').filter({hasText:course.title}).first();
+  await expect(entry.locator('strong')).toHaveText(course.title);
+  await expect(entry.locator('.ac-entry-detail')).toHaveText('⟦Rësultátën bëkijkën⟧');
+  await testInfo.attach('pseudo-results',{body:await page.screenshot(),contentType:'image/png'});
+});
+
 for (const width of [390, 1440]) {
-  test('German Studio and learner pages fit at ' + width, async ({academyPage: page, academyOrigin, request}, testInfo) => {
+  test('German Studio and learner pages fit at ' + width, async ({academyPage: page, academyOrigin, request, browser}, testInfo) => {
     test.setTimeout(75000);
     const course = await seedCourse(request, academyOrigin);
     const root = '/expedities/' + course.id;
@@ -75,6 +101,12 @@ for (const width of [390, 1440]) {
     });
     expect(sharing.ok()).toBe(true);
     const {share} = await sharing.json();
+    const invitation = await request.post(academyOrigin+'/api/elearning/expeditions/'+course.id+'/sharing', {
+      headers, data:{action:'create_grant', role:'translate', targetLanguage:'de', label:'Übersetzungsprüfung'}
+    });
+    expect(invitation.ok()).toBe(true);
+    const {grant} = await invitation.json();
+
     await page.setViewportSize({width,height:width === 390 ? 844 : 900});
     await page.context().addCookies([{name:'xped-language',value:'de',url:academyOrigin}]);
     for (const [name, path, ready] of [
@@ -84,7 +116,9 @@ for (const width of [390, 1440]) {
       ['course',root,'#xc-overzicht'], ['sharing',root+'#delen','#xc-sharing-settings'],
       ['course-translations',root+'#vertalingen','#xc-translation-heading'], ['course-settings',root+'#instellingen','#xc-instellingen'],
       ['builder',root+'/bewerken','#el-exp-title'], ['report',root+'/resultaten','#el-response-report'],
-      ['privacy','/privacy','main h1'], ['learner','/start/'+share.token+'?lang=de','main h1'],
+      ['translation-editor',root+'/bewerken?modus=vertalen&taal=de','#el-mode-translate'],
+      ['translator-invite',grant.urlPath,'#el-mode-translate'], ['help','/hulp','main h1'],
+      ['privacy','/privacy','main h1'], ['missing-page','/synthetic-missing','main h1'], ['learner','/start/'+share.token+'?lang=de','main h1'],
       ['inactive','/start/disabled-synthetic?lang=de','main h1'],
     ]) {
       await test.step(name, async () => {
@@ -98,5 +132,21 @@ for (const width of [390, 1440]) {
         await testInfo.attach(name,{path:file,contentType:'image/png'});
       });
     }
+    // Public sign-in is reached signed out. Keep its fake Firebase client in its own context.
+    const guest = await browser.newContext({viewport: {width,height:900}});
+    try {
+      await guest.addCookies([{name:'xped-language', value:'de', url:academyOrigin}]);
+      await guest.route('**/*', route => new URL(route.request().url()).origin === academyOrigin ? route.continue() : route.abort());
+      await guest.addInitScript(() => {
+        let app;
+        const auth = {currentUser:null, onAuthStateChanged(callback) {queueMicrotask(() => callback(null)); return () => {};}};
+        window.firebase = {app() {if (!app) throw Error('Not initialized'); return app;}, initializeApp(options) {app = {options}; return app;}, auth:() => auth};
+      });
+      const publicPage = await guest.newPage();
+      await publicPage.goto(academyOrigin+'/inloggen');
+      await expect(publicPage.getByRole('button',{name:'Mit Google anmelden'})).toBeVisible();
+      expect(await publicPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await testInfo.attach('signin',{body:await publicPage.screenshot({animations:'disabled'}),contentType:'image/png'});
+    } finally { await guest.close(); }
   });
 }

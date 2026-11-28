@@ -1,39 +1,39 @@
 {% extends 'academy/base.html' %}
 {% from 'academy/_shell_icons.html' import icon %}
-{% block title %}{{ xped_copy('Instellingen','Einstellungen') }} · xPED Academy{% endblock %}
+{% block title %}{{ xped_t('settings.title') }} · xPED Academy{% endblock %}
 {% block body_attrs %} class="academy-body"{% endblock %}
 {% block body %}
   {% include '_academy_header.html' %}
   <main class="ac-settings-page" id="main-content" tabindex="-1">
-    <h1>{{ xped_copy('Instellingen','Einstellungen') }}</h1>
+    <h1>{{ xped_t('settings.title') }}</h1>
     <section class="ac-setting-section" aria-labelledby="ac-preferences-title">
-      <div class="ac-section-heading"><span class="ac-section-icon">{{ icon('settings') }}</span><h2 id="ac-preferences-title">{{ xped_copy('Voorkeuren','Präferenzen') }}</h2></div>
-      <div class="ac-setting-row"><span id="ac-set-lang">{{ xped_copy('Taal van de Academy','Sprache der Academy') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-set-lang"><button type="button" data-academy-language="nl" lang="nl" aria-pressed="{{ 'true' if academy_locale == 'nl' else 'false' }}">Nederlands</button><button type="button" data-academy-language="de" lang="de" aria-pressed="{{ 'true' if academy_locale == 'de' else 'false' }}">Deutsch</button></div></div>
-      <div class="ac-setting-row"><span id="ac-set-theme">{{ xped_copy('Weergave','Darstellung') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-set-theme"><button type="button" data-academy-theme="light">{{ icon('sun',16) }}{{ xped_copy('Licht','Hell') }}</button><button type="button" data-academy-theme="dark">{{ icon('moon',16) }}{{ xped_copy('Donker','Dunkel') }}</button><button type="button" data-academy-theme="system">{{ xped_copy('Systeem','System') }}</button></div></div>
+      <div class="ac-section-heading"><span class="ac-section-icon">{{ icon('settings') }}</span><h2 id="ac-preferences-title">{{ xped_t('settings.preferences') }}</h2></div>
+      <div class="ac-setting-row"><span id="ac-set-lang">{{ xped_t('settings.language') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-set-lang"><button type="button" data-academy-language="nl" lang="nl" aria-pressed="{{ 'true' if academy_locale == 'nl' else 'false' }}">Nederlands</button><button type="button" data-academy-language="de" lang="de" aria-pressed="{{ 'true' if academy_locale == 'de' else 'false' }}">Deutsch</button></div></div>
+      <div class="ac-setting-row"><span id="ac-set-theme">{{ xped_t('settings.appearance') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-set-theme"><button type="button" data-academy-theme="light">{{ icon('sun',16) }}{{ xped_t('settings.light') }}</button><button type="button" data-academy-theme="dark">{{ icon('moon',16) }}{{ xped_t('settings.dark') }}</button><button type="button" data-academy-theme="system">{{ xped_t('settings.system') }}</button></div></div>
     </section>
     <p id="acct-status" role="status" aria-live="polite"></p>
-    <a class="btn" id="acct-signin" href="/inloggen?next=/instellingen" hidden>{{ xped_copy('Log in om je account te beheren','Melden Sie sich an, um Ihr Konto zu verwalten') }}</a>
+    <a class="btn" id="acct-signin" href="/inloggen?next=/instellingen" hidden>{{ xped_t('settings.signIn') }}</a>
     <div id="acct-controls" hidden>
       <section class="ac-setting-section" aria-labelledby="ac-account-title">
-        <div class="ac-section-heading"><span class="ac-section-icon">{{ icon('user') }}</span><h2 id="ac-account-title">{{ xped_copy('Mijn account','Mein Konto') }}</h2></div>
+        <div class="ac-section-heading"><span class="ac-section-icon">{{ icon('user') }}</span><h2 id="ac-account-title">{{ xped_t('settings.account') }}</h2></div>
         <p id="acct-identity" translate="no"></p>
-        <h3>{{ xped_copy('Accountgegevens downloaden','Kontodaten herunterladen') }}</h3>
-        <p>{{ xped_copy('Het JSON-bestand bevat je accountprofiel, uitnodigingen, mappen, cursusrollen en uploadgegevens. De inhoud van een expeditie exporteer je vanuit de bibliotheek.','Die JSON-Datei enthält Ihr Kontoprofil, Einladungen, Ordner, Kursrollen und Upload-Einträge. Den Inhalt einer Expedition exportieren Sie in der Bibliothek.') }}</p>
-        <button type="button" class="btn" id="acct-export">{{ xped_copy('Accountgegevens downloaden','Kontodaten herunterladen') }}</button>
+        <h3>{{ xped_t('settings.export') }}</h3>
+        <p>{{ xped_t('settings.exportHelp') }}</p>
+        <button type="button" class="btn" id="acct-export">{{ xped_t('settings.export') }}</button>
       </section>
       <section class="ac-setting-section ac-caution" aria-labelledby="ac-delete-title">
-        <h2 id="ac-delete-title">{{ xped_copy('Account verwijderen','Konto löschen') }}</h2>
-        <p>{{ xped_copy('De beheerder neemt je expedities en media over. Deelnemerslinks en gedeelde reacties blijven beschikbaar. Je aanmelding, mapnamen en auteurstoegang worden verwijderd.','Die Administration übernimmt Ihre Expeditionen und Medien. Teilnahmelinks und geteilte Antworten bleiben verfügbar. Ihre Anmeldung, Ordnernamen und Ihr Autorenzugang werden gelöscht.') }}</p>
-        <button type="button" class="btn danger" id="acct-begin" aria-expanded="false" aria-controls="acct-confirmation">{{ xped_copy('Account verwijderen','Konto löschen') }}</button>
+        <h2 id="ac-delete-title">{{ xped_t('settings.delete') }}</h2>
+        <p>{{ xped_t('settings.transferHelp') }}</p>
+        <button type="button" class="btn danger" id="acct-begin" aria-expanded="false" aria-controls="acct-confirmation">{{ xped_t('settings.delete') }}</button>
         <form id="acct-confirmation" hidden>
-          <p id="acct-deletion-effects">{{ xped_copy('Zodra de verwijdering begint, vervalt je auteurstoegang en kun je niets meer bewerken. Verlaat je deze pagina? Kom dan terug en bevestig opnieuw om de verwijdering af te ronden.','Sobald die Löschung beginnt, endet Ihr Autorenzugang und die Bearbeitung wird gesperrt. Wenn Sie diese Seite verlassen, kehren Sie zurück und bestätigen Sie erneut, um die Löschung abzuschließen.') }}</p>
-          <label><input type="checkbox" id="acct-consent" aria-describedby="acct-deletion-effects" required> {{ xped_copy('Ik begrijp dat mijn account definitief wordt verwijderd.','Ich verstehe, dass mein Konto endgültig gelöscht wird.') }}</label>
-          <div class="acct-actions"><button type="submit" class="btn danger">{{ xped_copy('Account definitief verwijderen','Konto endgültig löschen') }}</button><button type="button" class="btn" id="acct-cancel">{{ xped_copy('Annuleren','Abbrechen') }}</button></div>
+          <p id="acct-deletion-effects">{{ xped_t('settings.deleteWarning') }}</p>
+          <label><input type="checkbox" id="acct-consent" aria-describedby="acct-deletion-effects" required> {{ xped_t('settings.confirmConsent') }}</label>
+          <div class="acct-actions"><button type="submit" class="btn danger">{{ xped_t('settings.confirmDelete') }}</button><button type="button" class="btn" id="acct-cancel">{{ xped_t('settings.cancel') }}</button></div>
         </form>
-        <button type="button" class="btn" id="acct-reauth" hidden>{{ xped_copy('Opnieuw inloggen','Erneut anmelden') }}</button>
+        <button type="button" class="btn" id="acct-reauth" hidden>{{ xped_t('settings.reauth') }}</button>
       </section>
     </div>
-    <noscript>{{ xped_copy('Schakel JavaScript in om je account te beheren.','Aktivieren Sie JavaScript, um Ihr Konto zu verwalten.') }}</noscript>
+    <noscript>{{ xped_t('settings.noJS') }}</noscript>
   </main>
   {% include '_academy_footer.html' %}
   {% include 'academy/runtime.html' %}

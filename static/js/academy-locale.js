@@ -35,11 +35,12 @@
     const text = choices['=' + count] ?? choices[cardinals.select(count)] ?? choices.other;
     return text.replace(/#|\{(\w+)\}/g, (field, name) => field === '#' ? number(count) : values[name] ?? field);
   }
+  const uiText = t;
   function courseStatus(course) {
-    if (course.shareEnabled && course.collectResponses) return ['collecting', copy('Verzamelt resultaten', 'Erfasst Ergebnisse')];
-    if (course.shareEnabled) return ['live', 'Live'];
-    if (course.hasPublished) return ['paused', copy('Gepauzeerd', 'Pausiert')];
-    return ['draft', copy('Concept', 'Entwurf')];
+    if (course.shareEnabled && course.collectResponses) return ['collecting', uiText('status.collecting')];
+    if (course.shareEnabled) return ['live', uiText('status.live')];
+    if (course.hasPublished) return ['paused', uiText('status.paused')];
+    return ['draft', uiText('status.draft')];
   }
   function number(value, options) { return new Intl.NumberFormat(locale, options).format(value); }
   function date(value, options) { return new Intl.DateTimeFormat(locale, { hourCycle: 'h23', ...options }).format(value); }
@@ -71,7 +72,6 @@
   function localizeCalendars(scope = document) {
     const inputs = scope.querySelectorAll('input[type=date]');
     if (!inputs.length || !root.Xped?.ux?.enhanceDateInput) return;
-    const uiText = t;
     const labels = {
       choose: uiText('calendar.choose'), date: uiText('calendar.date'),
       previous: uiText('calendar.previous'), next: uiText('calendar.next'),

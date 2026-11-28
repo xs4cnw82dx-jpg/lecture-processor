@@ -342,7 +342,10 @@
     docs.delete('from'); docs.delete('to'); docs.set('days',btn.dataset.days); changePeriod();
   }));
   el('custom').addEventListener('click',() => {
-    const open = el('dates').hidden; el('dates').hidden=!open; el('custom').setAttribute('aria-expanded',String(open)); if (open) el('from').focus();
+    const open = el('dates').hidden;
+    el('dates').hidden = !open;
+    el('custom').setAttribute('aria-expanded', String(open));
+    if (open) (el('from')._appDateInstance?.trigger || el('from')).focus();
   });
   el('filters').addEventListener('submit',evt => {
     evt.preventDefault(); const start=el('from').value, end=el('to').value;

@@ -16,7 +16,7 @@
           <img src="{{ url_for('static', filename='images/xped/xped-jan.png') }}" width="175" height="112" alt="">
         </div>
         <div class="el-dash-actions" id="el-author-actions" hidden>
-          <a class="btn" id="el-team-link" href="/team" hidden>{{ xped_copy('Team','Team') }}</a>
+          <a class="btn" id="el-team-link" href="/team" hidden>{{ xped_t('library.team') }}</a>
           <button type="button" class="btn" id="el-import-json-btn">{{ tr("Import JSON") }}</button>
           <input type="file" id="el-import-json-input" accept="application/json" hidden>
           <button type="button" class="btn primary" id="el-new-expedition-btn">{{ tr("New expedition") }}</button>
@@ -33,11 +33,11 @@
 
       <div class="el-dash-search-row">
         <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite"></div>
-        <button type="button" id="ac-library-keys" class="btn small" hidden aria-haspopup="dialog" aria-controls="ac-library-help">{{ xped_copy('Sneltoetsen','Tastenkürzel') }} <kbd>?</kbd></button>
+        <button type="button" id="ac-library-keys" class="btn small" hidden aria-haspopup="dialog" aria-controls="ac-library-help">{{ xped_t('library.shortcuts') }} <kbd>?</kbd></button>
         <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="{{ tr("Search expeditions…") }}" aria-label="{{ tr("Search expeditions") }}" hidden>
       </div>
       <div id="ac-library-order" class="ac-library-order" hidden>
-        <label for="ac-library-sort">{{ xped_copy('Sorteer op','Sortieren nach') }}</label>
+        <label for="ac-library-sort">{{ xped_t('library.sortBy') }}</label>
         <select id="ac-library-sort" class="xped-input"></select>
         <button id="ac-library-direction" type="button" class="btn small"></button>
       </div>
@@ -50,12 +50,12 @@
       {% include '_academy_footer.html' %}
 
   <dialog id="ac-library-help" class="el-dialog" aria-labelledby="ac-library-help-title">
-    <h2 id="ac-library-help-title">{{ xped_copy('Sneltoetsen voor expedities','Tastenkürzel für Expeditionen') }}</h2>
-    <dl><div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>{{ xped_copy('Volgende of vorige expeditie','Nächste oder vorherige Expedition') }}</dd></div>
-      <div><dt><kbd>Enter</kbd></dt><dd>{{ xped_copy('Geselecteerde expeditie openen','Ausgewählte Expedition öffnen') }}</dd></div>
-      <div><dt><kbd>.</kbd></dt><dd>{{ xped_copy('Beschikbare acties openen','Verfügbare Aktionen öffnen') }}</dd></div>
-      <div><dt><kbd>?</kbd></dt><dd>{{ xped_copy('Sneltoetsen tonen','Tastenkürzel anzeigen') }}</dd></div></dl>
-    <form method="dialog"><button class="btn" autofocus>{{ xped_copy('Sluiten','Schließen') }}</button></form>
+    <h2 id="ac-library-help-title">{{ xped_t('library.shortcutHelp') }}</h2>
+    <dl><div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>{{ xped_t('library.nextCourse') }}</dd></div>
+      <div><dt><kbd>Enter</kbd></dt><dd>{{ xped_t('library.openCourse') }}</dd></div>
+      <div><dt><kbd>.</kbd></dt><dd>{{ xped_t('library.openActions') }}</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>{{ xped_t('library.showShortcuts') }}</dd></div></dl>
+    <form method="dialog"><button class="btn" autofocus>{{ xped_t('library.close') }}</button></form>
   </dialog>
   {% include '_academy_folders.html' %}
 

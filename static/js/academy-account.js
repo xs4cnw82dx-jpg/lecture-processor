@@ -2,6 +2,7 @@
   'use strict';
 
   const locale = window.Xped.i18n;
+  const uiText = locale.t;
   let preferenceVersion = 0;
   let writing = Promise.resolve();
   let interacted = false;
@@ -48,8 +49,7 @@
         if (requestVersion === preferenceVersion) {
           checkControls(languageControls, 'academyLanguage', locale.language);
           const ux = window.Xped.ux;
-          if (ux) ux.toast(locale.copy('Je taalkeuze is niet opgeslagen. Probeer het opnieuw.',
-            'Ihre Spracheinstellung wurde nicht gespeichert. Bitte versuchen Sie es erneut.'), { type: 'error' });
+          if (ux) ux.toast(uiText('settings.preferenceFailed'), { type: 'error' });
         }
         return;
       }
@@ -97,7 +97,7 @@
       window.location.replace('/');
     } catch (_) {
       button.disabled = false;
-      window.Xped.ux.toast(uiText('Could not sign out. Please try again.'), { type: 'error' });
+      window.Xped.ux.toast(uiText('settings.signOutFailed'), { type: 'error' });
     }
   });
 })();

@@ -94,7 +94,7 @@ def messages(language_code, section):
         abort(404)
     groups = catalog(language_code)
     selected = dict(groups.get('shared', {}))
-    if section in ('library', 'builder', 'report', 'player'):
+    if section in ('overview', 'library', 'builder', 'report', 'player'):
         selected.update(groups.get('model', {}))
     if section in ('builder', 'player'):
         selected.update(groups.get('activity', {}))

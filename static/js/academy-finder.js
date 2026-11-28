@@ -8,8 +8,8 @@
   const recentGroup = dialog.querySelector('[data-ac-recent]');
   const noResults = dialog.querySelector('[data-ac-no-results]');
   const pages = Array.from(dialog.querySelectorAll('[data-ac-pages] > a'));
-  const copy = (nl, de) => window.Xped.i18n.copy(nl, de);
-  const normalize = value => String(value || '').trim().toLocaleLowerCase(document.documentElement.lang)
+  const { t: uiText, language } = window.Xped.i18n;
+  const normalize = value => String(value || '').trim().toLocaleLowerCase(language)
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const historyKey = 'xped.finder.history';
   let account, uid, salt = '', history = [], entries = [], pending, ready = false;
@@ -81,26 +81,26 @@
   }
 
   async function destinations(payload, memberSalt) {
-    const actions = copy('Acties', 'Aktionen');
+    const actions = uiText('finder.actions');
     const result = [];
     const add = (group, title, href, ref, context = '', words = [], action = null) => {
       result.push({group, title, href, ref, context, action, words:[title, ...words].map(normalize)});
     };
-    if (payload.canCreate) add(actions, copy('Nieuwe expeditie', 'Neue Expedition'), '/expedities?actie=nieuw', 'new');
+    if (payload.canCreate) add(actions, uiText('finder.create'), '/expedities?actie=nieuw', 'new');
     [
-      [copy('Interface in het Duits', 'Oberfläche auf Deutsch'), () => document.querySelector('[data-academy-language="de"]')?.click()],
-      [copy('Interface in het Nederlands', 'Oberfläche auf Niederländisch'), () => document.querySelector('[data-academy-language="nl"]')?.click()],
-      [copy('Donkere weergave', 'Dunkle Darstellung'), () => window.Xped.i18n.setTheme('dark')],
-      [copy('Lichte weergave', 'Helle Darstellung'), () => window.Xped.i18n.setTheme('light')],
+      [uiText('finder.german'), () => document.querySelector('[data-academy-language="de"]')?.click()],
+      [uiText('finder.dutch'), () => document.querySelector('[data-academy-language="nl"]')?.click()],
+      [uiText('finder.dark'), () => window.Xped.i18n.setTheme('dark')],
+      [uiText('finder.light'), () => window.Xped.i18n.setTheme('light')],
     ].forEach(([title, action]) => add(actions, title, null, null, '', [], action));
 
-    const kinds = {course:copy('Expedities', 'Expeditionen'), station:copy('Stations', 'Stationen'), step:copy('Stappen', 'Schritte')};
+    const kinds = {course:uiText('finder.courses'), station:uiText('finder.stations'), step:uiText('finder.steps')};
     for (const item of payload.items) {
       if (!Object.hasOwn(kinds, item.type)) continue;
       const base = '/expedities/' + encodeURIComponent(item.course);
-      const title = item.title || item.labels?.[document.documentElement.lang] || item.labels?.nl || item.labels?.de || '';
+      const title = item.title || item.labels?.[language] || item.labels?.nl || item.labels?.de || '';
       if (item.type === 'course' && item.role !== 'translate') {
-        add(actions, copy('Resultaten van ', 'Ergebnisse von ') + title, base + '/resultaten', 'results:' + item.course);
+        add(actions, uiText('finder.courseResults', { title }), base + '/resultaten', 'results:' + item.course);
       }
       const params = new URLSearchParams();
       if (item.role === 'translate') params.set('modus', 'vertalen');
@@ -112,7 +112,7 @@
     }
     if (payload.studioAdmin) {
       const people = await Promise.all((payload.people || []).map(async email => [email, await personRef(email, memberSalt)]));
-      for (const [email, ref] of people) add(copy('Personen', 'Personen'), email, '/team?persoon=' + encodeURIComponent(email), ref);
+      for (const [email, ref] of people) add(uiText('finder.people'), email, '/team?persoon=' + encodeURIComponent(email), ref);
     }
     return result;
   }
@@ -168,7 +168,7 @@
     const recent = !term && ready ? authorizedRecents() : [];
     recentGroup.hidden = !recent.length;
     if (recent.length) {
-      const block = group(copy('Recent geopend', 'Zuletzt geöffnet'));
+      const block = group(uiText('finder.recent'));
       recent.forEach(entry => addItem(block, entry));
       recentGroup.append(block);
     }
