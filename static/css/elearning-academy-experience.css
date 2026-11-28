@@ -146,9 +146,10 @@
 .academy-segment-track > button { position: relative; z-index: 1; }
 .academy-segment-thumb {
   position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; box-sizing: border-box; transition-property: none;
-  border: 1px solid var(--theme-line, var(--journey-outline)); border-radius: var(--ac-radius-control, 6px);
-  background: var(--theme-surface, var(--journey-white)); box-shadow: 0 1px 2px rgb(6 41 64 / 8%);
+  border: 1px solid var(--theme-line); border-radius: var(--ac-radius-control, 6px);
+  background: var(--theme-surface); box-shadow: 0 1px 2px rgb(6 41 64 / 8%);
 }
+[data-academy-player] .academy-segment-thumb { background: var(--journey-white); border-color: var(--journey-outline); }
 [data-academy-player] [data-learner-appearance="dark"] .academy-segment-thumb {
   background: var(--xped-surface); border-color: var(--xped-border-strong);
 }
