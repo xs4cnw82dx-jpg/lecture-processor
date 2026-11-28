@@ -549,6 +549,48 @@ def test_recovery_preserves_unavailable_receipt_for_retry_without_refunding_anot
     assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
     assert not store.docs('credit_refunds')
     assert ref.get().to_dict()['status'] == 'starting'
+    retry_at = ref.get().to_dict()['recovery_journal_retry_at']
     journal_ref.set(journal)
+    journal_reads = store.reads.count(journal_ref.path)
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+    assert store.reads.count(journal_ref.path) == journal_reads
+    store.now = retry_at
     assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
     assert store.docs('users')['owner']['credits'] == 100
+
+
+
+def test_full_recovery_pages_advance_past_unreadable_journals():
+    runtime, store = runtime_fixture()
+    runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT = 1
+    runtime.RUNTIME_JOB_RECOVERY_CURSORS = {}
+    for job_id in ('first', 'second'):
+        job_charges.admit_runtime_job('owner', job_id, 'lecture-notes', PRIMARY, runtime=runtime)
+    ref = runtime.runtime_jobs_repo.doc_ref(runtime.db, runtime.RUNTIME_JOBS_COLLECTION, 'first')
+    ref.update({'billing_receipt': {}})
+    journal = ledger.charge_document_ref(runtime.db, 'owner', 'runtime-job:first')
+    store.fail_reads.add(journal.path)
+    runtime.jobs.clear()
+    store.now += 181
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert store.docs('runtime_jobs')['second']['status'] == 'error'
+    assert store.docs('users')['owner']['credits'] == 92
+    assert ref.get().to_dict()['status'] == 'starting'
+    store.fail_reads.clear()
+    store.now = ref.get().to_dict()['recovery_journal_retry_at']
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert store.docs('users')['owner']['credits'] == 100
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+
+
+@pytest.mark.parametrize('pending_field', ['credit_refund_pending', 'extra_slides_refund_pending'])
+def test_pending_refund_pages_visit_each_document_with_tied_values(pending_field):
+    runtime, _store = runtime_fixture()
+    for key in ('a', 'b', 'c'):
+        runtime_jobs_repo.doc_ref(runtime.db, 'runtime_jobs', key).set(
+            {pending_field: True if pending_field == 'credit_refund_pending' else 2})
+    cursors = {}
+    pages = [runtime_jobs_repo.query_pending_refunds(runtime.db, 'runtime_jobs', limit=1, cursors=cursors)
+             for _ in range(4)]
+    assert [[doc.id for doc in page] for page in pages] == [['a'], ['b'], ['c'], ['a']]

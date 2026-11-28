@@ -1,6 +1,6 @@
 """Synthetic Firestore with queued atomic writes for financial behavior tests."""
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from functools import wraps
 import logging
 from threading import RLock
@@ -88,6 +88,11 @@ class Query:
     def select(self, fields):
         return Query(self.store, self.collection, self.filters, self.maximum, self.ordering, fields)
 
+    def start_after(self, cursor):
+        query = copy(self)
+        query.cursor = cursor
+        return query
+
     def stream(self, transaction=None):
         if transaction is not None:
             assert not transaction.operations, 'Read after transaction write'
@@ -113,8 +118,14 @@ class Query:
         with self.store.lock:
             records = [(key, data) for (collection, key), data in self.store.documents.items()
                        if collection == self.collection and all(matches(data, item) for item in self.filters)]
+            def sort_value(item, field):
+                return item[0] if field == '__name__' else item[1].get(field, 0)
             for field, direction in reversed(self.ordering):
-                records.sort(key=lambda item: item[1].get(field, 0), reverse=str(direction).upper() == 'DESCENDING')
+                records.sort(key=lambda item: sort_value(item, field), reverse=str(direction).upper() == 'DESCENDING')
+            cursor = getattr(self, 'cursor', None)
+            if cursor:
+                after = tuple(cursor[field].id if field == '__name__' else cursor[field] for field, _ in self.ordering)
+                records = [item for item in records if tuple(sort_value(item, field) for field, _ in self.ordering) > after]
             snapshots = [self.document(key).get(transaction=transaction, field_paths=self.fields)
                          for key, _data in records[:self.maximum]]
             return iter(snapshots)

@@ -100,10 +100,14 @@ def _refund_deleted_account_checkout(app_ctx, session):
             )
         refund_id = refund.get('id')
         if not refund_id or refund.get('status') != 'succeeded':
+            if refund_id and refund.get('status') in {'failed', 'canceled', 'requires_action'}:
+                app_ctx.repositories.purchases.mark_refund_for_review(
+                    app_ctx.db, app_ctx.firestore, session_id, refund_id, refund['status'],
+                )
             app_ctx.logger.warning('Deleted-account checkout %s has an unsettled refund %s (status %s).',
                                    session_id, refund_id, refund.get('status'))
             return False
-        app_ctx.repositories.purchases.set_doc(
+        app_ctx.repositories.purchases.record_deleted_checkout_refund(
             app_ctx.db,
             session_id,
             {
@@ -114,7 +118,6 @@ def _refund_deleted_account_checkout(app_ctx, session):
                 'stripe_refund_id': refund_id,
                 'refunded_at': app_ctx.time.time(),
             },
-            merge=True,
         )
         return True
     except (app_ctx.stripe.error.StripeError, *STORAGE_ERRORS):
