@@ -224,7 +224,7 @@
     document.querySelectorAll('dialog.el-dialog').forEach(function (dlg) {
       if (dlg._elAnimatedWired) return;
       dlg._elAnimatedWired = true;
-      dlg.querySelectorAll('button[aria-label="Close"]').forEach(function (btn) {
+      dlg.querySelectorAll('form[method="dialog"] button.el-icon-btn').forEach(function (btn) {
         btn.className = 'el-icon-btn';
         btn.textContent = '';
         btn.appendChild(icon('x', 17));
