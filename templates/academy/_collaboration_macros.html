@@ -1,0 +1,4 @@
+{% macro say(nl, de) %}{{ de if academy_locale|default('nl') == 'de' else nl }}{% endmacro %}
+{% macro switch(key, nl, de, description_nl='', description_de='') %}
+<label class="xc-switch-row"><span><strong>{{ say(nl, de) }}</strong>{% if description_nl %}<small>{{ say(description_nl, description_de) }}</small>{% endif %}</span><input type="checkbox" role="switch" name="{{ key }}" data-xc-setting="{{ key }}"></label>
+{% endmacro %}

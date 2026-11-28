@@ -697,6 +697,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 'label': g.get('label', ''),
                 'revoked': bool(g.get('revoked')),
                 'createdAt': g.get('created_at', 0),
+                'lastOpenedAt': g.get('last_opened_at', 0),
                 'urlPath': _grant_path(g['token']) if not g.get('revoked') else '',
             }
             for g in db.list('elearning_grants', 'expedition_id', expedition_id)
@@ -733,6 +734,8 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             if 'pausedMessage' in body:
                 share['pausedMessage'] = model.safe_text(body['pausedMessage'], 400)
             if body.get('rotateToken'):
+                if current_app.config.get('XPED_ACADEMY') and body.get('confirmTitle') != exp.get('title'):
+                    raise model.ElearningError('Typ de huidige titel van de expeditie om de link te vernieuwen.', 409)
                 old_token = share.get('token', '')
                 new_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
                 share['token'] = new_token
@@ -744,6 +747,23 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             unit.put(_exp_path(expedition_id), exp)
             return jsonify(share=share)
 
+        if action == 'restore_member':
+            marker = exp.get('_memberUndo') or {}
+            if marker.get('until', 0) < now() or not marker.get('nonce') or marker['nonce'] != body.get('undo'):
+                raise model.ElearningError('Deze wijziging kan niet meer ongedaan worden gemaakt.', 409)
+            email = model.safe_email(body.get('email'))
+            if _digest(email) != marker['email']:
+                raise model.ElearningError('Deze wijziging kan niet meer ongedaan worden gemaakt.', 409)
+            _allow_invitation(runtime, unit, email)
+            members = dict(exp.get('members') or {})
+            if email in members or len(members) >= 20:
+                raise model.ElearningError('De toegangsrechten zijn gewijzigd.', 409)
+            members[email] = marker['role']
+            exp.pop('_memberUndo')
+            exp.update(members=members, member_emails=sorted(members), updated_at=now())
+            unit.put(_exp_path(expedition_id), exp)
+            return jsonify(restored=True)
+
         if action == 'add_member':
             email = model.safe_email(body.get('email'))
             _allow_invitation(runtime, unit, email)
@@ -753,6 +773,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             members = dict(exp.get('members') or {})
             if len(members) >= 20 and email not in members:
                 raise model.ElearningError('Maximum 20 collaborators per expedition.', 400)
+            exp.pop('_memberUndo', None)
             members[email] = member_role
             exp['members'] = members
             exp['member_emails'] = sorted(members.keys())
@@ -763,12 +784,17 @@ def sharing(runtime, expedition_id: str, *, admin=False):
         if action == 'remove_member':
             email = model.safe_email(body.get('email'))
             members = dict(exp.get('members') or {})
-            members.pop(email, None)
+            previous_role = members.pop(email, None)
+            exp.pop('_memberUndo', None)
+            nonce = ''
+            if previous_role and current_app.config.get('XPED_ACADEMY'):
+                nonce = secrets.token_urlsafe(16)
+                exp['_memberUndo'] = {'email': _digest(email), 'role': previous_role, 'nonce': nonce, 'until': now() + 12}
             exp['members'] = members
             exp['member_emails'] = sorted(members.keys())
             exp['updated_at'] = now()
             unit.put(_exp_path(expedition_id), exp)
-            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())])
+            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())], undo=nonce)
 
         if action == 'create_grant':
             grant_role = str(body.get('role') or 'translate').strip()
@@ -800,16 +826,31 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 'urlPath': _grant_path(raw_token),
             }), 201
 
-        if action == 'revoke_grant':
+        if action in ('revoke_grant', 'restore_grant'):
             gid = model.identifier(body.get('grantId'), 'grant id')
             grant = unit.get('elearning_grants/' + gid)
             if not grant or grant.get('expedition_id') != expedition_id:
                 raise model.ElearningError('Invite link not found.', 404)
+            if action == 'restore_grant':
+                if not grant.get('revoked') or not grant.get('undo') or grant['undo'] != body.get('undo') or grant.get('undo_until', 0) < now():
+                    raise model.ElearningError('Deze wijziging kan niet meer ongedaan worden gemaakt.', 409)
+                grant.update(revoked=False)
+                grant.pop('undo', None)
+                grant.pop('undo_until', None)
+                unit.put('elearning_grants/' + gid, grant)
+                unit.put('elearning_grant_tokens/' + grant['token_hash'], {'grant_id': gid, 'expedition_id': expedition_id})
+                return jsonify(restored=True)
+            nonce = ''
+            grant.pop('undo', None)
+            grant.pop('undo_until', None)
+            if current_app.config.get('XPED_ACADEMY') and not grant.get('revoked'):
+                nonce = secrets.token_urlsafe(16)
+                grant.update(undo=nonce, undo_until=now() + 12)
             grant['revoked'] = True
             unit.put('elearning_grants/' + gid, grant)
             if grant.get('token_hash'):
                 unit.delete('elearning_grant_tokens/' + grant['token_hash'])
-            return jsonify(revoked=True)
+            return jsonify(revoked=True, undo=nonce)
 
         raise model.ElearningError('Unsupported sharing action.', 400)
 
@@ -828,6 +869,16 @@ def exchange_grant(runtime):
     grant = db.get('elearning_grants/' + model.identifier(idx['grant_id'], 'grant'))
     if not grant or grant.get('revoked'):
         raise model.ElearningError('This translator link has been revoked.', 410)
+    if current_app.config.get('XPED_ACADEMY') and now() - grant.get('last_opened_at', 0) >= 3600:
+        def stamp(unit):
+            path = 'elearning_grants/' + grant['id']
+            latest = unit.get(path)
+            if not latest or latest.get('revoked'):
+                raise model.ElearningError('This translator link has been revoked.', 410)
+            if now() - latest.get('last_opened_at', 0) >= 3600:
+                latest['last_opened_at'] = now()
+                unit.put(path, latest)
+        db.atomic(stamp)
     guest_name = model.safe_text(body.get('name') or grant.get('label') or 'Translator', 60)
     signed = _grant_serializer().dumps({
         'grant': grant['id'],

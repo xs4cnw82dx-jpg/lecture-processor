@@ -22,6 +22,7 @@
   var actionsEl = document.getElementById('el-author-actions');
   var academy = !!document.querySelector('meta[name="academy-signin"]');
   var canCreate = !academy;
+  var requestedAction = academy ? new URLSearchParams(location.search).get('actie') : '';
   var retry = document.getElementById('el-retry');
   var signIn = document.getElementById('el-signin');
   var auth;
@@ -31,7 +32,8 @@
     return;
   }
   var client = platformAuth.createAuthClient(auth);
-  var admin = window.XpedStudioAdmin.create(api, loadList);
+  var admin = academy ? null : window.XpedStudioAdmin.create(api, loadList);
+  var teamLink = document.getElementById('el-team-link');
   var folders = academy && window.XpedAcademyFolders(api, loadList, function () { renderExpeditions(allExpeditions); });
   var listRequest = 0;
   var importAttempt = 0;
@@ -237,7 +239,7 @@
       top.className = 'el-exp-card-top';
       var h2 = document.createElement('h2');
       var title = document.createElement(exp.deletionPending ? 'span' : 'a');
-      if (!exp.deletionPending) title.href = editUrl;
+      if (!exp.deletionPending) title.href = Model.coursePaths(exp.id).overview;
       title.textContent = exp.title || 'Untitled Expedition';
       title.setAttribute('translate', 'no');
       h2.appendChild(title);
@@ -321,6 +323,7 @@
       }
       if (!exp.deletionPending && exp.role !== 'translate') {
         actions.appendChild(actionLink('Responses', Model.coursePaths(exp.id).report));
+        if (academy) menuItems.push({ label: document.documentElement.lang === 'de' ? 'Freigabe und Zugriff' : 'Delen en toegang', icon: 'share', href: Model.coursePaths(exp.id).overview + '#delen' });
         if (exp.shareEnabled && exp.shareToken) {
           menuItems.push({ label: 'Open learner link', icon: 'external', href: Model.learnerPath(exp.shareToken) });
         }
@@ -377,8 +380,18 @@
       actionsEl.hidden = !canCreate && !data.studioAdmin;
       document.getElementById('el-new-expedition-btn').hidden = !canCreate;
       document.getElementById('el-import-json-btn').hidden = !canCreate;
-      admin.setCourses(data.studioAdmin === true, allExpeditions);
+      if (admin) admin.setCourses(data.studioAdmin === true, allExpeditions);
+      if (teamLink) teamLink.hidden = !data.studioAdmin;
       renderExpeditions(allExpeditions);
+      if (canCreate && ['nieuw', 'importeren'].includes(requestedAction)) {
+        var action = requestedAction;
+        requestedAction = '';
+        var url = new URL(location.href);
+        url.searchParams.delete('actie');
+        history.replaceState(history.state, '', url);
+        if (action === 'nieuw') openCreateDialog();
+        else document.getElementById('el-import-json-btn').focus();
+      }
     } catch (err) {
       if (request !== listRequest || err.code === 'auth/session-changed') return;
       retry.hidden = false;
@@ -553,7 +566,8 @@
   retry.addEventListener('click', loadList);
 
   function accountChanged(user) {
-    admin.reset();
+    if (admin) admin.reset();
+    if (teamLink) teamLink.hidden = true;
     if (folders) folders.reset();
     ++listRequest;
     ++importAttempt;

@@ -216,33 +216,13 @@ for (const layout of [
   });
 }
 
-test('the Studio administrator can grant and revoke author access before creating a course', async ({ page }) => {
-  const calls = [];
-  const authors = new Set();
-  await page.route('**/api/academy/authors', async route => {
-    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
-    if (route.request().method() === 'POST') {
-      const body = route.request().postDataJSON();
-      calls.push(body);
-      if (body.action === 'grant') authors.add(body.email.toLowerCase());
-      else if (body.action === 'revoke') authors.delete(body.email);
-      return route.fulfill({ json: { ok: true } });
-    }
-    return route.fulfill({ json: { authors: [...authors] } });
-  });
+test('the Studio administrator can open Team from the library', async ({ page }) => {
   await signInToLibrary(page);
-  await page.getByRole('button', { name: 'Admin', exact: true }).click();
-  await page.getByRole('button', { name: 'Studio authors' }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('status')).toHaveText('No invited authors yet.');
-  await dialog.getByLabel('Email address', { exact: true }).filter({ visible: true }).fill('Author@example.test');
-  await dialog.getByRole('button', { name: 'Add author' }).click();
-  await expect(dialog.getByText('author@example.test', { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Revoke' }).click();
-  await dialog.getByRole('button', { name: 'Confirm removal' }).click();
-  await expect(dialog.getByRole('status')).toHaveText('No invited authors yet.');
-  await expect(dialog.getByText('author@example.test', { exact: true })).toHaveCount(0);
-  expect(calls).toEqual([{ action: 'grant', email: 'Author@example.test' }, { action: 'revoke', email: 'author@example.test' }]);
+  await page.locator('#el-team-link').click();
+  await expect(page).toHaveURL(academy + '/team');
+  await expect(page.getByRole('heading', { name: 'Team', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Uitnodigen' })).toBeVisible();
+  await expect(page.locator('#el-admin-dialog')).toHaveCount(0);
 });
 
 test('author invitations enable creation independently of course collaboration', async ({ page }) => {
@@ -256,7 +236,9 @@ test('author invitations enable creation independently of course collaboration',
   library.expeditions = [{ id: 'shared', title: 'Shared project', moduleCount: 0, stepCount: 0, role: 'edit' }];
   await page.reload();
   await expect(page.getByRole('link', { name: 'Open Builder' })).toHaveAttribute('href', '/expedities/shared/bewerken');
-  await expect(page.getByRole('button', { name: /^More actions/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /^More actions/ }).click();
+  await expect(page.getByRole('menuitem', { name: 'Delen en toegang' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Duplicate' })).toHaveCount(0);
   library.canCreate = true;
   await page.reload();
   await expect(page.getByRole('button', { name: 'New expedition' })).toBeVisible();

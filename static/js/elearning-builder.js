@@ -4179,6 +4179,10 @@
   }
 
   function openShareDialog() {
+    if (document.documentElement.dataset.product === 'academy') {
+      window.location.assign(Model.coursePaths(expeditionId).overview + '#delen');
+      return;
+    }
     if (!expeditionId) return;
     // UX-084: Show dialog shell immediately so clicks never feel unresponsive
     if (!shareDialog.open) {
