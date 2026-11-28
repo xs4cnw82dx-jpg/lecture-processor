@@ -95,18 +95,26 @@ def invite():
         # Firestore transactions read and validate every course before writing any invitation.
         selected = []
         for course_id in course_ids:
-            _, course, _, _, _ = studio.access(runtime, course_id, required='owner', unit=unit)
+            _, course, _, _, _ = studio.access(
+                runtime, course_id, required='owner', unit=unit, course_fields=('_memberUndo',),
+            )
             members = dict(course.get('members') or {})
             if len(members) >= 20 and email not in members:
                 raise model.ElearningError('Een expeditie heeft al 20 teamleden.', 409)
             members[email] = 'translate' if role == 'translate' else 'edit'
-            selected.append((course_id, course, members))
+            changes = {'members': members, 'member_emails': sorted(members), 'updated_at': studio.now()}
+            remove = ()
+            if '_memberUndo' in course:
+                studio._take_member_undo(course, email)
+                if '_memberUndo' in course:
+                    changes['_memberUndo'] = course['_memberUndo']
+                else:
+                    remove = ('_memberUndo',)
+            selected.append((studio._exp_path(course_id), changes, remove))
         studio._allow_invitation(runtime, unit, email)
         if role == 'author':
             unit.put(studio._author_key(email), {'email': email})
-        for course_id, course, members in selected:
-            course.update(members=members, member_emails=sorted(members), updated_at=studio.now())
-            studio._take_member_undo(course, email)
-            unit.put(studio._exp_path(course_id), course)
+        for path, changes, remove in selected:
+            unit.update_fields(path, changes, remove=remove)
     studio._store(runtime).atomic(apply)
     return jsonify(ok=True), 201

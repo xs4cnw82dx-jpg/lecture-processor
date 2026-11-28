@@ -161,9 +161,14 @@ def _check_translation_language(lang):
         raise model.ElearningError('English course text is archived. Choose Dutch or German to edit a translation.', 403)
 
 
-def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
+def access(runtime, expedition_id: str, required: str = 'translate', unit=None, *, course_fields=None):
     db = unit if unit is not None else _store(runtime)
-    exp = db.get(_exp_path(expedition_id))
+    path = _exp_path(expedition_id)
+    if course_fields is None:
+        exp = db.get(path)
+    else:
+        # Always read every field used to authorize the caller, even on a projection.
+        exp = db.get(path, fields={'owner_uid', 'members', 'copying', 'deleted', *course_fields})
     if not exp or exp.get('deleted') or exp.get('copying'):
         raise model.ElearningError('This expedition is unavailable.', 404)
 

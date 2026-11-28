@@ -8,13 +8,22 @@ class MemoryStore:
         self.data = {}
         self.lock = threading.RLock()
 
-    def get(self, path):
-        return deepcopy(self.data.get(path))
+    def get(self, path, *, fields=None):
+        row = self.data.get(path)
+        if row is not None and fields is not None:
+            row = {key: row[key] for key in fields if key in row}
+        return deepcopy(row)
 
     cached = get
 
     def put(self, path, value):
         self.data[path] = deepcopy(value)
+
+    def update_fields(self, path, values, *, remove=()):
+        row = self.data[path]
+        row.update(deepcopy(values))
+        for key in remove:
+            row.pop(key, None)
 
     def delete(self, path):
         self.data.pop(path, None)
