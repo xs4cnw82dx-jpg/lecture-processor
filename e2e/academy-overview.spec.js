@@ -40,8 +40,8 @@ test('dashboard filters, statistics and keyboard course links use one overview r
     return route.fulfill({json:overview([course('pijn','Pijn begrijpen'),course('bewegen','Weer bewegen')],week)});
   });
   await page.goto(academyOrigin);
-  await expect(page.locator('.ao-metric-big')).toHaveText('58,3%');
-  await expect(page.locator('.ao-split-counts')).toContainText('41,7%');
+  await expect(page.locator('.ao-metric-big')).toHaveText('58%');
+  await expect(page.locator('.ao-split-counts')).toContainText('42%');
   const cards = page.locator('#ao-kpis');
   await expect(cards.getByRole('button')).toHaveCount(4);
   await expect(cards.getByRole('button', {name:/Gestarte sessies/})).toContainText('+4 t.o.v. vorige periode');

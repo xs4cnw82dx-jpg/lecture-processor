@@ -1064,9 +1064,9 @@
           if (metric) {
             var caption = document.createElement('small');
             caption.className = 'academy-builder-metric';
-            var amount = metric.time ? Math.floor(metric.time.median/60) + ':' + String(metric.time.median%60).padStart(2,'0') + ' · ' : '';
-            var percent = new Intl.NumberFormat(document.documentElement.lang, {style:'percent'}).format(metric.reached/outlineResults.totalSessions);
-            caption.textContent = amount + percent + (document.documentElement.lang === 'de' ? ' erreicht' : ' bereikt');
+            var amount = metric.time ? academyUi.duration(metric.time.median, 'compact') + ' · ' : '';
+            var percent = academyUi.percent(100 * metric.reached / outlineResults.totalSessions);
+            caption.textContent = amount + uiText('builder.reached', { percent: percent });
             titleSpan.appendChild(caption);
           }
         }
@@ -4539,9 +4539,9 @@
 
   function mediaSize(bytes) {
     var small = bytes < 1024 * 1024;
-    return new Intl.NumberFormat(document.documentElement.lang || 'en', {
-      style: 'unit', unit: small ? 'kilobyte' : 'megabyte', maximumFractionDigits: 1,
-    }).format(bytes / (small ? 1024 : 1024 * 1024));
+    var options = { style: 'unit', unit: small ? 'kilobyte' : 'megabyte', maximumFractionDigits: 1 };
+    var amount = bytes / (small ? 1024 : 1024 * 1024);
+    return academyUi ? academyUi.number(amount, options) : new Intl.NumberFormat(document.documentElement.lang || 'en', options).format(amount);
   }
 
   async function openUnusedMedia() {

@@ -1,7 +1,7 @@
 {% extends 'academy/base.html' %}
 {% from 'academy/_shell_icons.html' import icon %}
 {% set results = index_kind == 'results' %}
-{% set title = xped_copy('Resultaten','Ergebnisse') if results else xped_copy('Vertalingen','Übersetzungen') %}
+{% set title = xped_t('indexes.results') if results else xped_t('indexes.translations') %}
 {% block title %}{{ title }} · xPED Academy{% endblock %}
 {% block body_attrs %} class="academy-body"{% endblock %}
 {% block body %}
@@ -11,18 +11,18 @@
     <div class="ac-index-surface">
       <div class="ac-index-caption">
         <span class="ac-section-icon">{{ icon('chart' if results else 'translate') }}</span>
-        <div><h2>{{ xped_copy('Resultaten per expeditie','Ergebnisse pro Expedition') if results else xped_copy('Taalversies per expeditie','Sprachversionen pro Expedition') }}</h2>
-        <p>{{ xped_copy('Bekijk de voortgang en gedeelde antwoorden van deelnemers.','Sehen Sie den Fortschritt und die geteilten Antworten der Teilnehmenden.') if results else xped_copy('Open een expeditie om een vertaling te bewerken of te controleren.','Öffnen Sie eine Expedition, um eine Übersetzung zu bearbeiten oder zu prüfen.') }}</p></div>
+        <div><h2>{{ xped_t('indexes.resultsByCourse') if results else xped_t('indexes.languagesByCourse') }}</h2>
+        <p>{{ xped_t('indexes.resultsHelp') if results else xped_t('indexes.translationsHelp') }}</p></div>
       </div>
-      <p role="status" class="ac-index-status" id="ac-index-status">{{ xped_copy('Expedities ophalen…','Expeditionen werden geladen…') }}</p>
+      <p role="status" class="ac-index-status" id="ac-index-status">{{ xped_t('indexes.loading') }}</p>
       <ul class="ac-index-list" id="ac-index-list" hidden></ul>
       <div class="ac-index-empty" id="ac-index-empty" hidden><span class="ac-index-empty-icon">{{ icon('chart' if results else 'translate',30) }}</span>
-        <h3>{{ xped_copy('Nog geen resultaten','Noch keine Ergebnisse') if results else xped_copy('Nog geen vertalingen','Noch keine Übersetzungen') }}</h3>
-        <p>{{ xped_copy('Zodra je toegang hebt tot resultaten van een expeditie, vind je ze hier.','Sobald Sie Zugriff auf die Ergebnisse einer Expedition haben, finden Sie diese hier.') if results else xped_copy('Expedities die je kunt vertalen, verschijnen hier.','Expeditionen, die Sie übersetzen können, erscheinen hier.') }}</p>
-        <a class="ac-inline-link" href="/expedities">{{ xped_copy('Naar de expedities','Zu den Expeditionen') }} {{ icon('arrow',16) }}</a>
+        <h3>{{ xped_t('indexes.resultsEmpty') if results else xped_t('indexes.translationsEmpty') }}</h3>
+        <p>{{ xped_t('indexes.resultsEmptyHelp') if results else xped_t('indexes.translationsEmptyHelp') }}</p>
+        <a class="ac-inline-link" href="/expedities">{{ xped_t('indexes.backToCourses') }} {{ icon('arrow',16) }}</a>
       </div>
-      <a class="btn" id="ac-index-signin" href="/inloggen?next={{ request.path|urlencode }}" hidden>{{ xped_copy('Inloggen','Anmelden') }}</a>
-      <button class="btn" id="ac-index-retry" type="button" hidden>{{ xped_copy('Opnieuw proberen','Erneut versuchen') }}</button>
+      <a class="btn" id="ac-index-signin" href="/inloggen?next={{ request.path|urlencode }}" hidden>{{ xped_t('indexes.signIn') }}</a>
+      <button class="btn" id="ac-index-retry" type="button" hidden>{{ xped_t('indexes.retry') }}</button>
     </div>
   </main>
   {% include '_academy_footer.html' %}

@@ -4,11 +4,11 @@
   const doc = document;
   let popoverId = 0;
   const $ = id => doc.getElementById('xc-' + id);
-  const { language: lang, copy: say, number, date: formatDate } = window.Xped.i18n;
+  const { language: lang, t: uiText, number, date: formatDate } = window.Xped.i18n;
   const date = value => Number.isFinite(value) && value >= 86400 ? formatDate(value * 1000, { dateStyle: 'medium' }) : '—';
   const roles = {
-    owner: say('Eigenaar', 'Eigentümer:in'), admin: say('Beheerder', 'Administrator:in'),
-    author: say('Auteur', 'Autor:in'), edit: say('Mede-auteur', 'Mitautor:in'), translate: say('Vertaler', 'Übersetzer:in'),
+    owner: uiText('workspace.role.owner'), admin: uiText('workspace.role.admin'),
+    author: uiText('workspace.role.author'), edit: uiText('workspace.role.coauthor'), translate: uiText('workspace.role.translator'),
   };
   const courseId = doc.body.dataset.courseId;
   const teamPage = doc.body.dataset.academyWorkspace === 'team';
@@ -46,14 +46,14 @@
   function isCurrent(version) { return version === epoch && identity && auth.currentUser?.uid === identity.uid; }
 
   async function api(url, body, version = epoch) {
-    if (!isCurrent(version)) throw new Error(say('Log opnieuw in.', 'Melden Sie sich erneut an.'));
+    if (!isCurrent(version)) throw new Error(uiText('workspace.signInAgain'));
     const response = await client.authFetch(url, body === undefined ? {} : {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     const result = await response.json();
-    if (!isCurrent(version)) throw new Error(say('Het account is gewijzigd.', 'Das Konto hat sich geändert.'));
+    if (!isCurrent(version)) throw new Error(uiText('workspace.accountChanged'));
     if (!response.ok) {
-      const error = new Error(window.Xped.i18n?.t?.(result.error) || result.error || say('Probeer het opnieuw.', 'Versuchen Sie es erneut.'));
+      const error = new Error(window.Xped.i18n?.t?.(result.error) || result.error || uiText('workspace.retryPrompt'));
       error.status = response.status;
       throw error;
     }
@@ -76,10 +76,10 @@
     host.replaceChildren(text);
     window.Xped.ux.toast(message, { element: host, textElement: text, type, duration: undo ? 8000 : 5000, hide: () => host.replaceChildren() });
     if (undo) {
-      const button = action(say('Ongedaan maken', 'Rückgängig'), async () => {
+      const button = action(uiText('workspace.undo'), async () => {
         clearTimeout(undoTimer);
         button.disabled = true;
-        try { await undo(); notice(say('Toegang hersteld.', 'Zugriff wiederhergestellt.')); }
+        try { await undo(); notice(uiText('workspace.accessRestored')); }
         catch (error) { notice(error.message, null, 'error'); }
       }, 'xc-text-action');
       host.append(button);
@@ -112,7 +112,7 @@
     $('confirm').hidden = !handle;
     $('confirm').disabled = false;
     $('confirm').className = options.danger ? 'btn danger' : 'btn primary';
-    $('cancel').textContent = handle ? say('Annuleren', 'Abbrechen') : say('Sluiten', 'Schließen');
+    $('cancel').textContent = handle ? uiText('workspace.cancel') : uiText('workspace.close');
     task = handle;
     frame.classList.toggle('is-sheet', !!options.sheet);
     frame.showModal();
@@ -124,8 +124,8 @@
     const pane = node('span', null, 'xc-inline-confirm');
     const original = doc.activeElement;
     pane.append(node('span', message));
-    const cancel = action(say('Annuleren', 'Abbrechen'), () => { pane.remove(); original?.focus(); }, 'xc-text-action');
-    const confirm = action(say('Bevestigen', 'Bestätigen'), async () => {
+    const cancel = action(uiText('workspace.cancel'), () => { pane.remove(); original?.focus(); }, 'xc-text-action');
+    const confirm = action(uiText('workspace.confirm'), async () => {
       confirm.disabled = cancel.disabled = true;
       try { await run(); pane.remove(); }
       catch (error) { notice(error.message, null, 'error'); confirm.disabled = cancel.disabled = false; }
@@ -137,7 +137,7 @@
 
   function safeURL(raw) {
     const url = new URL(raw, location.origin);
-    if (url.origin !== location.origin || !/^\/(?:start|vertalen|expedities)\//.test(url.pathname)) throw new Error(say('Ongeldige link.', 'Ungültiger Link.'));
+    if (url.origin !== location.origin || !/^\/(?:start|vertalen|expedities)\//.test(url.pathname)) throw new Error(uiText('workspace.invalidLink'));
     return url.href;
   }
   function copyField(raw, title) {
@@ -148,21 +148,21 @@
     a.append(node('span', displayed.slice(0,-4), 'xc-url-prefix'), node('span', displayed.slice(-4), 'xc-url-suffix'));
     a.setAttribute('aria-label', displayed);
     a.title = full;
-    const copy = action(say('Kopiëren', 'Kopieren'), async () => {
+    const copy = action(uiText('workspace.copy'), async () => {
       try {
         await navigator.clipboard.writeText(full);
         copy.textContent = '✓';
-        notice(say('Link gekopieerd.', 'Link kopiert.'));
-        setTimeout(() => { copy.textContent = say('Kopiëren', 'Kopieren'); }, 1500);
+        notice(uiText('workspace.linkCopied'));
+        setTimeout(() => { copy.textContent = uiText('workspace.copy'); }, 1500);
       } catch (_) {
-        const input = field(say('Link om te kopiëren', 'Link zum Kopieren'), 'url');
+        const input = field(uiText('workspace.copyableLink'), 'url');
         input.lastChild.value = full;
         input.lastChild.readOnly = true;
         dialog(title, [input], '', null);
         input.lastChild.select();
       }
     }, 'xc-text-action');
-    copy.setAttribute('aria-label', say('Link kopiëren', 'Link kopieren'));
+    copy.setAttribute('aria-label', uiText('workspace.copyLink'));
     const qr = action('QR', () => showQR(full, qr), 'xc-text-action');
     qr.setAttribute('aria-haspopup', 'dialog');
     qr.setAttribute('aria-expanded', 'false');
@@ -180,11 +180,11 @@
   }
   function showQR(url, trigger) {
     const svg = window.XpedElearningQR.createSvgElement(url);
-    svg.setAttribute('aria-label', say('QR-code voor de link', 'QR-Code für den Link'));
+    svg.setAttribute('aria-label', uiText('workspace.linkQRCode'));
     const image = node('div', null, 'xc-qr'); image.append(svg);
     const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
-    const svgButton = action(say('SVG downloaden', 'SVG herunterladen'), () => download(blob, 'xped-qr.svg'));
-    const pngButton = action(say('PNG downloaden', 'PNG herunterladen'), async () => {
+    const svgButton = action(uiText('workspace.downloadSVG'), () => download(blob, 'xped-qr.svg'));
+    const pngButton = action(uiText('workspace.downloadPNG'), async () => {
       const source = URL.createObjectURL(blob);
       try {
         const img = new Image(); img.src = source; await img.decode();
@@ -192,11 +192,11 @@
         const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
         ctx.drawImage(img, 0, 0, 1024, 1024);
         canvas.toBlob(file => { if (file) download(file, 'xped-qr.png'); }, 'image/png');
-      } catch (_) { notice(say('De afbeelding kon niet worden gemaakt.', 'Das Bild konnte nicht erstellt werden.')); }
+      } catch (_) { notice(uiText('workspace.imageFailed')); }
       finally { URL.revokeObjectURL(source); }
     });
     const actions = node('div', null, 'xc-actions'); actions.append(svgButton, pngButton);
-    const title = say('QR-code', 'QR-Code');
+    const title = uiText('workspace.qrCode');
     anchoredDetails(trigger, title, [image, actions]);
   }
 
@@ -213,7 +213,7 @@
     panel.id = 'xc-details-' + (++popoverId);
     panel.setAttribute('role','dialog');
     panel.setAttribute('aria-label',title);
-    const close = action(say('Sluiten', 'Schließen'), () => panel.hidePopover(), 'xc-text-action');
+    const close = action(uiText('workspace.close'), () => panel.hidePopover(), 'xc-text-action');
     const header = node('header');
     header.append(node('strong', title), close);
     panel.append(header, ...children);
@@ -268,48 +268,49 @@
 
   function showCourse() {
     const c = workspace.course, role = c.role;
-    const title = c.title || say('Expeditie', 'Expedition');
+    const title = c.title || uiText('workspace.course');
     $('title').textContent = title;
     doc.dispatchEvent(new CustomEvent('academy:course-title',{detail:title}));
     void showCover(workspace.cover).catch(() => { /* The course remains usable when its optional image is offline. */ });
     doc.title = title + ' · xPED Academy';
     showCourseStatus(c);
     const modules = c.modules || [], steps = modules.reduce((count, mod) => count + mod.steps, 0);
-    $('count').textContent = number(modules.length) + ' ' + (modules.length === 1 ? say('station', 'Station') : say('stations', 'Stationen')) + ' · ' + number(steps) + ' ' + (steps === 1 ? say('stap','Schritt') : say('stappen','Schritte'));
+    $('count').textContent = uiText('count.stations', { count: modules.length }) + ' · ' + uiText('count.steps', { count: steps });
     if (window.XpedAcademyControls && modules.length) $('strip').append(window.XpedAcademyControls.routeStrip(modules, { size: 'regular' }));
     for (const mod of modules) {
       const item = node('li');
-      const stationTitle = textOf(mod.title) || say('Station', 'Station');
+      const stationTitle = textOf(mod.title) || uiText('workspace.station');
       const firstStep = mod.firstStepId;
       const dest = path + '/bewerken?' + new URLSearchParams(role === 'translate' ? { modus: 'vertalen', taal: workspace.target } : firstStep ? { module: mod.id, step: firstStep } : {});
       const label = link(stationTitle, dest);
       label.translate = false;
-      item.append(label, node('small', number(mod.steps) + ' ' + (mod.steps === 1 ? say('stap', 'Schritt') : say('stappen', 'Schritte'))));
+      item.append(label, node('small', uiText('count.steps', { count: mod.steps })));
       $('stations').append(item);
     }
-    if (!modules.length) $('stations').append(node('li', say('Deze expeditie heeft nog geen stations.', 'Diese Expedition hat noch keine Stationen.')));
-    detail($('meta'), say('Jouw rol', 'Ihre Rolle'), roles[role]);
-    detail($('meta'), say('Inhoudstaal', 'Inhaltssprache'), (c.defaultLanguage || 'nl').toUpperCase());
-    detail($('meta'), say('Bijgewerkt', 'Aktualisiert'), date(c.updated_at));
+    if (!modules.length) $('stations').append(node('li', uiText('workspace.emptyRoute')));
+    detail($('meta'), uiText('workspace.yourRole'), roles[role]);
+    detail($('meta'), uiText('workspace.contentLanguage'), (c.defaultLanguage || 'nl').toUpperCase());
+    detail($('meta'), uiText('workspace.updated'), date(c.updated_at));
     const translationURL = path + '/bewerken?modus=vertalen&taal=' + encodeURIComponent(workspace.target);
     $('translate').href = translationURL;
     if (role === 'translate') $('edit').href = translationURL;
-    $('translation-heading').textContent = say('Vertaling naar ', 'Übersetzung nach ') + workspace.target.toUpperCase();
+    $('translation-heading').textContent = uiText('workspace.translationInto', { language: workspace.target.toUpperCase() });
     const coverage = workspace.coverage[workspace.target] || { translated: 0, total: workspace.translations.length };
-    $('coverage').textContent = number(coverage.translated) + ' / ' + number(coverage.total) + ' ' + say('teksten vertaald', 'Texte übersetzt');
+    $('coverage').textContent = uiText('count.translated', { count: coverage.total, ready: number(coverage.translated) });
     const deadline = $('deadline');
     if (deadline) {
       deadline.value = workspace.dueDate || '';
+      window.Xped.i18n.localizeCalendars($('deadline-form'));
       $('deadline-form').addEventListener('submit', async event => {
         event.preventDefault();
-        const button = event.currentTarget.querySelector('button');
+        const button = event.currentTarget.querySelector('button[type=submit]');
         if (button.disabled) return;
         button.disabled = true;
         try {
           const result = await api('/api/academy/courses/' + encodeURIComponent(courseId) + '/translation-date',
             {language: workspace.target, date: deadline.value || null});
           workspace.dueDate = result.dueDate;
-          notice(say('Streefdatum opgeslagen.', 'Zieldatum gespeichert.'));
+          notice(uiText('workspace.deadlineSaved'));
         } catch (error) { notice(error.message, null, 'error'); }
         finally { button.disabled = false; }
       });
@@ -317,7 +318,7 @@
       const note = $('deadline-label');
       const time = node('time', window.Xped.i18n.date(new Date(workspace.dueDate + 'T12:00:00'), {dateStyle:'long'}));
       time.dateTime = workspace.dueDate;
-      note.append(say('Streefdatum vertaling · ', 'Zieldatum der Übersetzung · '), time);
+      note.append(uiText('workspace.deadline') + ' · ', time);
       note.hidden = false;
     }
     $('review-only').addEventListener('change', showTranslations);
@@ -326,7 +327,7 @@
       event.preventDefault();
       const button = event.submitter;
       button.disabled = true;
-      try { const result = await api(shareEndpoint, { action: 'update_public', pausedMessage: $('paused-message').value }); sharing.share = result.share; notice(say('Bericht opgeslagen.', 'Nachricht gespeichert.')); }
+      try { const result = await api(shareEndpoint, { action: 'update_public', pausedMessage: $('paused-message').value }); sharing.share = result.share; notice(uiText('workspace.noteSaved')); }
       catch (error) { notice(error.message, null, 'error'); } finally { button.disabled = false; }
     });
     showView();
@@ -334,14 +335,14 @@
   function showTranslations() {
     const rows = workspace.translations.filter(row => !$('review-only').checked || row.status !== 'translated');
     const list = $('translation-rows'); list.replaceChildren();
-    if (!rows.length) { list.append(node('p', say('Alle teksten zijn bijgewerkt.', 'Alle Texte sind aktuell.'))); return; }
+    if (!rows.length) { list.append(node('p', uiText('workspace.translationsUpToDate'))); return; }
     for (const row of rows) {
       const item = node('div', null, 'xc-translation');
       item.append(userText('p', row.source || row.nl || '—'), userText('p', row.target || '—'));
       const review = node('div', null, 'xc-translation-action');
-      const status = row.status === 'needs_review' ? say('Te controleren', 'Zu prüfen') : row.status === 'untranslated' ? say('Ontbreekt', 'Fehlt') : say('Vertaald', 'Übersetzt');
+      const status = row.status === 'needs_review' ? uiText('workspace.needsReview') : row.status === 'untranslated' ? uiText('workspace.missing') : uiText('workspace.translated');
       const params = new URLSearchParams({ modus: 'vertalen', taal: workspace.target, filter: 'alle', veld: row.key, tab: 'vertalingen' });
-      const edit = link(row.status === 'needs_review' ? say('Controleren','Prüfen') : say('Bewerken','Bearbeiten'), path + '/bewerken?' + params, 'xc-text-action');
+      const edit = link(row.status === 'needs_review' ? uiText('workspace.review') : uiText('workspace.edit'), path + '/bewerken?' + params, 'xc-text-action');
       edit.setAttribute('aria-label', edit.textContent + ' · ' + (row.source || row.nl || row.target).slice(0, 70));
       review.append(node('small', status), edit);
       item.append(review);
@@ -379,7 +380,7 @@
       } catch (error) {
         if (isCurrent(version)) {
           notice(error.message, null, 'error');
-          const retry = action(say('Opnieuw proberen','Erneut versuchen'), () => loadSharing(true));
+          const retry = action(uiText('workspace.retry'), () => loadSharing(true));
           $('feedback').append(retry);
         }
       } finally { if (isCurrent(version)) loading = null; }
@@ -389,7 +390,7 @@
   function showSharing() {
     const data = sharing.share;
     const host = $('learner-link'); host.replaceChildren();
-    if (data.token) host.append(copyField('/start/' + encodeURIComponent(data.token), say('Deelnemerslink','Teilnahmelink')));
+    if (data.token) host.append(copyField('/start/' + encodeURIComponent(data.token), uiText('workspace.learnerLink')));
     if (!$('sharing-settings')) return;
     $('paused-message').value = data.pausedMessage || '';
     $('response-dependency').hidden = !!data.collectResponses;
@@ -408,7 +409,7 @@
           sharing.share = result.share; workspace.course.share = result.share;
           if (result.share.enabled) workspace.course.hasPublished = true;
           showCourseStatus(workspace.course);
-          $('sharing-status').textContent = say('Opgeslagen', 'Gespeichert');
+          $('sharing-status').textContent = uiText('workspace.saved');
         } catch (error) { if (isCurrent(version)) notice(error.message, null, 'error'); }
         finally { if (isCurrent(version)) { controls.disabled = false; showSharing(); } }
       };
@@ -418,66 +419,66 @@
     for (const member of sharing.members) {
       const row = node('li'), info = node('span', null, 'xc-person-info');
       info.append(userText('strong', member.email), node('small', roles[member.role]));
-      row.append(info, action(say('Rol wijzigen','Rolle ändern'), () => memberDialog(member), 'xc-text-action'));
-      const remove = action(say('Verwijderen','Entfernen'), () => confirmInline(remove, say('Toegang tot deze expeditie intrekken?','Zugriff auf diese Expedition entziehen?'), () => revoke('member', member)), 'xc-text-action is-danger');
+      row.append(info, action(uiText('workspace.changeRole'), () => memberDialog(member), 'xc-text-action'));
+      const remove = action(uiText('workspace.remove'), () => confirmInline(remove, uiText('workspace.confirmRemoveAccess'), () => revoke('member', member)), 'xc-text-action is-danger');
       row.append(remove); members.append(row);
     }
     for (const grant of sharing.grants) {
       const row = node('li'), info = node('span', null, 'xc-person-info');
-      info.append(userText('strong', grant.label || say('Vertalerslink', 'Übersetzungslink')), node('small', grant.targetLanguage.toUpperCase() + ' · ' + say('Gemaakt ', 'Erstellt ') + date(grant.createdAt) + ' · ' + (grant.lastOpenedAt ? say('Geopend ', 'Geöffnet ') + date(grant.lastOpenedAt) : say('Nog niet geopend', 'Noch nicht geöffnet'))));
-      row.append(info, copyField(grant.urlPath, say('Vertalerslink','Übersetzungslink')));
-      const remove = action(say('Intrekken','Widerrufen'), () => confirmInline(remove, say('Deze link intrekken?', 'Diesen Link widerrufen?'), () => revoke('grant', grant)), 'xc-text-action is-danger');
+      info.append(userText('strong', grant.label || uiText('workspace.translatorLink')), node('small', grant.targetLanguage.toUpperCase() + ' · ' + uiText('workspace.createdAt', { date: date(grant.createdAt) }) + ' · ' + (grant.lastOpenedAt ? uiText('workspace.openedAt', { date: date(grant.lastOpenedAt) }) : uiText('workspace.neverOpened'))));
+      row.append(info, copyField(grant.urlPath, uiText('workspace.translatorLink')));
+      const remove = action(uiText('workspace.revoke'), () => confirmInline(remove, uiText('workspace.confirmRevokeLink'), () => revoke('grant', grant)), 'xc-text-action is-danger');
       row.append(remove); grants.append(row);
     }
-    if (!members.children.length) members.append(node('li', say('Alleen jij hebt toegang met een account.', 'Nur Sie haben Zugriff mit einem Konto.'), 'xc-empty'));
-    if (!grants.children.length) grants.append(node('li', say('Er zijn nog geen vertalerslinks.', 'Es gibt noch keine Übersetzungslinks.'), 'xc-empty'));
+    if (!members.children.length) members.append(node('li', uiText('workspace.onlyYou'), 'xc-empty'));
+    if (!grants.children.length) grants.append(node('li', uiText('workspace.noTranslatorLinks'), 'xc-empty'));
   }
   async function revoke(kind, target) {
     const member = kind === 'member';
     const data = member ? { action: 'remove_member', email: target.email } : { action: 'revoke_grant', grantId: target.id };
     const result = await api(shareEndpoint, data);
     await loadSharing(true);
-    notice(member ? say('Teamlid verwijderd.', 'Teammitglied entfernt.') : say('Link ingetrokken.', 'Link widerrufen.'), result.undo ? async () => {
+    notice(member ? uiText('workspace.memberRemoved') : uiText('workspace.linkRevoked'), result.undo ? async () => {
       await api(shareEndpoint, { ...data, action: member ? 'restore_member' : 'restore_grant', undo: result.undo });
       await loadSharing(true);
     } : null);
   }
   function memberDialog(member) {
-    const email = field(say('E-mailadres','E-Mail-Adresse'), 'email', 'email');
-    const role = field(say('Rol','Rolle'), 'role', null, [['edit', roles.edit], ['translate', roles.translate]]);
+    const email = field(uiText('workspace.email'), 'email', 'email');
+    const role = field(uiText('workspace.role'), 'role', null, [['edit', roles.edit], ['translate', roles.translate]]);
     if (member) { email.lastChild.value = member.email; email.lastChild.readOnly = true; role.lastChild.value = member.role; }
-    dialog(member ? say('Rol wijzigen','Rolle ändern') : say('Teamlid toevoegen','Mitglied hinzufügen'), [email, role], say('Opslaan','Speichern'), async data => {
+    dialog(member ? uiText('workspace.changeRole') : uiText('workspace.addMember'), [email, role], uiText('workspace.save'), async data => {
       await api(shareEndpoint, { action: 'add_member', email: data.get('email'), role: data.get('role') });
-      await loadSharing(true); notice(say('Toegang opgeslagen.', 'Zugriff gespeichert.'));
+      await loadSharing(true); notice(uiText('workspace.accessSaved'));
     });
   }
   function grantDialog() {
-    const name = field(say('Naam van de ontvanger','Name der empfangenden Person'), 'name');
-    const select = field(say('Doeltaal','Zielsprache'), 'target', null, [['de','Deutsch'],['nl','Nederlands']]);
-    dialog(say('Vertalerslink maken','Übersetzungslink erstellen'), [name, select], say('Link maken','Link erstellen'), async data => {
+    const name = field(uiText('workspace.recipient'), 'name');
+    const select = field(uiText('workspace.targetLanguage'), 'target', null, [['de','Deutsch'],['nl','Nederlands']]);
+    dialog(uiText('workspace.createTranslatorLink'), [name, select], uiText('workspace.createLink'), async data => {
       await api(shareEndpoint, { action: 'create_grant', role: 'translate', targetLanguage: data.get('target'), label: data.get('name') });
-      await loadSharing(true); notice(say('Vertalerslink gemaakt.', 'Übersetzungslink erstellt.'));
+      await loadSharing(true); notice(uiText('workspace.translatorLinkCreated'));
     });
   }
   function rotateDialog() {
     const title = workspace.course.title;
-    const confirmation = field(say('Typ de titel van de expeditie','Geben Sie den Expeditionstitel ein'), 'title');
-    dialog(say('Deelnemerslink vernieuwen','Teilnahmelink erneuern'), [node('p', say('De oude link en alle afgedrukte QR-codes werken daarna niet meer.', 'Der bisherige Link und alle gedruckten QR-Codes funktionieren danach nicht mehr.')), userText('strong', title), confirmation], say('Link vernieuwen','Link erneuern'), async data => {
-      if (data.get('title') !== title) throw new Error(say('Typ de titel precies zoals hierboven.', 'Geben Sie den Titel genau wie oben ein.'));
+    const confirmation = field(uiText('workspace.typeCourseTitle'), 'title');
+    dialog(uiText('workspace.renewLink'), [node('p', uiText('workspace.renewHelp')), userText('strong', title), confirmation], uiText('workspace.renewAction'), async data => {
+      if (data.get('title') !== title) throw new Error(uiText('workspace.titleMismatch'));
       await api(shareEndpoint, { action: 'update_public', rotateToken: true, confirmTitle: title });
-      await loadSharing(true); notice(say('Nieuwe deelnemerslink gemaakt.', 'Neuer Teilnahmelink erstellt.'));
+      await loadSharing(true); notice(uiText('workspace.learnerLinkCreated'));
     }, { danger: true });
   }
 
   function teamDialog() {
-    const email = field(say('E-mailadres','E-Mail-Adresse'), 'email', 'email');
-    const role = field(say('Rol','Rolle'), 'role', null, [['author',roles.author], ['edit',roles.edit], ['translate',roles.translate]]);
+    const email = field(uiText('workspace.email'), 'email', 'email');
+    const role = field(uiText('workspace.role'), 'role', null, [['author',roles.author], ['edit',roles.edit], ['translate',roles.translate]]);
     const selection = node('fieldset', null, 'xc-course-checks');
-    selection.append(node('legend', say('Expedities', 'Expeditionen')));
+    selection.append(node('legend', uiText('workspace.courses')));
     const note = node('p');
     selection.append(note);
     const update = () => {
-      note.textContent = role.querySelector('select').value === 'author' ? say('Een auteur kan eigen expedities maken. Een selectie hieronder geeft ook bewerktoegang.', 'Autor:innen können eigene Expeditionen erstellen. Die Auswahl unten erlaubt zusätzlich das Bearbeiten.') : say('Kies de expedities waarvoor deze rol geldt.', 'Wählen Sie die Expeditionen für diese Rolle.');
+      note.textContent = role.querySelector('select').value === 'author' ? uiText('workspace.authorHelp') : uiText('workspace.selectCourses');
     };
     role.lastChild.addEventListener('change', update); update();
     for (const course of workspace.courses) {
@@ -485,12 +486,12 @@
       const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.name = 'courses'; checkbox.value = course.id;
       label.append(checkbox, userText('span', course.title)); selection.append(label);
     }
-    dialog(say('Teamlid uitnodigen','Teammitglied einladen'), [email, role, selection], say('Toegang verlenen','Zugriff gewähren'), async data => {
+    dialog(uiText('workspace.inviteMember'), [email, role, selection], uiText('workspace.grantAccess'), async data => {
       const courses = data.getAll('courses');
-      if (!courses.length && data.get('role') !== 'author') throw new Error(say('Kies ten minste één expeditie.', 'Wählen Sie mindestens eine Expedition.'));
+      if (!courses.length && data.get('role') !== 'author') throw new Error(uiText('workspace.chooseOneCourse'));
       await api('/api/academy/team/invitations', { email: data.get('email'), role: data.get('role'), courses });
       await refreshTeam();
-      notice(say('Toegang verleend. Het teamlid kan met dit e-mailadres inloggen.', 'Zugriff gewährt. Das Teammitglied kann sich mit dieser E-Mail-Adresse anmelden.'));
+      notice(uiText('workspace.accessGranted'));
     }, { sheet: true });
   }
   async function refreshTeam() {
@@ -499,10 +500,10 @@
   }
   function showTeam() {
     const people = workspace.people;
-    $('team-count').textContent = number(people.length) + ' ' + (people.length === 1 ? say('persoon','Person') : say('personen','Personen'));
+    $('team-count').textContent = uiText('workspace.people', { count: people.length });
     const table = node('table', null, 'xc-team-table');
     const head = table.createTHead().insertRow();
-    const labels = [say('Persoon','Person'), say('Rol','Rolle'), say('Expedities','Expeditionen'), say('Laatste aanmelding','Letzte Anmeldung'), 'Status', say('Acties','Aktionen')];
+    const labels = [uiText('workspace.person'), uiText('workspace.role'), uiText('workspace.courses'), uiText('workspace.lastSignIn'), 'Status', uiText('workspace.actions')];
     for (const label of labels) { const th = node('th', label); th.scope = 'col'; head.append(th); }
     const tbody = table.createTBody();
     for (const person of people.slice().sort((a,b) => (b.admin || false) - (a.admin || false) || a.email.localeCompare(b.email,lang))) {
@@ -526,17 +527,17 @@
         }, 'xc-text-action');
         showCourses.setAttribute('aria-haspopup','dialog');
         showCourses.setAttribute('aria-expanded','false');
-        showCourses.setAttribute('aria-label',say('Expedities van ','Expeditionen von ') + (person.name || person.email) + ' (' + number(person.courses.length) + ')');
+        showCourses.setAttribute('aria-label',uiText('workspace.personCourses', { person: person.name || person.email, total: number(person.courses.length) }));
         courses.append(showCourses);
       } else courses.textContent = '0';
       row.insertCell().textContent = date(person.lastSignIn);
-      row.insertCell().append(node('span', person.active || person.admin ? say('Actief','Aktiv') : workspace.profilesAvailable === false ? say('Onbekend','Unbekannt') : say('Uitgenodigd','Eingeladen'), 'xc-person-state' + (person.active || person.admin ? ' is-active' : '')));
+      row.insertCell().append(node('span', person.active || person.admin ? uiText('workspace.active') : workspace.profilesAvailable === false ? uiText('workspace.unknown') : uiText('workspace.invited'), 'xc-person-state' + (person.active || person.admin ? ' is-active' : '')));
       const actions = row.insertCell();
       if (person.author && !person.admin) {
-        const revokeBtn = action(say('Auteursrecht intrekken','Autor:innenrecht entziehen'), () => confirmInline(revokeBtn, say('Deze auteur verliest ook toegang tot de eigen expedities totdat je het auteursrecht herstelt. Auteursrecht intrekken?', 'Die Person verliert auch den Zugriff auf ihre eigenen Expeditionen, bis Sie das Autor:innenrecht wiederherstellen. Recht entziehen?'), async () => {
+        const revokeBtn = action(uiText('workspace.revokeAuthor'), () => confirmInline(revokeBtn, uiText('workspace.revokeAuthorHelp'), async () => {
           await api('/api/academy/authors', { action:'revoke', email: person.email });
           await refreshTeam();
-          notice(say('Auteursrecht ingetrokken.','Autor:innenrecht entzogen.'), async () => {
+          notice(uiText('workspace.authorRevoked'), async () => {
             await api('/api/academy/authors', { action:'grant', email: person.email }); await refreshTeam();
           });
         }), 'xc-text-action is-danger'); actions.append(revokeBtn);
@@ -574,10 +575,10 @@
     doc.dispatchEvent(new CustomEvent('academy:course-title',{detail:''}));
     if (!user || !user.emailVerified) {
       window.dispatchEvent(new CustomEvent('academy:workspace-access', { detail: { canCreate: false, studioAdmin: false, courses: [] } }));
-      state(user ? say('Bevestig je e-mailadres om deze pagina te openen.', 'Bestätigen Sie Ihre E-Mail-Adresse, um diese Seite zu öffnen.') : say('Log in om deze pagina te openen.', 'Melden Sie sich an, um diese Seite zu öffnen.'), { signin:true });
+      state(user ? uiText('workspace.verifyEmail') : uiText('workspace.signInPrompt'), { signin:true });
       return;
     }
-    state(say('Laden…','Wird geladen…'), {busy:true});
+    state(uiText('workspace.loading'), {busy:true});
     try {
       const result = await api(teamPage ? '/api/academy/team' : '/api/academy/courses/' + encodeURIComponent(courseId) + '/workspace', undefined, version);
       if (!isCurrent(version)) return;
@@ -594,7 +595,7 @@
       $('state').hidden = true; content.setAttribute('aria-busy','false');
     } catch (error) {
       if (!isCurrent(version)) return;
-      state(error.status === 403 ? say('Je hebt geen toegang tot deze pagina.', 'Sie haben keinen Zugriff auf diese Seite.') : error.message,
+      state(error.status === 403 ? uiText('workspace.forbidden') : error.message,
         { contact: error.status === 403, retry: error.status !== 403 });
     }
   }
@@ -604,5 +605,5 @@
     auth = window.Xped.bootstrap.getAuth();
     client = window.Xped.auth.createAuthClient(auth);
     auth.onAuthStateChanged(load);
-  } catch (_) { state(say('Inloggen is tijdelijk niet beschikbaar. Herlaad de pagina om het opnieuw te proberen.', 'Die Anmeldung ist vorübergehend nicht verfügbar. Laden Sie die Seite erneut.')); }
+  } catch (_) { state(uiText('workspace.authUnavailable')); }
 })();

@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const { language, copy, courseStatus: state } = window.Xped.i18n;
+  const { language, copy, t: uiText, courseStatus: state } = window.Xped.i18n;
   const headings = [
     ['title', copy('Expeditie', 'Expedition')], ['state', 'Status'],
     ['role', copy('Rol', 'Rolle')], ['stepCount', copy('Opbouw', 'Aufbau')],
@@ -115,8 +115,8 @@
     const [kind, text] = state(course);
     const status = node('span',text,'ac-course-state');
     status.dataset.state = kind;
-    const structure = node('span', String(course.moduleCount) + ' ' + copy(course.moduleCount === 1 ? 'station' : 'stations',course.moduleCount === 1 ? 'Station' : 'Stationen'));
-    structure.append(node('small',String(course.stepCount) + ' ' + copy(course.stepCount === 1 ? 'stap' : 'stappen',course.stepCount === 1 ? 'Schritt' : 'Schritte')));
+    const structure = node('span', uiText('count.stations', { count: course.moduleCount ?? 0 }));
+    structure.append(node('small',uiText('count.steps', { count: course.stepCount ?? 0 })));
     const coverage = node('div'); coverage.append(languages,detail);
     const values = [main,status,node('span',role(course)),structure,coverage,time || node('span','—'),actions];
     values.forEach((value,i) => {
@@ -174,13 +174,7 @@
     if (count === undefined) message.textContent = copy(
       'Het aantal opgeslagen resultaten is onbekend. Bestaande resultaten zijn na verwijdering niet meer toegankelijk.',
       'Die Anzahl gespeicherter Ergebnisse ist unbekannt. Vorhandene Ergebnisse sind nach dem Löschen nicht mehr zugänglich.');
-    else if (count === 0) message.textContent = copy('Deze expeditie heeft geen opgeslagen resultaten.', 'Diese Expedition hat keine gespeicherten Ergebnisse.');
-    else {
-      const amount = new Intl.NumberFormat(language).format(count);
-      message.textContent = count === 1
-        ? copy('1 opgeslagen resultaat is na verwijdering niet meer toegankelijk.', '1 gespeichertes Ergebnis ist nach dem Löschen nicht mehr zugänglich.')
-        : amount + ' ' + copy('opgeslagen resultaten zijn na verwijdering niet meer toegankelijk.', 'gespeicherte Ergebnisse sind nach dem Löschen nicht mehr zugänglich.');
-    }
+    else message.textContent = uiText('library.deletionImpact', { count });
     confirm.disabled = false;
   }
 

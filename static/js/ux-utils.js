@@ -523,8 +523,11 @@
     return instance;
   }
 
-  function enhanceDateInput(input) {
+  function enhanceDateInput(input, options) {
     if (!input || input._appDateInstance) return input && input._appDateInstance;
+    options = options || {};
+    var labels = options.labels || {};
+    var formatDate = options.date || function (value, fields) { return formatDate(value, fields); };
     var host = document.createElement('div');
     host.className = 'app-date';
     var trigger = document.createElement('button');
@@ -536,7 +539,7 @@
     panel.className = 'app-date-panel';
     panel.hidden = true;
     panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', 'Choose a date');
+    panel.setAttribute('aria-label', labels.choose || 'Choose a date');
     panel.id = (input.id || 'date-' + Math.random().toString(36).slice(2)) + '-calendar';
     trigger.setAttribute('aria-controls', panel.id);
     host.append(trigger, panel);
@@ -557,11 +560,11 @@
     }
     function sync() {
       var value = parse(input.value);
-      trigger.textContent = value ? value.toLocaleDateString(getLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) : 'Choose a date';
-      var labels = input.labels ? Array.from(input.labels).map(function (label) {
+      trigger.textContent = value ? formatDate(value, { day: 'numeric', month: 'short', year: 'numeric' }) : labels.choose || 'Choose a date';
+      var fieldLabel = input.labels ? Array.from(input.labels).map(function (label) {
         return Array.from(label.childNodes).filter(function (node) { return node !== host && node !== input; }).map(function (node) { return node.textContent; }).join(' ').trim();
       }).join(' ') : '';
-      trigger.setAttribute('aria-label', (input.getAttribute('aria-label') || labels || 'Date') + ': ' + trigger.textContent);
+      trigger.setAttribute('aria-label', (input.getAttribute('aria-label') || fieldLabel || labels.date || 'Date') + ': ' + trigger.textContent);
       trigger.disabled = input.disabled || input.readOnly;
     }
     function close(returnFocus) {
@@ -599,17 +602,17 @@
       var head = document.createElement('div');
       head.className = 'app-date-heading';
       var title = document.createElement('strong');
-      title.textContent = cursor.toLocaleDateString(getLocale(), { month: 'long', year: 'numeric' });
+      title.textContent = formatDate(cursor, { month: 'long', year: 'numeric' });
       title.setAttribute('aria-live', 'polite');
       function moveMonth(amount) {
         cursor = new Date(cursor.getFullYear(), cursor.getMonth() + amount, 1, 12);
         render(false);
         panel.querySelector(amount < 0 ? '.app-date-heading button:first-child' : '.app-date-heading button:last-child').focus();
       }
-      head.append(button('‹', 'Previous month', function () { moveMonth(-1); }), title, button('›', 'Next month', function () { moveMonth(1); }));
+      head.append(button('‹', labels.previous || 'Previous month', function () { moveMonth(-1); }), title, button('›', labels.next || 'Next month', function () { moveMonth(1); }));
       var days = document.createElement('div');
       days.className = 'app-date-grid';
-      ['Mo','Tu','We','Th','Fr','Sa','Su'].forEach(function (name) {
+      (options.weekdays || ['Mo','Tu','We','Th','Fr','Sa','Su']).forEach(function (name) {
         var cell = document.createElement('span');
         cell.textContent = name;
         cell.setAttribute('aria-hidden', 'true');
@@ -622,7 +625,7 @@
       for (var number = 1; number <= count; number += 1) {
         (function (day) {
           var date = new Date(cursor.getFullYear(), cursor.getMonth(), day, 12);
-          var cell = button(String(day), date.toLocaleDateString(getLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), function () { choose(date); });
+          var cell = button(String(day), formatDate(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), function () { choose(date); });
           cell.dataset.date = iso(date);
           cell.disabled = !allowed(date);
           cell.tabIndex = day === cursor.getDate() ? 0 : -1;
@@ -633,11 +636,11 @@
       }
       var footer = document.createElement('div');
       footer.className = 'app-date-footer';
-      var today = button('Today', null, function () { choose(new Date()); });
+      var today = button(labels.today || 'Today', null, function () { choose(new Date()); });
       today.disabled = !allowed(new Date());
       footer.appendChild(today);
-      if (!input.required) footer.appendChild(button('Clear', null, function () { choose(null); }));
-      footer.appendChild(button('Close', null, function () { close(true); }));
+      if (!input.required) footer.appendChild(button(labels.clear || 'Clear', null, function () { choose(null); }));
+      footer.appendChild(button(labels.close || 'Close', null, function () { close(true); }));
       panel.append(head, days, footer);
       if (focusDay) {
         var target = panel.querySelector('[data-date="' + iso(cursor) + '"]:not(:disabled)') || panel.querySelector('[data-date]:not(:disabled)') || panel.querySelector('.app-date-heading button');
@@ -686,6 +689,15 @@
       global.setTimeout(function () { if (!host.contains(document.activeElement)) close(false); }, 0);
     });
 
+    // External range controls also set native values when restoring a filter.
+    if (options.date && global.HTMLInputElement) {
+      var valueProperty = Object.getOwnPropertyDescriptor(global.HTMLInputElement.prototype, 'value');
+      Object.defineProperty(input, 'value', {
+        configurable: true,
+        get: function () { return valueProperty.get.call(this); },
+        set: function (value) { valueProperty.set.call(this, value); sync(); },
+      });
+    }
     input.addEventListener('change', sync);
     input.addEventListener('input', function () { if (input.validity.valid) trigger.removeAttribute('aria-invalid'); sync(); });
     input._appDateInstance = { sync: sync, close: close, trigger: trigger, host: host };

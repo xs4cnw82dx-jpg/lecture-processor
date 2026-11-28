@@ -1,6 +1,7 @@
 (function () {
   'use strict';
   var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
+  var academyLocale = window.Xped && window.Xped.i18n;
   var platformUx = window.ElearningHost.ux;
   var platformBootstrap = window.ElearningHost.bootstrap;
   var platformAuth = window.ElearningHost.auth;
@@ -98,13 +99,22 @@
     return { rel: rel, exact: exact };
   }
 
+  function courseStructure(stations, steps) {
+    if (academyLocale) {
+      return uiText('count.stations', { count: stations }) + ' · ' + uiText('count.steps', { count: steps });
+    }
+    return stations + (stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' +
+      steps + (steps === 1 ? uiText(' step') : uiText(' steps'));
+  }
+
   function renderTemplatePreview() {
     if (!templatePreviewEl || !templateSelect) return;
     var tpl = (Model.EXPEDITION_TEMPLATES && Model.EXPEDITION_TEMPLATES[templateSelect.value]) || null;
     templatePreviewEl.textContent = '';
     if (!tpl) return;
     var top = document.createElement('strong');
-    top.textContent = tpl.stations + (tpl.stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' + tpl.steps + (tpl.steps === 1 ? uiText(' step') : uiText(' steps')) + ' · ~' + tpl.minutes + uiText(' min');
+    top.textContent = courseStructure(tpl.stations, tpl.steps) + ' · ~' +
+      (academyLocale ? academyLocale.duration(tpl.minutes * 60) : tpl.minutes + uiText(' min'));
     var sum = document.createElement('p');
     sum.className = 'el-exp-meta';
     sum.textContent = tpl.summary;
@@ -264,9 +274,15 @@
       grid.appendChild(noMatch);
       return;
     }
-    statusEl.textContent = q
-      ? (uiText('Showing ') + visible.length + uiText(' of ') + items.length + uiText(' expeditions'))
-      : (items.length + (items.length === 1 ? uiText(' expedition') : uiText(' expeditions')));
+    if (academyLocale) {
+      statusEl.textContent = q
+        ? uiText('library.filteredCount', { count: items.length, visible: academyLocale.number(visible.length) })
+        : uiText('count.courses', { count: items.length });
+    } else {
+      statusEl.textContent = q
+        ? (uiText('Showing ') + visible.length + uiText(' of ') + items.length + uiText(' expeditions'))
+        : (items.length + (items.length === 1 ? uiText(' expedition') : uiText(' expeditions')));
+    }
 
     var focusDuplicateLink = null;
     var list = grid;
@@ -373,11 +389,15 @@
             var open = pill.getAttribute('aria-expanded') !== 'true';
             covRow.querySelectorAll('button').forEach(function (other) { other.setAttribute('aria-expanded', 'false'); });
             pill.setAttribute('aria-expanded', String(open));
-            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + uiText(' of ') + stat.total + uiText(' fields translated') + (stat.needsReview ? ' · ' + stat.needsReview + uiText(' need review') : '');
+            const counts = academyLocale
+              ? uiText('count.translated', { ready: academyLocale.number(stat.translated), count: stat.total }) +
+                (stat.needsReview ? ' · ' + uiText('count.needsReview', { count: stat.needsReview }) : '')
+              : stat.translated + uiText(' of ') + stat.total + uiText(' fields translated') + (stat.needsReview ? ' · ' + stat.needsReview + uiText(' need review') : '');
+            coverageDetail.textContent = code.toUpperCase() + ' · ' + counts;
             coverageDetail.hidden = !open;
           });
           pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
-          pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? uiText(' · review') : '');
+          pill.textContent = code.toUpperCase() + ' ' + (academyLocale ? academyLocale.percent(pct) : pct + '%') + (stat.needsReview ? uiText(' · review') : '');
           if (library) {
             pill.setAttribute('aria-label', pill.textContent);
             var progress = document.createElement('progress');
@@ -650,8 +670,7 @@
       title.setAttribute('translate', 'no');
       var info = document.createElement('p');
       info.className = 'el-exp-meta';
-      info.textContent = checked.stationCount + (checked.stationCount === 1 ? uiText(' station') : uiText(' stations')) + ' · ' +
-        checked.stepCount + (checked.stepCount === 1 ? uiText(' step') : uiText(' steps')) + ' · ' +
+      info.textContent = courseStructure(checked.stationCount, checked.stepCount) + ' · ' +
         checked.enabledLanguages.join(', ').toUpperCase() + uiText(' · Private draft');
       summary.replaceChildren(title, info);
       confirm.disabled = false;

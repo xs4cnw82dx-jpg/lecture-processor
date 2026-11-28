@@ -4,6 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 import json
 from pathlib import Path
+import re
 
 from flask import Blueprint, Response, abort, g, jsonify, request
 from google.api_core.exceptions import GoogleAPICallError
@@ -26,16 +27,58 @@ def _all_messages(language):
     return {key: value for messages in catalog(language).values() for key, value in messages.items()}
 
 
+_PLURAL = re.compile(r'^\{(\w+),\s*plural,\s*(.*)\}$', re.DOTALL)
+_VARIANT = re.compile(r'\s*(one|other|=-?\d+)\s*\{((?:[^{}]|\{\w+\})*)\}\s*')
+_FIELD = re.compile(r'\{(\w+)\}')
+
+
+@lru_cache(maxsize=2048)
+def compile_message(text):
+    """Compile the catalog's ICU cardinal messages once for both renderers.
+
+    The Academy supports integer counters in NL and DE, exact matches, and
+    named arguments inside each branch. Other messages remain simple strings.
+    """
+    if not re.search(r'\{\w+,\s*plural,', text):
+        return text
+    match = _PLURAL.fullmatch(text)
+    if not match:
+        raise ValueError(f'Invalid cardinal message: {text}')
+    field, body = match.groups()
+    choices = {}
+    pos = 0
+    while pos < len(body):
+        variant = _VARIANT.match(body, pos)
+        if not variant or variant[1] in choices:
+            raise ValueError(f'Invalid cardinal variants: {text}')
+        choices[variant[1]] = variant[2]
+        pos = variant.end()
+    if 'other' not in choices:
+        raise ValueError(f'Missing other cardinal variant: {text}')
+    return {'plural': field, 'choices': choices}
+
+
+def format_message(message, values):
+    compiled = compile_message(message)
+    if isinstance(compiled, str):
+        return _FIELD.sub(lambda match: str(values.get(match[1], match[0])), compiled)
+    count = values[compiled['plural']]
+    if type(count) is not int:
+        raise ValueError('Academy plural counts must be integers')
+    choices = compiled['choices']
+    # NL and DE both use "one" for the integer 1 and its negative counterpart.
+    phrase = choices.get(f'={count}', choices.get('one' if abs(count) == 1 else 'other', choices['other']))
+    localized = f'{count:,}'.replace(',', '.')
+    return re.sub(r'#|\{(\w+)\}', lambda m: localized if m[0] == '#' else str(values.get(m[1], m[0])), phrase)
+
+
 def language():
     chosen = getattr(g, 'academy_player_language', None) or request.cookies.get('xped-language')
     return chosen if chosen in LANGUAGES else 'nl'
 
 
 def translate(key, **values):
-    text = _all_messages(language())[key]
-    for name, val in values.items():
-        text = text.replace('{' + name + '}', str(val))
-    return text
+    return format_message(_all_messages(language())[key], values)
 
 
 @academy_language_bp.app_context_processor
@@ -47,7 +90,7 @@ def locale_context():
 
 @academy_language_bp.get('/academy/messages/<language_code>/<section>.js')
 def messages(language_code, section):
-    if language_code not in LANGUAGES or section not in ('account', 'signin', 'library', 'builder', 'report', 'player', 'shared'):
+    if language_code not in LANGUAGES or section not in ('account', 'signin', 'library', 'builder', 'report', 'player', 'shared', 'overview', 'workspace', 'indexes'):
         abort(404)
     groups = catalog(language_code)
     selected = dict(groups.get('shared', {}))
@@ -56,6 +99,7 @@ def messages(language_code, section):
     if section in ('builder', 'player'):
         selected.update(groups.get('activity', {}))
     selected.update(groups.get(section, {}))
+    selected = {key: compile_message(value) for key, value in selected.items()}
     body = 'window.XpedMessages=' + json.dumps(selected, ensure_ascii=False, separators=(',', ':')) + ';'
     result = Response(body, mimetype='text/javascript')
     result.cache_control.public = True

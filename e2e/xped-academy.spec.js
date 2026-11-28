@@ -641,7 +641,10 @@ test('dynamic interface labels use the scoped catalog and authored titles remain
     const result = await route.fetch();
     const source = await result.text();
     const data = JSON.parse(source.slice('window.XpedMessages='.length, -1));
-    for (const key of Object.keys(data)) data[key] = '⟦' + data[key] + '⟧';
+    for (const [key, message] of Object.entries(data)) {
+      if (typeof message === 'string') data[key] = '⟦' + message + '⟧';
+      else for (const form of Object.keys(message.choices)) message.choices[form] = '⟦' + message.choices[form] + '⟧';
+    }
     await route.fulfill({ response: result, body: 'window.XpedMessages=' + JSON.stringify(data) + ';' });
   });
   await page.route('**/api/elearning/expeditions', route => route.fulfill({ json: {

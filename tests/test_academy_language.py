@@ -175,9 +175,10 @@ def test_every_academy_catalog_key_is_used_and_preserves_its_placeholders():
     parser = Environment()
     for path in (root / 'templates').rglob('*.html'):
         source = path.read_text()
-        if '_academy_copy.html' in source or 'elearning' in path.relative_to(root / 'templates').parts:
+        if 'xped_t(' in source or '_academy_copy.html' in source or 'elearning' in path.relative_to(root / 'templates').parts:
             for call in parser.parse(source).find_all(nodes.Call):
-                if (getattr(call.node, 'name', None) == 'tr' and len(call.args) == 1
+                name = getattr(call.node, 'name', None)
+                if ((name == 'tr' and len(call.args) == 1 or name == 'xped_t' and call.args)
                         and isinstance(call.args[0], nodes.Const)):
                     expected.add(call.args[0].value)
 
@@ -204,6 +205,14 @@ def test_every_academy_catalog_key_is_used_and_preserves_its_placeholders():
             if name == 'ElearningError' and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
                 expected.add(call.args[0].value)
 
+    def signature(text):
+        parsed = academy_language.compile_message(text)
+        if isinstance(parsed, str):
+            return (None, set(re.findall(r'\{(\w+)\}', text)))
+        branches = {key: set(re.findall(r'\{(\w+)\}', value)) for key, value in parsed['choices'].items()}
+        return (parsed['plural'], branches)
+
+    reference = {key: value for group in academy_language.catalog('nl').values() for key, value in group.items()}
     for locale in academy_language.LANGUAGES:
         groups = academy_language.catalog(locale)
         actual = {key: value for group in groups.values() for key, value in group.items()}
@@ -212,7 +221,9 @@ def test_every_academy_catalog_key_is_used_and_preserves_its_placeholders():
         assert len(actual) == sum(map(len, groups.values())), f'Duplicate {locale} messages'
         for key, value in actual.items():
             assert value.strip() and '▁' not in value and '�' not in value, (locale, key, value)
-            assert sorted(re.findall(r'\{\w+\}', key)) == sorted(re.findall(r'\{\w+\}', value)), (locale, key, value)
+            assert signature(reference[key]) == signature(value), (locale, key, value)
+            if not re.fullmatch(r'[a-z][\w.-]*\.[\w.-]+', key):
+                assert signature(key) == signature(value), (locale, key, value)
 
 
 def test_legacy_english_grants_and_writes_cannot_open_an_english_editing_workspace(studio):
@@ -240,3 +251,20 @@ def test_legacy_english_grants_and_writes_cannot_open_an_english_editing_workspa
     assert client.post('/api/elearning/grant-session', json={'token': token}).status_code == 403
     assert client.get(course + '/sharing', headers=auth).json['grants'] == []
     assert store.get(path)['target_language'] == 'en'
+
+
+def test_cardinal_messages_render_before_javascript_and_keep_inserted_text_literal(studio):
+    client, _ = studio
+    for locale, expected in [('nl', '7 dagen'), ('de', '7 Tage')]:
+        client.set_cookie('xped-language', locale)
+        page = html.fromstring(client.get('/').data)
+        assert page.xpath('string(//button[@data-days="7"])') == expected
+        scoped = json.loads(client.get(f'/academy/messages/{locale}/overview.js').text.removeprefix('window.XpedMessages=').removesuffix(';'))
+        assert scoped['overview.days']['plural'] == 'count'
+        assert 'workspace.people' not in scoped
+    example = '{count, plural, =0 {Nog niemand} one {{name} heeft # stap} other {{name} heeft # stappen}}'
+    assert academy_language.format_message(example, {'count': 0}) == 'Nog niemand'
+    assert academy_language.format_message(example, {'count': 1, 'name': '{count} #'}) == '{count} # heeft 1 stap'
+    assert academy_language.format_message(example, {'count': 1200, 'name': 'Ada'}) == 'Ada heeft 1.200 stappen'
+    with pytest.raises(ValueError):
+        academy_language.compile_message('{count, plural, one {# stap}}')
