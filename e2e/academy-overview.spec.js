@@ -34,8 +34,10 @@ test('first-run templates create a private Dutch expedition and open its editor'
 test('dashboard filters, statistics and keyboard course links use one overview request per period', async ({page,academyOrigin}) => {
   const reads=[];
   await page.route('**/api/academy/overview*',route => {
-    reads.push(new URL(route.request().url()).searchParams);
-    return route.fulfill({json:overview([course('pijn','Pijn begrijpen'),course('bewegen','Weer bewegen')])});
+    const params = new URL(route.request().url()).searchParams;
+    reads.push(params);
+    const week = params.get('days') === '7' ? {current:{...totals,sessions:3,medianSeconds:null},previous:{...totals,sessions:1,medianSeconds:null}} : {};
+    return route.fulfill({json:overview([course('pijn','Pijn begrijpen'),course('bewegen','Weer bewegen')],week)});
   });
   await page.goto(academyOrigin);
   await expect(page.locator('.ao-metric-big')).toHaveText('58,3%');
@@ -48,6 +50,8 @@ test('dashboard filters, statistics and keyboard course links use one overview r
   await expect(page).toHaveURL(/days=7/);
   await expect(page.locator('#ao-rows tr')).toHaveCount(2);
   expect(reads.map(q=>q.get('days'))).toEqual([null,'7']);
+  await expect(cards.getByRole('button',{name:/Gestarte sessies/})).toContainText('+2 t.o.v. vorige periode');
+  await expect(cards.getByRole('button',{name:/Mediane actieve tijd/})).toContainText('Geen vergelijkingsgegevens');
   await page.getByRole('button',{name:'Routes tonen'}).click();
   await expect(page.locator('#ao-rows [role="img"]')).toHaveCount(2);
   const links=page.locator('#ao-rows a');
@@ -70,7 +74,7 @@ test('translator home, pending state, retry and a course-free invited account', 
   await page.getByRole('button',{name:'Opnieuw proberen'}).click();
   await expect(page.getByRole('heading',{name:'Mijn vertaalopdrachten'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Recente feedback'})).toBeHidden();
-  await expect(page.getByRole('link',{name:'Gesunde Bewegung'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Gesunde Bewegung',exact:true})).toBeVisible();
   await expect(page.getByRole('link',{name:'Te controleren (1) · DE · Gesunde Bewegung'})).toHaveAttribute('href','/expedities/pilot/bewerken?modus=vertalen&taal=de&filter=controleren');
   await page.reload();
   await expect(page.getByRole('heading',{name:'Toegang op uitnodiging'})).toBeVisible();
