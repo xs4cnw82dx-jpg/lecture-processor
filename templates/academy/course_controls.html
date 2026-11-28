@@ -55,5 +55,4 @@
   <section><h2>{{ say('Bericht bij een gepauzeerde link','Nachricht bei pausiertem Link') }}</h2><form id="xc-pause" class="xc-form"><label for="xc-paused-message">{{ say('Bericht voor deelnemers','Nachricht für Teilnehmende') }}</label><textarea id="xc-paused-message" maxlength="400" rows="3"></textarea><button class="btn" type="submit">{{ say('Bericht opslaan','Nachricht speichern') }}</button></form></section>
   <section class="xc-danger"><h2>{{ say('Deelnemerslink vernieuwen','Teilnahmelink erneuern') }}</h2><p>{{ say('De huidige link en alle bijbehorende QR-codes stoppen direct met werken.','Der aktuelle Link und alle zugehörigen QR-Codes funktionieren danach nicht mehr.') }}</p><button class="btn danger" data-xc-open="rotate" type="button">{{ say('Link vernieuwen','Link erneuern') }}</button></section>
 </section>{% endif %}
-<div id="xc-feedback" class="xc-feedback" role="status" aria-live="polite"></div>
 {% include 'academy/collaboration_dialog.html' %}

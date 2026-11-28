@@ -187,11 +187,8 @@
         renderExpeditions(allExpeditions);
       } else await loadList();
       var copied = Model.coursePaths(result.expedition.id).overview;
-      platformUx.toast(copyLabel('Kopie gemaakt.', 'Kopie erstellt.'), {
-        type: 'success', duration: 5000,
-        render: function (region, message) {
-          region.replaceChildren(document.createTextNode(message + ' '), actionLink(copyLabel('Openen', 'Öffnen'), copied));
-        },
+      platformUx.toast(uiText('Expedition duplicated.'), {
+        type: 'success', action: { label: uiText('Open'), href: copied },
       });
     } catch (error) {
       if (pendingCopies.get(expedition.id) !== session) return;
@@ -521,7 +518,7 @@
         await api('/api/elearning/expeditions/' + encodeURIComponent(target.id), { method: 'DELETE' });
         if (Icons) Icons.closeDialogAnimated(deleteDialog);
         else deleteDialog.close();
-        toast('Expedition deleted.', 'success');
+        toast(uiText('Expedition deleted.'), 'success');
         loadList();
       } catch (err) {
         if (pendingDeleteExp === target) dialogError('delete', err);
@@ -602,7 +599,7 @@
         var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(pendingImportPayload) });
         pendingImportPayload = null;
         importDialog.close();
-        toast('Imported expedition!', 'success');
+        toast(uiText('Imported expedition!'), 'success');
         window.location.href = Model.coursePaths(res.expedition.id).edit;
       } catch (err) {
         if (err.code === 'auth/session-changed') return;
