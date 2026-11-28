@@ -13,8 +13,8 @@
 <main class="ao" id="main-content" tabindex="-1">
   <div class="ao-title"><h1 id="ao-title">{{ tr('Overzicht','Übersicht') }}</h1>
     <a id="ao-library" class="ao-text-link" href="/expedities" hidden>{{ tr('Alle expedities','Alle Expeditionen') }} {{ icon('arrow',16) }}</a></div>
-  <p id="ao-status" role="status">{{ tr('Je werkruimte wordt opgehaald…','Ihr Arbeitsbereich wird geladen…') }}</p>
-  <div id="ao-loading" aria-hidden="true"><i></i><i></i><i></i></div>
+  <p id="ao-status" role="status" hidden></p>
+  <div id="ao-loading" aria-hidden="true" hidden><i></i><i></i><i></i></div>
   <button id="ao-retry" type="button" class="btn" hidden>{{ tr('Opnieuw proberen','Erneut versuchen') }}</button>
   <section class="ao-welcome" id="ao-welcome" hidden aria-labelledby="ao-welcome-title">
     <div class="ao-welcome-copy"><h2 id="ao-welcome-title">{{ tr('Nog geen expedities','Noch keine Expeditionen') }}</h2>

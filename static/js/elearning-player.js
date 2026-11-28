@@ -84,9 +84,7 @@
       }
       saveLocalProgress();
       if (window.Xped?.i18n && val !== window.Xped.i18n.language) {
-        const destination = new URL(location.href);
-        destination.searchParams.set('lang', val);
-        location.replace(destination);
+        reopenInLanguage(val);
         return;
       }
       updateLangDropdown();
@@ -95,6 +93,12 @@
   });
   langDD.el.hidden = true;
   langHost.appendChild(langDD.el);
+
+  function reopenInLanguage(language) {
+    const destination = new URL(location.href);
+    destination.searchParams.set('lang', language);
+    location.replace(destination);
+  }
 
   function updateLangDropdown() {
     var enabled = (state.exp && state.exp.enabledLanguages) || ['nl'];
@@ -1109,13 +1113,19 @@
       if (academyLocale) {
         const preferred = [queryLang, savedContentLanguage, academyLocale.language, 'nl', 'de'];
         state.lang = preferred.find(code => enabled.includes(code) && (code === 'nl' || code === 'de')) || 'nl';
+        // Older sessions saved the content language locally, before language cookies existed.
+        if (state.lang !== academyLocale.language) {
+          reopenInLanguage(state.lang);
+          return;
+        }
       } else if (queryLang) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, queryLang, navLangs);
       } else if (!state.hasSavedLanguage || enabled.indexOf(state.lang) < 0) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, '', navLangs);
       }
       updateLangDropdown();
-      document.title = (state.exp.title || 'xPEDitie Pijn') + ' · ' + (document.body.dataset.siteTitle || 'Lecture Processor');
+      var courseTitle = academyLocale && Model.getLocalized(state.exp.startPage && state.exp.startPage.title, state.lang, state.exp.defaultLanguage);
+      document.title = (courseTitle || state.exp.title || 'xPEDitie Pijn') + ' · ' + (document.body.dataset.siteTitle || 'Lecture Processor');
       render();
     } catch (_err) {
       mainEl.textContent = '';

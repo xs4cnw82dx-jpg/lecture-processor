@@ -15,7 +15,7 @@
 {% block body %}
   <main class="academy-error" id="main-content">
     <div class="academy-error-copy">
-      <a class="academy-error-brand" href="/"><img src="{{ url_for('static', filename='images/xped/academy-mark.webp' if de else 'images/xped/logo_nl.svg') }}" alt="xPEDitie Pijn"> Academy</a>
+      <a class="academy-error-brand" href="/" aria-label="xPED Academy">{% include 'academy/_error_wordmark.html' %}</a>
       <p class="academy-error-code">{{ status_code }}</p>
       <h1>{{ wording[1 if de else 0] }}</h1>
       <p>{{ wording[3 if de else 2] }}</p>

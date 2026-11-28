@@ -11,7 +11,7 @@
   ('/vertalingen', 'translate', 'Vertalingen', 'Übersetzungen'),
   ('/team', 'team', 'Team', 'Team')] %}
 {% set current = '/expedities' if courses or path == '/physio/elearning' else '/instellingen' if path in ['/account','/instellingen'] else path %}
-{% set labels = {'/':say('Overzicht','Übersicht'),'/expedities':say('Expedities','Expeditionen'),'/resultaten':say('Resultaten','Ergebnisse'),'/vertalingen':say('Vertalingen','Übersetzungen'),'/team':'Team','/instellingen':say('Instellingen','Einstellungen')} %}
+{% set labels = {'/':say('Overzicht','Übersicht'),'/expedities':say('Expedities','Expeditionen'),'/resultaten':say('Resultaten','Ergebnisse'),'/vertalingen':say('Vertalingen','Übersetzungen'),'/team':'Team','/hulp':say('Hulp','Hilfe'),'/instellingen':say('Instellingen','Einstellungen')} %}
 {% macro brand(on_header=false) %}
 <a class="ac-brand" href="/" aria-label="{{ say('xPED Academy, naar overzicht','xPED Academy, zur Übersicht') }}">
   {% if on_header %}
@@ -35,6 +35,7 @@
     {% for href, glyph, nl, de in sections %}<a class="ac-route" href="{{ href }}" {% if current == href %}aria-current="{{ 'location' if courses else 'page' }}"{% endif %} title="{{ say(nl,de) }}">{{ icon(glyph) }}<span>{{ say(nl,de) }}</span></a>{% endfor %}
   </nav>
   <div class="ac-rail-bottom">
+    <a class="ac-route" href="/hulp" title="{{ say('Hulp','Hilfe') }}" {% if current == '/hulp' %}aria-current="page"{% endif %}>{{ icon('help') }}<span>{{ say('Hulp','Hilfe') }}</span></a>
     <a class="ac-route" href="/instellingen" title="{{ say('Instellingen','Einstellungen') }}" {% if current == '/instellingen' %}aria-current="page"{% endif %}>{{ icon('settings') }}<span>{{ say('Instellingen','Einstellungen') }}</span></a>
     <button class="ac-route ac-fold" id="ac-fold" type="button" aria-controls="ac-rail" aria-expanded="true" data-expand="{{ say('Zijbalk uitklappen','Seitenleiste ausklappen') }}" data-collapse="{{ say('Zijbalk inklappen','Seitenleiste einklappen') }}">{{ icon('rail') }}<span>{{ say('Zijbalk inklappen','Seitenleiste einklappen') }}</span></button>
   </div>

@@ -68,7 +68,16 @@ for (const width of [390, 1440]) {
     const enabled = page.getByRole('switch',{name:/Deelnemerslink actief/});
     await enabled.check();
     await expect(page.locator('#xc-sharing-status')).toHaveText('Opgeslagen');
+    const collect = page.getByRole('switch',{name:/Antwoorden verzamelen/});
+    await collect.uncheck();
+    const peers = page.getByRole('switch',{name:/Groepsresultaten tonen/});
+    await expect(peers).toBeDisabled();
+    await expect(peers).toHaveAccessibleDescription(/Zet Antwoorden verzamelen aan/);
+    await collect.check();
+    await expect(peers).toBeEnabled();
     const shareURL = await page.locator('#xc-learner-link a').getAttribute('href');
+    await expect(page.locator('#xc-learner-link a')).toHaveAccessibleName(shareURL.replace(/^https?:\/\//,''));
+    await expect(page.locator('#xc-learner-link .xc-url-suffix')).toHaveText(shareURL.slice(-4));
     const linkResponse = await page.request.get(shareURL); expect(linkResponse.status()).toBe(200);
     await page.locator('#xc-learner-link').getByRole('button',{name:'QR',exact:true}).click();
     const qr = page.getByRole('dialog', { name: /QR-code|QR-Code/ });
@@ -127,9 +136,13 @@ test('team assignments grant actual scoped author and translator access', async 
   const person = page.locator('#xc-team-list tr').filter({hasText:'translator@example.test'});
   await expect(person).toBeFocused();
   await expect(person).toContainText('Vertaler');
-  await person.getByRole('button',{name:'1',exact:true}).click();
-  await expect(form.getByRole('link',{name:course.title})).toHaveAttribute('href','/expedities/'+course.id);
-  await form.getByRole('button',{name:'Sluiten',exact:true}).last().click();
+  const personCourses = person.getByRole('button',{name:/Expedities van/});
+  await personCourses.click();
+  const assignedCourses = page.getByRole('dialog',{name:/translator/i});
+  await expect(assignedCourses.getByRole('link',{name:course.title})).toHaveAttribute('href','/expedities/'+course.id);
+  await page.keyboard.press('Escape');
+  await expect(assignedCourses).toBeHidden();
+  await expect(personCourses).toBeFocused();
   if (process.env.XPED_COLLAB_EVIDENCE) await page.screenshot({path:process.env.XPED_COLLAB_EVIDENCE+'/team-1440.png'});
   const context = await browser.newContext();
   try {

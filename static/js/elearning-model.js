@@ -858,6 +858,7 @@
     consentPrivateNote: 'Ihre neuen Antworten und Ihr weiterer Fortschritt bleiben auf diesem Gerät.',
     consentFeedback: 'Das Kursteam kann auch die Rückmeldungen lesen, die Sie einsenden.',
     authorAccess: 'Das Kursteam erhält Ihren Fortschritt und Ihre Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
+    authorAccessWithTime: 'Das Kursteam erhält Ihren Fortschritt, Ihre aktive Zeit pro Schritt und Ihre Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
     deviceResume: 'Ihre Antworten werden auf diesem Gerät gespeichert, damit Sie später fortfahren können.',
     sharedWords: 'Wörter, die Sie zu einer geteilten Wortwolke hinzufügen, sind für andere Teilnehmende sichtbar.',
     routeTitle: 'Ihre Expeditionsroute',

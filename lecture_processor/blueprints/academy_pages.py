@@ -75,6 +75,11 @@ def team():
     return elearning.studio_dashboard_page('academy/team.html', academy_view='team')
 
 
+@academy_pages.get('/hulp')
+def help_page():
+    return render_template('academy/help.html', academy_view='help')
+
+
 @academy_pages.get('/instellingen')
 def settings():
     return render_template('academy/settings.html', academy_view='settings')

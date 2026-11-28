@@ -1,6 +1,6 @@
 # Taal en beeld in de Academy
 
-Nederlands is de hoofdtaal. In de Studio benoemt een kop de plek en beschrijft een knop de handeling. Spreek deelnemers aan met *je* in het Nederlands en met *Sie* in het Duits. Gebruik de taal van de deelnemer voor de interface en respecteer de inhoud en de gekozen omslag van de auteur.
+Nederlands is de hoofdtaal. In de Studio benoemt een kop de plek en beschrijft een knop de handeling. Spreek deelnemers én auteurs aan met *je* in het Nederlands en met *Sie* in het Duits. Gebruik de taal van de deelnemer voor de interface en respecteer de inhoud en de gekozen omslag van de auteur.
 
 | Situatie | Nederlands | Deutsch |
 | --- | --- | --- |
@@ -12,6 +12,27 @@ Nederlands is de hoofdtaal. In de Studio benoemt een kop de plek en beschrijft e
 | Verder na een lege keuze | Kies een van de twee opties om verder te gaan. | Wählen Sie eine der beiden Optionen, um fortzufahren. |
 
 Schrijf een foutmelding bij de invoer en vertel wat de gebruiker kan doen. Gebruik een korte statusmelding voor een afgeronde actie. Voeg alleen een actie aan de melding toe als die direct uitvoerbaar is. Een deelnamekeuze krijgt altijd twee gelijkwaardige, leesbare opties.
+
+## Woordenlijst voor de interface
+
+Gebruik deze termen ook in menu’s, statussen, meldingen en exports. De eigen titels en teksten van een auteur blijven behouden.
+
+| Nederlands | Deutsch |
+| --- | --- |
+| Expeditie | Expedition |
+| Station | Station |
+| Stap | Schritt |
+| Deelnemer | Teilnehmende |
+| Resultaten | Ergebnisse |
+| Deelnemerslink | Teilnahmelink |
+| Groep | Gruppe |
+| Mede-auteur | Mitautor:in |
+| Vertaler | Übersetzer:in |
+| Concept | Entwurf |
+| Live | Live |
+| Gepauzeerd | Pausiert |
+
+Een mede-auteur mag de inhoud en structuur van een expeditie bewerken. Een vertaler bewerkt vertalingen. Gebruik *teamlid* of *Teammitglied* als iemands rol nog niet bekend is. Schrijf *deelnemerslink* en *Teilnahmelink* ook bij een proef met een kleine groep. De benaming *pilotfeedback* kan wel specifiek gaan over de vragen aan het einde van een proef.
 
 ## Illustraties
 

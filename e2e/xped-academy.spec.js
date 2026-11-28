@@ -386,7 +386,10 @@ for (const signedIn of [false, true]) {
     }
     const requested = [];
     page.on('request', request => requested.push(new URL(request.url())));
-    for (const path of ['/expedities', '/expedities/sample/bewerken?modus=vertalen', '/expedities/sample/resultaten', '/instellingen', '/privacy']) {
+    const paths = ['/', '/expedities', '/expedities/sample', '/expedities/sample/bewerken?modus=vertalen',
+      '/expedities/sample/resultaten', '/resultaten', '/vertalingen', '/team', '/instellingen', '/hulp', '/privacy',
+      '/inloggen', '/vertalen/synthetic-grant', '/account', '/signin', '/physio/elearning/sample/edit'];
+    for (const path of paths) {
       const response = await page.goto(academy + path);
       expect(response.status()).toBe(200);
       expect(new URL(page.url()).origin).toBe(academy);
@@ -394,7 +397,11 @@ for (const signedIn of [false, true]) {
         project: window.Xped.bootstrap.firebaseConfig.projectId,
         authenticated: window.firebase.auth().currentUser !== null,
         legacyRuntime: Boolean(window.LectureProcessorAuth || window.LectureProcessorBootstrap || window.LectureI18n),
-        links: Array.from(document.querySelectorAll('a[href]'), node => node.href),
+        links: [
+          ...Array.from(document.querySelectorAll('a[href]'), node => node.href),
+          ...Array.from(document.forms, form => form.action),
+          ...Array.from(document.querySelectorAll('[formaction]'), control => control.formAction),
+        ],
       }));
       expect(state.project).toBe('demo-xped-academy');
       expect(state.authenticated).toBe(signedIn);

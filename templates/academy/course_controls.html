@@ -25,9 +25,12 @@
     <legend class="sr-only">{{ say('Toegang en gegevens','Zugriff und Daten') }}</legend>
     {{ switch('enabled','Deelnemerslink actief','Teilnahmelink aktiv','Deelnemers openen de expeditie zonder account.','Teilnehmende öffnen die Expedition ohne Konto.') }}
     {{ switch('collectResponses','Antwoorden verzamelen','Antworten erfassen','Deelnemers kiezen zelf of ze hun antwoorden delen.','Teilnehmende entscheiden selbst, ob sie Antworten teilen.') }}
+    <div id="xc-response-options" class="xc-response-options">
+      <p id="xc-response-dependency" hidden>{{ say('Zet Antwoorden verzamelen aan om deze opties te gebruiken.', 'Aktivieren Sie Antworten erfassen, um diese Optionen zu verwenden.') }}</p>
     {{ switch('showPeerResults','Groepsresultaten tonen','Gruppenergebnisse anzeigen') }}
     {{ switch('collectPilotFeedback','Feedback na afloop vragen','Am Ende um Feedback bitten') }}
     {{ switch('allowStepComments','Opmerkingen bij stappen toestaan','Kommentare zu Schritten erlauben') }}
+    </div>
   </fieldset>
   <div class="xc-section-title"><h2>{{ say('Teamleden','Teammitglieder') }}</h2><button class="btn" type="button" data-xc-open="member">{{ say('Teamlid toevoegen','Mitglied hinzufügen') }}</button></div>
   <ul class="xc-people" id="xc-members"></ul>

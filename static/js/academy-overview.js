@@ -13,6 +13,14 @@
   const docs = new URLSearchParams(location.search);
   let generation = 0;
   let data, user, api, auth;
+  const covers = new Map();
+  const coverObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      coverObserver.unobserve(entry.target);
+      void loadCover(entry.target);
+    }
+  });
   let dismissedArchive = new Set();
   let sorting = 'updatedAt';
   let ascending = false;
@@ -59,9 +67,12 @@
   }
   function routeStrip(parent, stations) {
     if (!window.XpedAcademyControls) return;
-    const localized = stations.map(s => ({title:lang(s.title), steps:s.steps}));
+    const localized = stations.map(s => ({title:lang(s.title), steps:s.steps, reached:s.reached}));
+    const reach = localized.filter(s => Number.isFinite(s.reached)).map(s => s.title + ' ' + percent(100 * s.reached));
+    let label = copy('Route met ','Route mit ') + number(stations.length) + copy(' stations',' Stationen');
+    if (reach.length) label += ' · ' + copy('Bereik','Reichweite') + ' · ' + reach.join(', ');
     parent.replaceChildren(window.XpedAcademyControls.routeStrip(localized, {
-      size:'compact', label:copy('Route met ','Route mit ') + number(stations.length) + copy(' stations',' Stationen'),
+      size:'compact', label,
     }));
   }
   function drawTemplates() {
@@ -81,7 +92,9 @@
     const completion = el('completion'), distribution = el('distribution'), kpis = el('kpis');
     const periodName = copy(' · gedeelde sessies',' · geteilte Sitzungen');
     const legend = node('div',null,'ao-split-counts');
-    legend.append(node('span',number(current.completed) + copy(' afgerond',' abgeschlossen')),node('span',number(current.sessions-current.completed) + copy(' open',' offen')));
+    const openCount = current.sessions - current.completed;
+    legend.append(node('span',number(current.completed) + copy(' afgerond',' abgeschlossen')),
+      node('span',number(openCount) + copy(' open',' offen') + (current.sessions ? ' · ' + percent(100 * openCount / current.sessions) : '')));
     completion.replaceChildren();
     if (current.sessions) {
       completion.append(node('div',percent(current.completion),'ao-metric-big'),
@@ -107,9 +120,10 @@
       const delta = !previous.sessions || current[key] == null || previous[key] == null ? null : current[key] - previous[key];
       const change = delta == null ? null : (delta > 0 ? '+' : delta < 0 ? '−' : '') +
         (key === 'completion' ? number(Math.abs(delta),{maximumFractionDigits:1}) + ' pp' : metricValue(key,Math.abs(delta)));
-      b.append(node('span',copy(nl,de)),node('strong',metricValue(key,current[key])),
-        node('small',change == null ? copy('Geen vergelijkingsgegevens','Keine Vergleichsdaten') :
-          change + copy(' t.o.v. vorige periode',' zur Vorperiode')));
+      const comparison = node('small',change == null ? copy('Geen vergelijkingsgegevens','Keine Vergleichsdaten') :
+        change + copy(' t.o.v. vorige periode',' zur Vorperiode'));
+      if (key === 'completion' && delta) comparison.dataset.direction = delta > 0 ? 'up' : 'down';
+      b.append(node('span',copy(nl,de)),node('strong',metricValue(key,current[key])),comparison);
       b.addEventListener('click',() => {
         metricFilter = metricFilter === key ? '' : key;
         drawStats(); drawTable(); el('courses').scrollIntoView({block:'nearest'}); el('kpis').querySelector('[data-metric="' + key + '"]').focus({preventScroll:true});
@@ -142,9 +156,36 @@
     if (key === 'drop') return course.drop?.percent;
     return course[key] ?? course.metrics?.[key];
   }
+  async function loadCover(img) {
+    const path = img.dataset.asset;
+    if (!covers.has(path)) {
+      const session = api.captureSession();
+      covers.set(path, api.authFetch(path).then(async response => {
+        if (!response.ok) throw new Error('cover');
+        const blob = await response.blob();
+        session.assertCurrent();
+        if (!blob.type.startsWith('image/')) throw new Error('cover');
+        return URL.createObjectURL(blob);
+      }));
+    }
+    const request = covers.get(path);
+    try {
+      const source = await request;
+      if (img.isConnected && covers.get(path) === request) img.src = source;
+    } catch (_) {
+      if (covers.get(path) === request) covers.delete(path);
+    }
+  }
+
   function createCover(course) {
     const box=node('span',null,'ao-cover');
     const img=node('img'); img.alt=''; img.loading='lazy';
+    if (course.coverMedia?.kind === 'asset' && course.coverMedia.assetId && !course.deletionPending) {
+      img.dataset.asset = '/api/elearning/expeditions/' + encodeURIComponent(course.id) + '/assets/' + encodeURIComponent(course.coverMedia.assetId);
+      coverObserver.observe(img);
+      box.append(img);
+      return box;
+    }
     const originals=['library','detour','choices','finish','steps','rest'];
     const seed = Array.from(course.id).reduce((n,c) => ((n * 31) + c.codePointAt(0)) >>> 0, 0);
     const path = course.coverMedia?.staticPath;
@@ -159,7 +200,7 @@
       const label = code.toUpperCase() + ' ' + number(completed) + '/' + number(coverage.total || 0);
       const wrap=node('span',null,'ao-cell'); wrap.title=label;
       wrap.append(node('span',code.toUpperCase()),bar(completed,coverage.total,label)); td.append(wrap);
-      if (course.role === 'translate' && code !== course.defaultLanguage && coverage.needsReview > 0) {
+      if (['owner','edit','translate'].includes(course.role) && !course.deletionPending && code !== course.defaultLanguage && coverage.needsReview > 0) {
         const action = copy('Te controleren','Zu prüfen') + ' (' + number(coverage.needsReview) + ')';
         const reviewLink = link(action,courseUrl(course.id) + '/bewerken?modus=vertalen&taal=' + code + '&filter=controleren','ao-review');
         reviewLink.setAttribute('aria-label',action + ' · ' + code.toUpperCase() + ' · ' + course.title);
@@ -193,7 +234,8 @@
   });
 
   function drawTable() {
-    const htmlHead = el('table-head'), tbody=el('rows'); tbody.replaceChildren();
+    const htmlHead = el('table-head'), tbody=el('rows');
+    coverObserver.disconnect(); tbody.replaceChildren();
     const editorial = data.studioAdmin || data.canCreate || data.courses.some(c => c.role !== 'translate');
     const columns = editorial ? headings : headings.filter(([k]) => ['title','languages','updatedAt'].includes(k));
     let rows = [...data.courses];
@@ -218,7 +260,10 @@
       a.append(createCover(c),node('span',c.title)); title.append(a);
       if (showRoutes) { const strip=node('div'); routeStrip(strip,c.stations || []); title.append(strip); }
       row.append(title);
-      if (editorial) row.append(node('td',c.shareEnabled ? copy('Gedeeld','Geteilt') : copy('Concept','Entwurf'), c.shareEnabled?'ao-published':''));
+      if (editorial) {
+        const [, state] = xped.i18n.courseStatus(c);
+        row.append(node('td',state, c.shareEnabled ? 'ao-published' : ''));
+      }
       row.append(translationCell(c));
       if (editorial) row.append(node('td',c.metrics ? number(c.metrics.sessions) : '—'),node('td',percent(c.metrics?.completion)),
         node('td',duration(c.metrics?.medianSeconds) + ' / ' + number(c.estimate || 0) + ' min'),
@@ -257,8 +302,12 @@
 
   async function refresh() {
     const request = ++generation;
-    hideContent(); el('loading').hidden=false;
-    notice(copy('Je werkruimte wordt opgehaald…','Ihr Arbeitsbereich wird geladen…'));
+    hideContent(); el('loading').hidden=true; notice('');
+    const loadingTimer = setTimeout(() => {
+      if (request !== generation) return;
+      el('loading').hidden=false;
+      notice(copy('Je werkruimte wordt opgehaald…','Ihr Arbeitsbereich wird geladen…'));
+    }, 300);
     try {
       const response = await api.authFetch('/api/academy/overview?' + docs);
       if (!response.ok) throw new Error('overview');
@@ -269,7 +318,7 @@
       if (request !== generation) return;
       el('loading').hidden=true; el('retry').hidden=false;
       notice(copy('Je overzicht kon niet worden opgehaald.','Ihre Übersicht konnte nicht geladen werden.'));
-    }
+    } finally { clearTimeout(loadingTimer); }
   }
   function changePeriod() {
     const params=docs.toString(); history.replaceState(null,'',location.pathname + (params ? '?' + params : ''));
@@ -314,6 +363,9 @@
   try {
     auth=xped.bootstrap.getAuth(); api=xped.auth.createAuthClient(auth);
     xped.bootstrap.onAuthStateReady(auth, next => {
+      coverObserver.disconnect();
+      covers.forEach(pending => pending.then(URL.revokeObjectURL).catch(() => {}));
+      covers.clear();
       user=next; data=null; generation++; hideContent();
       try { dismissedArchive = new Set(user && JSON.parse(localStorage.getItem('xped.archive.seen.' + user.uid)) || []); }
       catch (_) { dismissedArchive = new Set(); }

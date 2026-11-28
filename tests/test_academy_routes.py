@@ -92,7 +92,10 @@ def test_player_status_and_private_pause_note_before_any_script_runs(academy):
         assert not page.xpath('//script[@src]') and 'fontshare' not in result.text
     share.update(token='new-preview-token', enabled=True)
     store.put(course, exp)
-    assert client.get('/start/' + token).status_code == 410
+    for language in ('nl', 'de'):
+        expired = client.get('/start/' + token, headers={'Accept-Language': language})
+        assert expired.status_code == 410
+        assert html.fromstring(expired.data).xpath('//a[@referrerpolicy="no-referrer"]/@href') == [f'https://xped.net/{language}/']
     assert client.get('/api/elearning/public/' + token).json['error_code'] == 'link_expired'
     store.put('elearning_share_index/new-preview-token', {'expedition_id': 'exp-preview'})
     active = client.get('/start/new-preview-token')
@@ -101,3 +104,16 @@ def test_player_status_and_private_pause_note_before_any_script_runs(academy):
     payloads = [json.loads(script.text) for script in page.xpath('//script[@type="application/json"]') if script.text]
     assert any(isinstance(item, dict) and item.get('title') == 'Preview course' for item in payloads)
     assert not page.xpath('//script[contains(@src,"firebase")]') and 'fontshare' not in active.text
+
+
+@pytest.mark.parametrize('locale', ['nl', 'de'])
+def test_studio_pages_and_errors_have_the_requested_language_before_javascript(academy, locale):
+    client, _ = academy
+    client.set_cookie('xped-language', locale)
+    paths = ['/', '/expedities', '/expedities/example', '/expedities/example/bewerken',
+             '/expedities/example/resultaten', '/resultaten', '/vertalingen', '/team',
+             '/instellingen', '/inloggen', '/privacy', '/hulp', '/vertalen/example', '/unknown-preview-page']
+    for path in paths:
+        response = client.get(path)
+        assert response.status_code == (404 if path == '/unknown-preview-page' else 200), path
+        assert html.fromstring(response.data).get('lang') == locale, path

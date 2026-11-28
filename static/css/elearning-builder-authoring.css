@@ -118,3 +118,36 @@
     display: block; width: 100%; max-width: none; height: auto; overflow: visible; padding: 0; margin: 0; border: 0;
   }
 }
+
+/* The Academy editor keeps its course path and save feedback together. */
+.ac-editor-crumbs { display: flex; align-items: center; min-width: 0; gap: 4px; color: var(--theme-muted-strong); font-size: 13px; }
+.ac-editor-crumbs a { color: inherit; text-decoration: none; }
+.ac-editor-crumbs a:hover { text-decoration: underline; }
+.ac-editor-crumbs > svg, .ac-editor-library { flex: none; }
+.ac-editor-crumbs #el-back-link { min-width: 0; max-width: 13ch; font-weight: 500; }
+.ac-editor-crumbs #el-back-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-editor-view { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+[data-product="academy"] #el-save-state.is-saving::before {
+  content: ''; width: 10px; height: 10px; flex: none; border: 1px solid currentColor;
+  border-inline-end-color: transparent; border-radius: 50%; animation: ac-editor-saving .8s linear infinite;
+}
+[data-product="academy"] #el-save-state.is-live { animation: ac-editor-saved .2s ease-out 2s both; }
+[data-product="academy"] #el-save-state.is-unsaved { background: transparent; color: var(--theme-danger-ink); padding: 0; }
+@keyframes ac-editor-saving { to { transform: rotate(1turn); } }
+@keyframes ac-editor-saved { from { color: var(--theme-ink); } to { color: var(--theme-muted); } }
+@media (prefers-reduced-motion: reduce) {
+  [data-product="academy"] #el-save-state.is-saving::before, [data-product="academy"] #el-save-state.is-live { animation: none; }
+}
+@media (max-width: 1150px) {
+  .ac-editor-library, .ac-editor-crumbs > svg { display: none; }
+}
+@media (min-width: 1024px) {
+  html[data-product="academy"] body.el-studio-body:has(> .ac-rail) { padding-inline-start: 64px; }
+  html[data-product="academy"] .el-studio-body .ac-rail { width: 64px; display: flex; }
+  html[data-product="academy"] .el-studio-body :is(.ac-mobile-close, .ac-editor-menu, .ac-rail .ac-brand-wordmark, .ac-rail .ac-brand-product) { display: none; }
+  html[data-product="academy"] .el-studio-body .ac-brand-short { display: block; }
+  .el-studio-body .ac-rail .ac-rail-top { padding: 16px 10px; }
+  .el-studio-body .ac-rail .ac-brand { padding: 0; align-items: center; }
+  .el-studio-body .ac-rail .ac-route { justify-content: center; padding-inline: 6px; }
+  .el-studio-body .ac-rail .ac-route span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}

@@ -23,7 +23,7 @@ def test_dashboard_uses_calendar_periods_comparison_and_allows_only_permitted_re
         store.put('elearning_responses/' + doc, dict(expedition_id=course['id'], started_at=ts - days * 86400,
                   updated_at=ts, consentVersion=1, **fields))
     response(own, 'current-a', 1, completed=True, cohort='group-a', activeTimeDisclosure=1, stepSeconds={'a': 90},
-             pilotFeedback={'comment':'Een helder voorbeeld.'})
+             visitedStepIds=[own['modules'][0]['steps'][0]['id']], pilotFeedback={'comment':'Een helder voorbeeld.'})
     response(own, 'current-b', 0, completed=False, cohort='group-b', stepSeconds={'a': 300})
     response(own, 'previous', 8, completed=True, cohort='group-a')
     response(private, 'elsewhere', 0, completed=True, cohort='unrelated', pilotFeedback={'comment':'Private comment'})
@@ -34,11 +34,13 @@ def test_dashboard_uses_calendar_periods_comparison_and_allows_only_permitted_re
     assert data['cohorts'] == ['group-a', 'group-b']
     assert [x['id'] for x in data['courses']] == [own['id']]
     assert data['feedback'][0]['comment'] == 'Een helder voorbeeld.'
+    assert data['courses'][0]['stations'][0]['reached'] == 0.5
     assert 'shareToken' not in data['courses'][0]
     cohort = studio.get(URL + '?from=2026-10-20&to=2026-10-26&cohort=group-a', headers=ADMIN).json
     assert cohort['current']['completion'] == 100 and cohort['previous']['sessions'] == 1
     other = studio.get(URL, headers=OTHER).json
     assert not other['canCreate'] and 'metrics' not in other['courses'][0]
+    assert all('reached' not in station for station in other['courses'][0]['stations'])
     assert other['feedback'] == [] and other['cohorts'] == [] and other['current']['sessions'] == 0
 
 

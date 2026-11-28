@@ -34,7 +34,9 @@ def workspace(expedition_id):
     overview = {'title': course.get('title', ''), 'role': role, 'modules': stations,
                 'updated_at': course.get('updated_at'), 'defaultLanguage': course.get('defaultLanguage', 'nl')}
     if role != 'translate':
-        overview['share'] = {'enabled': bool((course.get('share') or {}).get('enabled'))}
+        share = course.get('share') or {}
+        overview['share'] = {'enabled': bool(share.get('enabled')), 'collectResponses': model.collects_responses(share)}
+        overview['hasPublished'] = bool(share.get('enabled') or course.get('publicRevisionWeeks'))
     translations = [{'key': row['key'], 'source': row['source'] or row['nl'], 'target': row['target'],
                      'status': row['status']} for row in rows]
     return jsonify(

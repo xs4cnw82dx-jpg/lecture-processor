@@ -129,6 +129,9 @@ def dashboard(runtime, args):
         group = PeriodStatistics()
         ids = [step['id'] for station in exp.get('modules') or [] if station.get('visibleToLearners', True)
                for step in station.get('steps') or []]
+        station_for_step = {step['id']: station['id'] for station in exp.get('modules') or []
+                            if station.get('visibleToLearners', True) for step in station.get('steps') or []}
+        station_visits = Counter()
         incoming, lost = Counter(), Counter()
         for row in sessions:
             name = row.get('cohort') or 'default'
@@ -141,6 +144,7 @@ def dashboard(runtime, args):
             group.add(eid, row)
             current.add(eid, row)
             visited = set(row.get('visitedStepIds') or [])
+            station_visits.update({station_for_step[sid] for sid in visited if sid in station_for_step})
             # Compare the same sessions at both ends of each transition.
             for idx, sid in enumerate(ids):
                 if idx == 0 or ids[idx - 1] in visited:
@@ -149,6 +153,10 @@ def dashboard(runtime, args):
             comments = list(_feedback(eid, entry['title'], row))
             if comments:
                 feedback = nlargest(6, (*feedback, *comments), key=lambda item: item['at'])
+        if group.total:
+            for station, summary in zip(exp.get('modules') or [], entry['stations']):
+                if station.get('visibleToLearners', True) and station.get('steps'):
+                    summary['reached'] = station_visits[station['id']] / group.total
         entry['metrics'] = group.summary()
         entry['drop'] = _drop(exp, {sid: (incoming[sid], lost[sid]) for sid in ids})
 

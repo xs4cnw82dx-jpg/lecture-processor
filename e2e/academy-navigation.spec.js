@@ -146,3 +146,13 @@ test('the public xPED wordmark follows the theme and fits beside the German sett
   await mark.evaluate(image => image.decode());
   await expect(brand).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
 });
+
+
+test('a tablet user can open help from the navigation drawer', async ({page,academyOrigin}) => {
+  await page.setViewportSize({ width: 900, height: 850 });
+  await page.goto(academyOrigin + '/expedities');
+  await page.getByRole('button',{name:'Navigatie openen'}).click();
+  await page.getByRole('dialog',{name:'Werkruimte'}).getByRole('link',{name:'Hulp'}).click();
+  await expect(page.getByRole('heading',{name:'Hulp',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Naar vertalingen'})).toHaveAttribute('href','/vertalingen');
+});

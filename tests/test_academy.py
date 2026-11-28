@@ -58,7 +58,7 @@ def test_academy_accepts_its_own_identity_and_starts_with_an_empty_library(acade
 def test_learner_page_is_public_but_unknown_course_is_unavailable(academy_client):
     player = academy_client.get('/start/synthetic-course-token')
     assert player.status_code == 404
-    assert 'Deze leerlink is niet actief' in html.fromstring(player.data).findtext('.//title')
+    assert 'Deze deelnemerslink is niet actief' in html.fromstring(player.data).findtext('.//title')
     assert academy_client.get('/api/elearning/public/synthetic-course-token').status_code == 404
     assert academy_client.get('/privacy').status_code == 200
 

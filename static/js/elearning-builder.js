@@ -39,7 +39,6 @@
   var renewBeforeSave = false;
   var writing = Promise.resolve();
 
-  var editorPageTitle = document.title;
   var urlParams = new URLSearchParams(window.location.search);
   var deepModuleId = urlParams.get('module') || '';
   var deepStepId = urlParams.get('step') || '';
@@ -123,7 +122,8 @@
   var shareDialog = document.getElementById('el-share-dialog');
 
   // Hydrate crisp SVG chrome icons
-  document.getElementById('el-back-link').prepend(Icons.icon('arrowLeft', 16));
+  var backLink = document.getElementById('el-back-link');
+  backLink.prepend(Icons.icon('arrowLeft', 16));
   document.getElementById('el-undo-btn').appendChild(Icons.icon('undo', 17));
   document.getElementById('el-redo-btn').appendChild(Icons.icon('redo', 17));
   document.getElementById('el-nav-start-icon').appendChild(Icons.icon('compass', 16));
@@ -164,17 +164,42 @@
     value: state.editLang,
     onChange: async function (val) {
       if (saveVersion !== savedVersion) {
-        editLangDD.setItems(LANG_OPTIONS, state.editLang);
+        refreshEditLanguages();
         clearTimeout(state.saveTimer);
         await queueStructureSave();
         if (saveVersion !== savedVersion) return;
       }
       state.editLang = val;
-      editLangDD.setItems(LANG_OPTIONS, val);
+      refreshEditLanguages();
       renderAll();
     },
   });
   document.getElementById('el-edit-lang-host').appendChild(editLangDD.el);
+
+  function refreshEditLanguages() {
+    if (!academyUi || !state.exp) {
+      editLangDD.setItems(LANG_OPTIONS, state.editLang);
+      return;
+    }
+    if (editLangDD.trigger.getAttribute('aria-expanded') === 'true') return;
+    var contentLabel = academyUi.copy('Inhoudstaal', 'Inhaltssprache');
+    var items = LANG_OPTIONS.map(function (item) {
+      var other = item.value === 'nl' ? 'de' : 'nl';
+      var stats = Model.getTranslationStats(Model.extractTranslationRows(state.exp, other, item.value));
+      var percent = stats.total ? academyUi.number(stats.translated / stats.total, {style:'percent'}) : '—';
+      var name = item.value.toUpperCase() + ' · ' + percent;
+      return {value: item.value, label: item.label + ' · ' + percent, shortLabel: contentLabel + ': ' + name};
+    });
+    editLangDD.setItems(items, state.editLang);
+    editLangDD.trigger.setAttribute('aria-label', items.find(item => item.value === state.editLang).shortLabel);
+  }
+  if (academyUi) {
+    editLangDD.trigger.addEventListener('click', refreshEditLanguages, true);
+    editLangDD.trigger.addEventListener('keydown', function (event) {
+      if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) refreshEditLanguages();
+    }, true);
+  }
+
 
   var moreMenuDD = Icons.createDropdown({
     leadingIcon: 'more',
@@ -416,10 +441,27 @@
   }
 
   function setSaveStatus(text, isLive, showRetry) {
-    saveStateEl.textContent = '';
-    if (isLive) saveStateEl.appendChild(Icons.icon('cloudCheck', 13));
-    saveStateEl.appendChild(document.createTextNode(text));
+    var failed = academyUi && showRetry && savedVersion !== saveVersion;
+    var label = failed ? academyUi.copy('Niet opgeslagen', 'Nicht gespeichert') : text;
+    if (saveStateEl.textContent !== label) {
+      saveStateEl.textContent = '';
+      if (isLive && !academyUi) saveStateEl.appendChild(Icons.icon('cloudCheck', 13));
+      saveStateEl.appendChild(document.createTextNode(label));
+    }
     saveStateEl.className = 'el-save-chip' + (isLive ? ' is-live' : (showRetry ? ' is-warn' : ''));
+    if (academyUi) {
+      saveStateEl.classList.toggle('is-saving', text === uiText('Saving…'));
+      saveStateEl.classList.toggle('is-unsaved', !!failed);
+      var savedAt = isLive && Number(acceptedCourse?.updated_at);
+      if (savedAt > 0) {
+        var time = academyUi.date(savedAt * 1000, {hour: '2-digit', minute: '2-digit', hour12: false});
+        saveStateEl.dataset.academyTip = academyUi.copy('Laatst opgeslagen om ', 'Zuletzt gespeichert um ') + time;
+        saveStateEl.tabIndex = 0;
+      } else {
+        delete saveStateEl.dataset.academyTip;
+        saveStateEl.removeAttribute('tabindex');
+      }
+    }
     if (saveRetryBtn) {
       var pendingCount = Math.max(0, saveVersion - savedVersion);
       saveRetryBtn.hidden = !showRetry;
@@ -471,7 +513,11 @@
       state.exp.revision = res.expedition.revision;
       syncReviewFlags(res.expedition);
       savedVersion = version;
-      if (version === saveVersion) setSaveStatus(uiText('Saved'), true, false);
+      if (version === saveVersion) {
+        setSaveStatus(uiText('Saved'), true, false);
+        updateEditorHeading();
+        if (academyUi) refreshEditLanguages();
+      }
     } catch (err) {
       if (err.status === 409) {
         renewBeforeSave = true;
@@ -554,7 +600,7 @@
           leaseMsg.textContent = uiText('{name} is currently editing this expedition{activity}. Preview is available. Taking over stops their unsaved changes from being saved.', {name: edName, activity: agoTxt});
         }
         leaseBanner.hidden = false;
-        saveStateEl.textContent = res.same_account ? uiText('Open in another tab') : uiText('{name} editing', {name: edName});
+        setSaveStatus(res.same_account ? uiText('Open in another tab') : uiText('{name} editing', {name: edName}), false, false);
         saveStateEl.className = 'el-save-chip is-warn';
       }
     } catch (err) {
@@ -637,10 +683,26 @@
     }
   }
 
+  function updateEditorHeading() {
+    if (!academyUi || !state.exp) return;
+    var course = state.exp.title;
+    var mode = state.mode === 'translate' ? uiText('Translate') : (state.mode === 'preview' ? uiText('Preview') : academyUi.copy('Bewerken', 'Bearbeiten'));
+    document.title = [mode, course, 'xPED Academy'].filter(Boolean).join(' · ');
+    if (grantToken) return;
+    document.querySelector('.ac-editor-view').textContent = mode;
+    backLink.querySelector('span').textContent = course || academyUi.copy('Expeditie', 'Expedition');
+    var description = academyUi.copy('Terug naar ', 'Zurück zu ') + backLink.querySelector('span').textContent;
+    backLink.setAttribute('aria-label', description);
+    backLink.dataset.academyTip = description;
+    backLink.removeAttribute('title');
+  }
+
   function setMode(nextMode) {
     if (!canEditStructure() && nextMode === 'edit') nextMode = 'translate';
     if (state.mode !== nextMode) toastEl.hidden = true;
     state.mode = nextMode;
+    updateEditorHeading();
+    if (academyUi && nextMode === 'edit') refreshEditLanguages();
     document.querySelectorAll('.el-mode-tab').forEach(function (tab) {
       var active = tab.getAttribute('data-mode') === nextMode;
       tab.classList.toggle('is-active', active);
@@ -4852,7 +4914,7 @@
   if (saveRetryBtn) {
     saveRetryBtn.addEventListener('click', function () {
       clearTimeout(state.saveTimer);
-      setSaveStatus('Saving…', false, false);
+      setSaveStatus(uiText('Saving…'), false, false);
       queueStructureSave();
     });
   }
@@ -5244,13 +5306,6 @@
       }
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId));
       state.exp = res.expedition;
-      if (academyUi && !grantToken && state.exp.title) {
-        var backLink = document.getElementById('el-back-link');
-        backLink.querySelector('span').textContent = state.exp.title;
-        document.title = state.exp.title + ' · ' + editorPageTitle;
-        backLink.title = window.Xped.i18n.copy('Terug naar ','Zurück zu ') + state.exp.title;
-        backLink.setAttribute('aria-label', backLink.title);
-      }
       acceptedCourse = clone(state.exp);
       state.role = res.expedition.role || '';
       state.editLang = courseLanguages.includes(state.exp.defaultLanguage) ? state.exp.defaultLanguage : 'nl';
@@ -5266,7 +5321,7 @@
         }
       }
       state.previewLang = state.editLang;
-      editLangDD.setItems(LANG_OPTIONS, state.editLang);
+      if (!academyUi) refreshEditLanguages();
       previewLangDD.setItems(LANG_OPTIONS, state.previewLang);
       if (state.role === 'translate') state.mode = 'translate';
 
@@ -5275,7 +5330,12 @@
         var retBar = document.getElementById('el-return-responses');
         var retLink = document.getElementById('el-return-responses-link');
         if (retBar && retLink) {
-          retLink.href = Model.coursePaths(expeditionId).report;
+          var reportURL = new URL(Model.coursePaths(expeditionId).report, window.location.origin);
+          if (academyUi && !grantToken) {
+            reportURL.search = urlParams.get('filters') || '';
+            backLink.href = reportURL.href;
+          }
+          retLink.href = reportURL.href;
           retBar.hidden = false;
         }
       }
@@ -5311,6 +5371,17 @@
     }
   }
 
+  if (academyUi && !grantToken) {
+    var originTab = urlParams.get('tab');
+    if (['overzicht', 'delen', 'vertalingen', 'instellingen'].includes(originTab)) backLink.hash = originTab;
+    window.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.repeat || event.isComposing || !state.exp) return;
+      if (event.target.closest?.('input, textarea, select, [contenteditable="true"], [contenteditable="plaintext-only"]')) return;
+      if (document.querySelector('dialog[open], .el-dd.is-open, [aria-haspopup][aria-expanded="true"], #ac-nav-toggle[aria-expanded="true"], #el-utilities-toggle[aria-expanded="true"], .academy-control-tip:not([hidden])')) return;
+      event.preventDefault();
+      backLink.click();
+    }, true);
+  }
   window.addEventListener('beforeunload', function (event) {
     if (!leavingAccount && (savedVersion !== saveVersion || Object.keys(state.trPendingTexts).length || Object.keys(state.trPendingMedia).length)) {
       event.preventDefault();
