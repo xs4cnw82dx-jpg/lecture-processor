@@ -1,0 +1,49 @@
+{% from 'academy/_collaboration_macros.html' import say, switch with context %}
+<header class="xc-page-heading xc-course-heading">
+  <div class="xc-course-intro"><p id="xc-state-mark" class="xc-status"></p><h1 id="xc-title" translate="no"></h1>
+    <div class="xc-route-summary"><span id="xc-count"></span><span id="xc-strip"></span></div>
+    <a class="btn primary" id="xc-edit" href="{{ url_for('academy.builder', expedition_id=expedition_id) }}">{{ say('Bewerken','Bearbeiten') if role != 'translate' else say('Vertalen','Übersetzen') }}</a>
+  </div>
+  <div id="xc-cover" class="xc-course-cover" hidden><img id="xc-cover-image" alt="" decoding="async"></div>
+</header>
+<nav class="xc-tabs" aria-label="{{ say('Expeditiepagina’s','Expeditionsseiten') }}">
+  <a href="#overzicht" data-view="overzicht">{{ say('Overzicht','Übersicht') }}</a>
+  {% if role != 'translate' %}<a href="{{ url_for('academy.report', expedition_id=expedition_id) }}">{{ say('Resultaten','Ergebnisse') }}</a>
+  <a href="#delen" data-view="delen">{{ say('Delen en toegang','Freigabe und Zugriff') }}</a>{% endif %}
+  <a href="#vertalingen" data-view="vertalingen">{{ say('Vertalingen','Übersetzungen') }}</a>
+  {% if role == 'owner' %}<a href="#instellingen" data-view="instellingen">{{ say('Instellingen','Einstellungen') }}</a>{% endif %}
+</nav>
+<section id="xc-overzicht" class="xc-panel" hidden>
+  <div class="xc-overview"><section class="xc-route-card"><h2>{{ say('De route','Die Route') }}</h2><ol id="xc-stations"></ol></section>
+  <section class="xc-metadata"><h2>{{ say('Over deze expeditie','Über diese Expedition') }}</h2><dl id="xc-meta"></dl></section></div>
+</section>
+{% if role != 'translate' %}<section id="xc-delen" class="xc-panel" hidden>
+  <div class="xc-section-title"><h2>{{ say('Deelnemerslink','Teilnahmelink') }}</h2><span id="xc-sharing-status" role="status"></span></div>
+  <div id="xc-learner-link"></div>
+  {% if role == 'owner' %}
+  <fieldset id="xc-sharing-settings" class="xc-switches">
+    <legend class="sr-only">{{ say('Toegang en gegevens','Zugriff und Daten') }}</legend>
+    {{ switch('enabled','Deelnemerslink actief','Teilnahmelink aktiv','Deelnemers openen de expeditie zonder account.','Teilnehmende öffnen die Expedition ohne Konto.') }}
+    {{ switch('collectResponses','Antwoorden verzamelen','Antworten erfassen','Deelnemers kiezen zelf of ze hun antwoorden delen.','Teilnehmende entscheiden selbst, ob sie Antworten teilen.') }}
+    {{ switch('showPeerResults','Groepsresultaten tonen','Gruppenergebnisse anzeigen') }}
+    {{ switch('collectPilotFeedback','Feedback na afloop vragen','Am Ende um Feedback bitten') }}
+    {{ switch('allowStepComments','Opmerkingen bij stappen toestaan','Kommentare zu Schritten erlauben') }}
+  </fieldset>
+  <div class="xc-section-title"><h2>{{ say('Teamleden','Teammitglieder') }}</h2><button class="btn" type="button" data-xc-open="member">{{ say('Teamlid toevoegen','Mitglied hinzufügen') }}</button></div>
+  <ul class="xc-people" id="xc-members"></ul>
+  <div class="xc-section-title"><h2>{{ say('Vertalerslinks','Übersetzungslinks') }}</h2><button class="btn" type="button" data-xc-open="grant">{{ say('Link maken','Link erstellen') }}</button></div>
+  <ul class="xc-people" id="xc-grants"></ul>
+  {% endif %}
+</section>{% endif %}
+<section id="xc-vertalingen" class="xc-panel" hidden>
+  <div class="xc-section-title"><div><h2 id="xc-translation-heading"></h2><p id="xc-coverage"></p></div>
+  <a class="btn" id="xc-translate" href="{{ url_for('academy.builder', expedition_id=expedition_id, modus='vertalen') }}">{{ say('Vertaalomgeving openen','Übersetzung öffnen') }}</a></div>
+  <label class="xc-check"><input type="checkbox" id="xc-review-only" checked>{{ say('Alleen ontbrekende of te controleren teksten','Nur fehlende oder zu prüfende Texte') }}</label>
+  <div id="xc-translation-rows"></div>
+</section>
+{% if role == 'owner' %}<section id="xc-instellingen" class="xc-panel" hidden>
+  <section><h2>{{ say('Bericht bij een gepauzeerde link','Nachricht bei pausiertem Link') }}</h2><form id="xc-pause" class="xc-form"><label for="xc-paused-message">{{ say('Bericht voor deelnemers','Nachricht für Teilnehmende') }}</label><textarea id="xc-paused-message" maxlength="400" rows="3"></textarea><button class="btn" type="submit">{{ say('Bericht opslaan','Nachricht speichern') }}</button></form></section>
+  <section class="xc-danger"><h2>{{ say('Deelnemerslink vernieuwen','Teilnahmelink erneuern') }}</h2><p>{{ say('De huidige link en alle bijbehorende QR-codes stoppen direct met werken.','Der aktuelle Link und alle zugehörigen QR-Codes funktionieren danach nicht mehr.') }}</p><button class="btn danger" data-xc-open="rotate" type="button">{{ say('Link vernieuwen','Link erneuern') }}</button></section>
+</section>{% endif %}
+<div id="xc-feedback" class="xc-feedback" role="status" aria-live="polite"></div>
+{% include 'academy/collaboration_dialog.html' %}

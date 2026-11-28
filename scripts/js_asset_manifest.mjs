@@ -1,4 +1,8 @@
 export const minifiedTargets = [
+  {
+    entry: 'scripts/entries/academy-runtime.js', out: 'static/js/academy-runtime.min.js',
+    bundle: true, format: 'iife', define: { XPED_ACADEMY_BUILD: 'true' },
+  },
   { entry: 'static/js/batch-status.js', out: 'static/js/batch-status.min.js' },
   { entry: 'static/js/book-zip.js', out: 'static/js/book-zip.min.js', bundle: true, format: 'iife' },
   { entry: 'static/js/book-studio.js', out: 'static/js/book-studio.min.js', bundle: true, format: 'esm' },
@@ -34,6 +38,7 @@ export const minifiedTargets = [
   { entry: 'static/js/elearning-dashboard.js', out: 'static/js/elearning-dashboard.min.js' },
   { entry: 'static/js/elearning-builder.js', out: 'static/js/elearning-builder.min.js' },
   { entry: 'static/js/elearning-player.js', out: 'static/js/elearning-player.min.js' },
+  { entry: 'static/js/academy-report.js', out: 'static/js/academy-report.min.js' },
   { entry: 'static/js/elearning-responses.js', out: 'static/js/elearning-responses.min.js' },
 ];
 
@@ -63,11 +68,20 @@ export const intentionallyUnminifiedScripts = [
   'static/js/app-shell.js',
   'static/js/tools-hub.js',
   'static/js/auth-utils.js',
+  'static/js/academy-locale.js',
   'static/js/academy-account.js',
   'static/js/academy-folders.js',
+  'static/js/academy-collaboration.js',
   'static/js/academy-account-data.js',
+  'static/js/academy-controls.js',
+  'static/js/academy-finder.js',
+  'static/js/academy-indexes.js',
+  'static/js/academy-overview.js',
+  'static/js/academy-shell.js',
   'static/js/academy-signin.js',
   'static/js/display-format-utils.js',
+  'static/js/elearning-step-timer.js',
+  'static/js/academy-report-details.js',
   'static/js/credit-utils.js',
   'static/js/download-utils.js',
   'static/js/features.js',

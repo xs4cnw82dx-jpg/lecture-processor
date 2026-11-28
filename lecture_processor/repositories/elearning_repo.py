@@ -5,6 +5,7 @@ import logging
 import threading
 from collections import Counter
 
+from google.api_core.exceptions import FailedPrecondition
 from google.cloud import firestore
 from google.cloud.firestore_v1 import _helpers
 from google.cloud.firestore_v1.types import Document
@@ -67,9 +68,9 @@ class ElearningStore:
     def ref(self, path: str):
         return self.db.document(path)
 
-    def get(self, path: str):
+    def get(self, path: str, *, fields=None):
         record('reads')
-        snap = self.ref(path).get()
+        snap = self.ref(path).get(field_paths=fields)
         return decode(snap.to_dict()) if snap.exists else None
 
     def put(self, path: str, value: dict) -> None:
@@ -99,6 +100,23 @@ class ElearningStore:
     def list(self, collection: str, field=None, value=None, operator: str = '==', limit: int | None = 200, fields=None):
         return list(self.stream(collection, field, value, operator, limit, fields))
 
+    def dashboard_sessions(self, expedition_id, start, end, fields):
+        query = apply_where(self.db.collection('elearning_responses'), 'expedition_id', '==', expedition_id)
+        period = apply_where(apply_where(query, 'started_at', '>=', start), 'started_at', '<', end)
+        count = 0
+        try:
+            for doc in period.select(fields).stream():
+                count += 1
+                yield decode(doc.to_dict())
+        except FailedPrecondition as exc:
+            if count or 'index' not in str(exc).lower():
+                raise
+            # Serve new projects through the existing single-course index while the period index builds.
+            rows = self.stream('elearning_responses', 'expedition_id', expedition_id, limit=None, fields=fields)
+            yield from (row for row in rows if start <= (row.get('started_at') or 0) < end)
+        finally:
+            record('reads', max(1, count))
+
     def count(self, collection: str, filters):
         # Firestore answers count aggregations from the index, without loading session documents.
         record('reads')
@@ -108,14 +126,21 @@ class ElearningStore:
         transaction = self.db.transaction()
 
         class Unit:
-            def get(_, path: str):
+            def get(_, path: str, *, fields=None):
                 record('reads')
-                snap = self.ref(path).get(transaction=transaction)
+                snap = self.ref(path).get(transaction=transaction, field_paths=fields)
                 return decode(snap.to_dict()) if snap.exists else None
 
             def put(_, path: str, value: dict) -> None:
                 record('writes')
                 transaction.set(self.ref(path), document_fields(value))
+
+            def update_fields(_, path: str, values: dict, *, remove=()) -> None:
+                """Replace the given top-level fields of an existing document."""
+                record('writes')
+                changes = document_fields(values)
+                changes.update(dict.fromkeys(remove, firestore.DELETE_FIELD))
+                transaction.update(self.ref(path), changes)
 
             def delete(_, path: str) -> None:
                 record('writes')

@@ -1,0 +1,30 @@
+{% extends 'academy/base.html' %}
+{% from '_academy_copy.html' import tr with context %}
+{% block title %}{{ tr("Privacy") }} · xPEDitie Pijn Studio{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  {% include '_academy_foundation.html' %}
+{% endblock %}
+{% block body_attrs %} class="academy-body"{% endblock %}
+{% block body %}
+  {% set academy_show_account = false %}
+  {% include '_academy_header.html' %}
+  <main class="academy-document" id="main-content" tabindex="-1">
+    <h1>{{ tr("Privacy in xPEDitie Pijn Studio") }}</h1>
+    <h2>{{ tr("Taking an expedition") }}</h2>
+    <p>{{ tr("You can open a shared expedition without an account. Your browser saves your progress on this device so you can return to the course.") }}</p>
+    <h2>{{ tr("Sharing in a pilot") }}</h2>
+    <p>{{ xped_copy('Als je na de uitleg over tijdmeting kiest voor delen, telt ook de actieve tijd per stap mee. De meting pauzeert als je de pagina verlaat of een tijd niets doet.','Wenn Sie sich nach dem Hinweis zur Zeitmessung für das Teilen entscheiden, wird auch Ihre aktive Zeit pro Schritt erfasst. Die Messung pausiert, wenn Sie die Seite verlassen oder längere Zeit inaktiv sind.') }}</p>
+    <p>{{ tr("If an expedition collects responses, you can participate privately or choose to share your progress, answers and feedback with the course authors. Shared responses are associated with a session ID. The player shows when other learners can see group results or submitted words.") }}</p>
+    <p>{{ tr("You can switch to private participation during the expedition. The authors keep the responses you shared before switching. Clearing your browser’s saved course progress removes your local copy.") }}</p>
+    <h2>{{ tr("Fonts in the Studio") }}</h2>
+    <p>{{ tr("Studio pages for authors load two weights of the General Sans typeface from Fontshare, a service of the Indian Type Foundry. Opening these pages sends your IP address and browser details to Fontshare's servers. Learner pages do not load these fonts.") }}</p>
+    <h2>{{ tr("Author accounts and courses") }}</h2>
+    <p>{{ tr("The Studio uses Firebase Authentication for sign-in. Course records and pilot responses are stored in Firestore. Uploaded course media is stored in Supabase. Authors can grant collaborators access to an expedition and choose when to share a learner link.") }}</p>
+    <p><a href="{{ url_for('academy.settings') }}">{{ tr("Manage your Studio account") }}</a></p>
+    <h2>{{ tr("Questions about your data") }}</h2>
+    <p>{{ tr("For questions about a pilot or a shared response, contact the course organizer who sent your expedition link.") }}</p>
+    {% if legal_contact_email %}<p>{{ tr("For help accessing or deleting your Studio account, or for other privacy requests, email") }} <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>{% endif %}
+    <a href="/" class="el-back-link">{{ tr("Back to the Studio") }}</a>
+  </main>
+{% endblock %}

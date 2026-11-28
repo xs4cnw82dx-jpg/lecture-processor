@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
 
   window.XpedAcademyFolders = function (api, reload, render) {
     function byId(id) { return document.getElementById('academy-folder-' + id); }
@@ -22,7 +23,8 @@
     }
 
     function folderOption(folder) {
-      return option(folder.name, folder.id, folder.id !== 'account-review');
+      const label = folder.id === 'account-review' ? window.Xped.i18n.copy('Te beoordelen', 'Zur Prüfung') : folder.name;
+      return option(label, folder.id, folder.id !== 'account-review');
     }
 
     function actions() {
@@ -35,7 +37,7 @@
     function update(rows, show, selection) {
       var previous = selection === undefined ? filter.value : selection;
       folders = rows || [];
-      filter.replaceChildren(option('All expeditions', '*'), option('Unfiled', ''));
+      filter.replaceChildren(option(uiText('All expeditions'), '*'), option(uiText('Unfiled'), ''));
       folders.forEach(function (folder) { filter.add(folderOption(folder)); });
       filter.value = previous === '' || current(previous) ? previous : '*';
       bar.hidden = !show;
@@ -62,12 +64,12 @@
       byId('delete-note').hidden = action !== 'delete';
       name.required = naming;
       name.value = action === 'rename' ? selected.name : '';
-      var titles = { create: 'New folder', rename: 'Rename folder', delete: 'Delete folder', move: 'Move expedition' };
+      var titles = { create: uiText('New folder'), rename: uiText('Rename folder'), delete: uiText('Delete folder'), move: uiText('Move expedition') };
       byId('title').textContent = titles[action];
-      confirm.textContent = action === 'delete' ? 'Delete folder' : action === 'move' ? 'Move' : 'Save';
+      confirm.textContent = action === 'delete' ? uiText('Delete folder') : action === 'move' ? uiText('Move') : uiText('Save');
       confirm.className = action === 'delete' ? 'btn danger' : 'btn primary';
       if (action === 'move') {
-        destination.replaceChildren(option('Unfiled', ''));
+        destination.replaceChildren(option(uiText('Unfiled'), ''));
         folders.filter(function (folder) { return !folder.deleting; }).forEach(function (folder) {
           destination.add(folderOption(folder));
         });
@@ -134,6 +136,11 @@
         if (course.role !== 'owner') return false;
         var folder = current(course.folderId);
         return (folder ? folder.id : '') === filter.value;
+      },
+      reveal: function (course) {
+        if (this.matches(course)) return;
+        filter.value = '*';
+        actions();
       },
       move: function (course) { open('move', course); },
     };

@@ -1,5 +1,9 @@
 (function () {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
+  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
+  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
+  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -16,19 +20,22 @@
   var pendingImportPayload = null;
   var allExpeditions = [];
   var justDuplicatedId = '';
+  var pendingCopies = new Map();
   var actionsEl = document.getElementById('el-author-actions');
   var academy = !!document.querySelector('meta[name="academy-signin"]');
   var canCreate = !academy;
+  var requestedAction = academy ? new URLSearchParams(location.search).get('actie') : '';
   var retry = document.getElementById('el-retry');
   var signIn = document.getElementById('el-signin');
   var auth;
-  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  try { auth = platformBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   if (!auth && academy) {
-    statusEl.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
+    statusEl.textContent = uiText('Sign-in is temporarily unavailable. Reload this page to try again.');
     return;
   }
-  var client = window.LectureProcessorAuth.createAuthClient(auth);
-  var admin = window.XpedStudioAdmin.create(api, loadList);
+  var client = platformAuth.createAuthClient(auth);
+  var admin = academy ? null : window.XpedStudioAdmin.create(api, loadList);
+  var teamLink = document.getElementById('el-team-link');
   var folders = academy && window.XpedAcademyFolders(api, loadList, function () { renderExpeditions(allExpeditions); });
   var listRequest = 0;
   var importAttempt = 0;
@@ -67,22 +74,26 @@
   }
 
   function toast(message, type) {
-    window.LectureProcessorUx.toast(message, { type: type });
+    platformUx.toast(message, { type: type });
   }
 
   function formatRelativeTime(epochSec) {
     if (!epochSec) return { rel: '', exact: '' };
     var d = new Date(epochSec * 1000);
+    const i18n = window.Xped && window.Xped.i18n;
+    if (i18n) {
+      return { rel: i18n.relative(epochSec), exact: i18n.date(d, { dateStyle: 'medium', timeStyle: 'short' }) };
+    }
     var exact = d.toLocaleString(document.documentElement.lang || undefined, {
       year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
     var diffSec = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
     var rel;
-    if (diffSec < 60) rel = 'Updated just now';
-    else if (diffSec < 3600) rel = 'Updated ' + Math.floor(diffSec / 60) + 'm ago';
-    else if (diffSec < 86400) rel = 'Updated ' + Math.floor(diffSec / 3600) + 'h ago';
-    else if (diffSec < 86400 * 7) rel = 'Updated ' + Math.floor(diffSec / 86400) + 'd ago';
-    else rel = 'Updated ' + d.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' });
+    if (diffSec < 60) rel = uiText('Updated just now');
+    else if (diffSec < 3600) rel = uiText('Updated ') + Math.floor(diffSec / 60) + uiText('m ago');
+    else if (diffSec < 86400) rel = uiText('Updated ') + Math.floor(diffSec / 3600) + uiText('h ago');
+    else if (diffSec < 86400 * 7) rel = uiText('Updated ') + Math.floor(diffSec / 86400) + uiText('d ago');
+    else rel = uiText('Updated ') + d.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' });
     return { rel: rel, exact: exact };
   }
 
@@ -92,7 +103,7 @@
     templatePreviewEl.textContent = '';
     if (!tpl) return;
     var top = document.createElement('strong');
-    top.textContent = tpl.stations + (tpl.stations === 1 ? ' station' : ' stations') + ' · ' + tpl.steps + (tpl.steps === 1 ? ' step' : ' steps') + ' · ~' + tpl.minutes + ' min';
+    top.textContent = tpl.stations + (tpl.stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' + tpl.steps + (tpl.steps === 1 ? uiText(' step') : uiText(' steps')) + ' · ~' + tpl.minutes + uiText(' min');
     var sum = document.createElement('p');
     sum.className = 'el-exp-meta';
     sum.textContent = tpl.summary;
@@ -122,7 +133,7 @@
   async function api(url, options) {
     var response = await client.authFetch(url, options, { ensureJsonContentType: true });
     var data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Could not complete this request.');
+    if (!response.ok) throw new Error(uiText(data.error) || uiText('Could not complete this request.'));
     return data;
   }
 
@@ -132,6 +143,61 @@
     link.href = url;
     link.textContent = label;
     return link;
+  }
+
+  function copyLabel(nl, de) { return document.documentElement.lang === 'de' ? de : nl; }
+
+  function pendingCopyRow(expedition) {
+    var row = document.createElement('article');
+    row.className = 'el-exp-row xc-copy-pending';
+    row.dataset.pendingCopy = expedition.id;
+    row.tabIndex = -1;
+    row.setAttribute('aria-busy', 'true');
+    var title = document.createElement('h2');
+    title.textContent = copyLabel('Kopie van ', 'Kopie von ') + expedition.title;
+    title.translate = false;
+    var message = document.createElement('span');
+    message.textContent = copyLabel('Wordt gekopieerd…', 'Wird kopiert…');
+    row.append(title, message);
+    return row;
+  }
+
+  async function duplicateAcademyCourse(expedition) {
+    if (pendingCopies.has(expedition.id)) return;
+    var session = client.captureSession();
+    pendingCopies.set(expedition.id, session);
+    renderExpeditions(allExpeditions);
+    grid.querySelector('[data-pending-copy="' + CSS.escape(expedition.id) + '"]')?.focus();
+    try {
+      var result = await api('/api/elearning/expeditions/' + encodeURIComponent(expedition.id) + '/duplicate', {
+        method: 'POST', body: JSON.stringify({ interfaceLanguage: document.documentElement.lang }),
+      });
+      session.assertCurrent();
+      if (pendingCopies.get(expedition.id) !== session) return;
+      pendingCopies.delete(expedition.id);
+      justDuplicatedId = result.expedition.id;
+      if (result.summary) {
+        // A previously started library fetch can contain the list from before this copy existed.
+        listRequest++;
+        allExpeditions = [result.summary].concat(allExpeditions.filter(function (item) { return item.id !== result.summary.id; }));
+        if (folders) folders.reveal(result.summary);
+        renderExpeditions(allExpeditions);
+      } else await loadList();
+      var copied = Model.coursePaths(result.expedition.id).overview;
+      platformUx.toast(copyLabel('Kopie gemaakt.', 'Kopie erstellt.'), {
+        type: 'success', duration: 5000,
+        render: function (region, message) {
+          region.replaceChildren(document.createTextNode(message + ' '), actionLink(copyLabel('Openen', 'Öffnen'), copied));
+        },
+      });
+    } catch (error) {
+      if (pendingCopies.get(expedition.id) !== session) return;
+      pendingCopies.delete(expedition.id);
+      if (error.code === 'auth/session-changed') return;
+      renderExpeditions(allExpeditions);
+      grid.querySelector('[data-expedition-row="' + CSS.escape(expedition.id) + '"] .el-exp-card-actions [aria-haspopup="menu"]')?.focus();
+      toast(error.message, 'error');
+    }
   }
 
   function renderExpeditions(items) {
@@ -151,23 +217,23 @@
       var body = document.createElement('div');
       var h2 = document.createElement('h2');
       if (folders && folders.selected()) {
-        h2.textContent = 'No expeditions in this folder';
+        h2.textContent = uiText('No expeditions in this folder');
         body.appendChild(h2);
         empty.appendChild(body);
         grid.appendChild(empty);
         return;
       }
-      h2.textContent = canCreate ? 'Create your first expedition' : 'Author access is by invitation';
+      h2.textContent = canCreate ? uiText('Create your first expedition') : uiText('Author access is by invitation');
       var p = document.createElement('p');
       p.textContent = canCreate
-        ? 'Start with a blank station, a three-station BPS skeleton, or explore an interactive example.'
-        : 'To create expeditions, ask the Studio administrator to add your verified email address. To take an expedition, open the learner link you received.';
+        ? uiText('Start with a blank station, a three-station BPS skeleton, or explore an interactive example.')
+        : uiText('To create expeditions, ask the Studio administrator to add your verified email address. To take an expedition, open the learner link you received.');
       body.append(h2, p);
       if (canCreate) {
         var cta = document.createElement('button');
         cta.type = 'button';
         cta.className = 'btn primary';
-        cta.textContent = 'Create expedition';
+        cta.textContent = uiText('Create expedition');
         cta.addEventListener('click', openCreateDialog);
         body.appendChild(cta);
       }
@@ -176,15 +242,15 @@
       return;
     }
     if (!visible.length) {
-      statusEl.textContent = '0 matching expeditions';
+      statusEl.textContent = uiText('0 matching expeditions');
       var noMatch = document.createElement('div');
       noMatch.className = 'el-dash-empty';
       var nh = document.createElement('h2');
-      nh.textContent = 'No expeditions match "' + searchInput.value.trim() + '"';
+      nh.textContent = uiText('No expeditions match "') + searchInput.value.trim() + '"';
       var clr = document.createElement('button');
       clr.type = 'button';
       clr.className = 'btn small';
-      clr.textContent = 'Clear search';
+      clr.textContent = uiText('Clear search');
       clr.addEventListener('click', function () {
         searchInput.value = '';
         renderExpeditions(allExpeditions);
@@ -195,14 +261,15 @@
       return;
     }
     statusEl.textContent = q
-      ? ('Showing ' + visible.length + ' of ' + items.length + ' expeditions')
-      : (items.length + (items.length === 1 ? ' expedition' : ' expeditions'));
+      ? (uiText('Showing ') + visible.length + uiText(' of ') + items.length + uiText(' expeditions'))
+      : (items.length + (items.length === 1 ? uiText(' expedition') : uiText(' expeditions')));
 
     var focusDuplicateLink = null;
     visible.forEach(function (exp) {
       var card = document.createElement('article');
       card.className = 'el-exp-row' + (justDuplicatedId && exp.id === justDuplicatedId ? ' is-just-duplicated' : '');
-      var editUrl = '/physio/elearning/' + encodeURIComponent(exp.id) + '/edit';
+      card.dataset.expeditionRow = exp.id;
+      var editUrl = Model.coursePaths(exp.id).edit;
 
       var mainWrap = document.createElement('div');
       mainWrap.className = 'el-exp-row-main';
@@ -234,22 +301,22 @@
       top.className = 'el-exp-card-top';
       var h2 = document.createElement('h2');
       var title = document.createElement(exp.deletionPending ? 'span' : 'a');
-      if (!exp.deletionPending) title.href = editUrl;
-      title.textContent = exp.title || 'Untitled Expedition';
+      if (!exp.deletionPending) title.href = Model.coursePaths(exp.id).overview;
+      title.textContent = exp.title || uiText('Untitled Expedition');
       title.setAttribute('translate', 'no');
       h2.appendChild(title);
       var badge = document.createElement('span');
       badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
-      badge.textContent = exp.deletionPending ? 'Removal pending' : (exp.shareEnabled ? (exp.collectResponses ? 'Pilot link active' : 'Learner link active') : 'Private draft');
+      badge.textContent = exp.deletionPending ? uiText('Removal pending') : (exp.shareEnabled ? (exp.collectResponses ? uiText('Pilot link active') : uiText('Learner link active')) : uiText('Private draft'));
       top.append(h2, badge);
 
       var meta = document.createElement('p');
       meta.className = 'el-exp-meta';
-      var role = exp.role === 'owner' ? 'Owner' : (exp.role === 'translate' ? 'Translator' : 'Co-Editor');
+      var role = exp.role === 'owner' ? uiText('Owner') : (exp.role === 'translate' ? uiText('Translator') : uiText('Co-Editor'));
       var metaParts = [
         role,
-        exp.moduleCount + (exp.moduleCount === 1 ? ' station' : ' stations'),
-        exp.stepCount + (exp.stepCount === 1 ? ' step' : ' steps'),
+        exp.moduleCount + (exp.moduleCount === 1 ? uiText(' station') : uiText(' stations')),
+        exp.stepCount + (exp.stepCount === 1 ? uiText(' step') : uiText(' steps')),
       ];
       metaParts.forEach(function (value, i) {
         if (i) meta.append(' · ');
@@ -274,7 +341,7 @@
 
       // UX-010: Per-locale translation coverage readiness badges
       var cov = exp.languageCoverage || null;
-      var langs = exp.enabledLanguages || ['nl'];
+      var langs = (exp.enabledLanguages || ['nl']).filter(code => !academy || code === 'nl' || code === 'de');
       var covRow = document.createElement('div');
       covRow.className = 'el-lang-cov-row';
       var coverageDetail = document.createElement('p');
@@ -293,11 +360,11 @@
             var open = pill.getAttribute('aria-expanded') !== 'true';
             covRow.querySelectorAll('button').forEach(function (other) { other.setAttribute('aria-expanded', 'false'); });
             pill.setAttribute('aria-expanded', String(open));
-            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + ' of ' + stat.total + ' fields translated' + (stat.needsReview ? ' · ' + stat.needsReview + ' need review' : '');
+            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + uiText(' of ') + stat.total + uiText(' fields translated') + (stat.needsReview ? ' · ' + stat.needsReview + uiText(' need review') : '');
             coverageDetail.hidden = !open;
           });
           pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
-          pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? ' · review' : '');
+          pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? uiText(' · review') : '');
         } else {
           pill.className = 'el-lang-cov';
           pill.textContent = code.toUpperCase();
@@ -312,22 +379,24 @@
       var menuItems = [];
       if (!exp.deletionPending) {
         var isCopy = justDuplicatedId === exp.id;
-        var open = actionLink(isCopy ? 'Open copy' : exp.role === 'translate' ? 'Open Translator' : 'Open Builder', editUrl, true);
+        var open = actionLink(isCopy ? uiText('Open copy') : exp.role === 'translate' ? uiText('Open Translator') : uiText('Open Builder'), editUrl, true);
         if (isCopy) focusDuplicateLink = open;
         actions.appendChild(open);
       }
       if (!exp.deletionPending && exp.role !== 'translate') {
-        actions.appendChild(actionLink('Responses', '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
+        actions.appendChild(actionLink(uiText('Responses'), Model.coursePaths(exp.id).report));
+        if (academy) menuItems.push({ label: document.documentElement.lang === 'de' ? 'Freigabe und Zugriff' : 'Delen en toegang', icon: 'share', onClick: function () { window.location.assign(Model.coursePaths(exp.id).overview + '#delen'); } });
         if (exp.shareEnabled && exp.shareToken) {
-          menuItems.push({ label: 'Open learner link', icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
+          menuItems.push({ label: uiText('Open learner link'), icon: 'external', href: Model.learnerPath(exp.shareToken) });
         }
       }
       if (canCreate && !exp.deletionPending && exp.role !== 'translate') {
-        menuItems.push({ label: 'Duplicate', icon: 'copy', onClick: async function () {
+        menuItems.push({ label: uiText('Duplicate'), icon: 'copy', onClick: async function () {
+          if (academy) { await duplicateAcademyCourse(exp); return; }
           try {
             var dupRes = await api('/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/duplicate', { method: 'POST', body: '{}' });
             justDuplicatedId = (dupRes && dupRes.expedition && dupRes.expedition.id) || '';
-            toast('Expedition duplicated. Highlighted in list.', 'success');
+            toast(uiText('Expedition duplicated. Highlighted in list.'), 'success');
             await loadList();
           } catch (err) { if (err.code !== 'auth/session-changed') toast(err.message, 'error'); }
         } });
@@ -335,10 +404,10 @@
       if (exp.role !== 'translate') {
         if (exp.role === 'owner') {
           if (folders && canCreate && !exp.deletionPending) {
-            menuItems.push({ label: 'Move to folder', onClick: function () { folders.move(exp); } });
+            menuItems.push({ label: uiText('Move to folder'), onClick: function () { folders.move(exp); } });
           }
           if (menuItems.length) menuItems.push({ divider: true });
-          menuItems.push({ label: 'Delete', icon: 'trash', danger: true, onClick: function () {
+          menuItems.push({ label: uiText('Delete'), icon: 'trash', danger: true, onClick: function () {
             pendingDeleteExp = exp;
             document.getElementById('el-delete-dialog-msg').textContent = exp.title;
             document.getElementById('el-delete-error').hidden = true;
@@ -347,12 +416,13 @@
           } });
         }
         if (menuItems.length) {
-          var menu = Icons.createDropdown({ ariaLabel: 'More actions for ' + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
+          var menu = Icons.createDropdown({ ariaLabel: uiText('More actions for ') + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
           actions.appendChild(menu.el);
         }
       }
       card.append(mainWrap, actions);
       grid.appendChild(card);
+      if (pendingCopies.has(exp.id)) grid.appendChild(pendingCopyRow(exp));
     });
 
     // UX-005: Focus newly duplicated copy row
@@ -374,8 +444,18 @@
       actionsEl.hidden = !canCreate && !data.studioAdmin;
       document.getElementById('el-new-expedition-btn').hidden = !canCreate;
       document.getElementById('el-import-json-btn').hidden = !canCreate;
-      admin.setCourses(data.studioAdmin === true, allExpeditions);
+      if (admin) admin.setCourses(data.studioAdmin === true, allExpeditions);
+      if (teamLink) teamLink.hidden = !data.studioAdmin;
       renderExpeditions(allExpeditions);
+      if (canCreate && ['nieuw', 'importeren'].includes(requestedAction)) {
+        var action = requestedAction;
+        requestedAction = '';
+        var url = new URL(location.href);
+        url.searchParams.delete('actie');
+        history.replaceState(history.state, '', url);
+        if (action === 'nieuw') openCreateDialog();
+        else document.getElementById('el-import-json-btn').focus();
+      }
     } catch (err) {
       if (request !== listRequest || err.code === 'auth/session-changed') return;
       retry.hidden = false;
@@ -420,7 +500,7 @@
 
   function lockDialog(dialog, saving) {
     dialog.setAttribute('closedby', saving ? 'none' : 'any');
-    dialog.querySelector('button[aria-label="Close"]').disabled = saving;
+    dialog.querySelector('form[method="dialog"] button.el-icon-btn').disabled = saving;
     dialog.querySelector('[id$="-cancel"]').disabled = saving;
     dialog.toggleAttribute('data-saving', saving);
   }
@@ -450,15 +530,16 @@
     var preset = document.getElementById('el-new-template').value;
     var origText = confirm.textContent;
     var progress = document.getElementById('el-create-progress');
-    progress.textContent = 'Creating expedition…';
+    progress.textContent = uiText('Creating expedition…');
     confirm.disabled = true;
     lockDialog(createDialog, true);
-    confirm.textContent = 'Creating expedition…';
-    var payload = Model.createExpeditionPreset(preset, titleInput.value, lang);
+    confirm.textContent = uiText('Creating expedition…');
+    var payload = Model.createExpeditionPreset(preset, titleInput.value, lang, { academy: academy });
+    if (academy) payload.enabledLanguages = ['nl', 'de'];
     try {
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(payload) });
       createDialog.close();
-      window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
+      window.location.href = Model.coursePaths(res.expedition.id).edit;
     } catch (err) {
       if (err.code === 'auth/session-changed') return;
       lockDialog(createDialog, false);
@@ -483,19 +564,19 @@
       if (btn.disabled) return;
       btn.disabled = true;
       lockDialog(importDialog, true);
-      btn.textContent = 'Importing…';
+      btn.textContent = uiText('Importing…');
       try {
         var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(pendingImportPayload) });
         pendingImportPayload = null;
         importDialog.close();
         toast('Imported expedition!', 'success');
-        window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
+        window.location.href = Model.coursePaths(res.expedition.id).edit;
       } catch (err) {
         if (err.code === 'auth/session-changed') return;
         lockDialog(importDialog, false);
         dialogError('import', err);
         btn.disabled = false;
-        btn.textContent = 'Import & Open Builder';
+        btn.textContent = uiText('Import & Open Builder');
       }
     });
     importDialog.addEventListener('close', function () {
@@ -513,8 +594,8 @@
     var confirm = document.getElementById('el-import-confirm');
     pendingImportPayload = null;
     confirm.disabled = true;
-    confirm.textContent = 'Import & Open Builder';
-    summary.textContent = 'Checking expedition…';
+    confirm.textContent = uiText('Import & Open Builder');
+    summary.textContent = uiText('Checking expedition…');
     document.getElementById('el-import-error').hidden = true;
     importDialog.showModal();
     try {
@@ -530,9 +611,9 @@
       title.setAttribute('translate', 'no');
       var info = document.createElement('p');
       info.className = 'el-exp-meta';
-      info.textContent = checked.stationCount + (checked.stationCount === 1 ? ' station' : ' stations') + ' · ' +
-        checked.stepCount + (checked.stepCount === 1 ? ' step' : ' steps') + ' · ' +
-        checked.enabledLanguages.join(', ').toUpperCase() + ' · Private draft';
+      info.textContent = checked.stationCount + (checked.stationCount === 1 ? uiText(' station') : uiText(' stations')) + ' · ' +
+        checked.stepCount + (checked.stepCount === 1 ? uiText(' step') : uiText(' steps')) + ' · ' +
+        checked.enabledLanguages.join(', ').toUpperCase() + uiText(' · Private draft');
       summary.replaceChildren(title, info);
       confirm.disabled = false;
     } catch (err) {
@@ -550,7 +631,8 @@
   retry.addEventListener('click', loadList);
 
   function accountChanged(user) {
-    admin.reset();
+    if (admin) admin.reset();
+    if (teamLink) teamLink.hidden = true;
     if (folders) folders.reset();
     ++listRequest;
     ++importAttempt;
@@ -559,6 +641,7 @@
     lockDialog(importDialog, false);
     if (importDialog.open) importDialog.close();
     allExpeditions = [];
+    pendingCopies.clear();
     justDuplicatedId = '';
     searchInput.value = '';
     searchInput.hidden = true;
@@ -568,7 +651,7 @@
     document.getElementById('el-create-progress').textContent = '';
     var createButton = document.getElementById('el-create-confirm');
     createButton.disabled = false;
-    createButton.textContent = 'Create & Open Builder';
+    createButton.textContent = uiText('Create & Open Builder');
     pendingDeleteExp = null;
     if (deleteDialog.open) deleteDialog.close();
     if (createDialog.open) createDialog.close();
@@ -579,7 +662,7 @@
     actionsEl.hidden = !user || !canCreate;
     signIn.hidden = !!user;
     retry.hidden = true;
-    statusEl.textContent = user ? 'Loading your expeditions…' : 'Sign in to view your expeditions.';
+    statusEl.textContent = user ? uiText('Loading your expeditions…') : uiText('Sign in to view your expeditions.');
     if (user) loadList();
   }
   if (auth) auth.onAuthStateChanged(accountChanged);

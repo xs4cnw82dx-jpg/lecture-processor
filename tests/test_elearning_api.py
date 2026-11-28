@@ -3,64 +3,15 @@ from __future__ import annotations
 
 import csv
 import io
-import threading
 from copy import deepcopy
 
 import pytest
 
 from lecture_processor.domains.elearning import model
 from lecture_processor.services import elearning_service as service
+from scripts.elearning_preview_store import MemoryStore
 
 
-class MemoryStore:
-    def __init__(self):
-        self.data = {}
-        self.lock = threading.RLock()
-
-    def get(self, path):
-        return deepcopy(self.data.get(path))
-
-    cached = get
-
-    def put(self, path, value):
-        self.data[path] = deepcopy(value)
-
-    def delete(self, path):
-        self.data.pop(path, None)
-
-    def list(self, collection, field=None, value=None, operator='==', limit=200, fields=None):
-        prefix = collection + '/'
-        rows = [
-            dict(deepcopy(v), _id=k[len(prefix):])
-            for k, v in self.data.items()
-            if k.startswith(prefix) and '/' not in k[len(prefix):]
-        ]
-        if field:
-            if operator == 'array_contains':
-                rows = [r for r in rows if value in (r.get(field) or [])]
-            else:
-                def field_value(row):
-                    selected = row
-                    for part in field.split('.'):
-                        selected = selected.get(part) if isinstance(selected, dict) else None
-                    return selected
-                rows = [r for r in rows if field_value(r) == value]
-        return rows[:limit]
-
-    stream = list
-
-    def count(self, collection, filters):
-        return sum(all(row.get(field) == value for field, _, value in filters)
-                   for row in self.list(collection, limit=None))
-
-    def atomic(self, operation):
-        with self.lock:
-            before = deepcopy(self.data)
-            try:
-                return operation(self)
-            except Exception:
-                self.data = before
-                raise
 
 
 @pytest.fixture
@@ -448,7 +399,7 @@ def test_public_media_and_results_only_use_visible_course_content(setup, monkeyp
     db.put('elearning_expeditions/' + eid, saved)
     for aid in ('visible_media', 'draft_media'):
         db.put('elearning_assets/' + aid, {'id': aid, 'expedition_id': eid, 'path': aid,
-                                          'size': 3, 'content_type': 'image/webp'})
+                                          'size': 3, 'content_type': 'image/webp', 'filename': 'mijn foto é.webp'})
     monkeypatch.setattr(service.book_storage, 'request', lambda *_args, **_kwargs: b'img')
     assert client.get(public + '/assets/visible_media').status_code == 200
     assert client.get(public + '/assets/draft_media').status_code == 404
@@ -456,7 +407,12 @@ def test_public_media_and_results_only_use_visible_course_content(setup, monkeyp
         pytest.fail('Metadata reads must not download or charge for course media')
 
     monkeypatch.setattr(service.elearning_storage, 'read_asset', unexpected_read)
-    assert client.head(public + '/assets/visible_media').content_length == 3
+    viewer = client.head(public + '/assets/visible_media')
+    assert viewer.content_length == 3
+    assert 'Content-Disposition' not in viewer.headers
+    editor = client.head(f'/api/elearning/expeditions/{eid}/assets/visible_media', headers=auth_headers())
+    assert editor.headers['Content-Disposition'] == "inline; filename*=UTF-8''mijn%20foto%20%C3%A9.webp"
+    assert editor.cache_control.no_store
     assert client.head(public + '/assets/draft_media').status_code == 404
     assert client.head(f'/api/elearning/expeditions/{eid}/assets/visible_media',
                        headers=auth_headers('stranger')).status_code == 403

@@ -1,5 +1,6 @@
 (function (root) {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
 
   function makeEditable(node, placeholder, editable, onCommit) {
     if (!editable) return node;
@@ -19,7 +20,8 @@
     form.className = 'xped-card el-consent-card';
     var title = document.createElement('h1');
     title.className = 'xped-step-title';
-    title.textContent = Model.ui(lang, 'consentTitle');
+    var academy = document.documentElement.hasAttribute('data-academy-player') || document.documentElement.dataset.product === 'academy';
+    title.textContent = Model.ui(lang, academy ? 'consentHeading' : 'consentTitle');
     var intro = document.createElement('p');
     intro.textContent = Model.ui(lang, 'consentIntro');
     if (options.cohort && options.cohort !== 'default') intro.textContent += ' ' + Model.ui(lang, 'consentCohort', { group: options.cohort });
@@ -32,9 +34,17 @@
     next.type = 'submit';
     next.className = 'xped-btn xped-btn-sun';
     next.textContent = Model.ui(lang, 'next');
-    next.disabled = true;
+    var error = document.createElement('p');
+    error.className = 'el-consent-error';
+    if (academy) {
+      form.noValidate = true;
+      error.id = Model.uid('sharing-choice');
+      error.setAttribute('role', 'alert');
+    } else {
+      next.disabled = true;
+    }
     var details = [];
-    var description = Model.ui(lang, 'authorAccess');
+    var description = Model.ui(lang, options.activeTimeDisclosure ? 'authorAccessWithTime' : 'authorAccess');
     if (options.showPeerResults) {
       var shared = modules.flatMap(function (module) {
         return module.steps.flatMap(function (step) { return step.blocks; });
@@ -58,15 +68,29 @@
       words.append(heading, detail);
       label.append(input, words);
       choices.appendChild(label);
-      input.addEventListener('change', function () { next.disabled = false; });
+      input.addEventListener('change', function () {
+        next.disabled = false;
+        error.textContent = '';
+        choices.removeAttribute('aria-describedby');
+        choices.querySelectorAll('[aria-invalid]').forEach(function (radio) { radio.removeAttribute('aria-invalid'); });
+      });
     });
     form.addEventListener('submit', function (event) {
       event.preventDefault();
       var choice = new FormData(form).get('sharing');
-      if (choice !== 'private' && choice !== 'share') return;
+      if (choice !== 'private' && choice !== 'share') {
+        if (academy) {
+          error.textContent = Model.ui(lang, 'consentChoiceRequired');
+          choices.setAttribute('aria-describedby', error.id);
+          choices.querySelectorAll('input').forEach(function (radio) { radio.setAttribute('aria-invalid', 'true'); });
+          choices.querySelector('input').focus();
+        }
+        return;
+      }
       onChoose(choice);
     });
     form.append(title, intro, choices);
+    if (academy) form.appendChild(error);
     if (details.length) {
       var disclosure = document.createElement('details');
       var summary = document.createElement('summary');
@@ -112,7 +136,9 @@
     col.className = 'xped-hero-copy';
 
     var eyText = Model.getLocalized(sp.eyebrow, lang, defLang);
-    if (eyText || editable) {
+    var isAcademy = document.documentElement.hasAttribute('data-academy-player') || document.documentElement.dataset.product === 'academy';
+    var genericEyebrow = /^(?:xpeditie pijn|xpedition pain|xpedition schmerz)$/i.test(eyText.trim());
+    if ((eyText || editable) && (!isAcademy || (eyText && !genericEyebrow))) {
       var kicker = document.createElement('div');
       kicker.className = 'xped-hero-kicker';
       var eySpan = document.createElement('span');
@@ -127,7 +153,7 @@
     h1.className = 'xped-hero-title';
     h1.textContent = Model.getLocalized(sp.title, lang, defLang) || (editable ? '' : (exp.title || ''));
     if (options.onLocalizedField) options.onLocalizedField(h1, sp.title);
-    makeEditable(h1, 'Click to write your xPEDitie title…', editable, function (v) { onEditField('title', v); });
+    makeEditable(h1, uiText('Click to write your xPEDitie title…'), editable, function (v) { onEditField('title', v); });
     col.appendChild(h1);
 
     var subText = Model.getLocalized(sp.subtitle, lang, defLang);
@@ -136,7 +162,7 @@
       p.className = 'xped-hero-subtitle';
       p.textContent = subText;
       if (options.onLocalizedField) options.onLocalizedField(p, sp.subtitle);
-      makeEditable(p, 'Click to add a calm welcome introduction…', editable, function (v) { onEditField('subtitle', v); });
+      makeEditable(p, uiText('Click to add a calm welcome introduction…'), editable, function (v) { onEditField('subtitle', v); });
       col.appendChild(p);
     }
 
@@ -158,7 +184,7 @@
         spn.className = 'xped-hl-text';
         spn.textContent = txt;
         if (options.onLocalizedField) options.onLocalizedField(spn, hl.text);
-        makeEditable(spn, 'Highlight bullet…', editable, function (v) { onEditField('highlight:' + hl.id, v); });
+        makeEditable(spn, uiText('Highlight bullet…'), editable, function (v) { onEditField('highlight:' + hl.id, v); });
         li.appendChild(spn);
         if (editable) {
           var tools = document.createElement('span');
@@ -167,7 +193,7 @@
             var upB = document.createElement('button');
             upB.type = 'button';
             upB.className = 'xped-hl-btn';
-            upB.title = 'Move up';
+            upB.title = uiText('Move up');
             if (Icons) upB.appendChild(Icons.icon('chevronUp', 13));
             upB.addEventListener('click', function () { onMoveHighlight(hlIdx, -1); });
             tools.appendChild(upB);
@@ -176,7 +202,7 @@
             var dnB = document.createElement('button');
             dnB.type = 'button';
             dnB.className = 'xped-hl-btn';
-            dnB.title = 'Move down';
+            dnB.title = uiText('Move down');
             if (Icons) dnB.appendChild(Icons.icon('chevronDown', 13));
             dnB.addEventListener('click', function () { onMoveHighlight(hlIdx, 1); });
             tools.appendChild(dnB);
@@ -185,7 +211,7 @@
             var rmB = document.createElement('button');
             rmB.type = 'button';
             rmB.className = 'xped-hl-btn';
-            rmB.title = 'Remove highlight';
+            rmB.title = uiText('Remove highlight');
             if (Icons) rmB.appendChild(Icons.icon('x', 13));
             rmB.addEventListener('click', function () { onDeleteHighlight(hl.id); });
             tools.appendChild(rmB);
@@ -214,7 +240,7 @@
       ? Model.ui(lang, 'continueExpedition')
       : (Model.getLocalized(sp.ctaLabel, lang, defLang) || Model.ui(lang, 'startExpedition'));
     if (editable) {
-      makeEditable(ctaSpan, 'Start button label', true, function (v) { onEditField('ctaLabel', v); });
+      makeEditable(ctaSpan, uiText('Start button label'), true, function (v) { onEditField('ctaLabel', v); });
     }
     cta.appendChild(ctaSpan);
     if (Icons) cta.appendChild(Icons.icon('arrowRight', 18));
@@ -247,7 +273,7 @@
       vf.className = 'xped-video-frame';
       var ifr = document.createElement('iframe');
       ifr.src = sp.heroVideoEmbedUrl;
-      ifr.title = 'Intro video';
+      ifr.title = uiText('Intro video');
       ifr.allowFullscreen = true;
       vf.appendChild(ifr);
       vSec.appendChild(vf);
@@ -345,7 +371,7 @@
 
       var title = document.createElement('strong');
       title.className = 'xped-journey-title';
-      title.textContent = Model.getLocalized(mod.title, lang, defaultLang) || ('Station ' + (idx + 1));
+      title.textContent = Model.getLocalized(mod.title, lang, defaultLang) || (uiText('Station ') + (idx + 1));
       if (options.onLocalizedField) options.onLocalizedField(title, mod.title);
       cardMain.appendChild(title);
 
@@ -409,6 +435,10 @@
     courseName.className = 'xped-print-course';
     courseName.textContent = Model.getLocalized(exp.localizedTitle, lang, defLang) || exp.title || '';
     card.append(courseName, h1, sub);
+    if (root.XpedAcademyControls) {
+      var visibleStations = (exp.modules || []).filter(function (station) { return station.visibleToLearners !== false; });
+      if (visibleStations.length > 1) card.appendChild(root.XpedAcademyControls.routeStrip(visibleStations, { size: 'large' }));
+    }
 
     var reflections = [];
     var plans = [];

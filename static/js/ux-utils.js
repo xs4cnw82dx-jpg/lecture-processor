@@ -1,5 +1,17 @@
+/* global XPED_ACADEMY_BUILD */
 (function (global) {
   'use strict';
+
+  const academyBuild = typeof XPED_ACADEMY_BUILD !== 'undefined' && XPED_ACADEMY_BUILD;
+
+  function productI18n() {
+    return academyBuild ? global.Xped.i18n : global.LectureI18n;
+  }
+
+  function isUserContent(element) {
+    var i18n = productI18n();
+    return i18n && typeof i18n.isContent === 'function' && i18n.isContent(element);
+  }
 
   var modalStateMap = typeof WeakMap === 'function' ? new WeakMap() : null;
   var enhancedSelectInstances = [];
@@ -93,7 +105,12 @@
   var layoutSerial = 0;
   function setLayoutStyles(element, values) {
     if (!element) return;
-    var sheet = Array.from(document.styleSheets).find(function (entry) { return entry.href && entry.href.indexOf('/css/shared-ui.css') >= 0; });
+    var layoutPath = academyBuild ? '/css/academy-base.css' : '/css/shared-ui.css';
+    var sheet = Array.from(document.styleSheets).find(function (entry) {
+      if (!entry.href) return false;
+      var url = new URL(entry.href, global.location.href);
+      return url.origin === global.location.origin && url.pathname.endsWith(layoutPath);
+    });
     if (!sheet) return;
     var record = layoutRules.get(element);
     if (!record) { record = { id: 'app-layout-' + (++layoutSerial), values: {}, rule: null }; element.dataset.appLayout = record.id; layoutRules.set(element, record); }
@@ -136,6 +153,7 @@
   function showAnchoredPanel(panel, anchor) {
     if (typeof panel.showPopover !== 'function') return;
     if (panel._closeTimer) global.clearTimeout(panel._closeTimer);
+    panel._closeTimer = null;
     panel.setAttribute('popover', 'manual');
     panel.showPopover();
     anchoredPanels.set(panel, anchor);
@@ -143,8 +161,14 @@
   }
   function hideAnchoredPanel(panel) {
     anchoredPanels.delete(panel);
-    if (typeof panel.hidePopover !== 'function' || !panel.hasAttribute('popover')) return;
-    panel._closeTimer = global.setTimeout(function () { if (panel.isConnected) panel.hidePopover(); clearLayoutStyles(panel); }, 200);
+    if (typeof panel.hidePopover !== 'function' || !panel.matches(':popover-open') || panel._closeTimer) return;
+    panel._closeTimer = global.setTimeout(function () {
+      panel._closeTimer = null;
+      if (panel.isConnected && !anchoredPanels.has(panel)) {
+        panel.hidePopover();
+        clearLayoutStyles(panel);
+      }
+    }, 200);
   }
   function repositionPanels() { anchoredPanels.forEach(function (anchor, panel) { positionAnchoredPanel(panel, anchor); }); }
   global.addEventListener('resize', repositionPanels);
@@ -322,7 +346,7 @@
 
     function sync() {
       var selectedOption = selectEl.options[selectEl.selectedIndex];
-      var content = selectedOption && global.LectureI18n && global.LectureI18n.isContent(selectedOption);
+      var content = selectedOption && isUserContent(selectedOption);
       label.toggleAttribute('data-user-content', !!content);
       var activeText = '';
       Array.prototype.slice.call(menu.querySelectorAll('.app-select-item[data-value]')).forEach(function (item) {
@@ -385,7 +409,7 @@
         item.type = 'button';
         item.className = itemClass;
         item.dataset.value = String(option.value || '');
-        if (global.LectureI18n && global.LectureI18n.isContent(option)) item.setAttribute('data-user-content', '');
+        if (isUserContent(option)) item.setAttribute('data-user-content', '');
         item.textContent = String(option.textContent || option.value || placeholder);
         item.setAttribute('role', 'option');
         item.disabled = !!option.disabled;
@@ -1271,7 +1295,9 @@
   function getLocale(options) {
     var opts = options || {};
     if (opts.locale) return String(opts.locale);
-    if (global.LectureI18n) return global.LectureI18n.locale();
+    var i18n = productI18n();
+    if (i18n && typeof i18n.locale === 'function') return i18n.locale();
+    if (i18n && typeof i18n.locale === 'string') return i18n.locale;
     if (global.navigator && Array.isArray(global.navigator.languages) && global.navigator.languages.length) {
       var locales = global.navigator.languages.filter(Boolean);
       if (locales.length) return locales;
@@ -1362,7 +1388,7 @@
     }
   }
 
-  global.LectureProcessorUx = {
+  var ux = {
     toast: toast,
     manageUploadZone: manageUploadZone,
     prefersReducedMotion: prefersReducedMotion,
@@ -1386,6 +1412,11 @@
     formatDate: formatDate,
     formatTime: formatTime,
   };
+  if (academyBuild) {
+    global.Xped.ux = ux;
+  } else {
+    global.LectureProcessorUx = ux;
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchMarkedSelects);
   else watchMarkedSelects();
 })(window);

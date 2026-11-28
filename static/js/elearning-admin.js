@@ -1,8 +1,9 @@
 (function (root) {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
   function create(api, refreshLibrary) {
     function el(id) { return document.getElementById('el-admin-' + id); }
-    function t(key, params) { return root.LectureI18n ? root.LectureI18n.t(key, params) : key.replace(/\{(\w+)\}/g, (_, k) => params[k]); }
+    function t(key, params) { return root.Xped?.i18n ? root.Xped.i18n.t(key, params) : root.LectureI18n ? root.LectureI18n.t(key, params) : key.replace(/\{(\w+)\}/g, (_, k) => params[k]); }
     var dialog = el('dialog');
     var course = el('course');
     var controls = el('controls');
@@ -57,15 +58,15 @@
       var url = new URL(path, location.origin).href;
       try {
         await navigator.clipboard.writeText(url);
-        if (current === generation) el('status').textContent = t('Link copied.');
+        if (current === generation) el('status').textContent = t(uiText('Link copied.'));
       } catch (_) {
         if (current !== generation) return;
         var input = document.createElement('input');
         input.className = 'xped-input';
         input.readOnly = true;
         input.value = url;
-        input.setAttribute('aria-label', t('Link to copy'));
-        el('status').replaceChildren(document.createTextNode(t('Select and copy this link.')), input);
+        input.setAttribute('aria-label', t(uiText('Link to copy')));
+        el('status').replaceChildren(document.createTextNode(t(uiText('Select and copy this link.'))), input);
         input.select();
       }
     }
@@ -100,8 +101,8 @@
         var button = event.currentTarget;
         var actions = button.parentElement;
         var originals = Array.from(actions.children);
-        var cancel = action('Cancel', function () { actions.replaceChildren.apply(actions, originals); button.focus(); });
-        var confirm = action('Confirm removal', onRemove);
+        var cancel = action(uiText('Cancel'), function () { actions.replaceChildren.apply(actions, originals); button.focus(); });
+        var confirm = action(uiText('Confirm removal'), onRemove);
         actions.replaceChildren(cancel, confirm);
         if (message) {
           var warning = document.createElement('small');
@@ -114,20 +115,20 @@
 
     function renderSharing(data) {
       el('members').replaceChildren.apply(el('members'), data.members.map(function (member) {
-        var roleLabel = member.role === 'edit' ? 'Co-Editor' : 'Translator';
+        var roleLabel = member.role === 'edit' ? uiText('Co-Editor') : uiText('Translator');
         return row(member.email, t(roleLabel), [
-          action('Change role', function () {
+          action(uiText('Change role'), function () {
             el('email').value = member.email;
             el('role').value = member.role;
             el('role').focus();
           }),
-          removeAction('Remove', function () { update({ action: 'remove_member', email: member.email }); }),
+          removeAction(uiText('Remove'), function () { update({ action: 'remove_member', email: member.email }); }),
         ]);
       }));
       el('grants').replaceChildren.apply(el('grants'), data.grants.map(function (grant) {
         return row(grant.label, grant.targetLanguage.toUpperCase(), [
-          action('Copy link', function () { copy(grant.urlPath); }),
-          removeAction('Revoke', function () { update({ action: 'revoke_grant', grantId: grant.id }); }),
+          action(uiText('Copy link'), function () { copy(grant.urlPath); }),
+          removeAction(uiText('Revoke'), function () { update({ action: 'revoke_grant', grantId: grant.id }); }),
         ]);
       }));
       var share = data.share;
@@ -135,11 +136,11 @@
       el('paused').value = share.pausedMessage || '';
       shareKeys.forEach(function (key) { shareForm.elements[key].checked = !!share[key]; });
       el('extra').disabled = !share.collectResponses;
-      el('link').value = share.token ? new URL('/elearning/p/' + encodeURIComponent(share.token), location.origin).href : '';
+      el('link').value = share.token ? new URL(root.XpedElearningModel.learnerPath(share.token), location.origin).href : '';
       el('copy').disabled = !share.enabled || !share.token;
-      var path = '/physio/elearning/' + encodeURIComponent(course.value);
-      el('report').href = path + '/responses';
-      el('sharing-tools').href = path + '/edit?panel=sharing';
+      var paths = root.XpedElearningModel.coursePaths(course.value);
+      el('report').href = paths.report;
+      el('sharing-tools').href = paths.edit + '?panel=sharing';
     }
 
     async function loadSharing() {
@@ -149,7 +150,7 @@
       el('retry').hidden = true;
       el('status').textContent = '';
       if (!course.value) return;
-      el('status').textContent = t('Loading access settings…');
+      el('status').textContent = t(uiText('Loading access settings…'));
       try {
         var data = await api(sharingUrl());
         if (current !== generation) return;
@@ -168,7 +169,7 @@
       el('retry').hidden = true;
       var url = sharingUrl();
       controls.disabled = true;
-      el('status').textContent = t('Saving…');
+      el('status').textContent = t(uiText('Saving…'));
       try {
         await api(url, { method: 'POST', body: JSON.stringify(payload) });
         if (current !== generation) return;
@@ -176,7 +177,7 @@
         var data = await api(url);
         if (current !== generation) return;
         renderSharing(data);
-        el('status').textContent = t('Saved');
+        el('status').textContent = t(uiText('Saved'));
         if (payload.action === 'update_public') refreshLibrary();
       } catch (err) {
         if (current !== generation) return;
@@ -192,7 +193,7 @@
       var panel = el('author-controls');
       panel.disabled = true;
       el('retry').hidden = true;
-      el('status').textContent = t(actionName ? 'Saving…' : 'Loading authors…');
+      el('status').textContent = t(actionName ? uiText('Saving…') : uiText('Loading authors…'));
       try {
         if (actionName) {
           await api('/api/academy/authors', { method: 'POST', body: JSON.stringify({ action: actionName, email: email }) });
@@ -202,10 +203,10 @@
         var data = await api('/api/academy/authors');
         if (current !== generation) return;
         el('author-list').replaceChildren(...data.authors.map(function (address) {
-          return row(address, '', [removeAction('Revoke', function () { authors('revoke', address); },
-            'This author will lose access to their own expeditions until you restore access.')]);
+          return row(address, '', [removeAction(uiText('Revoke'), function () { authors('revoke', address); },
+            uiText('This author will lose access to their own expeditions until you restore access.'))]);
         }));
-        el('status').textContent = data.authors.length ? (actionName ? t('Saved') : '') : t('No invited authors yet.');
+        el('status').textContent = data.authors.length ? (actionName ? t(uiText('Saved')) : '') : t(uiText('No invited authors yet.'));
         panel.disabled = false;
       } catch (err) {
         if (current !== generation) return;
@@ -236,7 +237,7 @@
       var locale = { nl: 'nl-NL', de: 'de-DE', en: 'en-GB' }[uiLanguage()];
       return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(part / whole);
     }
-    function sessions(count) { return t(count + (count === 1 ? ' session' : ' sessions')); }
+    function sessions(count) { return t(count + (count === 1 ? uiText(' session') : uiText(' sessions'))); }
     // Bars are <progress> elements: the page policy forbids inline styles.
     function bar(className, value, max) {
       var node = document.createElement('progress');
@@ -260,11 +261,11 @@
     function renderTotals(data) {
       var total = Number(data.sessions) || 0;
       var completed = Number(data.completed) || 0;
-      var rest = metric('Not completed', share(total - completed, total));
+      var rest = metric(uiText('Not completed'), share(total - completed, total));
       rest.querySelector('dt').textContent = NOT_COMPLETED[uiLanguage()];
       rest.querySelector('dt').setAttribute('translate', 'no');
       el('totals').classList.add('el-split-figures');
-      el('totals').replaceChildren(metric('Completed', share(completed, total), 'is-good'), rest);
+      el('totals').replaceChildren(metric(uiText('Completed'), share(completed, total), 'is-good'), rest);
       var split = bar('el-split-bar' + (total ? '' : ' is-empty'), total ? 100 * completed / total : 0);
       var counts = document.createElement('div');
       counts.className = 'el-split-counts';
@@ -276,7 +277,7 @@
       counts.append(left, right);
       var figures = document.createElement('dl');
       figures.className = 'el-split-stats';
-      figures.append(metric('Recorded sessions', String(total)));
+      figures.append(metric(uiText('Recorded sessions'), String(total)));
       splitDetails().replaceChildren(split, counts, figures);
     }
 
@@ -296,7 +297,7 @@
       var rate = document.createElement('span');
       rate.textContent = item.sessions ? share(item.completed, item.sessions) : '';
       value.append(count, ' ', rate);
-      value.title = t('{completed} of {total} sessions completed', { completed: item.completed, total: item.sessions });
+      value.title = t(uiText('{completed} of {total} sessions completed'), { completed: item.completed, total: item.sessions });
       var track = document.createElement('span');
       track.className = 'el-chart-stack';
       track.append(bar('is-rest', item.sessions, busiest || 1), bar('is-good is-overlay', item.completed, busiest || 1));
@@ -305,8 +306,8 @@
       detail.textContent = value.title;
       var report = document.createElement('a');
       report.className = 'el-action-link';
-      report.href = '/physio/elearning/' + encodeURIComponent(item.id) + '/responses';
-      report.textContent = t('Responses');
+      report.href = root.XpedElearningModel.coursePaths(item.id).report;
+      report.textContent = t(uiText('Responses'));
       entry.append(name, value, report, track, detail);
       return entry;
     }
@@ -328,7 +329,7 @@
       el('totals').replaceChildren();
       el('breakdown').replaceChildren();
       splitDetails().replaceChildren();
-      el('status').textContent = t('Loading statistics…');
+      el('status').textContent = t(uiText('Loading statistics…'));
       el('retry').hidden = true;
       try {
         var data = await api('/api/elearning/admin/statistics');
@@ -403,7 +404,7 @@
     });
     el('rotate').addEventListener('click', function () { update({ action: 'update_public', rotateToken: true }); });
     el('copy').addEventListener('click', function () { copy(el('link').value); });
-    el('copy-studio').addEventListener('click', function () { copy('/physio/elearning/' + encodeURIComponent(course.value) + '/edit'); });
+    el('copy-studio').addEventListener('click', function () { copy(root.XpedElearningModel.coursePaths(course.value).edit); });
 
     return { setCourses: setCourses, reset: reset };
   }

@@ -1,5 +1,8 @@
+/* global XPED_ACADEMY_BUILD */
 (function (global) {
   'use strict';
+
+  const academyBuild = typeof XPED_ACADEMY_BUILD !== 'undefined' && XPED_ACADEMY_BUILD;
 
   function isVerificationDenial(response, payload) {
     return response.status === 403 && payload && payload.error_code === 'email_not_verified';
@@ -8,7 +11,8 @@
   function verificationError(response, payload) {
     if (!isVerificationDenial(response, payload)) return null;
     var message = 'Verify your email address before continuing.';
-    var error = new Error(global.LectureI18n && global.LectureI18n.t ? global.LectureI18n.t(message) : message);
+    var i18n = academyBuild ? global.Xped.i18n : global.LectureI18n;
+    var error = new Error(i18n && i18n.t ? i18n.t(message) : message);
     error.code = 'email_not_verified';
     return error;
   }
@@ -222,6 +226,7 @@
   }
 
   function buildSignInUrl(nextPath, authView) {
+    if (academyBuild) return '/inloggen?next=' + encodeURIComponent(normalizeReturnPath(nextPath));
     var view = String(authView || 'signin').trim().toLowerCase();
     if (view !== 'signin' && view !== 'signup' && view !== 'reset') {
       view = 'signin';
@@ -235,13 +240,14 @@
   function updateSignInLinks(root) {
     var container = root || global.document;
     if (!container || typeof container.querySelectorAll !== 'function') return;
-    Array.prototype.slice.call(container.querySelectorAll('a[href="/lecture-notes?auth=signin"], a[data-sign-in-return]')).forEach(function (link) {
+    var selector = academyBuild ? 'a[data-sign-in-return]' : 'a[href="/lecture-notes?auth=signin"], a[data-sign-in-return]';
+    Array.prototype.slice.call(container.querySelectorAll(selector)).forEach(function (link) {
       var nextPath = link.getAttribute('data-sign-in-return') || getCurrentReturnPath();
       link.href = buildSignInUrl(nextPath, 'signin');
     });
   }
 
-  global.LectureProcessorAuth = {
+  var auth = {
     createAuthClient: createAuthClient,
     verificationError: verificationError,
     buildSignInUrl: buildSignInUrl,
@@ -249,4 +255,9 @@
     normalizeReturnPath: normalizeReturnPath,
     updateSignInLinks: updateSignInLinks,
   };
+  if (academyBuild) {
+    global.Xped.auth = auth;
+  } else {
+    global.LectureProcessorAuth = auth;
+  }
 })(window);

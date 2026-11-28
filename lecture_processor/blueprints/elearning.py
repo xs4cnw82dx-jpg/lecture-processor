@@ -74,7 +74,10 @@ def _request_too_large(_error):
 def _handle_elearning_error(error: ElearningError):
     if error.status >= 409:
         logger.info('E-learning request declined: status=%s endpoint=%s', error.status, request.endpoint)
-    return jsonify(error=str(error)), error.status
+    details = {'error': str(error)}
+    if current_app.config.get('XPED_ACADEMY') and getattr(error, 'code', ''):
+        details['error_code'] = error.code
+    return jsonify(details), error.status
 
 
 @elearning_bp.errorhandler(GoogleAPICallError)
@@ -96,10 +99,11 @@ def _studio_context(runtime):
 
 
 @elearning_bp.route('/physio/elearning')
-def studio_dashboard_page():
+def studio_dashboard_page(template='elearning_dashboard.html', **page_context):
     runtime = get_runtime()
     return render_template(
-        'elearning_dashboard.html',
+        template,
+        **page_context,
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_admin_js=runtime.resolve_js_asset('js/elearning-admin.js'),
@@ -109,13 +113,13 @@ def studio_dashboard_page():
 
 
 @elearning_bp.route('/physio/elearning/<expedition_id>/edit')
-def studio_builder_page(expedition_id: str):
+def studio_builder_page(expedition_id: str, template='elearning_builder.html', initial_mode='edit'):
     runtime = get_runtime()
     return render_template(
-        'elearning_builder.html',
+        template,
         expedition_id=expedition_id,
         grant_token='',
-        initial_mode='edit',
+        initial_mode=initial_mode,
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_qr_js=runtime.resolve_js_asset('js/elearning-qr.js'),
@@ -127,10 +131,10 @@ def studio_builder_page(expedition_id: str):
 
 
 @elearning_bp.route('/elearning/translate/<grant_token>')
-def translator_page(grant_token: str):
+def translator_page(grant_token: str, template='elearning_builder.html'):
     runtime = get_runtime()
     return render_template(
-        'elearning_builder.html',
+        template,
         expedition_id='',
         grant_token=grant_token,
         initial_mode='translate',
@@ -145,14 +149,15 @@ def translator_page(grant_token: str):
 
 
 @elearning_bp.route('/physio/elearning/<expedition_id>/responses')
-def studio_responses_page(expedition_id: str):
+def studio_responses_page(expedition_id: str, template='elearning_responses.html'):
     runtime = get_runtime()
+    report_js = 'js/academy-report.js' if current_app.config.get('XPED_ACADEMY') else 'js/elearning-responses.js'
     return render_template(
-        'elearning_responses.html',
+        template,
         expedition_id=expedition_id,
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
-        elearning_responses_js=runtime.resolve_js_asset('js/elearning-responses.js'),
+        elearning_responses_js=runtime.resolve_js_asset(report_js),
         **_studio_context(runtime),
     )
 
@@ -160,9 +165,24 @@ def studio_responses_page(expedition_id: str):
 @elearning_bp.route('/elearning/p/<share_token>')
 def public_player_page(share_token: str):
     runtime = get_runtime()
+    initial_course = None
+    player_error = None
+    if current_app.config.get('XPED_ACADEMY'):
+        from lecture_processor.blueprints.academy_language import learner_language
+        try:
+            initial_course = service.public_payload(runtime, share_token)
+        except ElearningError as exc:
+            player_error = {'status': exc.status, 'message': str(exc), 'code': getattr(exc, 'code', '')}
+        except (GoogleAPICallError, RuntimeError):
+            player_error = {'status': 503, 'message': '', 'code': 'temporarily_unavailable'}
+        available = initial_course['enabledLanguages'] if initial_course else ('nl', 'de')
+        g.academy_player_language = learner_language(available)
+        if player_error:
+            return render_template('academy/learner_error.html', academy_player_error=player_error), player_error['status']
     return render_template(
-        'elearning_player.html',
+        'academy/player.html' if current_app.config.get('XPED_ACADEMY') else 'elearning_player.html',
         share_token=share_token,
+        academy_initial_course=initial_course,
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_route_map_js=runtime.resolve_js_asset('js/elearning-route-map.js'),

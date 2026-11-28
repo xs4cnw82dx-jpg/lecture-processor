@@ -11,10 +11,16 @@ import time
 
 import firebase_admin
 from firebase_admin import auth, credentials, exceptions, firestore
-from flask import Flask, abort, g, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, g, jsonify, render_template, request
 from google.api_core.exceptions import GoogleAPICallError
+from werkzeug.exceptions import HTTPException
 
+from lecture_processor.blueprints.academy_collaboration import collaboration
 from lecture_processor.blueprints.academy_folders import academy_folders_bp
+from lecture_processor.blueprints.academy_language import academy_language_bp
+from lecture_processor.blueprints.academy_pages import academy_pages
+from lecture_processor.blueprints.academy_overview import overview_bp
+from lecture_processor.blueprints.academy_reports import academy_reports
 from lecture_processor.blueprints.elearning import elearning_bp
 from lecture_processor.domains.elearning.model import ElearningError
 from lecture_processor.repositories import users_repo
@@ -29,12 +35,9 @@ from lecture_processor.services import auth_service, elearning_service, rate_lim
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC_ASSETS = (
-    'brand/books/xped/mark-white.png',
-    'css/academy.css', 'css/app-shell.css', 'css/elearning-*.css', 'css/motion.css',
-    'css/shared-ui.css', 'css/theme.css', 'css/xped-theme.css', 'fonts/books/xped-*',
-    'images/xped/*', 'js/academy-*.js', 'js/auth-utils.js', 'js/download-utils.js',
-    'js/elearning-*.js', 'js/firebase-bootstrap.js', 'js/i18n*.js', 'js/theme.js',
-    'js/ux-utils.js', 'js/vendor/qrcode-generator-2.0.4/*',
+    'brand/books/xped/mark-white.png', 'css/academy*.css', 'css/elearning-*.css',
+    'css/xped-theme.css', 'fonts/books/xped-*', 'images/xped/*', 'js/academy-*.js',
+    'js/elearning-*.js', 'js/vendor/qrcode-generator-2.0.4/*',
 )
 _REQUIRED_ENV = (
     'FLASK_SECRET_KEY', 'PUBLIC_BASE_URL', 'ACADEMY_FIREBASE_PROJECT_ID',
@@ -115,6 +118,22 @@ class AcademyRuntime:
                 raise AcademyEmailUnverified
         return None
 
+    def academy_team_profiles(self, emails):
+        profiles = {}
+        for start in range(0, len(emails), 100):
+            identifiers = [auth.EmailIdentifier(email) for email in emails[start:start + 100]]
+            try:
+                batch = auth.get_users(identifiers, app=self.firebase_app)
+            except exceptions.FirebaseError:
+                return None
+            for user in batch.users:
+                if user.email and user.email_verified and not user.disabled:
+                    profiles[user.email.lower()] = {
+                        'active': True, 'name': user.display_name or '',
+                        'lastSignIn': (user.user_metadata.last_sign_in_timestamp or 0) / 1000,
+                    }
+        return profiles
+
     def academy_identity_removed(self, uid):
         try:
             auth.get_user(uid, app=self.firebase_app)
@@ -156,8 +175,13 @@ def create_app():
     apply_proxy_fix(app, 1)
     register_static_versioning(app)
     app.register_blueprint(elearning_bp)
+    app.register_blueprint(overview_bp)
     app.register_blueprint(academy_folders_bp)
+    app.register_blueprint(collaboration)
     app.register_blueprint(academy_account_bp)
+    app.register_blueprint(academy_language_bp)
+    app.register_blueprint(academy_pages)
+    app.register_blueprint(academy_reports)
     static_root = Path(app.static_folder)
     public_assets = {
         file.relative_to(static_root).as_posix()
@@ -169,9 +193,17 @@ def create_app():
         return jsonify(error='Please verify your email address before continuing.',
                        error_code=auth_service.EMAIL_NOT_VERIFIED_AUTH_ERROR), 403
 
-    @app.get('/')
-    def index():
-        return redirect(url_for('elearning.studio_dashboard_page'))
+    @app.errorhandler(HTTPException)
+    def http_error(error):
+        # Preserve e.g. Allow and Retry-After headers supplied by Werkzeug.
+        response = error.get_response()
+        if request.path.startswith('/api/'):
+            response.set_data(app.json.dumps({'error': error.name}))
+            response.content_type = 'application/json'
+        elif not request.path.startswith('/static/'):
+            response.set_data(render_template('academy/error.html', status_code=error.code))
+            response.content_type = 'text/html; charset=utf-8'
+        return response
 
     @app.get('/healthz')
     def healthz():
@@ -186,13 +218,9 @@ def create_app():
         except GoogleAPICallError:
             return jsonify(error='Cloud saving is temporarily unavailable. Please try again in a moment.'), 503
 
-    @app.get('/signin')
-    def signin():
-        return render_template('academy_signin.html')
-
     @app.get('/privacy')
     def privacy():
-        return render_template('academy_privacy.html')
+        return render_template('academy/privacy.html')
 
     @app.before_request
     def prepare_request():
@@ -219,6 +247,7 @@ def create_app():
             extra_frame_sources=('https://www.youtube-nocookie.com', 'https://player.vimeo.com'),
         )
         if request.endpoint != 'static':
+            response.headers['Referrer-Policy'] = 'strict-origin'
             response.headers.setdefault('Cache-Control', 'private, no-store')
         return apply_security_headers(response, request_is_secure=request.is_secure)
 

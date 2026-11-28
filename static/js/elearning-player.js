@@ -6,6 +6,15 @@
   var Blocks = window.XpedElearningBlocks;
   var RouteMap = window.XpedElearningRouteMap;
 
+  if (document.body.dataset.siteTitle === 'xPED Academy') {
+    var learnerScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    var updateLearnerScheme = function () {
+      document.body.dataset.learnerAppearance = learnerScheme.matches ? 'dark' : 'light';
+    };
+    updateLearnerScheme();
+    learnerScheme.addEventListener('change', updateLearnerScheme);
+  }
+
   var shareToken = document.body.dataset.shareToken || '';
   var params = new URLSearchParams(window.location.search);
   var cohort = (params.get('cohort') || '').trim() || 'default';
@@ -56,6 +65,12 @@
     syncTimer: null,
   };
 
+  // Active time per step. It is kept only for sessions whose consent included it.
+  var stepTimer = document.body.dataset.siteTitle === 'xPED Academy' && window.XpedStepTimer ? window.XpedStepTimer.createStepTimer() : null;
+  function measuringTime() {
+    return !!(stepTimer && isSharing() && state.consent.measuresTime === true);
+  }
+
   var langDD = Icons.createDropdown({
     leadingIcon: 'globe',
     align: 'right',
@@ -63,7 +78,17 @@
     items: [],
     onChange: function (val) {
       state.lang = val;
+      if (window.Xped && window.Xped.i18n) {
+        document.cookie = 'xped-course-language=' + val + '; Path=' + location.pathname + '; Max-Age=31536000; SameSite=Lax' +
+          (location.protocol === 'https:' ? '; Secure' : '');
+      }
       saveLocalProgress();
+      if (window.Xped?.i18n && val !== window.Xped.i18n.language) {
+        const destination = new URL(location.href);
+        destination.searchParams.set('lang', val);
+        location.replace(destination);
+        return;
+      }
       updateLangDropdown();
       render();
     },
@@ -107,6 +132,7 @@
         state.peerDisclosureTypes = Object.assign(Object.create(null), saved.peerDisclosureTypes);
         state.stepComments = Array.isArray(saved.stepComments) ? saved.stepComments : [];
         state.pilotSent = saved.pilotSent === true;
+        if (stepTimer && grant.measuresTime === true) stepTimer.load(saved.sharedStepMs);
       }
       if (saved.answers && typeof saved.answers === 'object') state.answers = Object.assign(Object.create(null), saved.answers);
       if (Array.isArray(saved.navHistory)) state.navHistory = saved.navHistory.filter(function (id) { return typeof id === 'string'; });
@@ -135,6 +161,7 @@
         visitedStepIds: state.visitedStepIds,
         completedModuleIds: state.completedModuleIds,
         stepComments: state.stepComments,
+        sharedStepMs: measuringTime() ? stepTimer.milliseconds() : undefined,
         lastModIdx: state.lastModIdx,
         lastStepIdx: state.lastStepIdx,
         lang: state.lang,
@@ -170,11 +197,14 @@
     state.peerDisclosureTypes = Object.create(null);
     state.stepComments = [];
     state.pilotSent = false;
+    if (stepTimer) stepTimer.reset();
   }
 
   function setConsent(choice) {
     resetSharing();
+    // measuresTime marks consent given with the disclosure that includes active time per step.
     if (choice) state.consent = { choice: choice, cohort: cohort, version: state.exp.shareOptions.collectionVersion, sessionId: state.sessionId };
+    if (stepTimer && choice === 'share') state.consent.measuresTime = true;
     try {
       if (state.consent) localStorage.setItem(consentKey, JSON.stringify(state.consent));
       else localStorage.removeItem(consentKey);
@@ -190,7 +220,7 @@
     catch (_err) { return false; }
   }
 
-  function sendResponse(completed, pilotFeedback) {
+  function sendResponse(completed, pilotFeedback, keepalive) {
     if (!isSharing()) return Promise.resolve({ ok: false });
     var grant = state.consent;
     var body = JSON.stringify({
@@ -205,6 +235,8 @@
       completed: completed || state.view === 'summary',
       pilotFeedback: pilotFeedback,
       stepComments: state.stepComments.length ? state.stepComments : undefined,
+      activeTimeDisclosure: measuringTime() ? 1 : undefined,
+      stepSeconds: measuringTime() ? stepTimer.seconds() : undefined,
     });
     var request = state.responseQueue.then(async function () {
       // Keep submitted answers or feedback queued until the learner leaves the
@@ -217,6 +249,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: body,
+        keepalive: !!keepalive,
       });
       if ((response.status === 403 || response.status === 409) && grantIsCurrent(grant)) {
         // A course owner changed the pilot settings while this learner had the course open.
@@ -357,7 +390,7 @@
     heading.textContent = Model.ui(state.lang, 'answerPrivacy');
     var body = document.createElement('p');
     var messages = [state.canSaveLocally ? 'deviceResume' : 'storageUnavailable'];
-    if (isSharing()) messages.unshift('authorAccess');
+    if (isSharing()) messages.unshift(measuringTime() ? 'authorAccessWithTime' : 'authorAccess');
     var shared = blocks.filter(sharesAnswer);
     if (shared.some(function (block) { return block.type !== 'wordcloud'; })) messages.push('sharedResults');
     if (shared.some(function (block) { return block.type === 'wordcloud'; })) messages.push('sharedWords');
@@ -382,7 +415,7 @@
   function renderConsent() {
     mainEl.classList.add('is-step-view');
     document.body.removeAttribute('data-active-domain');
-    RouteMap.renderConsent(mainEl, state.lang, state.exp.modules, { ...state.exp.shareOptions, cohort: cohort, changing: isSharing() }, function (choice) {
+    RouteMap.renderConsent(mainEl, state.lang, state.exp.modules, { ...state.exp.shareOptions, cohort: cohort, changing: isSharing(), activeTimeDisclosure: !!stepTimer }, function (choice) {
       if (!state.consent || state.consent.choice !== choice) setConsent(choice);
       state.view = 'step';
       showCurrentView();
@@ -446,10 +479,12 @@
     if (state.visitedStepIds.indexOf(step.id) < 0) {
       state.visitedStepIds.push(step.id);
     }
+    if (measuringTime()) stepTimer.enter(step.id);
     if (isSharing() && !state.sharedVisits.includes(step.id)) {
       state.sharedVisits.push(step.id);
       scheduleSync(false);
-    } else saveLocalProgress();
+    } else if (measuringTime()) scheduleSync(false);
+    else saveLocalProgress();
 
     mainEl.textContent = '';
     var card = document.createElement('article');
@@ -907,6 +942,7 @@
     if (!state.exp) return;
     if (state.view !== 'start' && state.exp.shareOptions && state.exp.shareOptions.collectResponses && !state.consent) state.view = 'consent';
     if (state.view !== 'consent') resumeQueuedResponse();
+    if (stepTimer && state.view !== 'step') stepTimer.leave();
     document.documentElement.lang = state.lang;
     courseLabelEl.textContent = Model.getLocalized(state.exp.startPage && state.exp.startPage.title, state.lang, state.exp.defaultLanguage) || state.exp.title;
     mapBtn.textContent = '';
@@ -1027,16 +1063,26 @@
   Icons.wireAnimatedDialogs();
   Model.enableDialogLightDismissFallback();
 
+  var academyLocale = window.Xped && window.Xped.i18n;
   async function init() {
     setTextScale('md');
     loadLocalProgress();
-    state.lang = Model.detectBrowserLanguage(Model.SUPPORTED_LANGS, 'nl', queryLang || (state.hasSavedLanguage ? state.lang : ''), navigator.languages);
+    var savedContentLanguage = state.hasSavedLanguage ? state.lang : '';
+    state.lang = academyLocale ? academyLocale.language : Model.detectBrowserLanguage(Model.SUPPORTED_LANGS, 'nl', queryLang || (state.hasSavedLanguage ? state.lang : ''), navigator.languages);
     document.documentElement.lang = state.lang;
     updateComfortLabels();
     try {
-      var resp = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
-      var data = await resp.json().catch(function () { return {}; });
-      if (!resp.ok) {
+      var prepared = document.getElementById('academy-initial-course');
+      var data;
+      var resp;
+      if (prepared) {
+        data = { expedition: JSON.parse(prepared.textContent) };
+        prepared.remove();
+      } else {
+        resp = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
+        data = await resp.json().catch(function () { return {}; });
+      }
+      if (resp && !resp.ok) {
         if (resp.status !== 404 && resp.status !== 410 && resp.status !== 403) throw new Error('Course unavailable');
         mainEl.textContent = '';
         var errCard = document.createElement('div');
@@ -1044,9 +1090,12 @@
         var h1 = document.createElement('h1');
         h1.textContent = Model.ui(state.lang, 'unavailable');
         var p = document.createElement('p');
-        p.textContent = resp.status === 410 ? (data.error || Model.ui(state.lang, 'pausedFallback')) : Model.ui(state.lang, 'notFound');
-        errCard.appendChild(h1);
-        errCard.appendChild(p);
+        var message = Model.ui(state.lang, 'notFound');
+        if (resp.status === 410 && data.error_code !== 'link_expired') {
+          message = data.error_code === 'link_paused' ? Model.ui(state.lang, 'pausedFallback') : (data.error || Model.ui(state.lang, 'pausedFallback'));
+        }
+        p.textContent = message;
+        errCard.append(h1, p);
         mainEl.appendChild(errCard);
         return;
       }
@@ -1057,7 +1106,10 @@
       document.body.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
       var enabled = state.exp.enabledLanguages || ['nl'];
       var navLangs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'nl'];
-      if (queryLang) {
+      if (academyLocale) {
+        const preferred = [queryLang, savedContentLanguage, academyLocale.language, 'nl', 'de'];
+        state.lang = preferred.find(code => enabled.includes(code) && (code === 'nl' || code === 'de')) || 'nl';
+      } else if (queryLang) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, queryLang, navLangs);
       } else if (!state.hasSavedLanguage || enabled.indexOf(state.lang) < 0) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, '', navLangs);
@@ -1094,6 +1146,27 @@
     }
     if (state.view !== 'start') showCurrentView();
   });
+
+  // Active time: input, scrolling and media playback count as activity. When the
+  // page is hidden the timer pauses and a consenting session sends its totals.
+  if (stepTimer) {
+    var markActive = function () { stepTimer.activity(); };
+    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(function (type) {
+      document.addEventListener(type, markActive, { capture: true, passive: true });
+    });
+    window.addEventListener('scroll', markActive, { passive: true });
+    document.addEventListener('timeupdate', markActive, true);
+    stepTimer.setVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', function () {
+      var visible = document.visibilityState !== 'hidden';
+      stepTimer.setVisible(visible);
+      if (!visible && measuringTime()) {
+        clearTimeout(state.syncTimer);
+        saveLocalProgress();
+        sendResponse(state.view === 'summary', undefined, true);
+      }
+    });
+  }
 
   init();
 })();

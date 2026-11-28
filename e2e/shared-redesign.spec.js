@@ -335,3 +335,23 @@ test('constraint feedback focuses enhanced select and date controls', async ({pa
   await expect(trigger).toBeFocused();
   await expect(trigger).toHaveAttribute('aria-invalid','true');
 });
+
+test('reopening a select cancels every pending dismissal', async ({ page }) => {
+  await controls(page);
+  await page.clock.install();
+  const trigger = page.locator('#subject-button');
+  await trigger.click();
+  const option = page.getByRole('option', { name: 'Biology' });
+  await expect(option).toBeVisible();
+  // Two ordinary outside clicks occur within the exit animation, followed by reopening.
+  await page.evaluate(() => {
+    document.body.click();
+    document.body.click();
+    document.getElementById('subject-button').click();
+  });
+  await page.clock.runFor(350);
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(trigger).toContainText('Biology');
+});

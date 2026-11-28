@@ -127,9 +127,10 @@ FIELD_LOCATION_LABELS = {
 
 
 class ElearningError(Exception):
-    def __init__(self, message: str, status: int = 400):
+    def __init__(self, message: str, status: int = 400, *, code: str = ''):
         super().__init__(message)
         self.status = status
+        self.code = code
 
 
 def new_id(prefix: str = 'el') -> str:
@@ -978,7 +979,13 @@ def _walk_localized_fields(expedition: dict):
                                     )
 
 
-def compute_language_coverage(expedition: dict) -> dict:
+def course_cover(expedition: dict) -> dict:
+    start = expedition.get('startPage') or {}
+    local = safe_media_ref((start.get('heroMediaOverrides') or {}).get(expedition.get('defaultLanguage')))
+    return local if local['kind'] != 'none' else safe_media_ref(start.get('heroMedia'))
+
+
+def compute_language_coverage(expedition: dict, *, canonical_source=False) -> dict:
     """Compute per-language translation counts across all non-empty translatable fields."""
     default_lang = normalize_lang(expedition.get('defaultLanguage', 'nl'))
     enabled = expedition.get('enabledLanguages') or [default_lang]
@@ -1000,25 +1007,33 @@ def compute_language_coverage(expedition: dict) -> dict:
             stats['total'] += 1
             if str(loc.get(lang, '') or '').strip():
                 stats['translated'] += 1
-                if review_map.get(lang):
+                if review_map.get(lang) and not (canonical_source and lang == default_lang):
                     stats['needsReview'] += 1
     return coverage
 
 
-def mark_translations_for_review(previous_exp: dict, next_exp: dict, edited_lang: str) -> dict:
+def mark_translations_for_review(previous_exp: dict, next_exp: dict, edited_lang: str, *, canonical_source=False) -> dict:
     """When source text changes in edited_lang, flag existing other-language translations for review."""
     prev_map = {k: deepcopy(v) for k, _, v in _walk_localized_fields(previous_exp)}
     safe_lang = normalize_lang(edited_lang)
+    source = normalize_lang(next_exp.get('defaultLanguage')) if canonical_source else None
     for key, _, loc in _walk_localized_fields(next_exp):
         old_loc = prev_map.get(key)
-        if not old_loc:
+        if not old_loc and not source:
             continue
-        review = dict(old_loc.get('_review') or {})
-        if old_loc.get(safe_lang, '') != loc.get(safe_lang, ''):
-            review.pop(safe_lang, None)
-            for other in SUPPORTED_LANGUAGES:
-                if other != safe_lang and loc.get(other, '').strip():
-                    review[other] = True
+        review = dict((old_loc or loc).get('_review') or {})
+        if source:
+            review.pop(source, None)
+        if old_loc:
+            if old_loc.get(safe_lang, '') != loc.get(safe_lang, ''):
+                review.pop(safe_lang, None)
+            # Academy translations are reviewed against the authored source.
+            # LP courses retain their bidirectional review workflow.
+            basis = source or safe_lang
+            if old_loc.get(basis, '') != loc.get(basis, ''):
+                for other in SUPPORTED_LANGUAGES:
+                    if other != basis and loc.get(other, '').strip():
+                        review[other] = True
         if review:
             loc['_review'] = review
         else:
@@ -1026,16 +1041,17 @@ def mark_translations_for_review(previous_exp: dict, next_exp: dict, edited_lang
     return next_exp
 
 
-def extract_translation_rows(expedition: dict, source_lang: str = 'nl', target_lang: str = 'de') -> list[dict]:
+def extract_translation_rows(expedition: dict, source_lang: str = 'nl', target_lang: str = 'de', *, canonical_source=False) -> list[dict]:
     src = normalize_lang(source_lang, 'nl')
     tgt = normalize_lang(target_lang, 'de')
+    can_require_review = not canonical_source or tgt != expedition.get('defaultLanguage', 'nl')
     rows = []
     for key, location, loc in _walk_localized_fields(expedition):
         src_text = loc.get(src, '')
         en_text = loc.get('en', '')
         nl_text = loc.get('nl', '')
         tgt_text = loc.get(tgt, '')
-        needs_review = bool((loc.get('_review') or {}).get(tgt))
+        needs_review = can_require_review and bool((loc.get('_review') or {}).get(tgt))
         if not any(str(loc.get(lang) or '').strip() for lang in SUPPORTED_LANGUAGES):
             continue
         status = 'needs_review' if needs_review else ('translated' if tgt_text.strip() else 'untranslated')
@@ -1056,6 +1072,7 @@ def apply_translation_patch(
     target_lang: str,
     text_updates: dict[str, str],
     media_updates: dict[str, object] | None = None,
+    *, canonical_source=False,
 ) -> dict:
     """Apply localized-only updates for target_lang without mutating structure or other languages."""
     tgt = normalize_lang(target_lang, '')
@@ -1070,7 +1087,12 @@ def apply_translation_patch(
         if key not in field_index:
             raise ElearningError(f'Unknown translation field: {key}', 400)
         loc = field_index[key]
-        loc[tgt] = str(raw_value or '').replace('\r\n', '\n').replace('\r', '\n')
+        value = str(raw_value or '').replace('\r\n', '\n').replace('\r', '\n')
+        if canonical_source and tgt == updated.get('defaultLanguage') and loc.get(tgt) != value:
+            for other in SUPPORTED_LANGUAGES:
+                if other != tgt and loc.get(other, '').strip():
+                    loc.setdefault('_review', {})[other] = True
+        loc[tgt] = value
         if isinstance(loc.get('_review'), dict) and tgt in loc['_review']:
             loc['_review'].pop(tgt, None)
             if not loc['_review']:

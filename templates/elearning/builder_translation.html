@@ -1,0 +1,55 @@
+<!-- Mode 2: Split-Screen Translation Studio (For German Editor & NL/EN) -->
+  <section class="el-translate-shell" id="el-mode-translate" hidden>
+    <div class="el-translate-welcome" id="el-tr-welcome">
+      <div>
+        <h1>{{ tr("Translation Studio") }}</h1>
+        <p>{{ tr("Edit translations directly below — module structure stays safely locked and changes save automatically.") }}</p>
+      </div>
+      <span class="el-status-inline is-live" role="status" id="el-tr-autosave">{{ tr("Saved") }}</span>
+    </div>
+
+    <div class="el-translate-toolbar">
+      <div class="el-btn-row">
+        <div id="el-tr-source-host"></div>
+        <span class="el-tr-arrow-host" id="el-tr-arrow-host" aria-hidden="true"></span>
+        <div id="el-tr-target-host"></div>
+        <span class="el-status-inline is-live" id="el-tr-progress">{{ tr("0 / 0 translated") }}</span>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-manage-langs" hidden>{{ tr("Course languages") }}</button>
+      </div>
+      <div class="el-btn-row el-tr-actions">
+        <div id="el-tr-filter-host"></div>
+        {% if not academy_mode %}<button type="button" class="el-btn el-btn-sm" id="el-tr-alt-toggle" aria-pressed="false">{{ tr("3rd language ref") }}</button>{% endif %}
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-next-missing">{{ tr("Next missing") }}</button>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-toggle-preview" aria-pressed="true">{{ tr("Live Preview") }}</button>
+        <details class="el-tr-transfer">
+          <summary class="el-btn el-btn-sm">{{ tr("CSV files") }}</summary>
+          <div class="el-tr-transfer-actions">
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-export-csv">{{ tr("Export CSV") }}</button>
+        <button type="button" class="el-btn el-btn-sm" id="el-tr-import-csv-btn">{{ tr("Import CSV") }}</button>
+        <input type="file" id="el-tr-import-csv-input" accept=".csv,text/csv" hidden>
+          </div>
+        </details>
+        <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-tr-save-btn">{{ tr("Save Now") }}</button>
+      </div>
+    </div>
+    <p class="el-tr-shortcut-hint"><kbd>{{ tr("Ctrl") }}</kbd>/<kbd>{{ tr("Cmd") }}</kbd> + <kbd>{{ tr("Enter") }}</kbd> {{ tr("moves to the next missing translation.") }}</p>
+
+    <details class="el-tr-glossary" id="el-tr-glossary">
+      <summary><span>{{ tr("Pain-Education Glossary") }}</span><span class="xped-caption" id="el-tr-glossary-summary">{{ tr("Shared key terms") }}</span></summary>
+      <div class="el-tr-glossary-body" id="el-tr-glossary-body"></div>
+    </details>
+
+    <div class="el-translate-split" id="el-translate-split">
+      <div>
+        <div id="el-translate-rows"></div>
+        <div id="el-tr-media-section"></div>
+      </div>
+      <aside class="el-tr-preview-pane" id="el-tr-preview-pane" aria-label="{{ tr("Live translated slide preview") }}">
+        <div class="el-tr-preview-label">
+          <span>{{ tr("Live Slide Preview") }}</span>
+          <span id="el-tr-preview-lang-tag">{{ tr("DE") }}</span>
+        </div>
+        <div class="xped-surface-scope" id="el-tr-preview-stage" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+      </aside>
+    </div>
+  </section>

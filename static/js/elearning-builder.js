@@ -1,5 +1,11 @@
 (function () {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message, values) {
+    return values ? message.replace(/\{(\w+)\}/g, function (field, name) { return values[name] ?? field; }) : message;
+  };
+  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
+  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
+  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -11,20 +17,21 @@
   var expeditionId = bodyData.expeditionId || '';
   var grantToken = bodyData.grantToken || '';
   var initialMode = bodyData.initialMode || 'edit';
-  var ux = window.LectureProcessorUx;
-  var bootstrap = window.LectureProcessorBootstrap;
+  var ux = platformUx;
+  var bootstrap = platformBootstrap;
   var auth = null;
   if (!grantToken) {
     try { auth = bootstrap.getAuth(); } catch (error) {
       if (!document.querySelector('meta[name="academy-signin"]')) throw error;
     }
   }
-  var authClient = grantToken ? null : window.LectureProcessorAuth.createAuthClient(auth);
+  var authClient = grantToken ? null : platformAuth.createAuthClient(auth);
   var accountSession = null;
   var activeUser = null;
   var loadedAccount = false;
   var leavingAccount = false;
   var privateMedia = new Map();
+  var mediaInfo = new Map();
   var saveVersion = 0;
   var savedVersion = 0;
   var acceptedCourse = null;
@@ -32,6 +39,7 @@
   var renewBeforeSave = false;
   var writing = Promise.resolve();
 
+  var editorPageTitle = document.title;
   var urlParams = new URLSearchParams(window.location.search);
   var deepModuleId = urlParams.get('module') || '';
   var deepStepId = urlParams.get('step') || '';
@@ -124,32 +132,34 @@
   var vpMob = document.getElementById('el-vp-mobile');
   vpDesk.textContent = '';
   vpDesk.appendChild(Icons.icon('monitor', 14));
-  vpDesk.appendChild(document.createTextNode(' Available width'));
+  vpDesk.appendChild(document.createTextNode(uiText(' Available width')));
   vpMob.textContent = '';
   vpMob.appendChild(Icons.icon('phone', 14));
-  vpMob.appendChild(document.createTextNode(' Phone'));
+  vpMob.appendChild(document.createTextNode(uiText(' Phone')));
   var shareBtn = document.getElementById('el-share-btn');
   shareBtn.textContent = '';
   shareBtn.appendChild(Icons.icon('share', 15));
-  shareBtn.appendChild(document.createTextNode(' Share'));
+  shareBtn.appendChild(document.createTextNode(uiText(' Share')));
   var trArrowHost = document.getElementById('el-tr-arrow-host');
   if (trArrowHost) trArrowHost.appendChild(Icons.icon('arrowRight', 15));
   var nextMissInit = document.getElementById('el-tr-next-missing');
   if (nextMissInit) {
     nextMissInit.textContent = '';
-    nextMissInit.appendChild(document.createTextNode('Next missing '));
+    nextMissInit.appendChild(document.createTextNode(uiText('Next missing ')));
     nextMissInit.appendChild(Icons.icon('arrowRight', 14));
   }
 
+  var academyUi = window.Xped && window.Xped.i18n;
+  var courseLanguages = academyUi ? ['nl', 'de'] : Model.SUPPORTED_LANGS;
   var LANG_OPTIONS = [
     { value: 'nl', label: 'Nederlands (NL)', shortLabel: 'NL' },
     { value: 'en', label: 'English (EN)', shortLabel: 'EN' },
     { value: 'de', label: 'Deutsch (DE)', shortLabel: 'DE' },
-  ];
+  ].filter(function (option) { return courseLanguages.includes(option.value); });
 
   var editLangDD = Icons.createDropdown({
     leadingIcon: 'globe',
-    ariaLabel: 'Active editing language',
+    ariaLabel: uiText('Active editing language'),
     items: LANG_OPTIONS,
     value: state.editLang,
     onChange: async function (val) {
@@ -172,13 +182,13 @@
     showChevron: false,
     align: 'right',
     triggerClass: 'el-icon-btn',
-    ariaLabel: 'More expedition actions',
+    ariaLabel: uiText('More expedition actions'),
     items: [],
   });
   document.getElementById('el-more-menu-host').appendChild(moreMenuDD.el);
 
   var trSourceDD = Icons.createDropdown({
-    ariaLabel: 'Source language',
+    ariaLabel: uiText('Source language'),
     items: LANG_OPTIONS,
     value: state.trSource,
     onChange: function (val) {
@@ -191,7 +201,7 @@
   document.getElementById('el-tr-source-host').appendChild(trSourceDD.el);
 
   var trTargetDD = Icons.createDropdown({
-    ariaLabel: 'Target language',
+    ariaLabel: uiText('Target language'),
     items: LANG_OPTIONS,
     value: state.trTarget,
     onChange: async function (val) {
@@ -200,7 +210,7 @@
       if (hasPendingTranslations() && !(await saveTranslationsNow())) return;
       if (hasPendingTranslations()) return;
       state.trTarget = val;
-      if (state.trSource === val) state.trSource = Model.SUPPORTED_LANGS.find(function (lang) { return lang !== val; });
+      if (state.trSource === val) state.trSource = courseLanguages.find(function (lang) { return lang !== val; });
       trSourceDD.setItems(LANG_OPTIONS.filter(function (item) { return item.value !== val; }), state.trSource);
       trTargetDD.setItems(LANG_OPTIONS, val);
       renderTranslateMode();
@@ -209,13 +219,13 @@
   document.getElementById('el-tr-target-host').appendChild(trTargetDD.el);
 
   var FILTER_OPTIONS = [
-    { value: 'all', label: 'All fields' },
-    { value: 'untranslated', label: 'Untranslated' },
-    { value: 'needs_review', label: 'Needs review' },
-    { value: 'translated', label: 'Translated' },
+    { value: 'all', label: uiText('All fields') },
+    { value: 'untranslated', label: uiText('Untranslated') },
+    { value: 'needs_review', label: uiText('Needs review') },
+    { value: 'translated', label: uiText('Translated') },
   ];
   var trFilterDD = Icons.createDropdown({
-    ariaLabel: 'Filter translation rows',
+    ariaLabel: uiText('Filter translation rows'),
     items: FILTER_OPTIONS,
     value: state.trFilter,
     onChange: function (val) {
@@ -228,7 +238,7 @@
 
   var previewLangDD = Icons.createDropdown({
     leadingIcon: 'globe',
-    ariaLabel: 'Preview language',
+    ariaLabel: uiText('Preview language'),
     items: LANG_OPTIONS,
     value: state.previewLang,
     onChange: function (val) {
@@ -251,7 +261,7 @@
     var ubtn = document.createElement('button');
     ubtn.type = 'button';
     ubtn.className = 'el-btn el-btn-sm';
-    ubtn.textContent = 'Undo';
+    ubtn.textContent = uiText('Undo');
     ubtn.addEventListener('click', function () {
       toastEl.hidden = true;
       if (undoMode === state.mode) undoCb();
@@ -270,7 +280,7 @@
       if (state.grantAccessToken) opts.headers['X-Elearning-Access'] = state.grantAccessToken;
       return fetch(url, opts);
     }
-    if (!accountSession || leavingAccount) throw new Error('Sign in required');
+    if (!accountSession || leavingAccount) throw new Error(uiText('Sign in required'));
     accountSession.assertCurrent();
     return authClient.authFetch(url, opts);
   }
@@ -279,7 +289,7 @@
     var resp = await request(url, opts);
     var data = await resp.json();
     if (!resp.ok) {
-      var err = new Error(data.error || ('Request failed (' + resp.status + ')'));
+      var err = new Error(uiText(data.error) || (uiText('Request failed (') + resp.status + ')'));
       err.status = resp.status;
       throw err;
     }
@@ -297,10 +307,10 @@
     }
     if (!privateMedia.has(url)) {
       var resource = request(url).then(function (response) {
-        if (!response.ok) throw new Error('Could not load media.');
+        if (!response.ok) throw new Error(uiText('Could not load media.'));
         return response.blob();
       }).then(function (blob) {
-        if (leavingAccount) throw new Error('Sign in required');
+        if (leavingAccount) throw new Error(uiText('Sign in required'));
         return URL.createObjectURL(blob);
       });
       privateMedia.set(url, resource);
@@ -317,6 +327,7 @@
       resource.then(function (url) { URL.revokeObjectURL(url); }).catch(function () {});
     });
     privateMedia.clear();
+    mediaInfo.clear();
   }
 
   function currentModuleAndStep() {
@@ -400,8 +411,8 @@
     redoBtn.disabled = !state.redoStack.length;
     var uLast = state.undoStack.length ? state.undoStack[state.undoStack.length - 1] : null;
     var rLast = state.redoStack.length ? state.redoStack[state.redoStack.length - 1] : null;
-    undoBtn.title = uLast ? ('Undo: ' + uLast.label) : 'Undo';
-    redoBtn.title = rLast ? ('Redo: ' + rLast.label) : 'Redo';
+    undoBtn.title = uLast ? (uiText('Undo: ') + uLast.label) : uiText('Undo');
+    redoBtn.title = rLast ? (uiText('Redo: ') + rLast.label) : uiText('Redo');
   }
 
   function setSaveStatus(text, isLive, showRetry) {
@@ -412,13 +423,13 @@
     if (saveRetryBtn) {
       var pendingCount = Math.max(0, saveVersion - savedVersion);
       saveRetryBtn.hidden = !showRetry;
-      saveRetryBtn.textContent = showRetry && pendingCount ? ('Retry save (' + pendingCount + ')') : 'Retry save';
+      saveRetryBtn.textContent = showRetry && pendingCount ? (uiText('Retry save (') + pendingCount + ')') : uiText('Retry save');
     }
   }
 
   function scheduleSave() {
     saveVersion++;
-    setSaveStatus('Saving…', false, false);
+    setSaveStatus(uiText('Saving…'), false, false);
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(queueStructureSave, 700);
   }
@@ -444,7 +455,7 @@
     if (leavingAccount || resolveConflict || savedVersion === saveVersion || !canEditStructure() || !state.exp) return;
     if (!state.leaseToken || renewBeforeSave) {
       await acquireLease(false);
-      if (!state.leaseToken) { if (!resolveConflict) setSaveStatus('Save paused', false, true); return; }
+      if (!state.leaseToken) { if (!resolveConflict) setSaveStatus(uiText('Save paused'), false, true); return; }
     }
     var version = saveVersion;
     try {
@@ -460,13 +471,13 @@
       state.exp.revision = res.expedition.revision;
       syncReviewFlags(res.expedition);
       savedVersion = version;
-      if (version === saveVersion) setSaveStatus('Saved', true, false);
+      if (version === saveVersion) setSaveStatus(uiText('Saved'), true, false);
     } catch (err) {
       if (err.status === 409) {
         renewBeforeSave = true;
         clearInterval(state.leaseTimer);
       }
-      setSaveStatus('Save paused', false, true);
+      setSaveStatus(uiText('Save paused'), false, true);
       showToast(err.message, 'error');
     }
   }
@@ -492,18 +503,18 @@
             titleInput.disabled = true;
             workspace.inert = true;
             leaseBanner.hidden = false;
-            leaseMsg.textContent = 'Both tabs changed the same part of this expedition. Download your draft before opening the saved version.';
+            leaseMsg.textContent = uiText('Both tabs changed the same part of this expedition. Download your draft before opening the saved version.');
             resolveConflict = true;
             document.getElementById('el-conflict-download').hidden = false;
-            document.getElementById('el-takeover-btn').textContent = 'Open saved version';
-            setSaveStatus('Conflicting edits', false, false);
+            document.getElementById('el-takeover-btn').textContent = uiText('Open saved version');
+            setSaveStatus(uiText('Conflicting edits'), false, false);
             return;
           }
           if (openSaved) {
             savedVersion = saveVersion;
             resolveConflict = false;
             document.getElementById('el-conflict-download').hidden = true;
-            document.getElementById('el-takeover-btn').textContent = 'Take Over Editing';
+            document.getElementById('el-takeover-btn').textContent = uiText('Take Over Editing');
           }
           acceptedCourse = clone(latest);
           state.exp = merged.expedition;
@@ -522,30 +533,35 @@
         titleInput.disabled = false;
         workspace.inert = false;
         leaseBanner.hidden = true;
-        if (savedVersion === saveVersion) setSaveStatus('Saved', true, false);
+        if (savedVersion === saveVersion) setSaveStatus(uiText('Saved'), true, false);
         clearInterval(state.leaseTimer);
         state.leaseTimer = setInterval(function () { writing = writing.then(function () { return acquireLease(false); }); }, 40000);
       } else {
         state.leaseToken = '';
         titleInput.disabled = true;
         workspace.inert = true;
-        var edName = (res.editor && res.editor.name) || 'A collaborator';
+        var edName = (res.editor && res.editor.name) || uiText('A collaborator');
         var agoSec = (res.editor && res.editor.updated_at) ? Math.max(1, Math.round(Date.now() / 1000 - res.editor.updated_at)) : 0;
-        var agoTxt = agoSec ? (' (active ' + (agoSec < 60 ? (agoSec + 's') : (Math.round(agoSec / 60) + 'm')) + ' ago)') : '';
+        var agoTxt = '';
+        if (agoSec) {
+          var relativeTime = window.Xped && window.Xped.i18n ? window.Xped.i18n.relative(res.editor.updated_at) :
+            ((agoSec < 60 ? agoSec + 's' : Math.round(agoSec / 60) + 'm') + ' ago');
+          agoTxt = uiText(' (active {time})', {time: relativeTime});
+        }
         if (res.same_account) {
-          leaseMsg.textContent = 'You already have this expedition open in another browser tab or window' + agoTxt + '. Taking over stops saves from that tab. Save pending edits there first.';
+          leaseMsg.textContent = uiText('You already have this expedition open in another browser tab or window{activity}. Taking over stops saves from that tab. Save pending edits there first.', {activity: agoTxt});
         } else {
-          leaseMsg.textContent = edName + ' is currently editing this expedition' + agoTxt + '. Preview is available. Taking over stops their unsaved changes from being saved.';
+          leaseMsg.textContent = uiText('{name} is currently editing this expedition{activity}. Preview is available. Taking over stops their unsaved changes from being saved.', {name: edName, activity: agoTxt});
         }
         leaseBanner.hidden = false;
-        saveStateEl.textContent = res.same_account ? 'Open in another tab' : (edName + ' editing');
+        saveStateEl.textContent = res.same_account ? uiText('Open in another tab') : uiText('{name} editing', {name: edName});
         saveStateEl.className = 'el-save-chip is-warn';
       }
     } catch (err) {
       if (!state.leaseToken) {
         leaseMsg.textContent = err.message;
         leaseBanner.hidden = false;
-        setSaveStatus('Save paused', false, true);
+        setSaveStatus(uiText('Save paused'), false, true);
       }
     }
   }
@@ -559,7 +575,7 @@
       var field = document.activeElement;
       if (field && field.matches('input, textarea, [contenteditable]') && field !== lastEditingField) {
         var fieldLabel = field.getAttribute('aria-label') || (field.labels && field.labels[0] && field.labels[0].textContent) || field.getAttribute('data-placeholder') || 'text';
-        pushUndo('edit ' + fieldLabel);
+        pushUndo(uiText('edit ') + fieldLabel);
         lastEditingField = field;
       }
     }
@@ -592,7 +608,7 @@
   async function uploadFileForBlock(blk, file) {
     var upKey = blk === 'startPage' ? 'startPage' : (blk && blk.id ? blk.id : 'media');
     uploadsInProgress++;
-    var operation = { status: 'uploading', fileName: file.name || 'media file', error: '', file: file };
+    var operation = { status: 'uploading', fileName: file.name || uiText('media file'), error: '', file: file };
     state.blockUploads[upKey] = operation;
     renderInspector();
     var fd = new FormData();
@@ -609,11 +625,11 @@
         } else {
           target.data.media = { kind: 'asset', assetId: res.asset.id, staticPath: '' };
         }
-      }, { label: 'upload media' });
-      showToast('Uploaded ' + (file.name || 'media'));
+      }, { label: uiText('upload media') });
+      showToast(uiText('Uploaded ') + (file.name || uiText('media')));
     } catch (err) {
       if (state.blockUploads[upKey] !== operation || leavingAccount || !state.exp) return;
-      state.blockUploads[upKey] = { status: 'error', fileName: file.name || 'media file', error: err.message || 'Upload failed', file: file };
+      state.blockUploads[upKey] = { status: 'error', fileName: file.name || uiText('media file'), error: err.message || uiText('Upload failed'), file: file };
       renderInspector();
       showToast(err.message, 'error');
     } finally {
@@ -678,7 +694,7 @@
       document.getElementById('el-confirm-message').textContent = message;
       var okBtn = document.getElementById('el-confirm-ok');
       var cancelBtn = document.getElementById('el-confirm-cancel');
-      okBtn.textContent = okLabel || 'Confirm';
+      okBtn.textContent = okLabel || uiText('Confirm');
       var settled = false;
       function done(result) {
         if (settled) return;
@@ -724,6 +740,32 @@
     });
   }
 
+  var outlineSwitch = document.getElementById('academy-outline-toggle');
+  var outlineResults;
+  function wireOutlineResults() {
+    if (!outlineSwitch || grantToken || !['owner','edit'].includes(state.role)) return;
+    outlineSwitch.hidden = false;
+    var input = outlineSwitch.querySelector('input');
+    var preference = 'xped-outline-results:' + activeUser.uid;
+    try { input.checked = localStorage.getItem(preference) === '1'; } catch (_) { /* Keep the in-page switch available. */ }
+    var status = document.getElementById('academy-outline-status');
+    var de = document.documentElement.lang === 'de';
+    async function update() {
+      status.textContent = '';
+      if (input.checked && !outlineResults) {
+        try { outlineResults = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/outline-results'); }
+        catch (_) { status.textContent = de ? 'Ergebnisse konnten nicht geladen werden.' : 'De resultaten konden niet worden geladen.'; }
+      }
+      if (input.checked && outlineResults && !outlineResults.totalSessions) status.textContent = de ? 'Noch keine geteilten Sitzungen.' : 'Nog geen gedeelde sessies.';
+      if (!leavingAccount) renderOutline();
+    }
+    input.onchange = function () {
+      try { localStorage.setItem(preference, input.checked ? '1' : '0'); } catch (_) { /* In-page choice remains active. */ }
+      update();
+    };
+    if (input.checked) update();
+  }
+
   /* ---- Left Rail with Real Drag-and-Drop ---- */
   function renderOutline(focusSelector) {
     var startBtn = document.getElementById('el-nav-start-page');
@@ -732,7 +774,7 @@
 
     (state.exp.modules || []).forEach(function (mod, mIdx) {
       var isCollapsed = !!state.collapsedModules[mod.id];
-      var modTitle = Model.getLocalized(mod.title, state.editLang, state.exp.defaultLanguage) || ('Station ' + (mIdx + 1));
+      var modTitle = Model.getLocalized(mod.title, state.editLang, state.exp.defaultLanguage) || (uiText('Station ') + (mIdx + 1));
       var stepTotal = (mod.steps || []).length;
       var group = document.createElement('div');
       group.className = 'el-module-group' + (mod.visibleToLearners === false ? ' is-hidden-learner' : '') + (isCollapsed ? ' is-collapsed' : '');
@@ -770,7 +812,7 @@
             var moved = state.exp.modules.splice(from, 1)[0];
             state.exp.modules.splice(targetIdx, 0, moved);
           }, { label: 'reorder station' });
-          announceOutline('Moved ' + modTitle + ' to station ' + (targetIdx + 1) + ' of ' + state.exp.modules.length);
+          announceOutline(uiText('Moved {title} to station {position} of {total}', {title: modTitle, position: targetIdx + 1, total: state.exp.modules.length}));
         });
       }
 
@@ -789,8 +831,8 @@
       toggleBtn.className = 'el-module-toggle';
       toggleBtn.setAttribute('data-toggle-mod', mod.id);
       toggleBtn.setAttribute('aria-controls', 'steps-' + mod.id);
-      toggleBtn.title = isCollapsed ? 'Expand station' : 'Collapse station';
-      toggleBtn.setAttribute('aria-label', (isCollapsed ? 'Expand ' : 'Collapse ') + modTitle + ' (' + stepTotal + (stepTotal === 1 ? ' step' : ' steps') + ')');
+      toggleBtn.title = isCollapsed ? uiText('Expand station') : uiText('Collapse station');
+      toggleBtn.setAttribute('aria-label', (isCollapsed ? uiText('Expand ') : uiText('Collapse ')) + modTitle + ' (' + stepTotal + (stepTotal === 1 ? uiText(' step') : uiText(' steps')) + ')');
       toggleBtn.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
       toggleBtn.appendChild(Icons.icon('chevronDown', 14));
       toggleBtn.addEventListener('click', function (e) {
@@ -806,7 +848,7 @@
       var dot = document.createElement('span');
       dot.className = 'xped-domain-dot domain-' + (mod.domain || 'general');
       if (mod.domain && mod.domain !== 'general') {
-        dot.title = { bio: 'Biological', psycho: 'Psychological', social: 'Social' }[mod.domain] || mod.domain;
+        dot.title = { bio: uiText('Biological'), psycho: uiText('Psychological'), social: uiText('Social') }[mod.domain] || mod.domain;
         dot.setAttribute('aria-label', dot.title);
         dot.setAttribute('role', 'img');
       }
@@ -829,7 +871,7 @@
         var cntBadge = document.createElement('span');
         cntBadge.className = 'el-module-count';
         cntBadge.setAttribute('aria-hidden', 'true');
-        cntBadge.textContent = stepTotal + (stepTotal === 1 ? ' step' : ' steps');
+        cntBadge.textContent = stepTotal + (stepTotal === 1 ? uiText(' step') : uiText(' steps'));
         head.appendChild(cntBadge);
       }
       if (canEditStructure() && (state.exp.modules || []).length > 1) {
@@ -840,8 +882,8 @@
         mUp.className = 'el-rail-move-btn';
         mUp.setAttribute('data-move-mod', mod.id);
         mUp.setAttribute('data-dir', 'up');
-        mUp.title = 'Move "' + modTitle + '" up';
-        mUp.setAttribute('aria-label', 'Move station ' + modTitle + ' up');
+        mUp.title = uiText('Move "') + modTitle + uiText('" up');
+        mUp.setAttribute('aria-label', uiText('Move station ') + modTitle + uiText(' up'));
         mUp.disabled = mIdx === 0;
         mUp.appendChild(Icons.icon('chevronUp', 12));
         mUp.addEventListener('click', function (e) {
@@ -853,15 +895,15 @@
             arr[mIdx] = t;
           }, { label: 'move station up' });
           restoreOutlineFocus('[data-move-mod="' + CSS.escape(mod.id) + '"][data-dir="up"]');
-          announceOutline('Moved ' + modTitle + ' to station ' + mIdx + ' of ' + state.exp.modules.length);
+          announceOutline(uiText('Moved {title} to station {position} of {total}', {title: modTitle, position: mIdx, total: state.exp.modules.length}));
         });
         var mDn = document.createElement('button');
         mDn.type = 'button';
         mDn.className = 'el-rail-move-btn';
         mDn.setAttribute('data-move-mod', mod.id);
         mDn.setAttribute('data-dir', 'down');
-        mDn.title = 'Move "' + modTitle + '" down';
-        mDn.setAttribute('aria-label', 'Move station ' + modTitle + ' down');
+        mDn.title = uiText('Move "') + modTitle + uiText('" down');
+        mDn.setAttribute('aria-label', uiText('Move station ') + modTitle + uiText(' down'));
         mDn.disabled = mIdx === state.exp.modules.length - 1;
         mDn.appendChild(Icons.icon('chevronDown', 12));
         mDn.addEventListener('click', function (e) {
@@ -873,7 +915,7 @@
             arr[mIdx] = t;
           }, { label: 'move station down' });
           restoreOutlineFocus('[data-move-mod="' + CSS.escape(mod.id) + '"][data-dir="down"]');
-          announceOutline('Moved ' + modTitle + ' to station ' + (mIdx + 2) + ' of ' + state.exp.modules.length);
+          announceOutline(uiText('Moved {title} to station {position} of {total}', {title: modTitle, position: mIdx + 2, total: state.exp.modules.length}));
         });
         modMove.appendChild(mUp);
         modMove.appendChild(mDn);
@@ -886,7 +928,7 @@
       stepList.id = 'steps-' + mod.id;
       (mod.steps || []).forEach(function (step, sIdx) {
         var active = state.selectedTarget.type === 'step' && state.selectedTarget.stepId === step.id;
-        var rawStepTitle = Model.getLocalized(step.title, state.editLang, state.exp.defaultLanguage) || 'Untitled step';
+        var rawStepTitle = Model.getLocalized(step.title, state.editLang, state.exp.defaultLanguage) || uiText('Untitled step');
         // Only the legacy example shipped with numbers embedded in these titles.
         var cleanStepTitle = rawStepTitle.replace(/^[123]\. (?=Prikkelende vraag$|Opening question$|Uitleg & video$|Explanation & video$|Korte reflectie$|Short reflection$)/, '');
         var stepLine = document.createElement('div');
@@ -927,7 +969,7 @@
             if (!srcMod) return;
             if (srcMod.id !== mod.id && srcMod.steps.length <= 1) {
               var srcTitle = Model.getLocalized(srcMod.title, state.editLang, state.exp.defaultLanguage) || 'that station';
-              showToast('Each station must keep at least one step. Add another step to "' + srcTitle + '" first.');
+              showToast(uiText('Each station must keep at least one step. Add another step to "') + srcTitle + uiText('" first.'));
               return;
             }
             var targetIdx = after ? sIdx + 1 : sIdx;
@@ -938,7 +980,7 @@
               mod.steps.splice(targetIdx, 0, moved);
               state.selectedTarget = { type: 'step', moduleId: mod.id, stepId: moved.id };
             }, { label: 'move step' });
-            announceOutline('Moved step to position ' + (targetIdx + 1) + ' in ' + modTitle);
+            announceOutline(uiText('Moved step to position {position} in {station}', {position: targetIdx + 1, station: modTitle}));
           });
         }
 
@@ -946,7 +988,7 @@
           var sGrip = document.createElement('span');
           sGrip.className = 'el-step-grip';
           sGrip.setAttribute('aria-hidden', 'true');
-          sGrip.title = 'Drag to reorder step';
+          sGrip.title = uiText('Drag to reorder step');
           sGrip.appendChild(Icons.icon('grip', 12));
           sbtn.appendChild(sGrip);
         }
@@ -955,6 +997,17 @@
         titleSpan.className = 'el-outline-item-text';
         titleSpan.setAttribute('translate', 'no');
         titleSpan.textContent = (sIdx + 1) + '. ' + cleanStepTitle;
+        if (outlineSwitch && outlineSwitch.querySelector('input').checked && outlineResults?.totalSessions) {
+          var metric = outlineResults.steps[step.id];
+          if (metric) {
+            var caption = document.createElement('small');
+            caption.className = 'academy-builder-metric';
+            var amount = metric.time ? Math.floor(metric.time.median/60) + ':' + String(metric.time.median%60).padStart(2,'0') + ' · ' : '';
+            var percent = new Intl.NumberFormat(document.documentElement.lang, {style:'percent'}).format(metric.reached/outlineResults.totalSessions);
+            caption.textContent = amount + percent + (document.documentElement.lang === 'de' ? ' erreicht' : ' bereikt');
+            titleSpan.appendChild(caption);
+          }
+        }
         sbtn.appendChild(titleSpan);
 
         if (canEditStructure() && (mod.steps || []).length > 1) {
@@ -965,8 +1018,8 @@
           sUp.className = 'el-rail-move-btn';
           sUp.setAttribute('data-move-step', step.id);
           sUp.setAttribute('data-dir', 'up');
-          sUp.title = 'Move "' + cleanStepTitle + '" up';
-          sUp.setAttribute('aria-label', 'Move step ' + cleanStepTitle + ' up');
+          sUp.title = uiText('Move "') + cleanStepTitle + uiText('" up');
+          sUp.setAttribute('aria-label', uiText('Move step ') + cleanStepTitle + uiText(' up'));
           sUp.disabled = sIdx === 0;
           sUp.appendChild(Icons.icon('chevronUp', 12));
           sUp.addEventListener('click', function (e) {
@@ -977,15 +1030,15 @@
               mod.steps[sIdx] = t;
             }, { label: 'move step up' });
             restoreOutlineFocus('[data-move-step="' + CSS.escape(step.id) + '"][data-dir="up"]');
-            announceOutline('Moved ' + cleanStepTitle + ' to step ' + sIdx + ' of ' + mod.steps.length);
+            announceOutline(uiText('Moved {title} to step {position} of {total}', {title: cleanStepTitle, position: sIdx, total: mod.steps.length}));
           });
           var sDn = document.createElement('button');
           sDn.type = 'button';
           sDn.className = 'el-rail-move-btn';
           sDn.setAttribute('data-move-step', step.id);
           sDn.setAttribute('data-dir', 'down');
-          sDn.title = 'Move "' + cleanStepTitle + '" down';
-          sDn.setAttribute('aria-label', 'Move step ' + cleanStepTitle + ' down');
+          sDn.title = uiText('Move "') + cleanStepTitle + uiText('" down');
+          sDn.setAttribute('aria-label', uiText('Move step ') + cleanStepTitle + uiText(' down'));
           sDn.disabled = sIdx === mod.steps.length - 1;
           sDn.appendChild(Icons.icon('chevronDown', 12));
           sDn.addEventListener('click', function (e) {
@@ -996,7 +1049,7 @@
               mod.steps[sIdx] = t;
             }, { label: 'move step down' });
             restoreOutlineFocus('[data-move-step="' + CSS.escape(step.id) + '"][data-dir="down"]');
-            announceOutline('Moved ' + cleanStepTitle + ' to step ' + (sIdx + 2) + ' of ' + mod.steps.length);
+            announceOutline(uiText('Moved {title} to step {position} of {total}', {title: cleanStepTitle, position: sIdx + 2, total: mod.steps.length}));
           });
           stepMove.appendChild(sUp);
           stepMove.appendChild(sDn);
@@ -1011,7 +1064,7 @@
         var derivedStatus = Model.deriveStepContentState(step);
         var stDot = document.createElement('span');
         stDot.className = 'el-status-dot status-' + derivedStatus;
-        stDot.title = 'Status: ' + derivedStatus;
+        stDot.title = uiText('Status: ') + derivedStatus;
         stDot.setAttribute('role', 'img');
         stDot.setAttribute('aria-label', stDot.title);
         sbtn.appendChild(stDot);
@@ -1019,7 +1072,7 @@
           var broken = Icons.icon('alertCircle', 14);
           broken.setAttribute('aria-hidden', 'false');
           broken.setAttribute('role', 'img');
-          broken.setAttribute('aria-label', 'Jump destination missing');
+          broken.setAttribute('aria-label', uiText('Jump destination missing'));
           sbtn.appendChild(broken);
         }
 
@@ -1036,7 +1089,7 @@
         addStepBtn.type = 'button';
         addStepBtn.className = 'el-quiet-add-step';
         addStepBtn.appendChild(Icons.icon('plus', 13));
-        addStepBtn.appendChild(document.createTextNode('Add step'));
+        addStepBtn.appendChild(document.createTextNode(uiText('Add step')));
         addStepBtn.addEventListener('click', function () {
           state.focusStepTitleAfterRender = true;
           mutate(function () {
@@ -1064,8 +1117,8 @@
 
     var left = document.createElement('span');
     var readEst = report.seconds >= 60 ? (Math.round(report.seconds / 60) + ' min read') : (report.seconds + ' sec read');
-    var optTxt = report.optionalWords ? (' (+' + report.optionalWords + ' optional in sources/transcripts)') : '';
-    left.textContent = report.words + ' words · ~' + readEst + optTxt;
+    var optTxt = report.optionalWords ? (' (+' + report.optionalWords + uiText(' optional in sources/transcripts)')) : '';
+    left.textContent = report.words + uiText(' words · ~') + readEst + optTxt;
     readabilityBarEl.appendChild(left);
   }
 
@@ -1075,9 +1128,9 @@
     slot.className = 'el-insert-slot';
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.setAttribute('aria-label', labelText || 'Add block here');
+    btn.setAttribute('aria-label', labelText || uiText('Add block here'));
     btn.appendChild(Icons.icon('plus', 12));
-    btn.appendChild(document.createTextNode('Add block'));
+    btn.appendChild(document.createTextNode(uiText('Add block')));
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
       state.insertBlockAt = insertIdx;
@@ -1091,8 +1144,8 @@
     var lang = state.editLang;
     if (field === 'addOption') {
       mutate(function () {
-        blk.data.options.push({ id: Model.uid('opt'), label: Model.loc('Nieuwe optie', 'New option', ''), isCorrect: false, feedback: Model.loc('', '', '') });
-      }, { label: 'add option' });
+        blk.data.options.push({ id: Model.uid('opt'), label: Model.loc('Nieuwe optie', 'New option', 'Neue Option'), isCorrect: false, feedback: Model.loc('', '', '') });
+      }, { label: uiText('add option') });
       return;
     }
     if (field === 'addPin') {
@@ -1102,15 +1155,15 @@
       mutate(function () {
         blk.data.pins.push({
           id: newPinId,
-          label: Model.loc('Punt ' + (blk.data.pins.length + 1), 'Point ' + (blk.data.pins.length + 1), ''),
+          label: Model.loc('Punt ' + (blk.data.pins.length + 1), 'Point ' + (blk.data.pins.length + 1), 'Punkt ' + (blk.data.pins.length + 1)),
           detail: Model.loc('', '', ''),
           x: val.x,
           y: val.y,
           color: nextColor,
         });
         state.selectedPinId = newPinId;
-      }, { label: 'add hotspot pin' });
-      showToast('Hotspot pin placed — edit its title, color, and explanation in Settings.');
+      }, { label: uiText('add hotspot pin') });
+      showToast(uiText('Hotspot pin placed — edit its title, color, and explanation in Settings.'));
       return;
     }
     if (field === 'movePin' && val && val.id) {
@@ -1120,7 +1173,7 @@
           targetPin.x = val.x;
           targetPin.y = val.y;
           state.selectedPinId = targetPin.id;
-        }, { label: 'move hotspot pin' });
+        }, { label: uiText('move hotspot pin') });
         if (val.keyboard) canvasCardEl.querySelector('[data-pin-id="' + CSS.escape(val.id) + '"]')?.focus({preventScroll:true});
       }
       return;
@@ -1136,7 +1189,7 @@
       var styleKey = field.slice(6);
       mutate(function () {
         blk.settings.textStyles = Object.assign({}, blk.settings.textStyles, { [styleKey]: val });
-      }, { label: 'change text style' });
+      }, { label: uiText('change text style') });
       canvasCardEl.querySelector('[data-block-id="' + CSS.escape(blk.id) + '"] [data-format-field="' + CSS.escape(styleKey) + '"]')?.focus();
       return;
     }
@@ -1170,7 +1223,7 @@
     if (field === 'videoUrl') {
       var parsedV = Model.parseVideoUrl(val);
       if (!parsedV.embedUrl) {
-        showToast(parsedV.error || 'Paste a valid YouTube or Vimeo link.', 'error');
+        showToast(parsedV.error || uiText('Paste a valid YouTube or Vimeo link.'), 'error');
         return;
       }
       mutate(function () {
@@ -1179,7 +1232,7 @@
         blk.data.videoId = parsedV.videoId || '';
         blk.data.embedUrl = parsedV.embedUrl || '';
         if (parsedV.startSeconds !== null && !blk.data.startSeconds) blk.data.startSeconds = parsedV.startSeconds;
-      }, { label: 'embed video' });
+      }, { label: uiText('embed video') });
       return;
     }
     mutate(function () {
@@ -1196,15 +1249,15 @@
     bar.className = 'el-block-toolbar';
     var handle = document.createElement('span');
     handle.className = 'el-block-drag-handle';
-    handle.title = 'Drag to reorder block';
+    handle.title = uiText('Drag to reorder block');
     handle.setAttribute('aria-hidden', 'true');
     handle.appendChild(Icons.icon('grip', 13));
     bar.appendChild(handle);
     var properties = document.createElement('button');
     properties.type = 'button';
     properties.className = 'el-block-properties';
-    properties.title = 'Block properties';
-    properties.setAttribute('aria-label', 'Block properties');
+    properties.title = uiText('Block properties');
+    properties.setAttribute('aria-label', uiText('Block properties'));
     properties.appendChild(Icons.icon('sliders', 14));
     properties.addEventListener('click', function () {
       state.inspectorTab = 'block';
@@ -1217,7 +1270,7 @@
     [
       {
         ic: 'chevronUp',
-        title: 'Move block up',
+        title: uiText('Move block up'),
         dis: bIdx === 0,
         fn: function () {
           var liveIdx = (pair.step.blocks || []).findIndex(function (b) { return b.id === state.selectedBlockId; });
@@ -1227,12 +1280,12 @@
             var t = a[liveIdx - 1];
             a[liveIdx - 1] = a[liveIdx];
             a[liveIdx] = t;
-          }, { label: 'move block up' });
+          }, { label: uiText('move block up') });
         },
       },
       {
         ic: 'chevronDown',
-        title: 'Move block down',
+        title: uiText('Move block down'),
         dis: bIdx === pair.step.blocks.length - 1,
         fn: function () {
           var liveIdx = (pair.step.blocks || []).findIndex(function (b) { return b.id === state.selectedBlockId; });
@@ -1242,12 +1295,12 @@
             var t = a[liveIdx + 1];
             a[liveIdx + 1] = a[liveIdx];
             a[liveIdx] = t;
-          }, { label: 'move block down' });
+          }, { label: uiText('move block down') });
         },
       },
       {
         ic: 'copy',
-        title: 'Duplicate block',
+        title: uiText('Duplicate block'),
         fn: function () {
           var liveIdx = (pair.step.blocks || []).findIndex(function (b) { return b.id === state.selectedBlockId; });
           if (liveIdx < 0) return;
@@ -1257,12 +1310,12 @@
             pair.step.blocks.splice(liveIdx + 1, 0, cp);
             state.selectedBlockId = cp.id;
             state.focusBlockAfterRender = cp.id;
-          }, { label: 'duplicate block' });
+          }, { label: uiText('duplicate block') });
         },
       },
       {
         ic: 'trash',
-        title: 'Delete block',
+        title: uiText('Delete block'),
         fn: function () {
           var liveIdx = (pair.step.blocks || []).findIndex(function (b) { return b.id === state.selectedBlockId; });
           if (liveIdx < 0) return;
@@ -1272,9 +1325,9 @@
           mutate(function () {
             pair.step.blocks.splice(liveIdx, 1);
             state.selectedBlockId = '';
-          }, { label: 'delete block' });
+          }, { label: uiText('delete block') });
           // UX-020: Scoped undo re-inserts only the deleted block without clobbering later edits
-          showToast('Block deleted.', function () {
+          showToast(uiText('Block deleted.'), function () {
             var m = (state.exp.modules || []).find(function (x) { return x.id === targetModId; });
             var s = m && (m.steps || []).find(function (x) { return x.id === targetStepId; });
             if (!s || s.blocks.some(function (b) { return b.id === removed.id; })) return;
@@ -1283,7 +1336,7 @@
               s.blocks.splice(ins, 0, removed);
               state.selectedTarget = { type: 'step', moduleId: targetModId, stepId: targetStepId };
               state.selectedBlockId = removed.id;
-            }, { label: 'restore block' });
+            }, { label: uiText('restore block') });
           });
         },
       },
@@ -1345,10 +1398,10 @@
     canvasFrameEl.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
     var simulatePhone = state.viewport === 'mobile' && !window.matchMedia('(max-width: 720px)').matches;
     canvasFrameEl.classList.toggle('is-mobile', simulatePhone);
-    canvasFrameEl.setAttribute('aria-label', simulatePhone ? 'Editing canvas at phone width' : 'Editing canvas at available width');
+    canvasFrameEl.setAttribute('aria-label', simulatePhone ? uiText('Editing canvas at phone width') : uiText('Editing canvas at available width'));
 
     if (state.selectedTarget.type === 'startPage') {
-      canvasCrumbEl.textContent = 'Start Page · ' + lang.toUpperCase();
+      canvasCrumbEl.textContent = uiText('Start Page · ') + lang.toUpperCase();
       stageFooterEl.hidden = true;
       RouteMap.renderStartPage(canvasCardEl, {
         exp: state.exp,
@@ -1368,7 +1421,7 @@
         onDeleteHighlight: function (hid) {
           mutate(function () {
             state.exp.startPage.highlights = (state.exp.startPage.highlights || []).filter(function (h) { return h.id !== hid; });
-          }, { label: 'remove highlight' });
+          }, { label: uiText('remove highlight') });
         },
         onMoveHighlight: function (idx, dir) {
           mutate(function () {
@@ -1377,7 +1430,7 @@
             if (target < 0 || target >= arr.length) return;
             var moved = arr.splice(idx, 1)[0];
             arr.splice(target, 0, moved);
-          }, { label: 'reorder highlight' });
+          }, { label: uiText('reorder highlight') });
         },
         onSelectModule: function (mod) {
           if (mod.steps && mod.steps[0]) {
@@ -1400,7 +1453,7 @@
     var modIndex = (state.exp.modules || []).indexOf(pair.mod);
     var stepIndex = (pair.mod.steps || []).indexOf(pair.step);
     // UX-029: Crisp non-redundant outer breadcrumb ("Station N · Step M of K · LANG")
-    canvasCrumbEl.textContent = 'Station ' + (modIndex + 1) + ' · Step ' + (stepIndex + 1) + ' of ' + (pair.mod.steps || []).length + ' · ' + lang.toUpperCase();
+    canvasCrumbEl.textContent = uiText('Station ') + (modIndex + 1) + uiText(' · Step ') + (stepIndex + 1) + uiText(' of ') + (pair.mod.steps || []).length + ' · ' + lang.toUpperCase();
     stageFooterEl.hidden = false;
     authorNotesEl.value = pair.step.authorNotes || '';
 
@@ -1417,8 +1470,8 @@
     crumb.appendChild(ddot);
     var stationName = document.createElement('span');
     stationName.textContent = Model.getLocalized(pair.mod.title, lang, defLang);
-    stationName.setAttribute('aria-label', 'Station name');
-    Model.bindEditableText(stationName, 'Station ' + (modIndex + 1), canEditStructure(), function (value) {
+    stationName.setAttribute('aria-label', uiText('Station name'));
+    Model.bindEditableText(stationName, uiText('Station ') + (modIndex + 1), canEditStructure(), function (value) {
       mutate(function () { pair.mod.title = Model.setLocalized(pair.mod.title, lang, value); }, { recordUndo: false, rerender: false });
       var inspectorName = inspectorBodyEl.querySelector('[data-field-key=stationName]');
       if (inspectorName) inspectorName.value = value;
@@ -1434,7 +1487,7 @@
     stepTitle.className = 'xped-step-title';
     var curStepTitle = Model.getLocalized(pair.step.title, lang, defLang);
     stepTitle.textContent = curStepTitle;
-    Model.bindEditableText(stepTitle, 'Click to write step title…', canEditStructure(), function (value) {
+    Model.bindEditableText(stepTitle, uiText('Click to write step title…'), canEditStructure(), function (value) {
       mutate(function () { pair.step.title = Model.setLocalized(pair.step.title, lang, value); }, { recordUndo: false, rerender: false });
       renderOutline();
     });
@@ -1446,7 +1499,7 @@
     (pair.step.blocks || []).forEach(function (blk, bIdx) {
       var bMeta = Model.getBlockMeta(blk.type);
       if (canEditStructure()) {
-        stack.appendChild(makeInsertSlot(bIdx, 'Add block before ' + bMeta.label + ' #' + (bIdx + 1)));
+        stack.appendChild(makeInsertSlot(bIdx, uiText('Add block before ') + bMeta.label + ' #' + (bIdx + 1)));
       }
 
       var wrap = document.createElement('div');
@@ -1515,9 +1568,9 @@
       empty.className = 'el-dropzone';
       empty.appendChild(Icons.icon('plus', 22));
       var es = document.createElement('strong');
-      es.textContent = 'Start building this step';
+      es.textContent = uiText('Start building this step');
       var ep = document.createElement('span');
-      ep.textContent = 'Add text, a YouTube clip, an illustration, a Myth/Fact card, or an interactive pain-education exercise.';
+      ep.textContent = uiText('Add text, a YouTube clip, an illustration, a Myth/Fact card, or an interactive pain-education exercise.');
       empty.appendChild(es);
       empty.appendChild(ep);
       empty.addEventListener('click', function () { state.insertBlockAt = 0; openBlockPicker(); });
@@ -1529,8 +1582,8 @@
       addBtn.type = 'button';
       addBtn.className = 'el-btn';
       addBtn.appendChild(Icons.icon('plus', 15));
-      addBtn.appendChild(document.createTextNode('Add Block'));
-      addBtn.setAttribute('aria-label', 'Add block at end');
+      addBtn.appendChild(document.createTextNode(uiText('Add Block')));
+      addBtn.setAttribute('aria-label', uiText('Add block at end'));
       addBtn.addEventListener('click', function () { state.insertBlockAt = pair.step.blocks.length; openBlockPicker(); });
       addRow.appendChild(addBtn);
       stack.appendChild(addRow);
@@ -1640,6 +1693,50 @@
     return lab;
   }
 
+  function currentMediaPreview(ref, asset, audioOnly) {
+    var german = document.documentElement.lang === 'de';
+    var preview = document.createElement('div');
+    preview.className = 'academy-media-file';
+    var info = document.createElement('span');
+    var title = document.createElement('strong');
+    title.textContent = asset ? (asset.labels?.[german ? 'de' : 'nl'] || asset.label)
+      : audioOnly ? (german ? 'Audiodatei' : 'Audiobestand') : (german ? 'Bild' : 'Afbeelding');
+    var detail = document.createElement('small');
+    var size = '';
+    var dimensions = '';
+    function update() { detail.textContent = [dimensions, size].filter(Boolean).join(' · '); }
+    var url = ref.kind === 'asset' ? assetUrl(ref.assetId) : ref.staticPath;
+    if (!audioOnly && url) {
+      var image = document.createElement('img');
+      image.alt = '';
+      image.addEventListener('load', function () {
+        dimensions = image.naturalWidth + ' × ' + image.naturalHeight + ' px';
+        update();
+      });
+      setMediaSource(image, url);
+      preview.appendChild(image);
+    } else if (audioOnly) preview.appendChild(Icons.icon('play', 28));
+    info.append(title, detail);
+    preview.appendChild(info);
+    if (url && !mediaInfo.has(url)) {
+      var lookup = (ref.kind === 'asset' ? request(url, { method: 'HEAD' }) : fetch(url, { method: 'HEAD' }))
+        .then(function (response) {
+          if (!response.ok) throw new Error();
+          var disposition = response.headers.get('Content-Disposition') || '';
+          var name = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+          return { name: name ? decodeURIComponent(name[1]) : '', bytes: Number(response.headers.get('Content-Length')) };
+        }).catch(function () { mediaInfo.delete(url); return null; });
+      mediaInfo.set(url, lookup);
+    }
+    if (url) mediaInfo.get(url).then(function (item) {
+      if (!item || leavingAccount) return;
+      if (item.name) title.textContent = item.name;
+      if (item.bytes > 0) size = mediaSize(item.bytes);
+      update();
+    });
+    return preview;
+  }
+
   function buildVisualPicker(currentRef, targetForUpload, onPick, audioOnly) {
     var box = document.createElement('div');
     box.className = 'el-field';
@@ -1650,9 +1747,15 @@
       onPick(ref, asset);
     }
 
+    var academy = document.documentElement.dataset.product === 'academy';
+    var selectedAsset = Model.XPED_ASSETS.find(function (asset) { return currentRef?.staticPath === asset.path; });
+    if (academy && hasMedia) {
+      box.classList.add('academy-media-occupied');
+      box.appendChild(currentMediaPreview(currentRef, selectedAsset, audioOnly));
+    }
     box.appendChild(Blocks.createDropzone(
-      audioOnly ? (hasMedia ? 'Replace audio clip' : 'Upload audio clip') : (hasMedia ? 'Replace custom photo' : 'Upload custom photo'),
-      audioOnly ? 'MP3, M4A or OGG' : 'Drop or click · PNG, JPG, WebP',
+      academy && hasMedia ? window.Xped.i18n.copy('Vervangen','Ersetzen') : audioOnly ? (hasMedia ? uiText('Replace audio clip') : uiText('Upload audio clip')) : (hasMedia ? uiText('Replace custom photo') : uiText('Upload custom photo')),
+      audioOnly ? uiText('MP3, M4A or OGG') : uiText('Drop or click · PNG, JPG, WebP'),
       audioOnly ? 'audio/*' : 'image/png,image/jpeg,image/webp',
       function (file) { uploadFileForBlock(targetForUpload, file); }
     ));
@@ -1665,14 +1768,19 @@
       upBar.className = 'el-upload-status' + (upState.status === 'error' ? ' is-error' : '');
       var upText = document.createElement('span');
       upText.textContent = upState.status === 'uploading'
-        ? ('Uploading ' + upState.fileName + '…')
+        ? (uiText('Uploading ') + upState.fileName + '…')
         : (upState.fileName + ': ' + upState.error);
       upBar.appendChild(upText);
+      if (academy && upState.status === 'uploading') {
+        var progress = document.createElement('progress');
+        progress.setAttribute('aria-label', upText.textContent);
+        upBar.appendChild(progress);
+      }
       if (upState.status === 'error' && upState.file) {
         var retryUp = document.createElement('button');
         retryUp.type = 'button';
         retryUp.className = 'el-btn el-btn-sm';
-        retryUp.textContent = 'Retry';
+        retryUp.textContent = uiText('Retry');
         retryUp.addEventListener('click', function () { uploadFileForBlock(targetForUpload, upState.file); });
         upBar.appendChild(retryUp);
       }
@@ -1686,7 +1794,7 @@
       var rmBtn = document.createElement('button');
       rmBtn.type = 'button';
       rmBtn.className = 'el-btn el-btn-danger el-btn-sm';
-      rmBtn.textContent = audioOnly ? 'Remove audio' : 'Remove image';
+      rmBtn.textContent = academy ? window.Xped.i18n.copy('Verwijderen','Entfernen') : audioOnly ? uiText('Remove audio') : uiText('Remove image');
       rmBtn.addEventListener('click', function () {
         chooseMedia({ kind: 'none', assetId: '', staticPath: '' });
       });
@@ -1703,14 +1811,14 @@
         state.openInspectorDetails[detKey] = library.open;
       });
       var summary = document.createElement('summary');
-      var current = Model.XPED_ASSETS.find(function (asset) { return currentRef?.staticPath === asset.path; });
+      var current = selectedAsset;
       if (current) {
         var thumbnail = document.createElement('img');
         thumbnail.src = current.path;
         thumbnail.alt = '';
         summary.appendChild(thumbnail);
       }
-      summary.append('Official xPED Illustrations');
+      summary.append(uiText('Official xPED Illustrations'));
       library.appendChild(summary);
       box.appendChild(library);
 
@@ -1719,12 +1827,14 @@
       var noneBtn = document.createElement('button');
       noneBtn.type = 'button';
       noneBtn.className = 'el-asset-thumb' + (!currentRef || currentRef.kind === 'none' ? ' is-selected' : '');
-      noneBtn.textContent = 'None';
+      noneBtn.textContent = uiText('None');
       noneBtn.setAttribute('aria-pressed', String(!currentRef || currentRef.kind === 'none'));
       noneBtn.addEventListener('click', function () { chooseMedia({ kind: 'none', assetId: '', staticPath: '' }); });
       grid.appendChild(noneBtn);
 
       Model.XPED_ASSETS.forEach(function (asset) {
+        if (!academy && asset.academyOnly) return;
+        var label = asset.labels?.[document.documentElement.lang] || asset.label;
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'el-asset-thumb' + (currentRef && currentRef.staticPath === asset.path ? ' is-selected' : '');
@@ -1734,11 +1844,11 @@
         img.loading = 'lazy';
         btn.setAttribute('aria-pressed', String(currentRef?.staticPath === asset.path));
         var sp = document.createElement('span');
-        sp.textContent = asset.label;
+        sp.textContent = label;
         var desc = document.createElement('small');
         desc.id = Model.uid('scene');
         desc.textContent = Model.getLocalized(asset.alt, state.editLang, state.exp.defaultLanguage);
-        btn.setAttribute('aria-label', asset.label);
+        btn.setAttribute('aria-label', label);
         btn.setAttribute('aria-describedby', desc.id);
         btn.append(img, sp, desc);
         btn.addEventListener('click', function () {
@@ -1776,7 +1886,7 @@
     if (state.inspectorTab === 'theme') {
       var h = document.createElement('div');
       h.className = 'el-insp-section-title';
-      h.textContent = 'Expedition Visual Style';
+      h.textContent = uiText('Expedition Visual Style');
       inspectorBodyEl.appendChild(h);
 
       // UX-113: Visual Palette Cards with Swatches & Live Mini Specimen
@@ -1824,15 +1934,15 @@
       var specCard = document.createElement('div');
       specCard.className = 'el-palette-specimen-card';
       var specT = document.createElement('strong');
-      specT.textContent = 'Your next step';
+      specT.textContent = uiText('Your next step');
       var specP = document.createElement('span');
-      specP.textContent = 'A moment to reflect on what you learned.';
+      specP.textContent = uiText('A moment to reflect on what you learned.');
       var sampleAction = document.createElement('span');
       sampleAction.className = 'el-specimen-action';
-      sampleAction.textContent = 'Continue →';
+      sampleAction.textContent = uiText('Continue →');
       var sampleFeedback = document.createElement('span');
       sampleFeedback.className = 'el-specimen-feedback';
-      sampleFeedback.textContent = '✓ Answer saved';
+      sampleFeedback.textContent = uiText('✓ Answer saved');
       specCard.append(specT, specP, sampleAction, sampleFeedback);
       spec.appendChild(specCard);
       inspectorBodyEl.appendChild(spec);
@@ -1840,14 +1950,14 @@
       applyPalette.className = 'el-btn el-btn-sm';
       applyPalette.type = 'button';
       applyPalette.disabled = true;
-      applyPalette.textContent = 'Apply palette to expedition';
+      applyPalette.textContent = uiText('Apply palette to expedition');
       applyPalette.addEventListener('click', function () {
         mutate(function () { state.exp.theme.preset = spec.dataset.xpedTheme; }, { label: 'change palette' });
       });
       inspectorBodyEl.appendChild(applyPalette);
 
-      inspectorBodyEl.appendChild(fieldCheck('Show animated Expedition Route Map on Start Page', !state.exp.theme || state.exp.theme.showRouteMap !== false, function (v) {
-        mutate(function () { state.exp.theme.showRouteMap = v; }, { label: 'toggle route map' });
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Show animated Expedition Route Map on Start Page'), !state.exp.theme || state.exp.theme.showRouteMap !== false, function (v) {
+        mutate(function () { state.exp.theme.showRouteMap = v; }, { label: uiText('toggle route map') });
       }));
 
       return;
@@ -1858,25 +1968,25 @@
       lh.id = 'el-course-languages';
       lh.tabIndex = -1;
       lh.className = 'el-insp-section-title';
-      lh.textContent = 'Course Languages';
+      lh.textContent = uiText('Course Languages');
       inspectorBodyEl.appendChild(lh);
 
-      inspectorBodyEl.appendChild(fieldSelect('Default Fallback Language', defLang, [
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Default Fallback Language'), defLang, [
         ['nl', 'Nederlands (NL)'],
         ['en', 'English (EN)'],
         ['de', 'Deutsch (DE)'],
-      ], function (v) {
+      ].filter(function (option) { return courseLanguages.includes(option[0]); }), function (v) {
         mutate(function () {
           state.exp.defaultLanguage = v;
           if ((state.exp.enabledLanguages || []).indexOf(v) < 0) state.exp.enabledLanguages.unshift(v);
-        }, { label: 'change default language' });
+        }, { label: uiText('change default language') });
       }));
 
       var enabledSet = state.exp.enabledLanguages || ['nl', 'en', 'de'];
-      ['nl', 'en', 'de'].forEach(function (code) {
+      courseLanguages.forEach(function (code) {
         var isDefault = code === defLang;
         inspectorBodyEl.appendChild(fieldCheck(
-          'Enable ' + Model.LANG_LABELS[code] + (isDefault ? ' (default)' : ''),
+          uiText('Enable ') + Model.LANG_LABELS[code] + (isDefault ? uiText(' (default)') : ''),
           enabledSet.indexOf(code) >= 0,
           function (on) {
             mutate(function () {
@@ -1884,7 +1994,7 @@
               if (on) next.push(code);
               if (!next.length) next = [defLang];
               state.exp.enabledLanguages = next;
-            }, { label: 'toggle language' });
+            }, { label: uiText('toggle language') });
           },
           isDefault
         ));
@@ -1896,19 +2006,19 @@
       var sp = state.exp.startPage;
       var spHead = document.createElement('div');
       spHead.className = 'el-insp-section-title';
-      spHead.textContent = 'Start Page Properties';
+      spHead.textContent = uiText('Start Page Properties');
       inspectorBodyEl.appendChild(spHead);
 
       var hint = document.createElement('p');
       hint.className = 'xped-caption';
-      hint.textContent = 'Edit headlines, intro, highlights, and CTA directly on the Start Page canvas.';
+      hint.textContent = uiText('Edit headlines, intro, highlights, and CTA directly on the Start Page canvas.');
       inspectorBodyEl.appendChild(hint);
 
       inspectorBodyEl.appendChild(buildVisualPicker(sp.heroMedia, 'startPage', function (ref) {
-        mutate(function () { sp.heroMedia = ref; }, { label: 'update start page illustration' });
+        mutate(function () { sp.heroMedia = ref; }, { label: uiText('update start page illustration') });
       }, false));
 
-      inspectorBodyEl.appendChild(fieldText('Optional Intro YouTube/Vimeo URL', sp.heroVideoUrl, function (v) {
+      inspectorBodyEl.appendChild(fieldText(uiText('Optional Intro YouTube/Vimeo URL'), sp.heroVideoUrl, function (v) {
         mutate(function () {
           sp.heroVideoUrl = v;
           var parsed = Model.parseVideoUrl(v);
@@ -1920,7 +2030,7 @@
       addHl.type = 'button';
       addHl.className = 'el-btn el-btn-sm';
       addHl.appendChild(Icons.icon('plus', 14));
-      addHl.appendChild(document.createTextNode('Add Start Page Highlight'));
+      addHl.appendChild(document.createTextNode(uiText('Add Start Page Highlight')));
       addHl.addEventListener('click', function () {
         mutate(function () { sp.highlights.push({ id: Model.uid('hl'), text: Model.loc('Nieuw voordeel', 'New highlight', '') }); }, { label: 'add highlight' });
       });
@@ -1928,10 +2038,10 @@
       var completion = document.createElement('details');
       completion.className = 'el-completion-settings';
       var legend = document.createElement('summary');
-      legend.textContent = 'Completion page';
+      legend.textContent = uiText('Completion page');
       completion.appendChild(legend);
-      [['summaryTitle', 'Summary title'], ['summaryIntro', 'Introduction'], ['summaryPlanHeading', 'Mini-plan heading'],
-        ['summaryClosing', 'Closing text']].forEach(function (item) {
+      [['summaryTitle', uiText('Summary title')], ['summaryIntro', uiText('Introduction')], ['summaryPlanHeading', uiText('Mini-plan heading')],
+        ['summaryClosing', uiText('Closing text')]].forEach(function (item) {
         completion.appendChild(fieldText(item[1] + ' (' + lang.toUpperCase() + ')', sp[item[0]]?.[lang], function (v) {
           mutate(function () { sp[item[0]] = Model.setLocalized(sp[item[0]], lang, v); }, { recordUndo: false });
         }));
@@ -1948,24 +2058,24 @@
       var step = pair.step;
       var mh = document.createElement('div');
       mh.className = 'el-insp-section-title';
-      mh.textContent = 'Station Settings';
+      mh.textContent = uiText('Station Settings');
       inspectorBodyEl.appendChild(mh);
 
-      inspectorBodyEl.appendChild(fieldText('Station Name (' + lang.toUpperCase() + ')', mod.title[lang], function (v) {
+      inspectorBodyEl.appendChild(fieldText(uiText('Station Name (') + lang.toUpperCase() + ')', mod.title[lang], function (v) {
         mutate(function () { mod.title = Model.setLocalized(mod.title, lang, v); }, { recordUndo: false });
       }, false, 'stationName'));
-      inspectorBodyEl.appendChild(fieldSelect('Biopsychosocial Color Theme', mod.domain || 'general', [
-        ['general', 'General (Neutral Navy)'],
-        ['bio', 'Biologisch (Mint)'],
-        ['psycho', 'Psychologisch (Blue)'],
-        ['social', 'Sociaal (Yellow)'],
-      ], function (v) { mutate(function () { mod.domain = v; }, { label: 'change station theme' }); }));
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Biopsychosocial Color Theme'), mod.domain || 'general', [
+        ['general', uiText('General (Neutral Navy)')],
+        ['bio', uiText('Biologisch (Mint)')],
+        ['psycho', uiText('Psychologisch (Blue)')],
+        ['social', uiText('Sociaal (Yellow)')],
+      ], function (v) { mutate(function () { mod.domain = v; }, { label: uiText('change station theme') }); }));
 
       // UX-108: Validated numeric duration input labeled as author estimate
       var minWrap = document.createElement('div');
       minWrap.className = 'el-field';
       var minLab = document.createElement('label');
-      minLab.textContent = 'Estimated Minutes (author estimate, 1–120)';
+      minLab.textContent = uiText('Estimated Minutes (author estimate, 1–120)');
       var minInp = document.createElement('input');
       minInp.type = 'text';
       minInp.inputMode = 'numeric';
@@ -1981,7 +2091,7 @@
         var n = Number(minInp.value);
         if (!/^\d+$/.test(minInp.value) || !Number.isInteger(n) || n < 1 || n > 120) {
           minInp.setAttribute('aria-invalid', 'true');
-          minErr.textContent = 'Enter a whole number between 1 and 120 minutes.';
+          minErr.textContent = uiText('Enter a whole number between 1 and 120 minutes.');
           minErr.hidden = false;
         } else {
           minErr.hidden = true;
@@ -1992,24 +2102,24 @@
       minWrap.append(minLab, minInp);
       inspectorBodyEl.append(minWrap, minErr);
 
-      inspectorBodyEl.appendChild(fieldCheck('Visible in Public Test Link', mod.visibleToLearners !== false, function (v) {
-        mutate(function () { mod.visibleToLearners = v; }, { label: 'toggle station visibility' });
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Visible in Public Test Link'), mod.visibleToLearners !== false, function (v) {
+        mutate(function () { mod.visibleToLearners = v; }, { label: uiText('toggle station visibility') });
       }));
-      inspectorBodyEl.appendChild(fieldText('Milestone Celebration Note', mod.milestoneMessage[lang], function (v) {
+      inspectorBodyEl.appendChild(fieldText(uiText('Milestone Celebration Note'), mod.milestoneMessage[lang], function (v) {
         mutate(function () { mod.milestoneMessage = Model.setLocalized(mod.milestoneMessage, lang, v); }, { recordUndo: false });
       }));
 
       var sh = document.createElement('div');
       sh.className = 'el-insp-section-title';
-      sh.textContent = 'Step Readiness & Flow';
+      sh.textContent = uiText('Step Readiness & Flow');
       inspectorBodyEl.appendChild(sh);
 
-      inspectorBodyEl.appendChild(fieldSelect('Content Status', Model.deriveStepContentState(step), [
-        ['empty', 'Empty (awaiting partner content)'],
-        ['draft', 'Draft (in progress)'],
-        ['review', 'Needs partner review'],
-        ['ready', 'Ready for testing'],
-      ], function (v) { mutate(function () { step.status = v; }, { label: 'change step status' }); }));
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Content Status'), Model.deriveStepContentState(step), [
+        ['empty', uiText('Empty (awaiting partner content)')],
+        ['draft', uiText('Draft (in progress)')],
+        [uiText('review'), uiText('Needs partner review')],
+        ['ready', uiText('Ready for testing')],
+      ], function (v) { mutate(function () { step.status = v; }, { label: uiText('change step status') }); }));
 
       // UX-073, UX-074, UX-075: Complete Visual Branching Rule Builder
       var qBlocks = (step.blocks || []).filter(function (b) { return b.type === 'mcq' || b.type === 'myth_fact' || b.type === 'scale'; });
@@ -2018,11 +2128,11 @@
         if (curRule && (!mod.steps.some(function (s) { return s.id === curRule.targetStepId; }) || !qBlocks.some(function (b) { return b.id === curRule.blockId; }))) {
           var brokenWarn = document.createElement('div');
           brokenWarn.className = 'el-insp-warn';
-          brokenWarn.textContent = 'This jump has a missing question or destination. Choose a replacement or clear the rule.';
+          brokenWarn.textContent = uiText('This jump has a missing question or destination. Choose a replacement or clear the rule.');
           var clrBtn = document.createElement('button');
           clrBtn.type = 'button';
           clrBtn.className = 'el-btn el-btn-sm';
-          clrBtn.textContent = 'Clear broken rule';
+          clrBtn.textContent = uiText('Clear broken rule');
           clrBtn.addEventListener('click', function () {
             mutate(function () { step.branching.splice(ruleIndex, 1); }, { label: 'clear broken jump rule' });
           });
@@ -2036,22 +2146,22 @@
           brCard.className = 'el-insp-card';
           var brHead = document.createElement('div');
           brHead.className = 'el-insp-card-head';
-          brHead.textContent = rules.length > 1 ? 'Conditional jump ' + (ruleIndex + 1) : 'Conditional jump';
+          brHead.textContent = rules.length > 1 ? uiText('Conditional jump ') + (ruleIndex + 1) : uiText('Conditional jump');
           brCard.appendChild(brHead);
 
-          var targetOpts = [['', 'Continue to next step (no jump)']].concat(
+          var targetOpts = [['', uiText('Continue to next step (no jump)')]].concat(
             mod.steps.filter(function (s) { return s.id !== step.id; }).map(function (s, i) {
-              return [s.id, 'Jump to: ' + (Model.getLocalized(s.title, lang, defLang) || ('Step ' + (i + 1)))];
+              return [s.id, uiText('Jump to: ') + (Model.getLocalized(s.title, lang, defLang) || (uiText('Step ') + (i + 1)))];
             })
           );
-          brCard.appendChild(fieldSelect('When answered…', curRule ? curRule.targetStepId : '', targetOpts, function (tid) {
+          brCard.appendChild(fieldSelect(uiText('When answered…'), curRule ? curRule.targetStepId : '', targetOpts, function (tid) {
             mutate(function () {
               if (!tid) { if (curRule) step.branching.splice(ruleIndex, 1); return; }
               if (curRule) { curRule.targetStepId = tid; return; }
               var firstQ = qBlocks[0];
               var defVal = firstQ.type === 'myth_fact' ? 'myth' : (firstQ.type === 'mcq' ? ((firstQ.data.options && firstQ.data.options[0] && firstQ.data.options[0].id) || '') : '5');
               step.branching = [{ blockId: firstQ.id, operator: firstQ.type === 'scale' ? 'lte' : 'equals', value: defVal, targetStepId: tid }];
-            }, { label: 'update jump rule' });
+            }, { label: uiText('update jump rule') });
           }));
 
           if (curRule) {
@@ -2061,39 +2171,39 @@
                 var qTxt = Model.getLocalized(qb.data.question || qb.data.statement, lang, defLang) || (Model.getBlockMeta(qb.type).label + ' #' + (qi + 1));
                 return [qb.id, qTxt];
               });
-              brCard.appendChild(fieldSelect('Source question', curRule.blockId, qOpts, function (bid) {
+              brCard.appendChild(fieldSelect(uiText('Source question'), curRule.blockId, qOpts, function (bid) {
                 var pickedB = qBlocks.find(function (b) { return b.id === bid; }) || qBlocks[0];
                 mutate(function () {
                   curRule.blockId = pickedB.id;
                   curRule.operator = pickedB.type === 'scale' ? 'lte' : 'equals';
                   curRule.value = pickedB.type === 'myth_fact' ? 'myth' : (pickedB.type === 'mcq' ? ((pickedB.data.options && pickedB.data.options[0] && pickedB.data.options[0].id) || '') : '5');
-                }, { label: 'change jump source' });
+                }, { label: uiText('change jump source') });
               }));
             }
 
             if (srcBlock.type === 'myth_fact') {
-              brCard.appendChild(fieldSelect('If learner chooses', curRule.value || 'myth', [
-                ['myth', 'Fabel / Myth'],
-                ['fact', 'Feit / Fact'],
+              brCard.appendChild(fieldSelect(uiText('If learner chooses'), curRule.value || 'myth', [
+                ['myth', uiText('Fabel / Myth')],
+                ['fact', uiText('Feit / Fact')],
               ], function (val) {
-                mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: 'update jump answer' });
+                mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: uiText('update jump answer') });
               }));
             } else if (srcBlock.type === 'mcq') {
               var optChoices = (srcBlock.data.options || []).map(function (o, oi) {
-                return [o.id, Model.getLocalized(o.label, lang, defLang) || ('Option ' + (oi + 1))];
+                return [o.id, Model.getLocalized(o.label, lang, defLang) || (uiText('Option ') + (oi + 1))];
               });
-              brCard.appendChild(fieldSelect('If learner chooses option', curRule.value || (optChoices[0] && optChoices[0][0]) || '', optChoices, function (val) {
-                mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: 'update jump option' });
+              brCard.appendChild(fieldSelect(uiText('If learner chooses option'), curRule.value || (optChoices[0] && optChoices[0][0]) || '', optChoices, function (val) {
+                mutate(function () { curRule.operator = 'equals'; curRule.value = val; }, { label: uiText('update jump option') });
               }));
             } else if (srcBlock.type === 'scale') {
-              brCard.appendChild(fieldSelect('Condition', curRule.operator || 'lte', [
-                ['lte', 'Score is at most (≤)'],
-                ['gte', 'Score is at least (≥)'],
-                ['equals', 'Score equals (=)'],
+              brCard.appendChild(fieldSelect(uiText('Condition'), curRule.operator || 'lte', [
+                ['lte', uiText('Score is at most (≤)')],
+                ['gte', uiText('Score is at least (≥)')],
+                ['equals', uiText('Score equals (=)')],
               ], function (op) {
-                mutate(function () { curRule.operator = op; }, { label: 'update jump operator' });
+                mutate(function () { curRule.operator = op; }, { label: uiText('update jump operator') });
               }));
-              brCard.appendChild(fieldText('Threshold (' + (srcBlock.data.min ?? 0) + '–' + (srcBlock.data.max ?? 10) + ')', curRule.value || '5', function (v) {
+              brCard.appendChild(fieldText(uiText('Threshold (') + (srcBlock.data.min ?? 0) + '–' + (srcBlock.data.max ?? 10) + ')', curRule.value || '5', function (v) {
                 mutate(function () { curRule.value = v; }, { recordUndo: false });
               }));
             }
@@ -2107,26 +2217,26 @@
       if (otherStations.length) {
         var moveLabel = document.createElement('div');
         moveLabel.className = 'el-insp-section-title';
-        moveLabel.textContent = 'Move step';
+        moveLabel.textContent = uiText('Move step');
         inspectorBodyEl.appendChild(moveLabel);
         if (mod.steps.length > 1) {
           var destinations = otherStations.map(function (other) {
-            return [other.id, Model.getLocalized(other.title, lang, defLang) || 'Untitled station'];
+            return [other.id, Model.getLocalized(other.title, lang, defLang) || uiText('Untitled station')];
           });
-          inspectorBodyEl.appendChild(fieldSelect('Move to station', '', [['', 'Choose a station…']].concat(destinations), function (id) {
+          inspectorBodyEl.appendChild(fieldSelect(uiText('Move to station'), '', [['', uiText('Choose a station…')]].concat(destinations), function (id) {
             var destination = otherStations.find(function (other) { return other.id === id; });
             if (!destination) return;
             mutate(function () {
               mod.steps.splice(mod.steps.indexOf(step), 1);
               destination.steps.push(step);
               state.selectedTarget = { type: 'step', moduleId: destination.id, stepId: step.id };
-            }, { label: 'move step to station' });
-            announceOutline('Moved step to ' + Model.getLocalized(destination.title, lang, defLang));
+            }, { label: uiText('move step to station') });
+            announceOutline(uiText('Moved step to ') + Model.getLocalized(destination.title, lang, defLang));
           }));
         } else {
           var reason = document.createElement('p');
           reason.className = 'xped-caption';
-          reason.textContent = 'Add another step to this station before moving its only step elsewhere.';
+          reason.textContent = uiText('Add another step to this station before moving its only step elsewhere.');
           inspectorBodyEl.appendChild(reason);
         }
       }
@@ -2137,7 +2247,7 @@
       var delStep = document.createElement('button');
       delStep.type = 'button';
       delStep.className = 'el-btn el-btn-danger el-btn-sm';
-      delStep.textContent = 'Delete Step';
+      delStep.textContent = uiText('Delete Step');
       var soleStep = (mod.steps || []).length <= 1;
       delStep.disabled = soleStep;
       delStep.addEventListener('click', function () {
@@ -2153,7 +2263,7 @@
         var affected = mod.steps.filter(function (other) {
           return (other.branching || []).some(function (rule) { return rule.targetStepId === step.id; });
         }).map(function (other) { return Model.getLocalized(other.title, lang, defLang) || 'Untitled step'; });
-        showToast(affected.length ? 'Step deleted. Review the jump from ' + affected.join(', ') + '.' : 'Step deleted.', function () {
+        showToast(affected.length ? uiText('Step deleted. Review the jump from ') + affected.join(', ') + '.' : uiText('Step deleted.'), function () {
           var m = (state.exp.modules || []).find(function (x) { return x.id === targetModId; });
           if (!m || m.steps.some(function (s) { return s.id === removedStep.id; })) return;
           mutate(function () {
@@ -2166,7 +2276,7 @@
       var delMod = document.createElement('button');
       delMod.type = 'button';
       delMod.className = 'el-btn el-btn-danger el-btn-sm';
-      delMod.textContent = 'Delete Station';
+      delMod.textContent = uiText('Delete Station');
       delMod.addEventListener('click', function () {
         var removedModIdx = state.exp.modules.indexOf(mod);
         var removedMod = clone(mod);
@@ -2174,7 +2284,7 @@
           state.exp.modules = state.exp.modules.filter(function (m) { return m.id !== mod.id; });
           state.selectedTarget = { type: 'startPage' };
         }, { label: 'delete station' });
-        showToast('Station deleted.', function () {
+        showToast(uiText('Station deleted.'), function () {
           if (state.exp.modules.some(function (m) { return m.id === removedMod.id; })) return;
           mutate(function () {
             state.exp.modules.splice(Math.min(removedModIdx, state.exp.modules.length), 0, removedMod);
@@ -2189,11 +2299,11 @@
       if (soleStep) {
         var soleNote = document.createElement('div');
         soleNote.className = 'el-insp-warn';
-        soleNote.textContent = 'Every station keeps at least one step. Add another step before deleting this one, or delete the whole station. ';
+        soleNote.textContent = uiText('Every station keeps at least one step. Add another step before deleting this one, or delete the whole station. ');
         var quickAdd = document.createElement('button');
         quickAdd.type = 'button';
         quickAdd.className = 'el-btn el-btn-sm';
-        quickAdd.textContent = '+ Add step';
+        quickAdd.textContent = uiText('+ Add step');
         quickAdd.addEventListener('click', function () {
           state.focusStepTitleAfterRender = true;
           mutate(function () {
@@ -2222,7 +2332,7 @@
     var mobBack = document.createElement('button');
     mobBack.type = 'button';
     mobBack.className = 'el-btn el-btn-sm';
-    mobBack.textContent = 'View on canvas';
+    mobBack.textContent = uiText('View on canvas');
     mobBack.addEventListener('click', function () {
       selectPane('canvas');
       var wrap = canvasCardEl.querySelector('[data-wrap-block-id="' + CSS.escape(blk.id) + '"]');
@@ -2236,21 +2346,21 @@
 
     var bh = document.createElement('div');
     bh.className = 'el-insp-section-title';
-    bh.textContent = metaInfo.label + ' Properties';
+    bh.textContent = metaInfo.label + uiText(' Properties');
     inspectorBodyEl.appendChild(bh);
 
     // S-01: Tailored per-block help (never misleading generic copy on fields only editable in Inspector)
     var helpByType = {
-      sources: 'Manage citations and DOIs below. Learners see a clean collapsible Bron box.',
-      video: 'Paste a YouTube or Vimeo link below, optionally set start/end times, and add a summary transcript.',
-      hotspot: 'Click the image on the canvas to place pins, drag pins to reposition, and edit titles, colors & explanations below.',
-      balance_scale: 'Edit heading on the canvas; configure Load vs. Resources factors and guidance tips below.',
-      bps_triad: 'Edit the Bio, Psycho, and Social tab explanations below.',
-      custom_visual: 'Pick a built-in pain animation or keep a Coding Agent Blueprint slot with a brief.',
+      sources: uiText('Manage citations and DOIs below. Learners see a clean collapsible Bron box.'),
+      video: uiText('Paste a YouTube or Vimeo link below, optionally set start/end times, and add a summary transcript.'),
+      hotspot: uiText('Click the image on the canvas to place pins, drag pins to reposition, and edit titles, colors & explanations below.'),
+      balance_scale: uiText('Edit heading on the canvas; configure Load vs. Resources factors and guidance tips below.'),
+      bps_triad: uiText('Edit the Bio, Psycho, and Social tab explanations below.'),
+      custom_visual: uiText('Pick a built-in pain animation or keep a Coding Agent Blueprint slot with a brief.'),
     };
     var editTip = document.createElement('p');
     editTip.className = 'xped-caption el-edit-tip';
-    editTip.textContent = helpByType[blk.type] || 'Edit visible headings and wording directly on the slide canvas; adjust behavior and extras here.';
+    editTip.textContent = helpByType[blk.type] || uiText('Edit visible headings and wording directly on the slide canvas; adjust behavior and extras here.');
     inspectorBodyEl.appendChild(editTip);
 
     // UX-076: Warn / guard revealAfterAnswer if step has no interactive question block
@@ -2260,20 +2370,20 @@
       var stepHasInteractive = eligible.length > 0;
       var revOn = !!(blk.settings && blk.settings.revealAfterAnswer);
       inspectorBodyEl.appendChild(fieldCheck(
-        'Reveal only after learner answers a question on this step',
+        uiText('Reveal only after learner answers a question on this step'),
         revOn,
         function (v) {
           mutate(function () {
             blk.settings = blk.settings || {};
             blk.settings.revealAfterAnswer = v;
-          }, { label: 'toggle progressive reveal' });
+          }, { label: uiText('toggle progressive reveal') });
         },
         !stepHasInteractive && !revOn
       ));
       if (stepHasInteractive && revOn) {
         var questionHint = document.createElement('p');
         questionHint.className = 'xped-caption';
-        questionHint.textContent = 'Unlocks after an answer to ' + eligible.map(function (b) {
+        questionHint.textContent = uiText('Unlocks after an answer to ') + eligible.map(function (b) {
           return Model.getLocalized(b.data.question || b.data.statement || b.data.prompt || b.data.title, lang, defLang) || Model.getBlockMeta(b.type).label;
         }).join(', ') + '.';
         inspectorBodyEl.appendChild(questionHint);
@@ -2282,8 +2392,8 @@
         var revWarn = document.createElement('div');
         revWarn.className = 'el-insp-warn';
         revWarn.textContent = revOn
-          ? 'Warning: this step has no question block, so learners would never be able to unlock this block! Turn off reveal-after-answer or add a question block.'
-          : 'Add a question block (e.g. Myth vs. Fact or Poll) on this step to enable progressive reveal.';
+          ? uiText('Warning: this step has no question block, so learners would never be able to unlock this block! Turn off reveal-after-answer or add a question block.')
+          : uiText('Add a question block (e.g. Myth vs. Fact or Poll) on this step to enable progressive reveal.');
         inspectorBodyEl.appendChild(revWarn);
       }
     }
@@ -2303,7 +2413,7 @@
         });
         d.media = ref;
         d.alt = alt;
-      }, {label: 'update image'});
+      }, {label: uiText('update image')});
     }
 
     if (blk.type === 'video') {
@@ -2311,7 +2421,7 @@
       var urlWrap = document.createElement('div');
       urlWrap.className = 'el-field';
       var urlLab = document.createElement('label');
-      urlLab.textContent = 'YouTube or Vimeo URL';
+      urlLab.textContent = uiText('YouTube or Vimeo URL');
       var urlInp = document.createElement('input');
       urlInp.type = 'url';
       urlInp.value = d.url || '';
@@ -2325,7 +2435,7 @@
         var p = Model.parseVideoUrl(v);
         var hadManualTrim = d.startSeconds != null || d.endSeconds != null;
         if (v && !p.embedUrl) {
-          trimPrompt.textContent = p.error || 'Use a YouTube or Vimeo link.';
+          trimPrompt.textContent = p.error || uiText('Use a YouTube or Vimeo link.');
           trimPrompt.hidden = false;
           return;
         }
@@ -2345,16 +2455,16 @@
         trimPrompt.replaceChildren();
         var promptCopy = document.createElement('p');
         var previousTrim = formatSecondsHuman(d.startSeconds || 0) + ' – ' + (d.endSeconds == null ? 'end' : formatSecondsHuman(d.endSeconds));
-        promptCopy.textContent = 'This video has a different start point. Choose which trim to use.';
+        promptCopy.textContent = uiText('This video has a different start point. Choose which trim to use.');
         var fromLink = document.createElement('button');
         fromLink.type = 'button';
         fromLink.className = 'el-btn el-btn-primary el-btn-sm';
-        fromLink.textContent = 'Use link time (' + formatSecondsHuman(p.startSeconds || 0) + ')';
+        fromLink.textContent = uiText('Use link time (') + formatSecondsHuman(p.startSeconds || 0) + ')';
         fromLink.onclick = function () { applyVideo(false); };
         var keep = document.createElement('button');
         keep.type = 'button';
         keep.className = 'el-btn el-btn-sm';
-        keep.textContent = 'Keep ' + previousTrim;
+        keep.textContent = uiText('Keep ') + previousTrim;
         keep.onclick = function () { applyVideo(true); };
         trimPrompt.append(promptCopy, fromLink, keep);
         trimPrompt.hidden = false;
@@ -2373,36 +2483,36 @@
         var sSec = Model.parseTimestampSeconds(rawStart);
         var eSec = Model.parseTimestampSeconds(rawEnd);
         if (rawStart.trim() && sSec === null) {
-          timeErr.textContent = 'Start time not recognized (use e.g. 1:15 or 75).';
+          timeErr.textContent = uiText('Start time not recognized (use e.g. 1:15 or 75).');
           timeErr.hidden = false;
           return false;
         }
         if (rawEnd.trim() && eSec === null) {
-          timeErr.textContent = 'End time not recognized (use e.g. 2:45 or 165).';
+          timeErr.textContent = uiText('End time not recognized (use e.g. 2:45 or 165).');
           timeErr.hidden = false;
           return false;
         }
         if (sSec !== null && eSec !== null && eSec <= sSec) {
-          timeErr.textContent = 'End time (' + formatSecondsHuman(eSec) + ') must be after Start time (' + formatSecondsHuman(sSec) + ').';
+          timeErr.textContent = uiText('End time (') + formatSecondsHuman(eSec) + uiText(') must be after Start time (') + formatSecondsHuman(sSec) + ').';
           timeErr.hidden = false;
           return false;
         }
         timeErr.hidden = true;
         if (sSec !== null || eSec !== null) {
-          segPreview.textContent = 'Effective clip: ' + (sSec !== null ? formatSecondsHuman(sSec) : '0:00') + ' – ' + (eSec !== null ? formatSecondsHuman(eSec) : 'end');
+          segPreview.textContent = uiText('Effective clip: ') + (sSec !== null ? formatSecondsHuman(sSec) : '0:00') + ' – ' + (eSec !== null ? formatSecondsHuman(eSec) : uiText('end'));
         } else {
-          segPreview.textContent = 'Plays full video from start to finish.';
+          segPreview.textContent = uiText('Plays full video from start to finish.');
         }
         return true;
       }
 
-      var startField = fieldText('Start Time (e.g. 1:15)', d.startSeconds !== null && d.startSeconds !== undefined ? formatSecondsHuman(d.startSeconds) : '', function (v) {
+      var startField = fieldText(uiText('Start Time (e.g. 1:15)'), d.startSeconds !== null && d.startSeconds !== undefined ? formatSecondsHuman(d.startSeconds) : '', function (v) {
         var endVal = endField.querySelector('input').value;
         if (refreshVideoTimingMeta(v, endVal)) {
           mutate(function () { d.startSeconds = Model.parseTimestampSeconds(v); }, { recordUndo: false });
         }
       });
-      var endField = fieldText('End Time (e.g. 2:45)', d.endSeconds !== null && d.endSeconds !== undefined ? formatSecondsHuman(d.endSeconds) : '', function (v) {
+      var endField = fieldText(uiText('End Time (e.g. 2:45)'), d.endSeconds !== null && d.endSeconds !== undefined ? formatSecondsHuman(d.endSeconds) : '', function (v) {
         var startVal = startField.querySelector('input').value;
         if (refreshVideoTimingMeta(startVal, v)) {
           mutate(function () { d.endSeconds = Model.parseTimestampSeconds(v); }, { recordUndo: false });
@@ -2410,47 +2520,47 @@
       });
       refreshVideoTimingMeta(startField.querySelector('input').value, endField.querySelector('input').value);
       inspectorBodyEl.append(startField, endField, timeErr, segPreview);
-      locField('Collapsible Transcript / Summary', 'transcript', true);
+      locField(uiText('Collapsible Transcript / Summary'), 'transcript', true);
     } else if (blk.type === 'image') {
       // UX-037: Warn when switching split -> full/framed if side text exists
       var hasSideText = Model.SUPPORTED_LANGS.some(function (code) {
         return !!((d.sideHeading || {})[code]?.trim() || (d.sideBody || {})[code]?.trim());
       });
       var wasSplit = d.layout === 'split-left' || d.layout === 'split-right';
-      inspectorBodyEl.appendChild(fieldSelect('Layout', d.layout || 'full', [
-        ['full', 'Full Width'],
-        ['framed', 'Framed Visual'],
-        ['split-left', 'Split: Image Left'],
-        ['split-right', 'Split: Image Right'],
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Layout'), d.layout || 'full', [
+        ['full', uiText('Full Width')],
+        ['framed', uiText('Framed Visual')],
+        ['split-left', uiText('Split: Image Left')],
+        ['split-right', uiText('Split: Image Right')],
       ], function (v) {
         mutate(function () {
           if (wasSplit && hasSideText && (v === 'full' || v === 'framed')) d.sideTextBelow = true;
           d.layout = v;
-        }, { label: 'change image layout' });
+        }, { label: uiText('change image layout') });
       }));
       if (!wasSplit && hasSideText) {
-        inspectorBodyEl.appendChild(fieldCheck('Show the saved side text below this image', !!d.sideTextBelow, function (checked) {
-          mutate(function () { d.sideTextBelow = checked; }, {label:'show or hide image text'});
+        inspectorBodyEl.appendChild(fieldCheck(uiText('Show the saved side text below this image'), !!d.sideTextBelow, function (checked) {
+          mutate(function () { d.sideTextBelow = checked; }, {label:uiText('show or hide image text')});
         }));
       }
 
       // S-06: Image Alignment & Focal Point Controls
       if (!wasSplit) {
-        inspectorBodyEl.appendChild(fieldSelect('Alignment', d.align || 'center', [
-          ['left', 'Left aligned'],
-          ['center', 'Centered'],
-          ['right', 'Right aligned'],
-        ], function (v) { mutate(function () { d.align = v; }, { label: 'change image alignment' }); }));
+        inspectorBodyEl.appendChild(fieldSelect(uiText('Alignment'), d.align || 'center', [
+          ['left', uiText('Left aligned')],
+          ['center', uiText('Centered')],
+          ['right', uiText('Right aligned')],
+        ], function (v) { mutate(function () { d.align = v; }, { label: uiText('change image alignment') }); }));
       }
-      inspectorBodyEl.appendChild(fieldCheck('Crop to a landscape frame', !!d.crop, function (checked) {
-        mutate(function () { d.crop = checked; }, {label: 'change image crop'});
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Crop to a landscape frame'), !!d.crop, function (checked) {
+        mutate(function () { d.crop = checked; }, {label: uiText('change image crop')});
       }));
       var focalCard = document.createElement('div');
       focalCard.hidden = !d.crop;
       focalCard.className = 'el-insp-card';
       var fcHead = document.createElement('div');
       fcHead.className = 'el-insp-card-head';
-      fcHead.textContent = 'Focal Point (crop anchor)';
+      fcHead.textContent = uiText('Focal Point (crop anchor)');
       focalCard.appendChild(fcHead);
       var fRow = document.createElement('div');
       fRow.className = 'el-coord-row';
@@ -2458,7 +2568,7 @@
         var fw = document.createElement('div');
         fw.className = 'el-field';
         var fl = document.createElement('label');
-        fl.textContent = axis === 'focalX' ? 'Horizontal %' : 'Vertical %';
+        fl.textContent = axis === 'focalX' ? uiText('Horizontal %') : uiText('Vertical %');
         var fi = document.createElement('input');
         fl.htmlFor = fi.id = Model.uid('focal');
         fi.type = 'number';
@@ -2477,27 +2587,27 @@
       inspectorBodyEl.appendChild(focalCard);
 
       inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, setFigureMedia, false));
-      locField('Alt Text (Accessibility)', 'alt', false);
+      locField(uiText('Alt Text (Accessibility)'), 'alt', false);
     } else if (blk.type === 'audio') {
-      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) { mutate(function () { d.media = ref; }, { label: 'update audio' }); }, true));
-      locField('Collapsible Transcript', 'transcript', true);
+      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) { mutate(function () { d.media = ref; }, { label: uiText('update audio') }); }, true));
+      locField(uiText('Collapsible Transcript'), 'transcript', true);
     } else if (blk.type === 'callout') {
-      inspectorBodyEl.appendChild(fieldSelect('Accent Color', d.tone || 'tip', [
-        ['tip', 'Navy'],
-        ['bio', 'Biologisch (Mint)'],
-        ['psycho', 'Psychologisch (Blue)'],
-        ['social', 'Sociaal (Yellow)'],
-      ], function (v) { mutate(function () { d.tone = v; }, { label: 'change callout color' }); }));
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Accent Color'), d.tone || 'tip', [
+        ['tip', uiText('Navy')],
+        ['bio', uiText('Biologisch (Mint)')],
+        ['psycho', uiText('Psychologisch (Blue)')],
+        ['social', uiText('Sociaal (Yellow)')],
+      ], function (v) { mutate(function () { d.tone = v; }, { label: uiText('change callout color') }); }));
     } else if (blk.type === 'story') {
-      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) { mutate(function () { d.media = ref; }, { label: 'update portrait' }); }, false));
+      inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, function (ref) { mutate(function () { d.media = ref; }, { label: uiText('update portrait') }); }, false));
       if (d.media && d.media.kind !== 'none') {
         var frame = document.createElement('fieldset');
         frame.className = 'el-portrait-controls';
         var portraitLegend = document.createElement('legend');
-        portraitLegend.textContent = 'Portrait framing';
+        portraitLegend.textContent = uiText('Portrait framing');
         frame.appendChild(portraitLegend);
-        [['portraitZoom', 'Zoom', 50, 250, 100], ['portraitX', 'Horizontal position', -75, 75, 0],
-          ['portraitY', 'Vertical position', -75, 75, 0]].forEach(function (setting) {
+        [['portraitZoom', uiText('Zoom'), 50, 250, 100], ['portraitX', uiText('Horizontal position'), -75, 75, 0],
+          ['portraitY', uiText('Vertical position'), -75, 75, 0]].forEach(function (setting) {
           var [key, name, min, max, fallback] = setting;
           var label = document.createElement('label');
           var range = document.createElement('input');
@@ -2519,31 +2629,31 @@
         var reset = document.createElement('button');
         reset.type = 'button';
         reset.className = 'el-btn el-btn-sm';
-        reset.textContent = 'Reset framing';
+        reset.textContent = uiText('Reset framing');
         reset.onclick = function () {
-          mutate(function () { d.portraitZoom = 100; d.portraitX = 0; d.portraitY = 0; }, {label: 'reset portrait framing'});
+          mutate(function () { d.portraitZoom = 100; d.portraitX = 0; d.portraitY = 0; }, {label: uiText('reset portrait framing')});
         };
         frame.appendChild(reset);
         inspectorBodyEl.appendChild(frame);
       }
     } else if (blk.type === 'sources') {
       // UX-041 & UX-042: Multiline auto-growing citation + DOI normalization preview + undoable Remove
-      locField('Drawer Heading (e.g. Bron)', 'title', false);
+      locField(uiText('Drawer Heading (e.g. Bron)'), 'title', false);
       (d.items || []).forEach(function (item, idx) {
         var sCard = document.createElement('div');
         sCard.className = 'el-insp-card';
         var sHead = document.createElement('div');
         sHead.className = 'el-insp-card-head';
-        sHead.appendChild(document.createTextNode('Reference ' + (idx + 1)));
+        sHead.appendChild(document.createTextNode(uiText('Reference ') + (idx + 1)));
         var rmSrc = document.createElement('button');
         rmSrc.type = 'button';
         rmSrc.className = 'el-btn el-btn-danger el-btn-sm';
-        rmSrc.textContent = 'Remove';
-        rmSrc.setAttribute('aria-label', 'Remove reference ' + (idx + 1));
+        rmSrc.textContent = uiText('Remove');
+        rmSrc.setAttribute('aria-label', uiText('Remove reference ') + (idx + 1));
         rmSrc.addEventListener('click', function () {
           var removed = clone(item);
           mutate(function () { d.items.splice(idx, 1); }, { label: 'remove reference' });
-          showToast('Reference removed.', function () {
+          showToast(uiText('Reference removed.'), function () {
             var entries = findLiveBlock(blk.id)?.data.items;
             if (entries && !entries.some(function (entry) { return entry.id === removed.id; })) {
               mutate(function () { entries.splice(Math.min(idx, entries.length), 0, removed); }, { label: 'restore reference' });
@@ -2552,17 +2662,17 @@
         });
         sHead.appendChild(rmSrc);
         sCard.appendChild(sHead);
-        sCard.appendChild(fieldText('Citation (' + lang.toUpperCase() + ')', item.citation[lang], function (v) {
+        sCard.appendChild(fieldText(uiText('Citation (') + lang.toUpperCase() + ')', item.citation[lang], function (v) {
           mutate(function () { item.citation = Model.setLocalized(item.citation, lang, v); }, { recordUndo: false });
         }, true, 'citation'));
-        sCard.appendChild(fieldText('DOI or URL (e.g. 10.3174/ajnr.A4173)', item.url || '', function (v) {
+        sCard.appendChild(fieldText(uiText('DOI or URL (e.g. 10.3174/ajnr.A4173)'), item.url || '', function (v) {
           mutate(function () { item.url = v; }, { recordUndo: false });
         }));
         var normLink = Model.normalizeCitationLink(item.url);
         if (normLink.url) {
           var lPrev = document.createElement('span');
           lPrev.className = 'xped-caption';
-          lPrev.textContent = 'Resolves to: ' + normLink.url;
+          lPrev.textContent = uiText('Resolves to: ') + normLink.url;
           sCard.appendChild(lPrev);
         }
         inspectorBodyEl.appendChild(sCard);
@@ -2570,7 +2680,7 @@
       var addSrc = document.createElement('button');
       addSrc.type = 'button';
       addSrc.className = 'el-btn el-btn-sm';
-      addSrc.textContent = '+ Add Reference';
+      addSrc.textContent = uiText('+ Add Reference');
       addSrc.addEventListener('click', function () {
         mutate(function () { d.items.push({ id: Model.uid('src'), citation: Model.loc('', '', ''), url: '' }); }, { label: 'add reference' });
       });
@@ -2578,29 +2688,29 @@
     } else if (blk.type === 'mcq') {
       // UX-047: Explicit Poll vs Knowledge Check + per-option answer key & feedback
       var isGraded = d.graded !== undefined ? !!d.graded : (d.options || []).some(function (o) { return !!o.isCorrect; });
-      inspectorBodyEl.appendChild(fieldSelect('Question Mode', isGraded ? 'graded' : 'poll', [
-        ['poll', 'Poll / Opinion (no right or wrong)'],
-        ['graded', 'Knowledge Check (graded answer key)'],
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Question Mode'), isGraded ? 'graded' : 'poll', [
+        ['poll', uiText('Poll / Opinion (no right or wrong)')],
+        ['graded', uiText('Knowledge Check (graded answer key)')],
       ], function (v) {
         mutate(function () {
           d.graded = v === 'graded';
           if (d.graded && blk.settings.allowMultiple) d.checkMode = 'submit';
-        }, { label: 'change question mode' });
+        }, { label: uiText('change question mode') });
       }));
-      inspectorBodyEl.appendChild(fieldCheck('Allow multiple selections', blk.settings.allowMultiple, function (v) {
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Allow multiple selections'), blk.settings.allowMultiple, function (v) {
         mutate(function () {
           blk.settings.allowMultiple = v;
           if (v && d.graded) d.checkMode = 'submit';
         }, { label: 'toggle multi-select' });
       }));
       if (blk.settings.allowMultiple && isGraded) {
-        inspectorBodyEl.appendChild(fieldSelect('Feedback Timing', d.checkMode || 'submit', [
-          ['submit', 'Wait for "Check answers" button (recommended)'],
-          ['immediate', 'Check immediately on each click'],
-        ], function (v) { mutate(function () { d.checkMode = v; }, { label: 'change check timing' }); }));
+        inspectorBodyEl.appendChild(fieldSelect(uiText('Feedback Timing'), d.checkMode || 'submit', [
+          ['submit', uiText('Wait for "Check answers" button (recommended)')],
+          ['immediate', uiText('Check immediately on each click')],
+        ], function (v) { mutate(function () { d.checkMode = v; }, { label: uiText('change check timing') }); }));
       }
-      inspectorBodyEl.appendChild(fieldCheck('Show anonymous peer stats after answering', blk.settings.showPeerResults, function (v) {
-        mutate(function () { blk.settings.showPeerResults = v; }, { label: 'toggle peer results' });
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Show anonymous peer stats after answering'), blk.settings.showPeerResults, function (v) {
+        mutate(function () { blk.settings.showPeerResults = v; }, { label: uiText('toggle peer results') });
       }));
 
       (d.options || []).forEach(function (opt, idx) {
@@ -2608,47 +2718,47 @@
         oCard.className = 'el-insp-card';
         var oHead = document.createElement('div');
         oHead.className = 'el-insp-card-head';
-        oHead.appendChild(document.createTextNode('Option ' + String.fromCharCode(65 + idx)));
+        oHead.appendChild(document.createTextNode(uiText('Option ') + String.fromCharCode(65 + idx)));
         if ((d.options || []).length > 2) {
           var rmO = document.createElement('button');
           rmO.type = 'button';
           rmO.className = 'el-btn el-btn-danger el-btn-sm';
-          rmO.textContent = 'Remove';
+          rmO.textContent = uiText('Remove');
           rmO.addEventListener('click', function () {
             mutate(function () { d.options.splice(idx, 1); }, { label: 'remove option' });
           });
           oHead.appendChild(rmO);
         }
         oCard.appendChild(oHead);
-        oCard.appendChild(fieldText('Label', (opt.label && opt.label[lang]) || '', function (v) {
+        oCard.appendChild(fieldText(uiText('Label'), (opt.label && opt.label[lang]) || '', function (v) {
           mutate(function () { opt.label = Model.setLocalized(opt.label, lang, v); }, { recordUndo: false });
         }));
         if (isGraded) {
-          oCard.appendChild(fieldCheck('Mark as correct answer', !!opt.isCorrect, function (v) {
-            mutate(function () { opt.isCorrect = v; }, { label: 'toggle correct option' });
+          oCard.appendChild(fieldCheck(uiText('Mark as correct answer'), !!opt.isCorrect, function (v) {
+            mutate(function () { opt.isCorrect = v; }, { label: uiText('toggle correct option') });
           }));
         }
-        oCard.appendChild(fieldText('Option-specific feedback (optional)', (opt.feedback && opt.feedback[lang]) || '', function (v) {
+        oCard.appendChild(fieldText(uiText('Option-specific feedback (optional)'), (opt.feedback && opt.feedback[lang]) || '', function (v) {
           mutate(function () { opt.feedback = Model.setLocalized(opt.feedback, lang, v); }, { recordUndo: false });
         }));
         inspectorBodyEl.appendChild(oCard);
       });
-      locField('General Explanation (after answer)', 'explanation', true);
+      locField(uiText('General Explanation (after answer)'), 'explanation', true);
     } else if (blk.type === 'myth_fact') {
-      inspectorBodyEl.appendChild(fieldSelect('Correct Answer', d.correctAnswer || 'myth', [
-        ['myth', 'Fabel / Myth'],
-        ['fact', 'Feit / Fact'],
-      ], function (v) { mutate(function () { d.correctAnswer = v; }, { label: 'change correct answer' }); }));
-      locField('Explanation Reveal (shown after click)', 'explanation', true);
-      inspectorBodyEl.appendChild(fieldText('Optional Source Link or DOI', d.sourceUrl || '', function (v) {
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Correct Answer'), d.correctAnswer || 'myth', [
+        ['myth', uiText('Fabel / Myth')],
+        ['fact', uiText('Feit / Fact')],
+      ], function (v) { mutate(function () { d.correctAnswer = v; }, { label: uiText('change correct answer') }); }));
+      locField(uiText('Explanation Reveal (shown after click)'), 'explanation', true);
+      inspectorBodyEl.appendChild(fieldText(uiText('Optional Source Link or DOI'), d.sourceUrl || '', function (v) {
         mutate(function () { d.sourceUrl = v; }, { recordUndo: false });
       }));
     } else if (blk.type === 'scale') {
       // UX-051: One-click Scale Anchor Presets
-      var presetOpts = [['', 'Apply anchor preset…']].concat(
+      var presetOpts = [['', uiText('Apply anchor preset…')]].concat(
         (Model.SCALE_ANCHOR_PRESETS || []).map(function (pr) { return [pr.id, pr.label]; })
       );
-      inspectorBodyEl.appendChild(fieldSelect('Quick Anchor Preset', '', presetOpts, function (pid) {
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Quick Anchor Preset'), '', presetOpts, function (pid) {
         var preset = (Model.SCALE_ANCHOR_PRESETS || []).find(function (p) { return p.id === pid; });
         if (!preset) return;
         mutate(function () {
@@ -2656,28 +2766,28 @@
           d.max = preset.max;
           d.minLabel = Object.assign({}, preset.minLabel);
           d.maxLabel = Object.assign({}, preset.maxLabel);
-        }, { label: 'apply scale preset' });
+        }, { label: uiText('apply scale preset') });
       }));
-      locField('Left Endpoint Label', 'minLabel', false);
-      locField('Right Endpoint Label', 'maxLabel', false);
-      locField('Helper Note', 'feedback', true);
-      inspectorBodyEl.appendChild(fieldCheck('Show anonymous peer average', blk.settings.showPeerResults, function (v) {
-        mutate(function () { blk.settings.showPeerResults = v; }, { label: 'toggle peer average' });
+      locField(uiText('Left Endpoint Label'), 'minLabel', false);
+      locField(uiText('Right Endpoint Label'), 'maxLabel', false);
+      locField(uiText('Helper Note'), 'feedback', true);
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Show anonymous peer average'), blk.settings.showPeerResults, function (v) {
+        mutate(function () { blk.settings.showPeerResults = v; }, { label: uiText('toggle peer average') });
       }));
     } else if (blk.type === 'wordcloud') {
-      inspectorBodyEl.appendChild(fieldCheck('Show anonymous peer word cloud', blk.settings.showPeerResults, function (v) {
-        mutate(function () { blk.settings.showPeerResults = v; }, { label: 'toggle peer word cloud' });
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Show anonymous peer word cloud'), blk.settings.showPeerResults, function (v) {
+        mutate(function () { blk.settings.showPeerResults = v; }, { label: uiText('toggle peer word cloud') });
       }));
     } else if (blk.type === 'ranking') {
       (d.items || []).forEach(function (it, idx) {
-        inspectorBodyEl.appendChild(fieldText('Item ' + (idx + 1), it.label[lang], function (v) {
+        inspectorBodyEl.appendChild(fieldText(uiText('Item ') + (idx + 1), it.label[lang], function (v) {
           mutate(function () { it.label = Model.setLocalized(it.label, lang, v); }, { recordUndo: false });
         }));
       });
       var addRank = document.createElement('button');
       addRank.type = 'button';
       addRank.className = 'el-btn el-btn-sm';
-      addRank.textContent = '+ Add Item';
+      addRank.textContent = uiText('+ Add Item');
       addRank.addEventListener('click', function () {
         mutate(function () { d.items.push({ id: Model.uid('opt'), label: Model.loc('', '', '') }); }, { label: 'add ranking item' });
       });
@@ -2702,12 +2812,12 @@
           preview.appendChild(thumb);
         }
         var previewCaption = document.createElement('figcaption');
-        previewCaption.textContent = Model.getLocalized(pair.step.title, lang, defLang) + ' · ' + (Model.getLocalized(selectedPin.label, lang, defLang) || 'Pin ' + (d.pins.indexOf(selectedPin) + 1));
+        previewCaption.textContent = Model.getLocalized(pair.step.title, lang, defLang) + ' · ' + (Model.getLocalized(selectedPin.label, lang, defLang) || uiText('Pin ') + (d.pins.indexOf(selectedPin) + 1));
         preview.appendChild(previewCaption);
         inspectorBodyEl.appendChild(preview);
         if (d.pins.length > 1) {
-          var selector = fieldSelect('Selected point', selectedPin.id, d.pins.map(function (pin, index) {
-            return [pin.id, (index + 1) + '. ' + (Model.getLocalized(pin.label, lang, defLang) || 'Untitled point')];
+          var selector = fieldSelect(uiText('Selected point'), selectedPin.id, d.pins.map(function (pin, index) {
+            return [pin.id, (index + 1) + '. ' + (Model.getLocalized(pin.label, lang, defLang) || uiText('Untitled point'))];
           }), function (id) {
             state.selectedPinId = id;
             renderInspector();
@@ -2728,7 +2838,7 @@
         var pinHeading = document.createElement('button');
         pinHeading.type = 'button';
         pinHeading.className = 'el-btn el-btn-sm';
-        pinHeading.textContent = 'Pin ' + (idx + 1);
+        pinHeading.textContent = uiText('Pin ') + (idx + 1);
         pinHeading.setAttribute('aria-pressed', String(pin === selectedPin));
         pinHeading.onclick = function () {
           state.selectedPinId = pin.id;
@@ -2744,7 +2854,7 @@
           pUp.type = 'button';
           pUp.className = 'el-btn el-btn-sm';
           pUp.textContent = '↑';
-          pUp.title = 'Move pin earlier';
+          pUp.title = uiText('Move pin earlier');
           pUp.disabled = idx === 0;
           pUp.addEventListener('click', function () {
             mutate(function () { var t = d.pins[idx - 1]; d.pins[idx - 1] = d.pins[idx]; d.pins[idx] = t; }, { label: 'reorder pin' });
@@ -2753,7 +2863,7 @@
           pDn.type = 'button';
           pDn.className = 'el-btn el-btn-sm';
           pDn.textContent = '↓';
-          pDn.title = 'Move pin later';
+          pDn.title = uiText('Move pin later');
           pDn.disabled = idx === d.pins.length - 1;
           pDn.addEventListener('click', function () {
             mutate(function () { var t = d.pins[idx + 1]; d.pins[idx + 1] = d.pins[idx]; d.pins[idx] = t; }, { label: 'reorder pin' });
@@ -2763,11 +2873,11 @@
         var pDel = document.createElement('button');
         pDel.type = 'button';
         pDel.className = 'el-btn el-btn-danger el-btn-sm';
-        pDel.textContent = 'Remove';
+        pDel.textContent = uiText('Remove');
         pDel.addEventListener('click', function () {
           var removedPin = clone(pin);
           mutate(function () { d.pins.splice(idx, 1); }, { label: 'delete hotspot pin' });
-          showToast('Pin removed.', function () {
+          showToast(uiText('Pin removed.'), function () {
             var entries = findLiveBlock(blk.id)?.data.pins;
             if (entries && !entries.some(function (entry) { return entry.id === removedPin.id; })) {
               mutate(function () { entries.splice(Math.min(idx, entries.length), 0, removedPin); }, { label: 'restore pin' });
@@ -2778,10 +2888,10 @@
         pHead.appendChild(pActs);
         pCard.appendChild(pHead);
 
-        pCard.appendChild(fieldText('Pin Title', (pin.label && pin.label[lang]) || '', function (v) {
+        pCard.appendChild(fieldText(uiText('Pin Title'), (pin.label && pin.label[lang]) || '', function (v) {
           mutate(function () { pin.label = Model.setLocalized(pin.label, lang, v); }, { recordUndo: false });
         }));
-        pCard.appendChild(fieldText('Pin Explanation', (pin.detail && pin.detail[lang]) || '', function (v) {
+        pCard.appendChild(fieldText(uiText('Pin Explanation'), (pin.detail && pin.detail[lang]) || '', function (v) {
           mutate(function () { pin.detail = Model.setLocalized(pin.detail, lang, v); }, { recordUndo: false });
         }, true));
 
@@ -2795,7 +2905,7 @@
           swBtn.appendChild(Blocks.colorSwatch(col.hex));
           swBtn.title = col.label;
           swBtn.setAttribute('aria-pressed', String((pin.color || '#0072CE').toUpperCase() === col.hex));
-          swBtn.setAttribute('aria-label', 'Pin ' + (idx + 1) + ' color: ' + col.label);
+          swBtn.setAttribute('aria-label', uiText('Pin ') + (idx + 1) + uiText(' color: ') + col.label);
           swBtn.addEventListener('click', function () {
             mutate(function () { pin.color = col.hex; }, { label: 'change pin color' });
           });
@@ -2829,59 +2939,59 @@
         inspectorBodyEl.appendChild(pCard);
       });
       inspectorBodyEl.appendChild(buildVisualPicker(d.media, blk, setFigureMedia, false));
-      locField('Image Alt Description', 'alt', false);
+      locField(uiText('Image Alt Description'), 'alt', false);
     } else if (blk.type === 'balance_scale') {
-      locField('Left Label (Load)', 'loadLabel', false);
-      locField('Right Label (Resources)', 'resourceLabel', false);
+      locField(uiText('Left Label (Load)'), 'loadLabel', false);
+      locField(uiText('Right Label (Resources)'), 'resourceLabel', false);
       (d.factors || []).forEach(function (f, idx) {
-        inspectorBodyEl.appendChild(fieldText('Factor ' + (idx + 1), f.label[lang], function (v) {
+        inspectorBodyEl.appendChild(fieldText(uiText('Factor ') + (idx + 1), f.label[lang], function (v) {
           mutate(function () { f.label = Model.setLocalized(f.label, lang, v); }, { recordUndo: false });
         }));
-        inspectorBodyEl.appendChild(fieldSelect('Side', f.category || 'load', [['load', 'Load (Draaglast)'], ['resource', 'Resource (Draagkracht)']], function (v) {
-          mutate(function () { f.category = v; }, { label: 'change factor side' });
+        inspectorBodyEl.appendChild(fieldSelect(uiText('Side'), f.category || 'load', [['load', uiText('Load (Draaglast)')], ['resource', uiText('Resource (Draagkracht)')]], function (v) {
+          mutate(function () { f.category = v; }, { label: uiText('change factor side') });
         }));
       });
       var addFac = document.createElement('button');
       addFac.type = 'button';
       addFac.className = 'el-btn el-btn-sm';
-      addFac.textContent = '+ Add Factor';
+      addFac.textContent = uiText('+ Add Factor');
       addFac.addEventListener('click', function () {
         mutate(function () { d.factors.push({ id: Model.uid('opt'), label: Model.loc('', '', ''), category: 'resource' }); }, { label: 'add balance factor' });
       });
       inspectorBodyEl.appendChild(addFac);
-      locField('Tip: High Load', 'overloadTip', true);
-      locField('Tip: Balanced', 'balancedTip', true);
+      locField(uiText('Tip: High Load'), 'overloadTip', true);
+      locField(uiText('Tip: Balanced'), 'balancedTip', true);
     } else if (blk.type === 'bps_triad') {
-      locField('Bio Explanation', 'bioBody', true);
-      locField('Psycho Explanation', 'psychoBody', true);
-      locField('Social Explanation', 'socialBody', true);
+      locField(uiText('Bio Explanation'), 'bioBody', true);
+      locField(uiText('Psycho Explanation'), 'psychoBody', true);
+      locField(uiText('Social Explanation'), 'socialBody', true);
     } else if (blk.type === 'mini_plan') {
       (d.suggestions || []).forEach(function (sug, idx) {
-        inspectorBodyEl.appendChild(fieldText('Step Suggestion ' + (idx + 1), sug.label[lang], function (v) {
+        inspectorBodyEl.appendChild(fieldText(uiText('Step Suggestion ') + (idx + 1), sug.label[lang], function (v) {
           mutate(function () { sug.label = Model.setLocalized(sug.label, lang, v); }, { recordUndo: false });
         }));
       });
       var addSug = document.createElement('button');
       addSug.type = 'button';
       addSug.className = 'el-btn el-btn-sm';
-      addSug.textContent = '+ Add Suggestion';
+      addSug.textContent = uiText('+ Add Suggestion');
       addSug.addEventListener('click', function () {
         mutate(function () { d.suggestions.push({ id: Model.uid('opt'), label: Model.loc('', '', '') }); }, { label: 'add suggestion' });
       });
       inspectorBodyEl.appendChild(addSug);
-      inspectorBodyEl.appendChild(fieldCheck('Allow learner custom step', d.allowCustom !== false, function (v) {
-        mutate(function () { d.allowCustom = v; }, { label: 'toggle custom goal' });
+      inspectorBodyEl.appendChild(fieldCheck(uiText('Allow learner custom step'), d.allowCustom !== false, function (v) {
+        mutate(function () { d.allowCustom = v; }, { label: uiText('toggle custom goal') });
       }));
     } else if (blk.type === 'custom_visual') {
-      inspectorBodyEl.appendChild(fieldSelect('Visual Mode', d.preset || 'placeholder', [
-        ['percentage', 'Percentage chart'],
-        ['placeholder', 'Coding Agent Blueprint Slot'],
-        ['alarm-dial', 'Built-in: Pain Alarm Volume Dial'],
-        ['breathing-circle', 'Built-in: Calm Guided Breathing'],
-        ['custom-svg', 'Pasted Custom SVG Artwork'],
-      ], function (v) { mutate(function () { d.preset = v; }, { label: 'change visual preset' }); }));
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Visual Mode'), d.preset || 'placeholder', [
+        ['percentage', uiText('Percentage chart')],
+        ['placeholder', uiText('Coding Agent Blueprint Slot')],
+        ['alarm-dial', uiText('Built-in: Pain Alarm Volume Dial')],
+        ['breathing-circle', uiText('Built-in: Calm Guided Breathing')],
+        ['custom-svg', uiText('Pasted Custom SVG Artwork')],
+      ], function (v) { mutate(function () { d.preset = v; }, { label: uiText('change visual preset') }); }));
       if (d.preset === 'percentage') {
-        var percent = fieldText('Percentage (0–100)', String(d.percentage ?? 50), function () {
+        var percent = fieldText(uiText('Percentage (0–100)'), String(d.percentage ?? 50), function () {
           if (number.value && number.validity.valid) {
             mutate(function () { d.percentage = number.valueAsNumber; }, { recordUndo: false });
           }
@@ -2892,29 +3002,29 @@
         number.max = '100';
         number.step = 'any';
         inspectorBodyEl.appendChild(percent);
-        locField('Chart label', 'title');
-        locField('Caption', 'caption', true);
-        locField('Source citation', 'citation');
-        inspectorBodyEl.appendChild(fieldText('Source URL or DOI', d.sourceUrl, function (v) {
+        locField(uiText('Chart label'), 'title');
+        locField(uiText('Caption'), 'caption', true);
+        locField(uiText('Source citation'), 'citation');
+        inspectorBodyEl.appendChild(fieldText(uiText('Source URL or DOI'), d.sourceUrl, function (v) {
           mutate(function () { d.sourceUrl = v; }, { recordUndo: false });
         }));
       } else {
-        inspectorBodyEl.appendChild(fieldSelect('Stage Height', d.height || 'medium', [
-          ['compact', 'Compact (180px)'],
-          ['medium', 'Medium (260px)'],
-          ['tall', 'Tall (360px)'],
-        ], function (v) { mutate(function () { d.height = v; }, { label: 'change visual height' }); }));
-        inspectorBodyEl.appendChild(fieldText('Slot ID (reference for coding agent)', d.slotId || '', function (v) {
+        inspectorBodyEl.appendChild(fieldSelect(uiText('Stage Height'), d.height || 'medium', [
+          ['compact', uiText('Compact (180px)')],
+          ['medium', uiText('Medium (260px)')],
+          ['tall', uiText('Tall (360px)')],
+        ], function (v) { mutate(function () { d.height = v; }, { label: uiText('change visual height') }); }));
+        inspectorBodyEl.appendChild(fieldText(uiText('Slot ID (reference for coding agent)'), d.slotId || '', function (v) {
           mutate(function () { d.slotId = v; }, { recordUndo: false });
         }));
-        inspectorBodyEl.appendChild(fieldText('Coding Agent Design Brief', d.agentBrief || '', function (v) {
+        inspectorBodyEl.appendChild(fieldText(uiText('Coding Agent Design Brief'), d.agentBrief || '', function (v) {
           mutate(function () { d.agentBrief = v; }, { recordUndo: false });
         }, true));
         if (d.preset === 'custom-svg') {
           var phone = document.createElement('details');
           phone.className = 'el-svg-phone-preview';
           var toggle = document.createElement('summary');
-          toggle.textContent = 'Phone preview';
+          toggle.textContent = uiText('Phone preview');
           var art = document.createElement('img');
           art.alt = Model.getLocalized(d.alt, lang, defLang);
           function refreshArt(value) {
@@ -2926,7 +3036,7 @@
           var zoom = document.createElement('button');
           zoom.type = 'button';
           zoom.className = 'el-btn el-btn-sm';
-          zoom.textContent = 'Enlarge phone preview';
+          zoom.textContent = uiText('Enlarge phone preview');
           zoom.addEventListener('click', function () {
             var dialog = document.createElement('dialog');
             dialog.className = 'el-dialog el-svg-enlarged';
@@ -2934,7 +3044,7 @@
             var done = document.createElement('button');
             done.type = 'button';
             done.className = 'el-btn';
-            done.textContent = 'Close';
+            done.textContent = uiText('Close');
             done.addEventListener('click', function () { dialog.close(); });
             dialog.append(art.cloneNode(true), done);
             document.body.appendChild(dialog);
@@ -2949,7 +3059,7 @@
           inspectorBodyEl.appendChild(phone);
         }
       }
-      locField('Accessible Alt Description', 'alt', false);
+      locField(uiText('Accessible Alt Description'), 'alt', false);
     }
 
     // S-06: Move block to another step / station
@@ -2957,15 +3067,15 @@
     (state.exp.modules || []).forEach(function (m, mi) {
       (m.steps || []).forEach(function (s, si) {
         if (s.id === pair.step.id) return;
-        allDestinations.push([m.id + '::' + s.id, 'Station ' + (mi + 1) + ' · Step ' + (si + 1) + ' — ' + (Model.getLocalized(s.title, lang, defLang) || 'Step')]);
+        allDestinations.push([m.id + '::' + s.id, uiText('Station ') + (mi + 1) + uiText(' · Step ') + (si + 1) + ' — ' + (Model.getLocalized(s.title, lang, defLang) || uiText('Step'))]);
       });
     });
     if (allDestinations.length) {
       var mvHead = document.createElement('div');
       mvHead.className = 'el-insp-section-title';
-      mvHead.textContent = 'Organize Block';
+      mvHead.textContent = uiText('Organize Block');
       inspectorBodyEl.appendChild(mvHead);
-      inspectorBodyEl.appendChild(fieldSelect('Move block to another step…', '', [['', 'Choose destination step…']].concat(allDestinations), function (destKey) {
+      inspectorBodyEl.appendChild(fieldSelect(uiText('Move block to another step…'), '', [['', uiText('Choose destination step…')]].concat(allDestinations), function (destKey) {
         if (!destKey) { mvControls.hidden = true; return; }
         var parts = destKey.split('::');
         var targetMod = (state.exp.modules || []).find(function (m) { return m.id === parts[0]; });
@@ -2973,9 +3083,9 @@
         if (!targetStep) return;
         mvPosition.textContent = '';
         targetStep.blocks.forEach(function (targetBlock, index) {
-          mvPosition.add(new Option('Before ' + (index + 1) + '. ' + Model.getBlockMeta(targetBlock.type).label, String(index)));
+          mvPosition.add(new Option(uiText('Before ') + (index + 1) + '. ' + Model.getBlockMeta(targetBlock.type).label, String(index)));
         });
-        mvPosition.add(new Option('At the end', String(targetStep.blocks.length), true, true));
+        mvPosition.add(new Option(uiText('At the end'), String(targetStep.blocks.length), true, true));
         mvControls.hidden = false;
         moveButton.onclick = function () {
           mutate(function () {
@@ -2985,8 +3095,8 @@
             if (targetStep.status === 'empty') targetStep.status = 'draft';
             state.selectedTarget = { type: 'step', moduleId: targetMod.id, stepId: targetStep.id };
             state.selectedBlockId = blk.id;
-          }, { label: 'move block to another step' });
-          showToast('Block moved to ' + (Model.getLocalized(targetStep.title, lang, defLang) || 'step'));
+          }, { label: uiText('move block to another step') });
+          showToast(uiText('Block moved to ') + (Model.getLocalized(targetStep.title, lang, defLang) || uiText('step')));
         };
       }));
       var mvControls = document.createElement('div');
@@ -2996,11 +3106,11 @@
       mvPosition.id = 'el-move-position';
       var posLabel = document.createElement('label');
       posLabel.htmlFor = mvPosition.id;
-      posLabel.textContent = 'Insert position';
+      posLabel.textContent = uiText('Insert position');
       var moveButton = document.createElement('button');
       moveButton.type = 'button';
       moveButton.className = 'el-btn el-btn-sm';
-      moveButton.textContent = 'Move block here';
+      moveButton.textContent = uiText('Move block here');
       mvControls.append(posLabel, mvPosition, moveButton);
       inspectorBodyEl.appendChild(mvControls);
     }
@@ -3008,10 +3118,11 @@
 
   /* ---- Split-Screen German Translation Studio with Live Slide Preview & Autosave ---- */
   function translationLocation(location) {
-    if (!window.LectureI18n) return location;
+    var i18n = academyUi || window.LectureI18n;
+    if (!i18n) return location;
     return location.split(' · ').map(function (part) {
       var number = part.match(/^(.*?) (#[0-9]+|[0-9]+)$/);
-      return number ? window.LectureI18n.t(number[1]) + ' ' + number[2] : window.LectureI18n.t(part);
+      return number ? i18n.t(number[1]) + ' ' + number[2] : i18n.t(part);
     }).join(' · ');
   }
 
@@ -3044,8 +3155,8 @@
       var pill = document.createElement('button');
       pill.type = 'button';
       pill.className = 'el-tr-fallback-pill';
-      pill.textContent = actualLang.toUpperCase() + ' fallback';
-      pill.setAttribute('aria-label', 'Translate ' + translationLocation(row.location) + ' (' + actualLang.toUpperCase() + ' fallback)');
+      pill.textContent = actualLang.toUpperCase() + uiText(' fallback');
+      pill.setAttribute('aria-label', uiText('Translate ') + translationLocation(row.location) + ' (' + actualLang.toUpperCase() + uiText(' fallback)'));
       pill.addEventListener('click', function () {
         var sheet = document.getElementById('el-tr-preview-dialog');
         if (sheet.open) { state.trLastActiveKey = row.key; sheet.close(); }
@@ -3141,7 +3252,7 @@
   }
 
   function scheduleTranslateAutosave() {
-    translateAutosaveEl.textContent = 'Saving…';
+    translateAutosaveEl.textContent = uiText('Saving…');
     translateAutosaveEl.className = 'el-status-inline';
     clearTimeout(state.trSaveTimer);
     state.trSaveTimer = setTimeout(saveTranslationsNow, 900);
@@ -3199,16 +3310,16 @@
         if (state.trPendingMedia[key] === media[key]) delete state.trPendingMedia[key];
       });
       if (!hasPendingTranslations()) {
-        translateAutosaveEl.textContent = 'Saved';
-        document.getElementById('el-tr-save-btn').textContent = 'Save now';
+        translateAutosaveEl.textContent = uiText('Saved');
+        document.getElementById('el-tr-save-btn').textContent = uiText('Save now');
         translateAutosaveEl.className = 'el-status-inline is-live';
-        if (saveVersion === savedVersion) setSaveStatus('Saved', true, false);
+        if (saveVersion === savedVersion) setSaveStatus(uiText('Saved'), true, false);
       }
       return true;
     } catch (err) {
-      translateAutosaveEl.textContent = 'Unsaved translation';
+      translateAutosaveEl.textContent = uiText('Unsaved translation');
       translateAutosaveEl.className = 'el-status-inline is-warn';
-      document.getElementById('el-tr-save-btn').textContent = 'Retry save';
+      document.getElementById('el-tr-save-btn').textContent = uiText('Retry save');
       showToast(err.message, 'error');
       return false;
     }
@@ -3221,7 +3332,7 @@
     var items = (state.exp && state.exp.glossary && state.exp.glossary.length)
       ? state.exp.glossary
       : (Model.DEFAULT_GLOSSARY || []);
-    if (sum) sum.textContent = items.length + ' shared pain-science terms';
+    if (sum) sum.textContent = items.length + uiText(' shared pain-science terms');
     body.textContent = '';
     items.forEach(function (term) {
       var chip = document.createElement('span');
@@ -3245,21 +3356,21 @@
     var card = document.createElement('div');
     card.className = 'el-tr-media-card';
     var h = document.createElement('strong');
-    h.textContent = 'Localized Videos & Media (' + state.trTarget.toUpperCase() + ')';
+    h.textContent = uiText('Localized Videos & Media (') + state.trTarget.toUpperCase() + ')';
     card.appendChild(h);
     var hint = document.createElement('p');
     hint.className = 'xped-caption';
-    hint.textContent = 'Optional: keep the original video or paste a ' + state.trTarget.toUpperCase() + '-subtitled YouTube/Vimeo link.';
+    hint.textContent = uiText('Optional: keep the original video or paste a ') + state.trTarget.toUpperCase() + uiText('-subtitled YouTube/Vimeo link.');
     card.appendChild(hint);
 
     mediaRows.forEach(function (mr) {
       var row = document.createElement('div');
       row.className = 'el-field';
       var lbl = document.createElement('label');
-      lbl.textContent = mr.location + ' (Default: ' + mr.sourceUrl + ')';
+      lbl.textContent = mr.location + uiText(' (Default: ') + mr.sourceUrl + ')';
       var inp = document.createElement('input');
       inp.type = 'text';
-      inp.placeholder = 'Paste ' + state.trTarget.toUpperCase() + ' YouTube/Vimeo URL (leave blank to reuse default)';
+      inp.placeholder = uiText('Paste ') + state.trTarget.toUpperCase() + uiText(' YouTube/Vimeo URL (leave blank to reuse default)');
       inp.value = mr.targetUrl || '';
       inp.id = 'el-media-translation-' + mr.blockId;
       lbl.htmlFor = inp.id;
@@ -3281,7 +3392,7 @@
   function focusNextMissingTranslation() {
     var tas = Array.from(translateRowsEl.querySelectorAll('textarea.xped-textarea'));
     if (!tas.length) {
-      showToast('All fields in this view are translated!');
+      showToast(uiText('All fields in this view are translated!'));
       return;
     }
     // UX-061: Track last active key independently of focus so toolbar button clicks still advance from current row
@@ -3307,18 +3418,18 @@
         return;
       }
     }
-    showToast('All visible fields are translated!');
+    showToast(uiText('All visible fields are translated!'));
   }
 
   function updateTranslationProgress(rows) {
     var stats = Model.getTranslationStats(rows);
-    translateProgressEl.textContent = state.trTarget.toUpperCase() + ': ' + stats.translated + ' / ' + stats.total + ' translated' + (stats.review ? (' · ' + stats.review + ' to review') : '');
+    translateProgressEl.textContent = state.trTarget.toUpperCase() + ': ' + stats.translated + ' / ' + stats.total + uiText(' translated') + (stats.review ? (' · ' + stats.review + uiText(' to review')) : '');
   }
 
   function updateTranslationBadge(rowElement, badge, status) {
     rowElement.dataset.status = status;
     badge.className = 'el-status-inline ' + (status === 'translated' ? 'is-live' : (status === 'needs_review' ? 'is-warn' : ''));
-    badge.textContent = status === 'needs_review' ? 'Review' : (status === 'translated' ? 'Done' : 'Missing');
+    badge.textContent = status === 'needs_review' ? uiText('Review') : (status === 'translated' ? uiText('Done') : uiText('Missing'));
   }
 
   function refreshTranslationStatuses() {
@@ -3332,23 +3443,37 @@
     translateRowsEl.querySelectorAll('.el-tr-group').forEach(function (group) {
       var count = group.querySelectorAll('.el-tr-row').length;
       if (!count) group.remove();
-      else group.querySelector('summary .xped-caption').textContent = count + (count === 1 ? ' field' : ' fields');
+      else group.querySelector('summary .xped-caption').textContent = count + (count === 1 ? uiText(' field') : uiText(' fields'));
     });
     if (!translateRowsEl.childElementCount) renderTranslateMode();
     else updateTranslationProgress(rows);
   }
 
+  translateRowsEl.addEventListener('keydown', function (event) {
+    if (event.ctrlKey || event.metaKey || event.altKey || event.target.matches('textarea,input,[contenteditable]')) return;
+    if (event.key !== 'j' && event.key !== 'k') return;
+    const rows = Array.from(translateRowsEl.querySelectorAll('.el-tr-row'));
+    const index = rows.indexOf(event.target.closest('.el-tr-row'));
+    const next = rows[index + (event.key === 'j' ? 1 : -1)];
+    if (next) {
+      event.preventDefault();
+      const button = next.querySelector('button:not([disabled])');
+      if (button) button.focus();
+    }
+  });
+
   function renderTranslateMode() {
     if (!state.exp) return;
-    if (state.trSource === state.trTarget) state.trSource = Model.SUPPORTED_LANGS.find(function (lang) { return lang !== state.trTarget; });
+    if (state.trSource === state.trTarget) state.trSource = courseLanguages.find(function (lang) { return lang !== state.trTarget; });
     trSourceDD.setItems(LANG_OPTIONS.filter(function (item) { return item.value !== state.trTarget; }), state.trSource);
     document.querySelector('#el-tr-welcome p').hidden = (state.role !== 'translate' && !grantToken);
     var manageLangsBtn = document.getElementById('el-tr-manage-langs');
     if (manageLangsBtn) manageLangsBtn.hidden = !canEditStructure();
     var altBtn = document.getElementById('el-tr-alt-toggle');
-    if (altBtn) {
+    if (altBtn && academyUi) altBtn.hidden = true;
+    if (altBtn && !academyUi) {
       var altLanguage = Model.SUPPORTED_LANGS.find(function (l) { return l !== state.trSource && l !== state.trTarget; });
-      altBtn.textContent = altLanguage.toUpperCase() + ' reference';
+      altBtn.textContent = altLanguage.toUpperCase() + uiText(' reference');
       altBtn.setAttribute('aria-pressed', String(!!state.trShowAltLang));
     }
     document.getElementById('el-tr-toggle-preview').setAttribute('aria-pressed', String(state.trShowPreview));
@@ -3358,6 +3483,21 @@
 
     var rows = Model.extractTranslationRows(state.exp, state.trSource, state.trTarget);
     updateTranslationProgress(rows);
+    if (academyUi) {
+      var notice = document.getElementById('academy-legacy-language');
+      if (!notice) {
+        notice = document.createElement('p');
+        notice.id = 'academy-legacy-language';
+        notice.className = 'xped-caption';
+        document.getElementById('el-tr-welcome').appendChild(notice);
+      }
+      notice.hidden = !state.exp.enabledLanguages.includes('en') || !rows.some(function (r) {
+        return typeof r.locObj.en === 'string' && r.locObj.en.trim();
+      });
+      notice.textContent = window.Xped.i18n.copy(
+        'Deze expeditie bevat ook Engelse tekst. Die blijft in het cursusbestand bewaard.',
+        'Diese Expedition enthält auch englische Texte. Sie bleiben in der Kursdatei erhalten.');
+    }
 
     translateRowsEl.querySelectorAll('details[data-group-key]').forEach(function (group) {
       if (!group.classList.contains('app-details-animating')) state.trCollapsedGroups[group.dataset.groupKey] = !group.open;
@@ -3369,18 +3509,18 @@
       var box = document.createElement('div');
       box.className = 'el-tr-complete';
       var stg = document.createElement('strong');
-      stg.textContent = !rows.length ? 'No course text to translate yet.' : state.trFilter === 'untranslated'
-        ? ('All ' + state.trTarget.toUpperCase() + ' fields are translated!')
-        : (state.trFilter === 'needs_review' ? 'No fields waiting for review.' : 'No fields match this filter.');
+      stg.textContent = !rows.length ? uiText('No course text to translate yet.') : state.trFilter === 'untranslated'
+        ? (uiText('All ') + state.trTarget.toUpperCase() + uiText(' fields are translated!'))
+        : (state.trFilter === 'needs_review' ? uiText('No fields waiting for review.') : uiText('No fields match this filter.'));
       var desc = document.createElement('p');
       desc.className = 'xped-caption';
-      desc.textContent = !rows.length ? 'Fields appear here when the author adds course content.' : state.trFilter === 'untranslated'
-        ? 'Great work — switch back to All fields anytime to review or refine wording.'
-        : 'Everything in this filter is clear.';
+      desc.textContent = !rows.length ? uiText('Fields appear here when the author adds course content.') : state.trFilter === 'untranslated'
+        ? uiText('Great work — switch back to All fields anytime to review or refine wording.')
+        : uiText('Everything in this filter is clear.');
       var showAllBtn = document.createElement('button');
       showAllBtn.type = 'button';
       showAllBtn.className = 'el-btn el-btn-sm';
-      showAllBtn.textContent = 'Show all fields';
+      showAllBtn.textContent = uiText('Show all fields');
       showAllBtn.addEventListener('click', function () {
         state.trFilter = 'all';
         trFilterDD.setItems(FILTER_OPTIONS, 'all');
@@ -3399,12 +3539,12 @@
     filtered.forEach(function (row) {
       var gKey = row.key.indexOf('startPage') === 0 ? 'startPage' : row.key.split('.').slice(0, 2).join('.');
       if (!groupMap[gKey]) {
-        var title = 'Start Page';
+        var title = uiText('Start Page');
         var modId = '';
         if (gKey !== 'startPage') {
           modId = gKey.split('.')[1];
           var mod = (state.exp.modules || []).find(function (m) { return m.id === modId; });
-          title = mod ? (Model.getLocalized(mod.title, state.trSource, state.exp.defaultLanguage) || 'Station') : 'Station';
+          title = mod ? (Model.getLocalized(mod.title, state.trSource, state.exp.defaultLanguage) || uiText('Station')) : uiText('Station');
         }
         groupMap[gKey] = { key: gKey, title: title, modId: modId, rows: [] };
         groups.push(groupMap[gKey]);
@@ -3426,11 +3566,11 @@
       });
       var sum = document.createElement('summary');
       var left = document.createElement('span');
-      if (grp.title !== 'Start Page') left.setAttribute('translate', 'no');
+      if (grp.key !== 'startPage') left.setAttribute('translate', 'no');
       left.textContent = grp.title;
       var cnt = document.createElement('span');
       cnt.className = 'xped-caption';
-      cnt.textContent = grp.rows.length + (grp.rows.length === 1 ? ' field' : ' fields');
+      cnt.textContent = grp.rows.length + (grp.rows.length === 1 ? uiText(' field') : uiText(' fields'));
       sum.appendChild(left);
       sum.appendChild(cnt);
       det.appendChild(sum);
@@ -3454,9 +3594,9 @@
         copySrc.type = 'button';
         copySrc.className = 'el-btn el-btn-sm';
         copySrc.disabled = !row.source.trim() || state.trSource === state.trTarget;
-        copySrc.title = 'Use ' + state.trSource.toUpperCase() + ' text in the ' + state.trTarget.toUpperCase() + ' translation';
+        copySrc.title = uiText('Use ') + state.trSource.toUpperCase() + uiText(' text in the ') + state.trTarget.toUpperCase() + uiText(' translation');
         copySrc.appendChild(Icons.icon('copy', 13));
-        var sourceNames = { nl: 'Use Dutch text', de: 'Use German text', en: 'Use English text' };
+        var sourceNames = { nl: uiText('Use Dutch text'), de: uiText('Use German text'), en: uiText('Use English text') };
         copySrc.appendChild(document.createTextNode(sourceNames[state.trSource]));
         rightMeta.appendChild(st);
         rightMeta.appendChild(copySrc);
@@ -3470,10 +3610,10 @@
         srcBox.lang = state.trSource;
         srcBox.className = 'el-tr-source';
         var srcPrimary = document.createElement('div');
-        srcPrimary.textContent = row.source || '(empty)';
+        srcPrimary.textContent = row.source || uiText('(empty)');
         srcBox.appendChild(srcPrimary);
         // UX-064: Show 3rd-language reference only when enabled
-        if (state.trShowAltLang && row.altSource) {
+        if (!academyUi && state.trShowAltLang && row.altSource) {
           var altRef = document.createElement('div');
           altRef.className = 'el-tr-alt-ref';
           var altTag = document.createElement('strong');
@@ -3489,7 +3629,7 @@
         ta.setAttribute('aria-label', location + ' (' + state.trTarget.toUpperCase() + ')');
         ta.rows = row.source.length > 90 ? 3 : 2;
         // UX-065: Clean placeholder without repeating shortcut
-        ta.placeholder = 'Write ' + state.trTarget.toUpperCase() + ' translation…';
+        ta.placeholder = uiText('Write ') + state.trTarget.toUpperCase() + uiText(' translation…');
         ta.value = state.trPendingTexts[row.key] !== undefined ? state.trPendingTexts[row.key] : row.target;
 
         var rowExp = state.exp;
@@ -3515,14 +3655,27 @@
         var previewField = document.createElement('button');
         previewField.type = 'button';
         previewField.className = 'el-btn el-btn-sm el-tr-field-preview';
-        previewField.textContent = 'Preview';
-        previewField.setAttribute('aria-label', 'Preview ' + location);
+        previewField.textContent = uiText('Preview');
+        previewField.setAttribute('aria-label', uiText('Preview ') + location);
         previewField.addEventListener('click', function () {
           focusContext();
           renderTranslatePreviewInto(trSheetStage);
           trSheetDialog.showModal();
         });
         rightMeta.appendChild(previewField);
+        if (academyUi && row.status === 'needs_review' && row.target.trim()) {
+          var approve = document.createElement('button');
+          approve.type = 'button';
+          approve.className = 'el-btn el-btn-sm';
+          approve.textContent = window.Xped.i18n.copy('Vertaling goedkeuren', 'Übersetzung freigeben');
+          approve.addEventListener('click', function () {
+            updateLocalizedText(ta.value);
+            updateTranslationBadge(rEl, st, 'translated');
+            approve.disabled = true;
+            scheduleTranslateAutosave();
+          });
+          rightMeta.appendChild(approve);
+        }
         ta.addEventListener('keydown', function (ev) {
           if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
             ev.preventDefault();
@@ -3549,7 +3702,7 @@
           focusContext();
           scheduleTranslateAutosave();
           if (prevVal.trim() && prevVal !== row.source) {
-            showToast('Replaced with ' + state.trSource.toUpperCase() + ' text.', function () {
+            showToast(uiText('Replaced with ') + state.trSource.toUpperCase() + uiText(' text.'), function () {
               if (state.trTarget !== targetLang || state.mode !== 'translate') return;
               updateLocalizedText(prevVal);
               renderTranslateMode();
@@ -3630,7 +3783,7 @@
     previewContainerEl.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
     var simulatePhone = state.previewViewport === 'mobile' && !window.matchMedia('(max-width: 720px)').matches;
     previewContainerEl.classList.toggle('is-mobile', simulatePhone);
-    previewContainerEl.setAttribute('aria-label', simulatePhone ? 'Learner preview at phone width' : 'Learner preview at available width');
+    previewContainerEl.setAttribute('aria-label', simulatePhone ? uiText('Learner preview at phone width') : uiText('Learner preview at available width'));
     previewContainerEl.textContent = '';
     var visibleMods = (state.exp.modules || []).filter(function (m) { return m.visibleToLearners !== false; });
 
@@ -3738,7 +3891,7 @@
     pvCrumb.className = 'xped-step-crumb';
     var pvDot = document.createElement('span');
     pvDot.className = 'xped-domain-dot domain-' + (mod.domain || 'general');
-    pvCrumb.append(pvDot, document.createTextNode(Model.getLocalized(mod.title, pLang, defLang) || ('Station ' + (state.previewPos.modIdx + 1))));
+    pvCrumb.append(pvDot, document.createTextNode(Model.getLocalized(mod.title, pLang, defLang) || (uiText('Station ') + (state.previewPos.modIdx + 1))));
     pvKicker.appendChild(pvCrumb);
     {
       var pvSegs = document.createElement('span');
@@ -3872,11 +4025,11 @@
 
   var pickerItem = null;
   var breathingActivity = { type: 'custom_visual', preset: 'breathing-circle', category: 'pain_tools',
-    label: 'Guided breathing', desc: 'A gently expanding circle for a paced breathing exercise.',
-    aliases: ['breathing visual', 'ademcirkel', 'ademhaling', 'atemübung', 'atemkreis'] };
+    label: uiText('Guided breathing'), desc: uiText('A gently expanding circle for a paced breathing exercise.'),
+    aliases: [uiText('breathing visual'), 'ademcirkel', 'ademhaling', 'atemübung', 'atemkreis'] };
 
   var percentageChart = { type: 'custom_visual', preset: 'percentage', category: 'explain',
-    label: 'Percentage chart', desc: 'Show a percentage with a bar, a caption and its source.',
+    label: uiText('Percentage chart'), desc: uiText('Show a percentage with a bar, a caption and its source.'),
     aliases: ['percentage', 'procent', 'prozent', 'balk', 'grafiek', 'chart', 'grafik'] };
 
   function createPickerBlock(item) {
@@ -3898,7 +4051,7 @@
     var blockType = item.type;
     var add = document.getElementById('el-picker-insert');
     add.disabled = false;
-    add.textContent = 'Add ' + item.label;
+    add.textContent = uiText('Add ') + item.label;
     document.getElementById('el-picker-preview-heading').textContent = item.label;
     document.querySelectorAll('#el-picker-body [data-picker-key]').forEach(function (button) {
       button.setAttribute('aria-pressed', String(button.dataset.pickerKey === (item.preset || item.type)));
@@ -3919,47 +4072,47 @@
       };
     }
     if (blockType === 'richtext') {
-      sample.data.heading = Model.loc('Wat gebeurt er in het zenuwstelsel?', 'What happens in the nervous system?', '');
-      sample.data.body = Model.loc('Pijn is een **beschermingssignaal** dat je lichaam waarschuwt.', 'Pain is a **protective signal** from your nervous system.', '');
+      sample.data.heading = Model.loc('Wat gebeurt er in het zenuwstelsel?', 'What happens in the nervous system?', "Was passiert im Nervensystem?");
+      sample.data.body = Model.loc('Pijn is een **beschermingssignaal** dat je lichaam waarschuwt.', 'Pain is a **protective signal** from your nervous system.', "Schmerz ist ein **Schutzsignal**, mit dem Ihr Körper Sie warnt.");
     } else if (blockType === 'video' || blockType === 'audio') {
       var vBox = document.createElement('div');
       vBox.className = 'xped-picker-media-mock';
       var isAudio = blockType === 'audio';
       vBox.appendChild(Icons.icon(isAudio ? 'audio' : 'video', 22));
       var vTitle = document.createElement('strong');
-      vTitle.textContent = isAudio ? 'Guided listening exercise' : 'Short explainer clip';
+      vTitle.textContent = isAudio ? uiText('Guided listening exercise') : uiText('Short explainer clip');
       var vCap = document.createElement('span');
       vCap.className = 'xped-caption';
-      vCap.textContent = isAudio ? '0:00 / 2:00  ·  Audio recording' : '0:15 – 2:30  ·  YouTube or Vimeo';
+      vCap.textContent = isAudio ? uiText('0:00 / 2:00  ·  Audio recording') : uiText('0:15 – 2:30  ·  YouTube or Vimeo');
       vBox.append(vTitle, vCap);
       previewEl.appendChild(vBox);
       return;
     } else if (blockType === 'image') {
       sample.data.media = { kind: 'xped', assetId: '', staticPath: '/static/images/xped/xped-wandelaar-met-kaart.png' };
-      sample.data.caption = Model.loc('Stap voor stap op ontdekkingstocht', 'Step by step on your journey', '');
+      sample.data.caption = Model.loc('Stap voor stap op ontdekkingstocht', 'Step by step on your journey', "Schritt für Schritt auf Entdeckungstour");
     } else if (blockType === 'callout') {
-      sample.data.title = Model.loc('Goed om te onthouden', 'Key takeaway', '');
-      sample.data.body = Model.loc('Pijn is altijd echt — ook als weefsel al hersteld is.', 'Pain is always real — even after tissue has healed.', '');
+      sample.data.title = Model.loc('Goed om te onthouden', 'Key takeaway', "Gut zu wissen");
+      sample.data.body = Model.loc('Pijn is altijd echt — ook als weefsel al hersteld is.', 'Pain is always real — even after tissue has healed.', "Schmerz ist immer real, auch wenn das Gewebe bereits verheilt ist.");
     } else if (blockType === 'story') {
       sample.data.speakerName = 'Inge';
-      sample.data.quote = Model.loc('Toen ik begreep hoe het alarmsysteem werkt, durfde ik weer rustig te wandelen.', 'Once I understood the alarm system, I felt safe walking gently again.', '');
+      sample.data.quote = Model.loc('Toen ik begreep hoe het alarmsysteem werkt, durfde ik weer rustig te wandelen.', 'Once I understood the alarm system, I felt safe walking gently again.', "Als ich das Alarmsystem verstanden hatte, traute ich mich wieder, in Ruhe spazieren zu gehen.");
     } else if (blockType === 'myth_fact') {
-      sample.data.statement = Model.loc('Aanhoudende pijn betekent altijd nieuwe weefselschade.', 'Persistent pain always means new tissue damage.', '');
+      sample.data.statement = Model.loc('Aanhoudende pijn betekent altijd nieuwe weefselschade.', 'Persistent pain always means new tissue damage.', "Anhaltender Schmerz bedeutet immer, dass Gewebe erneut geschädigt wurde.");
     } else if (blockType === 'mcq') {
-      sample.data.question = Model.loc('Wat helpt jou op een moeilijke dag?', 'What helps you most on a tough day?', '');
+      sample.data.question = Model.loc('Wat helpt jou op een moeilijke dag?', 'What helps you most on a tough day?', "Was hilft Ihnen an einem schwierigen Tag?");
     } else if (blockType === 'scale') {
-      sample.data.question = Model.loc('Hoeveel vertrouwen heb je om rustig te bewegen?', 'How confident do you feel moving gently?', '');
+      sample.data.question = Model.loc('Hoeveel vertrouwen heb je om rustig te bewegen?', 'How confident do you feel moving gently?', "Wie zuversichtlich sind Sie, sich behutsam zu bewegen?");
     } else if (blockType === 'reflection') {
-      sample.data.prompt = Model.loc('Welke gedachte neem je mee uit dit station?', 'What thought will you take away from this station?', '');
+      sample.data.prompt = Model.loc('Welke gedachte neem je mee uit dit station?', 'What thought will you take away from this station?', "Welchen Gedanken nehmen Sie aus dieser Station mit?");
     } else if (blockType === 'wordcloud') {
-      sample.data.question = Model.loc('Welke woorden passen bij pijn voor jou?', 'Which words come to mind about pain?', '');
+      sample.data.question = Model.loc('Welke woorden passen bij pijn voor jou?', 'Which words come to mind about pain?', "Welche Wörter verbinden Sie mit Schmerz?");
     } else if (blockType === 'ranking') {
-      sample.data.question = Model.loc('Zet op volgorde wat jou het meest helpt', 'Order what helps you most', '');
+      sample.data.question = Model.loc('Zet op volgorde wat jou het meest helpt', 'Order what helps you most', "Ordnen Sie danach, was Ihnen am meisten hilft.");
     } else if (blockType === 'hotspot') {
-      sample.data.question = Model.loc('Tik op een punt op de afbeelding', 'Tap a point on the diagram', '');
+      sample.data.question = Model.loc('Tik op een punt op de afbeelding', 'Tap a point on the diagram', "Tippen Sie auf einen Punkt im Bild.");
       sample.data.media = { kind: 'xped', assetId: '', staticPath: '/static/images/xped/xped-brein-mascotte-met-gloeilamp.png' };
     } else if (blockType === 'sources') {
-      sample.data.items = [{ id: 'src_prev', citation: Model.loc('Moseley GL & Butler DS. Explain Pain Supercharged (2017).', 'Moseley GL & Butler DS. Explain Pain Supercharged (2017).', ''), url: '10.1016/j.jpain.2015.05.005' }];
+      sample.data.items = [{ id: 'src_prev', citation: Model.loc('Moseley GL & Butler DS. Explain Pain Supercharged (2017).', 'Moseley GL & Butler DS. Explain Pain Supercharged (2017).', "Moseley GL & Butler DS. Explain Pain Supercharged (2017)."), url: '10.1016/j.jpain.2015.05.005' }];
     }
     var rendered = Blocks.renderBlock(sample, {
       lang: state.editLang,
@@ -4035,12 +4188,12 @@
       document.getElementById('el-picker-custom-option').hidden = true;
       document.getElementById('el-picker-insert').disabled = true;
       document.getElementById('el-picker-preview').textContent = '';
-      document.getElementById('el-picker-preview-heading').textContent = 'No matching block';
+      document.getElementById('el-picker-preview-heading').textContent = uiText('No matching block');
     }
     if (!anyRendered) {
       var empty = document.createElement('p');
       empty.className = 'xped-caption';
-      empty.textContent = 'No blocks match "' + q + '". Try keywords like YouTube, stelling, bronnen, waage, or slider.';
+      empty.textContent = uiText('No blocks match "') + q + uiText('". Try keywords like YouTube, stelling, bronnen, waage, or slider.');
       body.appendChild(empty);
     }
   }
@@ -4100,7 +4253,7 @@
     var share = state.exp && state.exp.share;
     var badge = document.getElementById('el-share-visibility');
     badge.hidden = !share || !canEditStructure();
-    if (share) badge.textContent = share.enabled ? 'Link active' : 'Private';
+    if (share) badge.textContent = share.enabled ? uiText('Link active') : uiText('Private');
   }
 
   function syncShareActiveVisibility(enabled) {
@@ -4117,7 +4270,7 @@
     groupInput.setAttribute('aria-invalid', String(!!invalid));
     document.getElementById('el-share-cohort-error').hidden = !invalid;
     var cohort = share.collectResponses ? groupInput.value : '';
-    var url = window.location.origin + '/elearning/p/' + encodeURIComponent(share.token || '');
+    var url = window.location.origin + Model.learnerPath(share.token || '');
     if (cohort) url += '?cohort=' + encodeURIComponent(cohort);
     if (invalid || !share.token) url = '';
     document.getElementById('el-share-url').value = url;
@@ -4134,7 +4287,7 @@
     var cohortNote = document.getElementById('el-share-qr-cohort');
     if (cohortNote) {
       cohortNote.hidden = !cohort || !url;
-      cohortNote.textContent = cohort ? ('QR includes cohort tag: ' + cohort) : '';
+      cohortNote.textContent = cohort ? (uiText('QR includes cohort tag: ') + cohort) : '';
     }
   }
 
@@ -4145,7 +4298,7 @@
     var retryBtn = document.getElementById('el-share-retry-btn');
     var contentBox = document.getElementById('el-share-content');
     if (loadingBox) loadingBox.hidden = false;
-    if (loadingMsg) loadingMsg.textContent = 'Loading sharing settings…';
+    if (loadingMsg) loadingMsg.textContent = uiText('Loading sharing settings…');
     if (retryBtn) retryBtn.hidden = true;
     if (contentBox) contentBox.hidden = true;
 
@@ -4158,6 +4311,8 @@
       var owner = state.role === 'owner';
       Object.values(shareFields).forEach(function (id) { document.getElementById(id).disabled = !owner; });
       document.getElementById('el-share-rotate-btn').hidden = !owner;
+      var resetPanel = document.getElementById('academy-link-reset');
+      if (resetPanel) { resetPanel.hidden = !owner; resetPanel.open = false; }
       shareDialog.querySelectorAll('[data-share-tab]:not([data-share-tab="learners"])').forEach(function (tab) { tab.hidden = !owner; });
       document.getElementById('el-share-status').textContent = '';
       document.getElementById('el-share-cohort').oninput = updateShareUrlAndQr;
@@ -4168,12 +4323,16 @@
       if (contentBox) contentBox.hidden = false;
     } catch (err) {
       if (loadVersion !== shareLoadVersion) return;
-      if (loadingMsg) loadingMsg.textContent = err.message || 'Could not load sharing settings.';
+      if (loadingMsg) loadingMsg.textContent = err.message || uiText('Could not load sharing settings.');
       if (retryBtn) retryBtn.hidden = false;
     }
   }
 
   function openShareDialog() {
+    if (document.documentElement.dataset.product === 'academy') {
+      window.location.assign(Model.coursePaths(expeditionId).overview + '#delen');
+      return;
+    }
     if (!expeditionId) return;
     // UX-084: Show dialog shell immediately so clicks never feel unresponsive
     if (!shareDialog.open) {
@@ -4189,7 +4348,7 @@
     if (!members.length) {
       var none = document.createElement('p');
       none.className = 'xped-caption';
-      none.textContent = 'No collaborators invited yet.';
+      none.textContent = uiText('No collaborators invited yet.');
       host.appendChild(none);
       return;
     }
@@ -4197,21 +4356,21 @@
       var row = document.createElement('div');
       row.className = 'el-member-row';
       var lbl = document.createElement('span');
-      lbl.textContent = m.email + ' · ' + (m.role === 'translate' ? 'Translator' : 'Co-Editor');
+      lbl.textContent = m.email + ' · ' + (m.role === 'translate' ? uiText('Translator') : uiText('Co-Editor'));
       var rm = document.createElement('button');
       rm.type = 'button';
       rm.className = 'el-btn el-btn-danger el-btn-sm';
-      rm.textContent = 'Remove';
-      rm.setAttribute('aria-label', 'Remove collaborator ' + m.email);
+      rm.textContent = uiText('Remove');
+      rm.setAttribute('aria-label', uiText('Remove collaborator ') + m.email);
       rm.addEventListener('click', async function () {
-        var ok = await showConfirmDialog('Remove collaborator?', 'Remove ' + m.email + ' from this expedition?', 'Remove');
+        var ok = await showConfirmDialog(uiText('Remove collaborator?'), uiText('Remove {email} from this expedition?', {email: m.email}), uiText('Remove'));
         if (!ok) return;
         var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
           method: 'POST',
           body: JSON.stringify({ action: 'remove_member', email: m.email }),
         });
         renderMembersList(res.members || []);
-        showToast('Collaborator removed.');
+        showToast(uiText('Collaborator removed.'));
       });
       row.appendChild(lbl);
       row.appendChild(rm);
@@ -4225,21 +4384,21 @@
     if (!grants.length) {
       var none = document.createElement('p');
       none.className = 'xped-caption';
-      none.textContent = 'No active translator links yet.';
+      none.textContent = uiText('No active translator links yet.');
       host.appendChild(none);
       return;
     }
     grants.forEach(function (g) {
       var row = document.createElement('div');
       row.className = 'el-member-row';
-      var url = window.location.origin + (g.urlPath || ('/elearning/translate/' + encodeURIComponent(g.token || '')));
-      var grantName = (g.label || 'Translator') + ' (' + String(g.targetLanguage || 'de').toUpperCase() + ')';
+      var url = window.location.origin + (g.urlPath || ((window.Xped ? '/vertalen/' : '/elearning/translate/') + encodeURIComponent(g.token || '')));
+      var grantName = (g.label || uiText('Translator')) + ' (' + String(g.targetLanguage || 'de').toUpperCase() + ')';
       var inp = document.createElement('input');
       inp.type = 'text';
       inp.readOnly = true;
       inp.id = 'grant-url-' + g.id;
       inp.value = url;
-      inp.setAttribute('aria-label', 'Link for ' + grantName);
+      inp.setAttribute('aria-label', uiText('Link for ') + grantName);
       inp.classList.add('el-grant-url');
       var lbl = document.createElement('span');
       lbl.textContent = grantName;
@@ -4252,8 +4411,8 @@
       cpBtn.className = 'el-btn el-btn-sm el-copy-btn';
       cpBtn.setAttribute('command', '--copy');
       cpBtn.setAttribute('commandfor', inp.id);
-      cpBtn.setAttribute('aria-label', 'Copy translator link for ' + grantName);
-      cpBtn.textContent = 'Copy link';
+      cpBtn.setAttribute('aria-label', uiText('Copy translator link for ') + grantName);
+      cpBtn.textContent = uiText('Copy link');
       var cpTip = document.createElement('span');
       cpTip.className = 'el-copy-tip';
       cpTip.setAttribute('role', 'status');
@@ -4263,13 +4422,13 @@
       var rev = document.createElement('button');
       rev.type = 'button';
       rev.className = 'el-btn el-btn-danger el-btn-sm';
-      rev.textContent = 'Revoke';
-      rev.setAttribute('aria-label', 'Revoke translator link for ' + grantName);
+      rev.textContent = uiText('Revoke');
+      rev.setAttribute('aria-label', uiText('Revoke translator link for ') + grantName);
       rev.addEventListener('click', async function () {
         var ok = await showConfirmDialog(
-          'Revoke translator link?',
-          'Revoke "' + grantName + '"? Anyone using that link will immediately lose access.',
-          'Revoke link'
+          uiText('Revoke translator link?'),
+          uiText('Revoke "') + grantName + uiText('"? Anyone using that link will immediately lose access.'),
+          uiText('Revoke link')
         );
         if (!ok) return;
         api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
@@ -4327,15 +4486,15 @@
     var attempt = ++unusedLoad;
     unusedFiles.replaceChildren();
     unusedRemove.disabled = true;
-    unusedStatus.textContent = 'Checking saved media…';
+    unusedStatus.textContent = uiText('Checking saved media…');
     unusedDialog.showModal();
     try {
-      if (uploadsInProgress) throw new Error('Wait for the upload to finish before removing media.');
+      if (uploadsInProgress) throw new Error(uiText('Wait for the upload to finish before removing media.'));
       await queueStructureSave();
-      if (saveVersion !== savedVersion || !state.leaseToken) throw new Error('Save your changes before removing media.');
+      if (saveVersion !== savedVersion || !state.leaseToken) throw new Error(uiText('Save your changes before removing media.'));
       var result = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/assets');
       if (attempt !== unusedLoad || !unusedDialog.open) return;
-      if (result.revision !== state.exp.revision) throw new Error('The expedition changed. Reload before removing media.');
+      if (result.revision !== state.exp.revision) throw new Error(uiText('The expedition changed. Reload before removing media.'));
       unusedRevision = result.revision;
       result.unused.forEach(function (asset) {
         if (usesMedia(state.exp, asset.id)) return;
@@ -4346,14 +4505,14 @@
         input.value = asset.id;
         input.checked = true;
         var label = document.createElement('span');
-        label.textContent = asset.filename || (asset.kind === 'audio' ? 'Audio' : 'Image');
+        label.textContent = asset.filename || (asset.kind === 'audio' ? uiText('Audio') : uiText('Image'));
         if (asset.filename) label.setAttribute('translate', 'no');
         var size = document.createElement('small');
         size.textContent = mediaSize(asset.size);
         row.append(input, label, size);
         unusedFiles.append(row);
       });
-      unusedStatus.textContent = unusedFiles.children.length ? '' : 'There are no unused files to remove.';
+      unusedStatus.textContent = unusedFiles.children.length ? '' : uiText('There are no unused files to remove.');
       syncUnusedButton();
     } catch (error) {
       if (attempt === unusedLoad) unusedStatus.textContent = error.message;
@@ -4372,7 +4531,7 @@
     unusedDialog.querySelector('form button').disabled = true;
     document.getElementById('el-unused-cancel').disabled = true;
     unusedFiles.inert = true;
-    unusedStatus.textContent = 'Removing files…';
+    unusedStatus.textContent = uiText('Removing files…');
     try {
       for (var input of selected) {
         if (usesMedia(state.exp, input.value) || saveVersion !== savedVersion || state.exp.revision !== unusedRevision) {
@@ -4383,11 +4542,11 @@
         });
         var result = await response.json();
         if (response.ok || result.removalPending || response.status === 404) forgetRemovedMedia(input.value);
-        if (!response.ok && response.status !== 404) throw new Error(result.error || 'Could not remove this file.');
+        if (!response.ok && response.status !== 404) throw new Error(uiText(result.error) || uiText('Could not remove this file.'));
         input.closest('label').remove();
       }
       unusedDialog.close();
-      showToast('Unused media removed.');
+      showToast(uiText('Unused media removed.'));
     } catch (error) {
       unusedStatus.textContent = error.message;
     } finally {
@@ -4417,21 +4576,21 @@
       if (hasPendingTranslations() && !(await saveTranslationsNow())) return;
       await queueStructureSave();
       if (saveVersion !== savedVersion || hasPendingTranslations()) {
-        showToast('Save your latest edits before exporting course content.', 'error');
+        showToast(uiText('Save your latest edits before exporting course content.'), 'error');
         return;
       }
       var result = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/content-export');
       var notices = [];
       if (result.excludedUploads) {
-        notices.push('The file includes course text and library illustrations. Reattach your uploaded images and audio after importing.');
+        notices.push(uiText('The file includes course text and library illustrations. Reattach your uploaded images and audio after importing.'));
       }
       if (result.exceedsImportLimits) {
-        notices.push('The download includes older material that exceeds the current size limits. Shorten the course before importing it again.');
+        notices.push(uiText('The download includes older material that exceeds the current size limits. Shorten the course before importing it again.'));
       }
       if (notices.length) {
-        var title = result.excludedUploads ? 'Export without uploaded files?' : 'Export course content';
-        var message = notices.map(function (note) { return window.LectureI18n ? window.LectureI18n.t(note) : note; }).join(' ');
-        if (!(await showConfirmDialog(title, message, 'Export course content'))) return;
+        var title = result.excludedUploads ? uiText('Export without uploaded files?') : uiText('Export course content');
+        var message = notices.map(function (note) { return academyUi ? uiText(note) : window.LectureI18n ? window.LectureI18n.t(note) : note; }).join(' ');
+        if (!(await showConfirmDialog(title, message, uiText('Export course content')))) return;
       }
       downloadCourseJson(result.course, '-content');
     } catch (err) { showToast(err.message, 'error'); }
@@ -4439,22 +4598,22 @@
 
   function refreshMoreMenu() {
     var mediaActions = state.mode === 'edit' && state.leaseToken ? [
-      { label: 'Free unused media', icon: 'trash', onClick: openUnusedMedia },
+      { label: uiText('Free unused media'), icon: 'trash', onClick: openUnusedMedia },
     ] : [];
     moreMenuDD.setItems([
       ...mediaActions,
       {
-        label: 'Responses & Analytics',
+        label: uiText('Responses & Analytics'),
         icon: 'chart',
-        onClick: function () { window.location.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/responses'; },
+        onClick: function () { window.location.href = Model.coursePaths(expeditionId).report; },
       },
       {
-        label: 'Export course content',
+        label: uiText('Export course content'),
         icon: 'upload',
         onClick: downloadCourseContent,
       },
       {
-        label: 'Export JSON Backup',
+        label: uiText('Export JSON Backup'),
         icon: 'upload',
         onClick: downloadCurrentDraft,
       },
@@ -4662,14 +4821,14 @@
     var entry = state.undoStack.pop();
     state.redoStack.push(historyEntry(entry.label));
     restoreSnapshot(entry);
-    showToast('Undid ' + (entry.label || 'change'));
+    showToast(uiText('Undid ') + (entry.label || uiText('change')));
   }
   function performRedo() {
     if (state.mode !== 'edit' || !canEditStructure() || !state.leaseToken || !state.redoStack.length) return;
     var entry = state.redoStack.pop();
     state.undoStack.push(historyEntry(entry.label));
     restoreSnapshot(entry);
-    showToast('Redid ' + (entry.label || 'change'));
+    showToast(uiText('Redid ') + (entry.label || uiText('change')));
   }
   document.getElementById('el-undo-btn').addEventListener('click', performUndo);
   document.getElementById('el-redo-btn').addEventListener('click', performRedo);
@@ -4701,7 +4860,7 @@
   document.getElementById('el-conflict-download').addEventListener('click', downloadCurrentDraft);
   document.getElementById('el-takeover-btn').addEventListener('click', async function () {
     if (resolveConflict) {
-      var proceed = await showConfirmDialog('Open the saved version?', 'Unsaved edits in this tab will be discarded. You can cancel and download a copy first.', 'Open saved version');
+      var proceed = await showConfirmDialog(uiText('Open the saved version?'), uiText('Unsaved edits in this tab will be discarded. You can cancel and download a copy first.'), uiText('Open saved version'));
       if (!proceed) return;
     }
     var openSaved = resolveConflict;
@@ -4751,7 +4910,7 @@
     if (state.role !== 'owner' || !state.shareData) return;
     var status = document.getElementById('el-share-status');
     savingShare++;
-    status.textContent = 'Saving sharing settings…';
+    status.textContent = uiText('Saving sharing settings…');
     var intended = document.getElementById('el-share-enabled').checked;
     syncShareActiveVisibility(intended && state.shareData.share.enabled);
     state.shareQueue = state.shareQueue.then(async function () {
@@ -4762,9 +4921,9 @@
         state.shareData.share = res.share;
         state.exp.share = res.share;
         updateShareLabel();
-        if (savingShare === 1) status.textContent = 'Sharing settings saved.';
+        if (savingShare === 1) status.textContent = uiText('Sharing settings saved.');
       } catch (err) {
-        status.textContent = err.message || 'Could not save sharing settings.';
+        status.textContent = err.message || uiText('Could not save sharing settings.');
       } finally {
         if (--savingShare === 0) applyConfirmedShare(state.shareData.share);
       }
@@ -4837,7 +4996,7 @@
     [[canvasFrameEl, state.viewport, 'Editing canvas'], [previewContainerEl, state.previewViewport, 'Learner preview']].forEach(function (entry) {
       var phone = !narrow && entry[1] === 'mobile';
       entry[0].classList.toggle('is-mobile', phone);
-      entry[0].setAttribute('aria-label', entry[2] + (phone ? ' at phone width' : ' at available width'));
+      entry[0].setAttribute('aria-label', entry[2] + (phone ? uiText(' at phone width') : uiText(' at available width')));
     });
   });
   var pvSamplePeers = document.getElementById('el-pv-sample-peers');
@@ -4846,6 +5005,32 @@
       state.previewSamplePeers = pvSamplePeers.checked;
       renderPreviewMode();
     });
+  }
+
+  var previewAppearanceButtons = document.querySelectorAll('[data-academy-preview-appearance]');
+  if (previewAppearanceButtons.length) {
+    var preferenceKey = 'xped-preview-appearance';
+    var previewAppearance = 'light';
+    try { previewAppearance = sessionStorage.getItem(preferenceKey) || 'light'; } catch (_) { /* Session storage is optional. */ }
+    function setPreviewAppearance(value) {
+      var appearance = value === 'dark' ? 'dark' : 'light';
+      document.querySelectorAll('.xped-surface-scope[data-xped-theme]').forEach(function (canvas) {
+        canvas.dataset.learnerAppearance = appearance;
+      });
+      previewAppearanceButtons.forEach(function (button) {
+        var selected = button.dataset.academyPreviewAppearance === appearance;
+        button.classList.toggle('is-active', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+    }
+    previewAppearanceButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        var appearance = button.dataset.academyPreviewAppearance;
+        setPreviewAppearance(appearance);
+        try { sessionStorage.setItem(preferenceKey, appearance); } catch (_) { /* Session storage is optional. */ }
+      });
+    });
+    setPreviewAppearance(previewAppearance);
   }
 
   var pvDesk = document.getElementById('el-pv-desktop');
@@ -4870,9 +5055,9 @@
   }
   document.getElementById('el-share-rotate-btn').addEventListener('click', async function () {
     var ok = await showConfirmDialog(
-      'Reset public share URL?',
-      'Generate a brand-new share URL? The previous link and printed QR codes will stop working.',
-      'Reset link'
+      uiText('Reset public share URL?'),
+      uiText('Generate a brand-new share URL? The previous link and printed QR codes will stop working.'),
+      uiText('Reset link')
     );
     if (ok) savePublicShareSettings({ rotateToken: true });
   });
@@ -4898,19 +5083,19 @@
       });
       document.getElementById('el-member-email').value = '';
       renderMembersList(res.members || []);
-      showToast('Collaborator added!');
+      showToast(uiText('Collaborator added!'));
     } catch (err) { showToast(err.message, 'error'); }
   });
   document.getElementById('el-create-grant-btn').addEventListener('click', async function () {
     var lang = document.getElementById('el-grant-lang').value;
-    var label = document.getElementById('el-grant-label').value.trim() || (lang.toUpperCase() + ' translator');
+    var label = document.getElementById('el-grant-label').value.trim() || uiText('{language} translator', {language: lang.toUpperCase()});
     try {
       await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
         method: 'POST',
         body: JSON.stringify({ action: 'create_grant', role: 'translate', targetLanguage: lang, label: label }),
       });
       document.getElementById('el-grant-label').value = '';
-      showToast('Translator link created!');
+      showToast(uiText('Translator link created!'));
       loadShareDialogData();
     } catch (err) { showToast(err.message, 'error'); }
   });
@@ -4979,7 +5164,7 @@
         state.redoStack = [];
       } else rebaseUndoStacksWithTranslations(state.exp, state.trTarget);
       updateUndoButtons();
-      showToast('Imported ' + (res.appliedCount || 0) + ' translated fields!');
+      showToast(uiText('Imported ') + (res.appliedCount || 0) + uiText(' translated fields!'));
       renderTranslateMode();
     } catch (err) {
       showToast(err.message, 'error');
@@ -5013,8 +5198,8 @@
     panel.textContent = message;
     if (auth && !grantToken && !activeUser) {
       var link = document.createElement('a');
-      link.href = window.LectureProcessorAuth.buildSignInUrl(window.location.pathname);
-      link.textContent = 'Sign in';
+      link.href = platformAuth.buildSignInUrl(window.location.pathname + window.location.search + window.location.hash);
+      link.textContent = uiText('Sign in');
       panel.append(' ', link);
     }
     document.querySelector('.el-topbar').after(panel);
@@ -5059,9 +5244,27 @@
       }
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId));
       state.exp = res.expedition;
+      if (academyUi && !grantToken && state.exp.title) {
+        var backLink = document.getElementById('el-back-link');
+        backLink.querySelector('span').textContent = state.exp.title;
+        document.title = state.exp.title + ' · ' + editorPageTitle;
+        backLink.title = window.Xped.i18n.copy('Terug naar ','Zurück zu ') + state.exp.title;
+        backLink.setAttribute('aria-label', backLink.title);
+      }
       acceptedCourse = clone(state.exp);
       state.role = res.expedition.role || '';
-      state.editLang = state.exp.defaultLanguage || 'nl';
+      state.editLang = courseLanguages.includes(state.exp.defaultLanguage) ? state.exp.defaultLanguage : 'nl';
+      if (academyUi && !grantToken && urlParams.get('modus') === 'vertalen') {
+        state.mode = 'translate';
+        const target = urlParams.get('taal');
+        if (courseLanguages.includes(target) && state.exp.enabledLanguages.includes(target)) {
+          state.trTarget = target;
+          state.trSource = courseLanguages.find(code => code !== target);
+          state.trFilter = urlParams.get('filter') === 'alle' ? 'all' : 'needs_review';
+          trTargetDD.setItems(LANG_OPTIONS, state.trTarget);
+          trFilterDD.setItems(FILTER_OPTIONS, state.trFilter);
+        }
+      }
       state.previewLang = state.editLang;
       editLangDD.setItems(LANG_OPTIONS, state.editLang);
       previewLangDD.setItems(LANG_OPTIONS, state.previewLang);
@@ -5072,10 +5275,11 @@
         var retBar = document.getElementById('el-return-responses');
         var retLink = document.getElementById('el-return-responses-link');
         if (retBar && retLink) {
-          retLink.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/responses';
+          retLink.href = Model.coursePaths(expeditionId).report;
           retBar.hidden = false;
         }
       }
+      wireOutlineResults();
       restoreEditingPosition();
       if (deepStepId) {
         var matchedMod = (state.exp.modules || []).find(function (m) {
@@ -5088,13 +5292,19 @@
           state.selectedTarget = { type: 'step', moduleId: matchedMod.id, stepId: matchedStep.id };
           state.selectedBlockId = (matchedStep.blocks && matchedStep.blocks[0]) ? matchedStep.blocks[0].id : '';
         } else {
-          showToast('That commented step was removed or archived — showing Start Page instead.');
+          showToast(uiText('That commented step was removed or archived — showing Start Page instead.'));
         }
       }
 
-      setSaveStatus('Saved', true, false);
+      setSaveStatus(uiText('Saved'), true, false);
       if (canEditStructure()) await acquireLease(false);
       setMode(state.mode);
+      if (academyUi && state.mode === 'translate' && urlParams.has('veld')) {
+        var fieldKey = urlParams.get('veld');
+        if (Model.extractTranslationRows(state.exp, state.trSource, state.trTarget).some(row => row.key === fieldKey)) {
+          jumpToTranslationField(fieldKey);
+        }
+      }
       if (canEditStructure() && urlParams.get('panel') === 'sharing') openShareDialog();
     } catch (err) {
       showUnavailable(err.message);
@@ -5110,7 +5320,7 @@
   if (grantToken) {
     loadExpedition();
   } else if (!auth) {
-    showUnavailable('Sign-in is temporarily unavailable. Reload this page to try again.');
+    showUnavailable(uiText('Sign-in is temporarily unavailable. Reload this page to try again.'));
   } else {
     bootstrap.onAuthStateReady(auth, function (user) {
       if (loadedAccount && (activeUser?.uid || '') !== (user?.uid || '')) {
@@ -5127,7 +5337,7 @@
       accountSession = authClient.captureSession();
       loadedAccount = true;
       if (user) loadExpedition();
-      else showUnavailable('Sign in required');
+      else showUnavailable(uiText('Sign in required'));
     });
   }
 })();

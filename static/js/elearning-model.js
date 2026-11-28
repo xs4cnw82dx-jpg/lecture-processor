@@ -1,6 +1,7 @@
 (function (root) {
   'use strict';
 
+  var uiText = root.Xped && root.Xped.i18n ? root.Xped.i18n.t : function (message) { return message; };
   var SUPPORTED_LANGS = ['nl', 'en', 'de'];
 
   var LANG_LABELS = {
@@ -18,6 +19,8 @@
 
   var UI_STRINGS = {
     nl: {
+      consentHeading: 'Jouw gegevens',
+      consentChoiceRequired: 'Kies een van de twee opties om verder te gaan.',
       courseHighlights: 'Wat je kunt verwachten',
       answerPrivacy: 'Over je antwoorden',
       reflectionAccess: 'De makers van deze cursus kunnen je reflectie lezen.',
@@ -33,6 +36,7 @@
       consentFeedback: "Ook feedback die je instuurt, kunnen de makers lezen.",
       changeConsent: "Mijn keuze voor gegevens delen wijzigen",
       authorAccess: 'De makers ontvangen je voortgang en antwoorden, ook ingevulde tekst, onder een sessiecode.',
+      authorAccessWithTime: 'De makers ontvangen je voortgang, hoe lang je actief bent per stap en je antwoorden, ook ingevulde tekst, onder een sessiecode.',
       deviceResume: 'Dit apparaat bewaart je antwoorden zodat je later verder kunt gaan.',
       sharedResults: 'Bij vragen met gedeelde resultaten kunnen anderen groepsuitkomsten zien.',
       sharedWords: 'Woorden die je aan een gedeelde woordenwolk toevoegt, zijn voor andere deelnemers zichtbaar.',
@@ -134,6 +138,8 @@
       down: 'Omlaag',
     },
     en: {
+      consentHeading: 'Your information',
+      consentChoiceRequired: 'Choose one of the two options to continue.',
       courseHighlights: 'What to expect',
       answerPrivacy: 'About your answers',
       reflectionAccess: 'Course authors can read your reflection.',
@@ -149,6 +155,7 @@
       consentFeedback: "The authors can also read any feedback you send.",
       changeConsent: "Change my sharing choice",
       authorAccess: 'Course authors receive your progress and answers, including written responses, under a session ID.',
+      authorAccessWithTime: 'Course authors receive your progress, how long you are active on each step and your answers, including written responses, under a session ID.',
       deviceResume: 'This device stores your answers so you can return later.',
       sharedResults: 'Other learners can see group results for questions where sharing is enabled.',
       sharedWords: 'Words you add to a shared word cloud are visible to other learners.',
@@ -250,6 +257,8 @@
       down: 'Down',
     },
     de: {
+      consentHeading: 'Ihre Daten',
+      consentChoiceRequired: 'Wählen Sie eine der beiden Optionen, um fortzufahren.',
       courseHighlights: 'Was dich erwartet',
       answerPrivacy: 'Über deine Antworten',
       reflectionAccess: 'Die Kursverantwortlichen können deine Reflexion lesen.',
@@ -265,6 +274,7 @@
       consentFeedback: "Das Kursteam kann auch dein eingesendetes Feedback lesen.",
       changeConsent: "Meine Auswahl zur Datenfreigabe ändern",
       authorAccess: 'Die Kursverantwortlichen erhalten deinen Fortschritt und deine Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
+      authorAccessWithTime: 'Die Kursverantwortlichen erhalten deinen Fortschritt, deine aktive Zeit pro Schritt und deine Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
       deviceResume: 'Deine Antworten werden auf diesem Gerät gespeichert, damit du später weitermachen kannst.',
       sharedResults: 'Bei Fragen mit freigegebenen Ergebnissen können andere Teilnehmende Gruppenergebnisse sehen.',
       sharedWords: 'Wörter, die du zu einer geteilten Wortwolke hinzufügst, sind für andere Teilnehmende sichtbar.',
@@ -526,43 +536,61 @@
         de: 'Logo von xPEDition Schmerz',
       },
     },
+    {
+      id: 'samen-op-route', academyOnly: true,
+      label: 'Samen op pad', labels: { nl: 'Samen op pad', de: 'Gemeinsam unterwegs', en: 'Travelling together' },
+      path: '/static/images/xped/academy-together.webp',
+      alt: { nl: 'Drie mensen verkennen samen een blauwe route. Eén van hen kijkt vanuit een rolstoel door een verrekijker.', de: 'Drei Menschen erkunden gemeinsam einen blauen Weg. Eine Person schaut vom Rollstuhl aus durch ein Fernglas.', en: 'Three people explore a blue trail together. One looks through binoculars from a wheelchair.' },
+    },
+    {
+      id: 'rustmoment', academyOnly: true,
+      label: 'Rustmoment', labels: { nl: 'Rustmoment', de: 'Ruhepause', en: 'A moment of rest' },
+      path: '/static/images/xped/academy-rest.webp',
+      alt: { nl: 'Een persoon zit met gekruiste benen.', de: 'Eine Person sitzt im Schneidersitz.', en: 'A person sits cross-legged.' },
+    },
+    {
+      id: 'eerste-stappen', academyOnly: true,
+      label: 'Eerste stappen', labels: { nl: 'Eerste stappen', de: 'Erste Schritte', en: 'First steps' },
+      path: '/static/images/xped/academy-steps.webp',
+      alt: { nl: 'Een spoor van mintgroene voetstappen.', de: 'Eine Spur mintgrüner Fußabdrücke.', en: 'A trail of mint-green footprints.' },
+    },
   ];
 
   var BLOCK_CATEGORIES = [
-    { key: 'explain', label: 'Explain & illustrate' },
-    { key: 'ask', label: 'Ask a question' },
-    { key: 'pain_tools', label: 'Pain education tools' },
-    { key: 'advanced', label: 'Advanced' },
+    { key: 'explain', label: uiText('Explain & illustrate') },
+    { key: 'ask', label: uiText('Ask a question') },
+    { key: 'pain_tools', label: uiText('Pain education tools') },
+    { key: 'advanced', label: uiText('Advanced') },
   ];
 
   var BLOCK_CATALOG = [
-    { type: 'richtext', category: 'explain', label: 'Heading & Text', desc: 'Clean readable explanation or story section.', aliases: ['tekst', 'alinea', 'kop', 'uitleg', 'paragraph', 'text', 'absatz', 'überschrift'] },
-    { type: 'video', category: 'explain', label: 'YouTube / Vimeo Video', desc: 'Privacy-friendly embed with optional start/end timestamps.', aliases: ['filmpje', 'youtube', 'vimeo', 'clip', 'uitlegvideo', 'erklärvideo'] },
-    { type: 'image', category: 'explain', label: 'Image & Visual', desc: 'Upload photo or pick an official xPED illustration.', aliases: ['afbeelding', 'foto', 'illustratie', 'plaatje', 'bild', 'grafik', 'picture'] },
-    { type: 'audio', category: 'explain', label: 'Audio Exercise', desc: 'Breathing, pacing, or spoken explanation player.', aliases: ['geluid', 'ademhaling', 'ontspanning', 'luisteren', 'podcast', 'atmung', 'hörbeitrag'] },
-    { type: 'callout', category: 'explain', label: 'Key Takeaway', desc: 'Bio / Psycho / Social / Tip highlight card.', aliases: ['tip', 'inzicht', 'kader', 'samenvatting', 'hinweis', 'merksatz', 'highlight'] },
-    { type: 'story', category: 'explain', label: 'Patient / Expert Story', desc: 'Authentic quote card with optional portrait.', aliases: ['verhaal', 'citaat', 'ervaring', 'patiënt', 'quote', 'case', 'geschichte', 'zitat'] },
-    { type: 'sources', category: 'explain', label: 'Scientific Sources', desc: 'Collapsible academic references drawer.', aliases: ['bronnen', 'bron', 'referentie', 'literatuur', 'doi', 'citation', 'references', 'quellen'] },
-    { type: 'mcq', category: 'ask', label: 'Multiple Choice / Poll', desc: 'Single or multi-select with optional peer stats & feedback.', aliases: ['meerkeuze', 'peiling', 'poll', 'quiz', 'vraag', 'umfrage', 'auswahlfrage'] },
-    { type: 'myth_fact', category: 'ask', label: 'Myth vs. Fact', desc: 'Modern accessible Feit of Fabel reveal card.', aliases: ['feit', 'fabel', 'stelling', 'waar', 'onwaar', 'mythos', 'fakt', 'statement'] },
-    { type: 'scale', category: 'ask', label: 'Confidence Slider', desc: 'Mentimeter-style 0–10 belief or readiness scale.', aliases: ['schaal', 'schuifbalk', 'slider', 'score', 'cijfer', 'skala', 'regler'] },
-    { type: 'reflection', category: 'ask', label: 'Open Reflection', desc: 'Written response that course authors can read.', aliases: ['reflectie', 'open vraag', 'schrijven', 'gedachten', 'reflexion', 'freitext'] },
-    { type: 'wordcloud', category: 'ask', label: 'Word Cloud', desc: 'Quick 1–3 word associations with optional peer cloud.', aliases: ['woordenwolk', 'associatie', 'kernwoorden', 'wortwolke', 'tags'] },
-    { type: 'ranking', category: 'ask', label: 'Priority Ranking', desc: 'Order personal values, activities, or coping tips.', aliases: ['rangschikken', 'volgorde', 'prioriteit', 'sortieren', 'rangfolge'] },
-    { type: 'hotspot', category: 'ask', label: 'Pin on Image', desc: 'Interactive diagram hotspots with text fallback.', aliases: ['hotspot', 'pin', 'aanwijzen', 'diagram', 'kaart', 'bildpunkte'] },
-    { type: 'balance_scale', category: 'pain_tools', label: 'Balance Scale (Waage)', desc: 'Modernized Draagkracht vs. Draaglast interactive scale.', aliases: ['weegschaal', 'draagkracht', 'draaglast', 'balans', 'waage', 'belastung', 'ressourcen'] },
-    { type: 'bps_triad', category: 'pain_tools', label: 'Biopsychosocial Triad', desc: 'Interactive Bio · Psycho · Sociaal explorer.', aliases: ['bps', 'biopsychosociaal', 'driehoek', 'pijlers', 'biopsychosozial'] },
-    { type: 'mini_plan', category: 'pain_tools', label: 'Personal Mini-Plan', desc: 'Action chip selector compiled into printable summary.', aliases: ['actieplan', 'doel', 'kleine stap', 'mini-plan', 'plan', 'ziel', 'schritte'] },
-    { type: 'custom_visual', category: 'advanced', label: 'Custom SVG / Animation Slot', desc: 'Reserve a stage for a coding agent SVG/animation or pick a built-in pain animation.', aliases: ['svg', 'animatie', 'custom', 'visualisatie', 'agent', 'animation', 'grafikslot'] },
+    { type: 'richtext', category: 'explain', label: uiText('Heading & Text'), desc: uiText('Clean readable explanation or story section.'), aliases: ['tekst', 'alinea', 'kop', 'uitleg', 'paragraph', 'text', 'absatz', 'überschrift'] },
+    { type: 'video', category: 'explain', label: uiText('YouTube / Vimeo Video'), desc: uiText('Privacy-friendly embed with optional start/end timestamps.'), aliases: ['filmpje', 'youtube', 'vimeo', 'clip', 'uitlegvideo', 'erklärvideo'] },
+    { type: 'image', category: 'explain', label: uiText('Image & Visual'), desc: uiText('Upload photo or pick an official xPED illustration.'), aliases: ['afbeelding', 'foto', 'illustratie', 'plaatje', 'bild', 'grafik', 'picture'] },
+    { type: 'audio', category: 'explain', label: uiText('Audio Exercise'), desc: uiText('Breathing, pacing, or spoken explanation player.'), aliases: ['geluid', 'ademhaling', 'ontspanning', 'luisteren', 'podcast', 'atmung', 'hörbeitrag'] },
+    { type: 'callout', category: 'explain', label: uiText('Key Takeaway'), desc: uiText('Bio / Psycho / Social / Tip highlight card.'), aliases: ['tip', 'inzicht', 'kader', 'samenvatting', 'hinweis', 'merksatz', 'highlight'] },
+    { type: 'story', category: 'explain', label: uiText('Patient / Expert Story'), desc: uiText('Authentic quote card with optional portrait.'), aliases: ['verhaal', 'citaat', 'ervaring', 'patiënt', 'quote', 'case', 'geschichte', 'zitat'] },
+    { type: 'sources', category: 'explain', label: uiText('Scientific Sources'), desc: uiText('Collapsible academic references drawer.'), aliases: ['bronnen', 'bron', 'referentie', 'literatuur', 'doi', 'citation', 'references', 'quellen'] },
+    { type: 'mcq', category: 'ask', label: uiText('Multiple Choice / Poll'), desc: uiText('Single or multi-select with optional peer stats & feedback.'), aliases: ['meerkeuze', 'peiling', 'poll', 'quiz', 'vraag', 'umfrage', 'auswahlfrage'] },
+    { type: 'myth_fact', category: 'ask', label: uiText('Myth vs. Fact'), desc: uiText('Modern accessible Feit of Fabel reveal card.'), aliases: ['feit', 'fabel', 'stelling', 'waar', 'onwaar', 'mythos', 'fakt', 'statement'] },
+    { type: 'scale', category: 'ask', label: uiText('Confidence Slider'), desc: uiText('Mentimeter-style 0–10 belief or readiness scale.'), aliases: ['schaal', 'schuifbalk', 'slider', 'score', 'cijfer', 'skala', 'regler'] },
+    { type: 'reflection', category: 'ask', label: uiText('Open Reflection'), desc: uiText('Written response that course authors can read.'), aliases: ['reflectie', 'open vraag', 'schrijven', 'gedachten', 'reflexion', 'freitext'] },
+    { type: 'wordcloud', category: 'ask', label: uiText('Word Cloud'), desc: uiText('Quick 1–3 word associations with optional peer cloud.'), aliases: ['woordenwolk', 'associatie', 'kernwoorden', 'wortwolke', 'tags'] },
+    { type: 'ranking', category: 'ask', label: uiText('Priority Ranking'), desc: uiText('Order personal values, activities, or coping tips.'), aliases: ['rangschikken', 'volgorde', 'prioriteit', 'sortieren', 'rangfolge'] },
+    { type: 'hotspot', category: 'ask', label: uiText('Pin on Image'), desc: uiText('Interactive diagram hotspots with text fallback.'), aliases: ['hotspot', 'pin', 'aanwijzen', 'diagram', 'kaart', 'bildpunkte'] },
+    { type: 'balance_scale', category: 'pain_tools', label: uiText('Balance Scale (Waage)'), desc: uiText('Modernized Draagkracht vs. Draaglast interactive scale.'), aliases: ['weegschaal', 'draagkracht', 'draaglast', 'balans', 'waage', 'belastung', 'ressourcen'] },
+    { type: 'bps_triad', category: 'pain_tools', label: uiText('Biopsychosocial Triad'), desc: uiText('Interactive Bio · Psycho · Sociaal explorer.'), aliases: ['bps', 'biopsychosociaal', 'driehoek', 'pijlers', 'biopsychosozial'] },
+    { type: 'mini_plan', category: 'pain_tools', label: uiText('Personal Mini-Plan'), desc: uiText('Action chip selector compiled into printable summary.'), aliases: ['actieplan', 'doel', 'kleine stap', 'mini-plan', 'plan', 'ziel', 'schritte'] },
+    { type: 'custom_visual', category: 'advanced', label: uiText('Custom SVG / Animation Slot'), desc: uiText('Reserve a stage for a coding agent SVG/animation or pick a built-in pain animation.'), aliases: ['svg', 'animatie', 'custom', 'visualisatie', 'agent', 'animation', 'grafikslot'] },
   ];
 
   var HOTSPOT_PIN_COLORS = [
-    { hex: '#0072CE', label: 'xPED Blue', text: '#FFFFFF' },
-    { hex: '#062940', label: 'Deep Navy', text: '#FFFFFF' },
-    { hex: '#009C67', label: 'Emerald Mint', text: '#FFFFFF' },
-    { hex: '#C98A00', label: 'Warm Amber', text: '#FFFFFF' },
-    { hex: '#D63B4F', label: 'Coral Red', text: '#FFFFFF' },
-    { hex: '#5C4CE6', label: 'Indigo', text: '#FFFFFF' },
+    { hex: '#0072CE', label: uiText('xPED Blue'), text: '#FFFFFF' },
+    { hex: '#062940', label: uiText('Deep Navy'), text: '#FFFFFF' },
+    { hex: '#009C67', label: uiText('Emerald Mint'), text: '#FFFFFF' },
+    { hex: '#C98A00', label: uiText('Warm Amber'), text: '#FFFFFF' },
+    { hex: '#D63B4F', label: uiText('Coral Red'), text: '#FFFFFF' },
+    { hex: '#5C4CE6', label: uiText('Indigo'), text: '#FFFFFF' },
   ];
 
   function pinTextColor(hex) {
@@ -578,7 +606,7 @@
   var SCALE_ANCHOR_PRESETS = [
     {
       id: 'agreement',
-      label: 'Agreement (0–10)',
+      label: uiText('Agreement (0–10)'),
       min: 0,
       max: 10,
       minLabel: { nl: 'Helemaal oneens', en: 'Strongly disagree', de: 'Stimme gar nicht zu' },
@@ -586,7 +614,7 @@
     },
     {
       id: 'confidence',
-      label: 'Confidence (0–10)',
+      label: uiText('Confidence (0–10)'),
       min: 0,
       max: 10,
       minLabel: { nl: 'Geen vertrouwen', en: 'Not confident at all', de: 'Gar kein Vertrauen' },
@@ -594,7 +622,7 @@
     },
     {
       id: 'readiness',
-      label: 'Readiness to try (0–10)',
+      label: uiText('Readiness to try (0–10)'),
       min: 0,
       max: 10,
       minLabel: { nl: 'Nog niet klaar', en: 'Not ready yet', de: 'Noch nicht bereit' },
@@ -602,7 +630,7 @@
     },
     {
       id: 'impact',
-      label: 'Daily impact (0–10)',
+      label: uiText('Daily impact (0–10)'),
       min: 0,
       max: 10,
       minLabel: { nl: 'Geen invloed', en: 'No impact', de: 'Kein Einfluss' },
@@ -613,86 +641,86 @@
   var EXPEDITION_TEMPLATES = {
     blank: {
       key: 'blank',
-      label: 'Clean Blank Canvas (1 empty station)',
+      label: uiText('Clean Blank Canvas (1 empty station)'),
       stations: 1,
       steps: 1,
       minutes: 5,
-      summary: 'Start from scratch with one neutral station and one blank step.',
-      outline: ['Station 1 · Blank starter step'],
+      summary: uiText('Start from scratch with one neutral station and one blank step.'),
+      outline: [uiText('Station 1 · Blank starter step')],
     },
     'bps-skeleton': {
       key: 'bps-skeleton',
-      label: 'Biopsychosocial 3-Station Skeleton (Bio · Psycho · Social)',
+      label: uiText('Biopsychosocial 3-Station Skeleton (Bio · Psycho · Social)'),
       stations: 3,
       steps: 7,
       minutes: 15,
-      summary: 'Three pre-structured BPS stations with opening question, video, triad, balance scale, and mini-plan.',
+      summary: uiText('Three pre-structured BPS stations with opening question, video, triad, balance scale, and mini-plan.'),
       outline: [
-        'Station 1 (Bio) · Opening question, video & reflection',
-        'Station 2 (Psycho) · BPS overview, slider & sources',
-        'Station 3 (Social) · Balance scale & mini-plan',
+        uiText('Station 1 (Bio) · Opening question, video & reflection'),
+        uiText('Station 2 (Psycho) · BPS overview, slider & sources'),
+        uiText('Station 3 (Social) · Balance scale & mini-plan'),
       ],
     },
     showcase: {
       key: 'showcase',
-      label: 'xPED Showcase Example (2 stations with sample blocks)',
+      label: uiText('xPED Showcase Example (2 stations with sample blocks)'),
       stations: 2,
       steps: 5,
       minutes: 10,
-      summary: 'Ready-to-preview pilot with a filled Myth vs. Fact, explainer step, balance scale, and mini-plan.',
+      summary: uiText('Ready-to-preview pilot with a filled Myth vs. Fact, explainer step, balance scale, and mini-plan.'),
       outline: [
-        'Station 1 · Myth vs. Fact, video & reflection',
-        'Station 2 · Balance scale & personal mini-plan',
+        uiText('Station 1 · Myth vs. Fact, video & reflection'),
+        uiText('Station 2 · Balance scale & personal mini-plan'),
       ],
     },
   };
 
   var FIELD_LABELS = {
-    'summaryTitle': 'Title', 'summaryIntro': 'Introduction', 'summaryPlanHeading': 'Mini-plan heading', 'summaryClosing': 'Closing text',
-    heading: 'Heading',
-    body: 'Body text',
-    title: 'Title',
-    subtitle: 'Subtitle',
-    caption: 'Caption',
-    transcript: 'Transcript',
-    alt: 'Image description (alt text)',
-    sideHeading: 'Side panel heading',
-    sideBody: 'Side panel text',
-    description: 'Description',
-    speakerRole: 'Speaker role',
-    speakerName: 'Speaker name',
-    agentBrief: 'Designer brief',
-    quote: 'Quote',
-    question: 'Question',
-    explanation: 'Explanation',
-    statement: 'Statement',
-    sourceLabel: 'Source label',
-    minLabel: 'Low end label',
-    maxLabel: 'High end label',
-    feedback: 'Feedback',
-    prompt: 'Prompt',
-    placeholder: 'Input placeholder',
-    helperNote: 'Helper note',
-    instruction: 'Instruction',
-    intro: 'Introduction',
-    loadLabel: 'Load side label',
-    resourceLabel: 'Resources side label',
-    overloadTip: 'Overload guidance',
-    balancedTip: 'Balanced guidance',
-    bioTitle: 'Biological heading',
-    bioBody: 'Biological explanation',
-    psychoTitle: 'Psychological heading',
-    psychoBody: 'Psychological explanation',
-    socialTitle: 'Social heading',
-    socialBody: 'Social explanation',
-    options: 'Option',
-    items: 'Item',
-    pins: 'Pin',
-    factors: 'Factor',
-    suggestions: 'Suggestion',
-    label: 'Label',
-    detail: 'Detail',
-    citation: 'Reference',
+    'summaryTitle': uiText('Title'), 'summaryIntro': uiText('Introduction'), 'summaryPlanHeading': uiText('Mini-plan heading'), 'summaryClosing': uiText('Closing text'),
+    heading: uiText('Heading'),
+    body: uiText('Body text'),
+    title: uiText('Title'),
+    subtitle: uiText('Subtitle'),
+    caption: uiText('Caption'),
+    transcript: uiText('Transcript'),
+    alt: uiText('Image description (alt text)'),
+    sideHeading: uiText('Side panel heading'),
+    sideBody: uiText('Side panel text'),
+    description: uiText('Description'),
+    speakerRole: uiText('Speaker role'),
+    speakerName: uiText('Speaker name'),
+    agentBrief: uiText('Designer brief'),
+    quote: uiText('Quote'),
+    question: uiText('Question'),
+    explanation: uiText('Explanation'),
+    statement: uiText('Statement'),
+    sourceLabel: uiText('Source label'),
+    minLabel: uiText('Low end label'),
+    maxLabel: uiText('High end label'),
+    feedback: uiText('Feedback'),
+    prompt: uiText('Prompt'),
+    placeholder: uiText('Input placeholder'),
+    helperNote: uiText('Helper note'),
+    instruction: uiText('Instruction'),
+    intro: uiText('Introduction'),
+    loadLabel: uiText('Load side label'),
+    resourceLabel: uiText('Resources side label'),
+    overloadTip: uiText('Overload guidance'),
+    balancedTip: uiText('Balanced guidance'),
+    bioTitle: uiText('Biological heading'),
+    bioBody: uiText('Biological explanation'),
+    psychoTitle: uiText('Psychological heading'),
+    psychoBody: uiText('Psychological explanation'),
+    socialTitle: uiText('Social heading'),
+    socialBody: uiText('Social explanation'),
+    options: uiText('Option'),
+    items: uiText('Item'),
+    pins: uiText('Pin'),
+    factors: uiText('Factor'),
+    suggestions: uiText('Suggestion'),
+    label: uiText('Label'),
+    detail: uiText('Detail'),
+    citation: uiText('Reference'),
   };
 
   function getBlockMeta(type) {
@@ -818,9 +846,43 @@
     return out;
   }
 
+  // Academy uses formal German in learner-facing guidance, including the author preview.
+  var ACADEMY_LEARNER_DE = {
+    courseHighlights: 'Was Sie erwartet',
+    answerPrivacy: 'Über Ihre Antworten',
+    reflectionAccess: 'Das Kursteam kann Ihre Reflexion lesen.',
+    consentCohort: 'Ihre geteilten Antworten werden der Gruppe {group} zugeordnet.',
+    consentChangeNote: 'Ihre Wahl gilt ab jetzt. Bereits geteilte Antworten bleiben beim Kursteam.',
+    consentIntro: 'Sie können die gesamte Expedition unabhängig von Ihrer Wahl durchlaufen.',
+    consentQuestion: 'Möchten Sie Ihre Antworten mit dem Kursteam teilen?',
+    consentPrivateNote: 'Ihre neuen Antworten und Ihr weiterer Fortschritt bleiben auf diesem Gerät.',
+    consentFeedback: 'Das Kursteam kann auch die Rückmeldungen lesen, die Sie einsenden.',
+    authorAccess: 'Das Kursteam erhält Ihren Fortschritt und Ihre Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
+    deviceResume: 'Ihre Antworten werden auf diesem Gerät gespeichert, damit Sie später fortfahren können.',
+    sharedWords: 'Wörter, die Sie zu einer geteilten Wortwolke hinzufügen, sind für andere Teilnehmende sichtbar.',
+    routeTitle: 'Ihre Expeditionsroute',
+    yourAnswer: 'Ihre Auswahl',
+    savedAutomatically: 'Ihr Fortschritt wird automatisch auf diesem Gerät gespeichert. Sie können jederzeit eine Pause machen.',
+    summaryTitle: 'Ihre Expedition im Überblick',
+    summarySubtitle: 'Hier sehen Sie, was Sie aus der Expedition mitnehmen.',
+    summaryEmpty: 'Sie haben diese Expedition abgeschlossen.',
+    summaryCopyManual: 'Markieren und kopieren Sie den folgenden Text.',
+    revealHint: 'Beantworten Sie zuerst die Frage oben, um die Erklärung zu sehen.',
+    pilotTitle: 'Wie war der Pilotkurs für Sie?',
+    pilotEngagement: 'Wie ansprechend fanden Sie die Gestaltung? (1–5)',
+    pilotComment: 'Was hat Ihnen gefallen? Was können wir verbessern?',
+    pilotThanks: 'Vielen Dank für Ihre Rückmeldung.',
+    hotspotListLabel: 'Wählen Sie einen Punkt.',
+    hotspotUnselected: 'Wählen Sie einen Punkt auf dem Bild, um die Erklärung zu lesen.',
+    partialCorrect: 'Ein Teil ist richtig. Lesen Sie die Erklärung unten.',
+    wordsLimitReached: 'Sie haben {max} Wörter hinzugefügt. Entfernen Sie zuerst ein Wort, um ein neues einzutragen.',
+    goalsLimitReached: 'Sie haben {max} Schritte ausgewählt. Wählen Sie zuerst einen ab, um einen weiteren hinzuzufügen.'
+  };
+
   function ui(lang, key, vars) {
     var dict = UI_STRINGS[lang] || UI_STRINGS.nl;
-    var text = dict[key] || UI_STRINGS.en[key] || key;
+    var formal = root.Xped?.i18n && lang === 'de' && ACADEMY_LEARNER_DE[key];
+    var text = formal || dict[key] || UI_STRINGS.en[key] || key;
     if (vars) {
       Object.keys(vars).forEach(function (k) {
         text = text.replace('{' + k + '}', String(vars[k]));
@@ -1145,7 +1207,7 @@
     return mod;
   }
 
-  function createExpeditionPreset(presetKey, title, defaultLang) {
+  function createExpeditionPreset(presetKey, title, defaultLang, options) {
     var lang = SUPPORTED_LANGS.indexOf(defaultLang) >= 0 ? defaultLang : 'nl';
     var cleanTitle = title || 'Untitled Expedition';
     var startTitle = loc('', '', '');
@@ -1175,6 +1237,10 @@
       glossary: DEFAULT_GLOSSARY.map(function (g) { return Object.assign({}, g); }),
       modules: [],
     };
+    if (options?.academy) {
+      var coverId = { 'bps-skeleton': 'rustmoment', showcase: 'eerste-stappen' }[presetKey] || 'samen-op-route';
+      base.startPage.heroMedia.staticPath = XPED_ASSETS.find(function (asset) { return asset.id === coverId; }).path;
+    }
     if (presetKey === 'bps-skeleton') {
       var mBio = createModule('ask-teach-reflect', 0);
       mBio.title = loc('Station 1: Het zenuwstelsel (Bio)', 'Station 1: The nervous system (Bio)', '');
@@ -1213,6 +1279,7 @@
   function extractTranslationRows(exp, sourceLang, targetLang) {
     var src = sourceLang || 'nl';
     var tgt = targetLang || 'de';
+    var canRequireReview = !root.Xped || tgt !== (exp.defaultLanguage || 'nl');
     var altLang = SUPPORTED_LANGS.find(function (lang) { return lang !== src && lang !== tgt; });
     var rows = [];
     function pushField(key, location, locObj, blockId) {
@@ -1222,7 +1289,7 @@
       var tgtVal = String(locObj[tgt] || '');
       var anyVal = String(locObj.nl || '') + String(locObj.en || '') + String(locObj.de || '');
       if (!anyVal.trim()) return;
-      var needsReview = !!(locObj._review && locObj._review[tgt]);
+      var needsReview = canRequireReview && !!(locObj._review && locObj._review[tgt]);
       var status = needsReview ? 'needs_review' : (tgtVal.trim() ? 'translated' : 'untranslated');
       rows.push({
         key: key,
@@ -1568,7 +1635,25 @@
     return { expedition: expedition, conflicts: conflicts };
   }
 
+  // Share the Studio domain model across deployments; links stay on their data-owning site.
+  function coursePaths(id) {
+    var component = encodeURIComponent(id);
+    var academy = !!(root.Xped && root.Xped.bootstrap);
+    var base = (academy ? '/expedities/' : '/physio/elearning/') + component;
+    return {
+      overview: academy ? base : base + '/edit',
+      edit: base + (academy ? '/bewerken' : '/edit'),
+      report: base + (academy ? '/resultaten' : '/responses'),
+    };
+  }
+
+  function learnerPath(token) {
+    return ((root.Xped && root.Xped.bootstrap) ? '/start/' : '/elearning/p/') + encodeURIComponent(token);
+  }
+
   var api = {
+    coursePaths: coursePaths,
+    learnerPath: learnerPath,
     mergeCourseEdits: mergeCourseEdits,
     SUPPORTED_LANGS: SUPPORTED_LANGS,
     LANG_LABELS: LANG_LABELS,

@@ -12,15 +12,16 @@ from collections import Counter, OrderedDict
 from itertools import chain
 from statistics import median
 from threading import Lock
+from urllib.parse import quote
 from copy import deepcopy
 
-from flask import current_app, g, jsonify, request, send_file
+from flask import current_app, g, jsonify, request, send_file, url_for
 from google.cloud.firestore_v1.field_path import FieldPath
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.books.model import BookError
-from lecture_processor.domains.elearning import model
+from lecture_processor.domains.elearning import model, reporting
 from lecture_processor.domains.shared import sanitize_csv_cell, sanitize_csv_row
 from lecture_processor.repositories.elearning_repo import ElearningStore
 from lecture_processor.services import access_service, book_storage, elearning_storage
@@ -61,6 +62,11 @@ def _store(runtime) -> ElearningStore:
 
 def _exp_path(expedition_id: str) -> str:
     return 'elearning_expeditions/' + model.identifier(expedition_id, 'expedition id')
+
+
+def _grant_path(token: str) -> str:
+    endpoint = 'academy.translator' if current_app.config.get('XPED_ACADEMY') else 'elearning.translator_page'
+    return url_for(endpoint, grant_token=token)
 
 
 def _grant_serializer() -> URLSafeTimedSerializer:
@@ -150,9 +156,19 @@ def _role_rank(role: str) -> int:
     return {'owner': 3, 'edit': 2, 'translate': 1}.get(role, 0)
 
 
-def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
+def _check_translation_language(lang):
+    if current_app.config.get('XPED_ACADEMY') and lang == 'en':
+        raise model.ElearningError('English course text is archived. Choose Dutch or German to edit a translation.', 403)
+
+
+def access(runtime, expedition_id: str, required: str = 'translate', unit=None, *, course_fields=None):
     db = unit if unit is not None else _store(runtime)
-    exp = db.get(_exp_path(expedition_id))
+    path = _exp_path(expedition_id)
+    if course_fields is None:
+        exp = db.get(path)
+    else:
+        # Always read every field used to authorize the caller, even on a projection.
+        exp = db.get(path, fields={'owner_uid', 'members', 'copying', 'deleted', *course_fields})
     if not exp or exp.get('deleted') or exp.get('copying'):
         raise model.ElearningError('This expedition is unavailable.', 404)
 
@@ -197,6 +213,7 @@ def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
             if _role_rank(grant_role) > _role_rank(role):
                 role = grant_role
                 grant_lang = str(grant.get('target_language') or '')
+                _check_translation_language(grant_lang)
                 who['grant_id'] = grant['id']
             if not uid:
                 who['id'] = str(claims.get('guest') or grant['id'])
@@ -243,10 +260,6 @@ def _summary_card(exp: dict, role: str) -> dict:
     modules = exp.get('modules') or []
     step_count = sum(len(m.get('steps') or []) for m in modules)
     share = exp.get('share') or {}
-    start_page = exp.get('startPage') or {}
-    cover_media = model.safe_media_ref((start_page.get('heroMediaOverrides') or {}).get(exp.get('defaultLanguage')))
-    if cover_media['kind'] == 'none':
-        cover_media = model.safe_media_ref(start_page.get('heroMedia'))
     return {
         'id': exp['id'],
         'title': exp.get('title', 'Untitled Expedition'),
@@ -260,8 +273,8 @@ def _summary_card(exp: dict, role: str) -> dict:
         'collectResponses': model.collects_responses(share),
         'shareEnabled': bool(share.get('enabled') and not exp.get('deleted')),
         'shareToken': share.get('token', '') if role in ('owner', 'edit') else '',
-        'coverMedia': cover_media,
-        'languageCoverage': model.compute_language_coverage(exp),
+        'coverMedia': model.course_cover(exp),
+        'languageCoverage': model.compute_language_coverage(exp, canonical_source=current_app.config.get('XPED_ACADEMY')),
         'updatedAt': exp.get('updated_at', 0),
         'createdAt': exp.get('created_at', 0),
     }
@@ -285,7 +298,7 @@ def _assert_lease(exp: dict, who: dict, body: dict) -> None:
         raise model.ElearningError('A newer version was saved by a collaborator. Reload before saving.', 409)
 
 
-def list_expeditions(runtime):
+def accessible_expeditions(runtime):
     user = identity(runtime, required=True)
     db = _store(runtime)
     email = _verified_member_email(user)
@@ -295,20 +308,33 @@ def list_expeditions(runtime):
     limit = None if academy else 200
     owned = db.stream('elearning_expeditions', 'owner_uid', user['uid'], limit=limit) if can_create else ()
     shared = db.stream('elearning_expeditions', 'member_emails', email, 'array_contains', limit=limit) if email else ()
-    combined = {}
-    for exp in chain(owned, shared):
-        if exp.get('copying') or (exp.get('deleted') and exp.get('owner_uid') != user['uid']):
-            continue
-        eid = exp.get('id') or exp.get('_id')
-        if not eid:
-            continue
-        role = 'owner' if exp.get('owner_uid') == user['uid'] else str((exp.get('members') or {}).get(email, ''))
-        if not role or (role == 'owner' and not can_create):
-            continue
-        combined[eid] = _summary_card(exp, role)
+    def permitted():
+        seen = set()
+        for exp in chain(owned, shared):
+            if exp.get('copying') or (exp.get('deleted') and exp.get('owner_uid') != user['uid']):
+                continue
+            eid = exp.get('id') or exp.get('_id')
+            if not eid or eid in seen:
+                continue
+            role = 'owner' if exp.get('owner_uid') == user['uid'] else (exp.get('members') or {}).get(email)
+            if role not in ('owner', 'edit', 'translate') or (role == 'owner' and not can_create):
+                continue
+            seen.add(eid)
+            yield eid, exp, role
+
+    return user, db, can_create, permitted()
+
+
+def list_expeditions(runtime):
+    academy = current_app.config.get('XPED_ACADEMY')
+    user, db, can_create, courses = accessible_expeditions(runtime)
+    items = []
+    for _, exp, role in courses:
+        card = _summary_card(exp, role)
         if role == 'owner' and academy:
-            combined[eid]['folderId'] = exp.get('folder_id', '')
-    items = sorted(combined.values(), key=lambda x: x.get('updatedAt', 0), reverse=True)
+            card['folderId'] = exp.get('folder_id', '')
+        items.append(card)
+    items.sort(key=lambda x: x.get('updatedAt', 0), reverse=True)
     capabilities = {'canCreate': can_create} if academy else {}
     if academy and can_create:
         folders = db.list(f"academy_users/{user['uid']}/folders", limit=None)
@@ -381,6 +407,9 @@ def create_expedition(runtime):
             title=title,
             default_lang=str(raw.get('defaultLanguage') or 'nl'),
         )
+        if current_app.config.get('XPED_ACADEMY'):
+            normalized['defaultLanguage'] = 'de' if raw.get('defaultLanguage') == 'de' else 'nl'
+            normalized['enabledLanguages'] = ['nl', 'de']
     eid = model.new_id('exp')
     share_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
     ts = now()
@@ -490,9 +519,13 @@ def save_expedition(runtime, expedition_id: str):
         next_exp = deepcopy(current)
         next_exp.update(normalized)
         elearning_storage.attach_new_media(unit, current, next_exp)
-        model.mark_translations_for_review(current, next_exp, edited_lang)
+        model.mark_translations_for_review(
+            current, next_exp, edited_lang, canonical_source=current_app.config.get('XPED_ACADEMY'),
+        )
         next_exp['revision'] = int(current.get('revision', 1)) + 1
         next_exp['updated_at'] = now()
+        if current_app.config.get('XPED_ACADEMY'):
+            reporting.record_public_revision(next_exp, next_exp['updated_at'])
         unit.put(_exp_path(expedition_id), next_exp)
         return next_exp
 
@@ -514,7 +547,13 @@ def duplicate_expedition(runtime, expedition_id: str):
     _require_author(runtime, user)
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     copy_payload = model.normalize_expedition_payload(exp)
-    copy_payload['title'] = (copy_payload['title'] + ' (Copy)')[:200]
+    academy = current_app.config.get('XPED_ACADEMY')
+    if academy:
+        options = request.get_json(silent=True)
+        german = isinstance(options, dict) and options.get('interfaceLanguage') == 'de'
+        copy_payload['title'] = (('Kopie von ' if german else 'Kopie van ') + copy_payload['title'])[:200]
+    else:
+        copy_payload['title'] = (copy_payload['title'] + ' (Copy)')[:200]
     new_eid = model.new_id('exp')
     share_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
     ts = now()
@@ -577,7 +616,10 @@ def duplicate_expedition(runtime, expedition_id: str):
         except Exception:
             elearning_storage.delete_expedition(db, new_eid, user['uid'])
             raise
-    return jsonify(expedition=_public_studio_view(doc, 'owner')), 201
+    result = {'expedition': _public_studio_view(doc, 'owner')}
+    if academy:
+        result['summary'] = {**_summary_card(doc, 'owner'), 'folderId': doc.get('folder_id', '')}
+    return jsonify(result), 201
 
 
 def _is_studio_admin(runtime, user):
@@ -678,6 +720,21 @@ def export_course_content(runtime, expedition_id: str):
     return jsonify(course=content, excludedUploads=excluded_uploads, exceedsImportLimits=exceeds_limits)
 
 
+def _take_member_undo(course, email):
+    """Pop only this member's undo and expire old undo records on the same write."""
+    entries = course.get('_memberUndo') or {}
+    if 'nonce' in entries:  # Accept a short-lived marker issued by the previous format.
+        entries = {entries['email']: entries}
+    current = now()
+    active = {key: value for key, value in entries.items() if value['until'] >= current}
+    marker = active.pop(_digest(email), {})
+    if active:
+        course['_memberUndo'] = active
+    else:
+        course.pop('_memberUndo', None)
+    return marker
+
+
 def sharing(runtime, expedition_id: str, *, admin=False):
     if admin:
         _require_studio_admin(runtime)
@@ -692,10 +749,11 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 'label': g.get('label', ''),
                 'revoked': bool(g.get('revoked')),
                 'createdAt': g.get('created_at', 0),
-                'urlPath': '/elearning/translate/' + g['token'] if not g.get('revoked') else '',
+                'lastOpenedAt': g.get('last_opened_at', 0),
+                'urlPath': _grant_path(g['token']) if not g.get('revoked') else '',
             }
             for g in db.list('elearning_grants', 'expedition_id', expedition_id)
-            if not g.get('revoked')
+            if not g.get('revoked') and not (current_app.config.get('XPED_ACADEMY') and g.get('target_language') == 'en')
         ]
         members = [{'email': em, 'role': r} for em, r in sorted((exp.get('members') or {}).items())]
         share = dict(exp.get('share') or {})
@@ -728,16 +786,35 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             if 'pausedMessage' in body:
                 share['pausedMessage'] = model.safe_text(body['pausedMessage'], 400)
             if body.get('rotateToken'):
+                if current_app.config.get('XPED_ACADEMY') and body.get('confirmTitle') != exp.get('title'):
+                    raise model.ElearningError('Typ de huidige titel van de expeditie om de link te vernieuwen.', 409)
                 old_token = share.get('token', '')
                 new_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
                 share['token'] = new_token
                 if old_token:
                     unit.delete('elearning_share_index/' + old_token)
                 unit.put('elearning_share_index/' + new_token, {'expedition_id': expedition_id, 'updated_at': now()})
+            first_publication = share.get('enabled') and not (exp.get('share') or {}).get('enabled')
             exp['share'] = share
+            if current_app.config.get('XPED_ACADEMY') and first_publication:
+                reporting.record_public_revision(exp, now())
             exp['updated_at'] = now()
             unit.put(_exp_path(expedition_id), exp)
             return jsonify(share=share)
+
+        if action == 'restore_member':
+            email = model.safe_email(body.get('email'))
+            marker = _take_member_undo(exp, email)
+            if not marker or marker['nonce'] != body.get('undo'):
+                raise model.ElearningError('Deze wijziging kan niet meer ongedaan worden gemaakt.', 409)
+            _allow_invitation(runtime, unit, email)
+            members = dict(exp.get('members') or {})
+            if email in members or len(members) >= 20:
+                raise model.ElearningError('De toegangsrechten zijn gewijzigd.', 409)
+            members[email] = marker['role']
+            exp.update(members=members, member_emails=sorted(members), updated_at=now())
+            unit.put(_exp_path(expedition_id), exp)
+            return jsonify(restored=True)
 
         if action == 'add_member':
             email = model.safe_email(body.get('email'))
@@ -748,6 +825,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             members = dict(exp.get('members') or {})
             if len(members) >= 20 and email not in members:
                 raise model.ElearningError('Maximum 20 collaborators per expedition.', 400)
+            _take_member_undo(exp, email)
             members[email] = member_role
             exp['members'] = members
             exp['member_emails'] = sorted(members.keys())
@@ -758,18 +836,24 @@ def sharing(runtime, expedition_id: str, *, admin=False):
         if action == 'remove_member':
             email = model.safe_email(body.get('email'))
             members = dict(exp.get('members') or {})
-            members.pop(email, None)
+            previous_role = members.pop(email, None)
+            marker = _take_member_undo(exp, email)
+            if previous_role and current_app.config.get('XPED_ACADEMY'):
+                marker = {'role': previous_role, 'nonce': secrets.token_urlsafe(16), 'until': now() + 12}
+            if marker:
+                exp.setdefault('_memberUndo', {})[_digest(email)] = marker
             exp['members'] = members
             exp['member_emails'] = sorted(members.keys())
             exp['updated_at'] = now()
             unit.put(_exp_path(expedition_id), exp)
-            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())])
+            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())], undo=marker.get('nonce', ''))
 
         if action == 'create_grant':
             grant_role = str(body.get('role') or 'translate').strip()
             if grant_role not in ('translate', 'edit'):
                 raise model.ElearningError('Grant role must be translate or edit.', 400)
             target_lang = model.normalize_lang(body.get('targetLanguage') or 'de')
+            _check_translation_language(target_lang)
             label = model.safe_text(body.get('label') or f'{target_lang.upper()} Editor', 80).strip()
             gid = model.new_id('grt')
             raw_token = secrets.token_urlsafe(24)
@@ -792,19 +876,34 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 'role': grant_role,
                 'targetLanguage': target_lang,
                 'label': label,
-                'urlPath': '/elearning/translate/' + raw_token,
+                'urlPath': _grant_path(raw_token),
             }), 201
 
-        if action == 'revoke_grant':
+        if action in ('revoke_grant', 'restore_grant'):
             gid = model.identifier(body.get('grantId'), 'grant id')
             grant = unit.get('elearning_grants/' + gid)
             if not grant or grant.get('expedition_id') != expedition_id:
                 raise model.ElearningError('Invite link not found.', 404)
+            if action == 'restore_grant':
+                if not grant.get('revoked') or not grant.get('undo') or grant['undo'] != body.get('undo') or grant.get('undo_until', 0) < now():
+                    raise model.ElearningError('Deze wijziging kan niet meer ongedaan worden gemaakt.', 409)
+                grant.update(revoked=False)
+                grant.pop('undo', None)
+                grant.pop('undo_until', None)
+                unit.put('elearning_grants/' + gid, grant)
+                unit.put('elearning_grant_tokens/' + grant['token_hash'], {'grant_id': gid, 'expedition_id': expedition_id})
+                return jsonify(restored=True)
+            nonce = ''
+            grant.pop('undo', None)
+            grant.pop('undo_until', None)
+            if current_app.config.get('XPED_ACADEMY') and not grant.get('revoked'):
+                nonce = secrets.token_urlsafe(16)
+                grant.update(undo=nonce, undo_until=now() + 12)
             grant['revoked'] = True
             unit.put('elearning_grants/' + gid, grant)
             if grant.get('token_hash'):
                 unit.delete('elearning_grant_tokens/' + grant['token_hash'])
-            return jsonify(revoked=True)
+            return jsonify(revoked=True, undo=nonce)
 
         raise model.ElearningError('Unsupported sharing action.', 400)
 
@@ -823,6 +922,17 @@ def exchange_grant(runtime):
     grant = db.get('elearning_grants/' + model.identifier(idx['grant_id'], 'grant'))
     if not grant or grant.get('revoked'):
         raise model.ElearningError('This translator link has been revoked.', 410)
+    _check_translation_language(grant.get('target_language'))
+    if current_app.config.get('XPED_ACADEMY') and now() - grant.get('last_opened_at', 0) >= 3600:
+        def stamp(unit):
+            path = 'elearning_grants/' + grant['id']
+            latest = unit.get(path)
+            if not latest or latest.get('revoked'):
+                raise model.ElearningError('This translator link has been revoked.', 410)
+            if now() - latest.get('last_opened_at', 0) >= 3600:
+                latest['last_opened_at'] = now()
+                unit.put(path, latest)
+        db.atomic(stamp)
     guest_name = model.safe_text(body.get('name') or grant.get('label') or 'Translator', 60)
     signed = _grant_serializer().dumps({
         'grant': grant['id'],
@@ -843,6 +953,7 @@ def save_translations(runtime, expedition_id: str):
     target_lang = model.normalize_lang(body.get('targetLanguage') or grant_lang or 'de', '')
     if not target_lang:
         raise model.ElearningError('Choose a valid target language (nl, en, or de).', 400)
+    _check_translation_language(target_lang)
     if grant_lang and target_lang != grant_lang:
         raise model.ElearningError(f'This translator link is scoped to {grant_lang.upper()}.', 403)
     if body.get('modules') is not None or body.get('startPage') is not None:
@@ -852,10 +963,14 @@ def save_translations(runtime, expedition_id: str):
 
     def txn(unit):
         _, current, _, _, _ = access(runtime, expedition_id, 'translate', unit=unit)
-        patched = model.apply_translation_patch(current, target_lang, text_updates, media_updates)
+        patched = model.apply_translation_patch(
+            current, target_lang, text_updates, media_updates, canonical_source=current_app.config.get('XPED_ACADEMY'),
+        )
         elearning_storage.attach_new_media(unit, current, patched)
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
+        if current_app.config.get('XPED_ACADEMY'):
+            reporting.record_public_revision(patched, patched['updated_at'])
         unit.put(_exp_path(expedition_id), patched)
         return patched
 
@@ -867,7 +982,8 @@ def export_translations_csv(runtime, expedition_id: str):
     _, exp, _, _, grant_lang = access(runtime, expedition_id, required='translate')
     source_lang = model.normalize_lang(request.args.get('source', exp.get('defaultLanguage', 'nl')))
     target_lang = model.normalize_lang(request.args.get('target', grant_lang or 'de'))
-    rows = model.extract_translation_rows(exp, source_lang=source_lang, target_lang=target_lang)
+    rows = model.extract_translation_rows(exp, source_lang=source_lang, target_lang=target_lang,
+                                          canonical_source=current_app.config.get('XPED_ACADEMY'))
     csv_data = model.translation_rows_to_csv(rows, target_lang=target_lang)
     filename = f"xped-translations-{expedition_id}-{target_lang}.csv"
     return send_file(
@@ -881,6 +997,7 @@ def export_translations_csv(runtime, expedition_id: str):
 def import_translations_csv(runtime, expedition_id: str):
     db, _, role, _, grant_lang = access(runtime, expedition_id, required='translate')
     target_lang = model.normalize_lang(request.args.get('target') or (request.form.get('targetLanguage') if request.form else '') or grant_lang or 'de', '')
+    _check_translation_language(target_lang)
     if grant_lang and target_lang != grant_lang:
         raise model.ElearningError(f'This translator link is scoped to {grant_lang.upper()}.', 403)
     if 'file' in request.files:
@@ -901,9 +1018,13 @@ def import_translations_csv(runtime, expedition_id: str):
                     for k, v in updates.items() if k in original}
         if not filtered:
             raise model.ElearningError('No matching translation keys found in this CSV.', 400)
-        patched = model.apply_translation_patch(current, target_lang, filtered)
+        patched = model.apply_translation_patch(
+            current, target_lang, filtered, canonical_source=current_app.config.get('XPED_ACADEMY'),
+        )
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
+        if current_app.config.get('XPED_ACADEMY'):
+            reporting.record_public_revision(patched, patched['updated_at'])
         unit.put(_exp_path(expedition_id), patched)
         return patched, len(filtered)
 
@@ -946,13 +1067,16 @@ def upload_asset(runtime, expedition_id: str):
     }), 201
 
 
-def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str):
+def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str, *, author_metadata=False):
     aid = model.identifier(asset_id, 'asset id')
     meta = db.get('elearning_assets/' + aid)
     if not meta or meta.get('expedition_id') != expedition_id or not meta.get('ready', True):
         raise model.ElearningError('Asset not found.', 404)
     if request.method == 'HEAD':
         response = current_app.response_class(mimetype=meta.get('content_type', 'application/octet-stream'))
+        response.headers['Cache-Control'] = 'private, no-store'
+        if author_metadata and meta.get('filename'):
+            response.headers['Content-Disposition'] = "inline; filename*=UTF-8''" + quote(meta['filename'], safe='')
         if 'size' in meta:
             response.content_length = meta['size']
         return response
@@ -967,7 +1091,7 @@ def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str):
 
 def get_asset(runtime, expedition_id: str, asset_id: str):
     db, _, _, _, _ = access(runtime, expedition_id, required='translate')
-    return _serve_asset(db, expedition_id, asset_id)
+    return _serve_asset(db, expedition_id, asset_id, author_metadata=True)
 
 
 def _media_session(who):
@@ -1028,23 +1152,60 @@ def _resolve_public_expedition(runtime, share_token: str, unit=None):
         raise model.ElearningError('This expedition is no longer available.', 404)
     share = exp.get('share') or {}
     if share.get('token') != safe_token:
-        raise model.ElearningError('This expedition link has expired.', 410)
+        raise model.ElearningError('This expedition link has expired.', 410, code='link_expired')
     if not share.get('enabled'):
         raise model.ElearningError(
             str(share.get('pausedMessage') or 'This learning module is temporarily paused.'),
-            410,
+            410, code='author_message' if share.get('pausedMessage') else 'link_paused',
         )
     return db, exp
 
 
-def public_get_expedition(runtime, share_token: str):
+def _public_course(exp):
+    public = model.sanitize_public_expedition(exp)
+    if not current_app.config.get('XPED_ACADEMY'):
+        return public
+
+    # Hidden stations do not disqualify a translation of what participants actually see.
+    coverage = model.compute_language_coverage(public, canonical_source=True)
+    available = [lang for lang in ('nl', 'de') if lang in coverage and coverage[lang]['total']
+                 and coverage[lang]['translated'] == coverage[lang]['total'] and not coverage[lang]['needsReview']]
+    if not available:
+        raise model.ElearningError('There is no reviewed course language available yet.', 410)
+    public['enabledLanguages'] = available
+    if public['defaultLanguage'] not in available:
+        public['defaultLanguage'] = available[0]
+
+    # The public copy also omits unoffered text and language-specific media.
+    # The stored expedition and its author export preserve the full historical document.
+    excluded = (set(model.SUPPORTED_LANGUAGES) - set(available)) | {'_review'}
+
+    def remove_unoffered(value):
+        if isinstance(value, list):
+            for item in value:
+                remove_unoffered(item)
+        elif isinstance(value, dict):
+            for key in excluded:
+                value.pop(key, None)
+            for field in value.values():
+                remove_unoffered(field)
+
+    remove_unoffered(public)
+    return public
+
+
+def public_payload(runtime, share_token: str) -> dict:
     _, exp = _resolve_public_expedition(runtime, share_token)
-    return jsonify(expedition=model.sanitize_public_expedition(exp))
+    return _public_course(exp)
+
+
+def public_get_expedition(runtime, share_token: str):
+    return jsonify(expedition=public_payload(runtime, share_token))
 
 
 def public_get_asset(runtime, share_token: str, asset_id: str):
     db, exp = _resolve_public_expedition(runtime, share_token)
-    public = model.sanitize_public_expedition(exp)
+    public = _public_course(exp)
     if asset_id not in model.media_ids(public):
         raise model.ElearningError('Asset not found.', 404)
     return _serve_asset(db, exp['id'], asset_id)
@@ -1153,6 +1314,15 @@ def public_submit_response(runtime, share_token: str):
                 else:
                     peer_answers.pop(bid, None)
                 answers[bid] = answer
+        timing = {}
+        if current_app.config.get('XPED_ACADEMY'):
+            # Consent belongs to one session. Older response records cannot start measuring
+            # without a fresh session after the learner sees and accepts the disclosure.
+            existing_disclosure = old.get('activeTimeDisclosure') == 1
+            explicit_disclosure = type(body.get('activeTimeDisclosure')) is int and body['activeTimeDisclosure'] == 1
+            if existing_disclosure or (not old and explicit_disclosure):
+                timing['activeTimeDisclosure'] = 1
+                timing['stepSeconds'] = reporting.merge_seconds(old.get('stepSeconds'), body.get('stepSeconds') if explicit_disclosure else None, steps)
         visited = list(old.get('visitedStepIds') or [])
         if isinstance(body.get('visitedStepIds'), list):
             visited.extend(s for s in body['visitedStepIds'] if isinstance(s, str) and s in steps)
@@ -1179,7 +1349,8 @@ def public_submit_response(runtime, share_token: str):
         tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], 'session_id': session_id,
                       'cohort': cohort, 'language': lang, 'answers': answers, 'peerAnswers': peer_answers,
                       'consentVersion': options['collectionVersion'], 'consented_at': old.get('consented_at', ts),
-                      'visitedStepIds': list(dict.fromkeys(visited)), 'completed': bool(body.get('completed') or old.get('completed')),
+                      'visitedStepIds': list(dict.fromkeys(visited)), **timing,
+                      'completed': bool(body.get('completed') or old.get('completed')),
                       'pilotFeedback': feedback, 'stepComments': comments, 'started_at': old.get('started_at', ts), 'updated_at': ts})
 
     _store(runtime).atomic(save)
@@ -1294,6 +1465,10 @@ def get_responses(runtime, expedition_id: str):
         and (not lang_filter or r.get('language') == lang_filter)
     ]
 
+    academy = current_app.config.get('XPED_ACADEMY')
+    if academy:
+        rows = reporting.filter_responses(all_rows, request.args, now())
+
     completed_count = sum(1 for r in rows if r.get('completed'))
     durations = [
         max(0, float(r.get('updated_at', 0)) - float(r.get('started_at', 0)))
@@ -1354,6 +1529,12 @@ def get_responses(runtime, expedition_id: str):
                     'language': r.get('language', 'nl'),
                 })
 
+    summary_metrics, extra = {}, {}
+    if academy:
+        stamp = now()
+        summary_metrics, stations = reporting.course_metrics(exp, rows, funnel, block_stats)
+        extra = {'stations': stations, 'weekly': reporting.weekly_activity(
+            rows, exp.get('publicRevisionWeeks', []), stamp, *reporting.period_bounds(request.args, stamp))}
     return jsonify(
         expedition={'id': exp['id'], 'title': exp.get('title', ''), 'defaultLanguage': exp.get('defaultLanguage', 'nl'), 'modules': exp.get('modules', [])},
         summary={
@@ -1363,20 +1544,27 @@ def get_responses(runtime, expedition_id: str):
             'medianSeconds': median_sec,
             'avgClarity': round(sum(clarity_scores) / len(clarity_scores), 2) if clarity_scores else None,
             'avgEngagement': round(sum(engagement_scores) / len(engagement_scores), 2) if engagement_scores else None,
+            **summary_metrics,
         },
         cohorts=cohorts,
         funnel=funnel,
         blockStats=block_stats,
         pilotFeedback=feedback,
         stepComments=step_comments,
+        **extra,
     )
 
 
-def export_responses_csv(runtime, expedition_id: str):
+def export_responses_csv(runtime, expedition_id: str, extension='csv'):
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     cohort_filter = str(request.args.get('cohort') or '').strip()
     lang_filter = str(request.args.get('language') or '').strip().lower()
     all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
+    if current_app.config.get('XPED_ACADEMY'):
+        stamp = now()
+        scoped = reporting.filter_responses(all_rows, request.args, stamp)
+        buf, media, filename = reporting.export_file(exp, scoped, extension, stamp)
+        return send_file(buf, mimetype=media, as_attachment=True, download_name=filename)
     rows = [
         r for r in all_rows
         if (not cohort_filter or r.get('cohort') == cohort_filter)
@@ -1424,3 +1612,19 @@ def export_responses_csv(runtime, expedition_id: str):
         as_attachment=True,
         download_name=f'xped-responses-{expedition_id}{scope_suffix}.csv',
     )
+
+
+def outline_results(runtime, expedition_id):
+    store, course, _, _, _ = access(runtime, expedition_id, required='edit')
+    ids = [step['id'] for module in course.get('modules', []) for step in module.get('steps', [])]
+    rows = store.list('elearning_responses', 'expedition_id', expedition_id, limit=None,
+                      fields=('visitedStepIds', 'activeTimeDisclosure', 'stepSeconds'))
+    visits = Counter()
+    samples = {sid: [] for sid in ids}
+    for row in rows:
+        visits.update(set(row.get('visitedStepIds') or []))
+        for sid, seconds in reporting.measured_seconds(row).items():
+            if sid in samples:
+                samples[sid].append(seconds)
+    return jsonify(totalSessions=len(rows), steps={sid: {'reached': visits[sid], 'time': reporting.quartiles(samples[sid])}
+                                                   for sid in ids})

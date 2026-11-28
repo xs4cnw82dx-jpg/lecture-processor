@@ -2,6 +2,8 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "Team": "Team",
+  "Your existing expeditions are available here. For new Academy courses, open": "Je bestaande expedities vind je hier. Voor nieuwe Academy-cursussen ga je naar",
   "This author will lose access to their own expeditions until you restore access.": "Deze auteur heeft geen toegang meer tot de eigen expedities totdat je de toegang herstelt.",
   "Studio authors": "Studio-auteurs",
   "Manage Studio authors": "Studio-auteurs beheren",
@@ -74,6 +76,7 @@
   "Assign a successor as Studio administrator before deleting this account.": "Wijs eerst een opvolger aan als Studio-beheerder voordat je dit account verwijdert.",
   "Please verify your email address before continuing.": "Bevestig je e-mailadres om verder te gaan.",
   "For help accessing or deleting your Studio account, or for other privacy requests, email": "Voor hulp bij het openen of verwijderen van je Studio-account of voor andere privacyverzoeken kun je mailen naar",
-  "Revoking access keeps the author’s expeditions and learner links. Restore author access to let them manage their expeditions again.": "Als je de toegang intrekt, blijven de expedities en deelnemerslinks behouden. Herstel de auteurstoegang zodat deze auteur de eigen expedities weer kan beheren."
+  "Revoking access keeps the author’s expeditions and learner links. Restore author access to let them manage their expeditions again.": "Als je de toegang intrekt, blijven de expedities en deelnemerslinks behouden. Herstel de auteurstoegang zodat deze auteur de eigen expedities weer kan beheren.",
+  "Shared responses also include how long you are active on each step. Active time counts only while the page is open and you are using it.": "Gedeelde antwoorden bevatten ook hoe lang je per stap actief bent. Actieve tijd telt alleen mee zolang de pagina open is en je ermee bezig bent."
   });
 })(window);

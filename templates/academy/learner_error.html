@@ -1,0 +1,40 @@
+<!doctype html>
+{% set de = academy_locale|default('nl') == 'de' %}
+{% set status = academy_player_error.status %}
+<html lang="{{ 'de' if de else 'nl' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{ url_for('static', filename='images/xped/academy-mark.webp' if de else 'images/xped/logo_nl.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-player.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-base.css') }}">
+  {% set paused = academy_player_error.code in ('link_paused', 'author_message') %}
+  {% if status >= 500 %}
+    {% set title = 'Die Expedition kann gerade nicht geladen werden' if de else 'De expeditie kan nu niet laden' %}
+    {% set detail = 'Versuchen Sie es in ein paar Minuten erneut.' if de else 'Probeer over een paar minuten opnieuw.' %}
+  {% elif paused %}
+    {% set title = 'Diese Expedition ist pausiert' if de else 'Deze expeditie is gepauzeerd' %}
+    {% set detail = academy_player_error.message if academy_player_error.code == 'author_message' else ('Versuchen Sie es später erneut oder fragen Sie die Person, die Ihnen den Link geschickt hat.' if de else 'Probeer het later opnieuw of vraag het aan degene die je de link gaf.') %}
+  {% elif status == 403 %}
+    {% set title = 'Zugriff auf diese Expedition fehlt' if de else 'Je hebt geen toegang tot deze expeditie' %}
+    {% set detail = 'Fragen Sie die Person, die Ihnen den Link geschickt hat.' if de else 'Vraag het aan degene die je de link gaf.' %}
+  {% else %}
+    {% set title = 'Dieser Lernlink ist nicht aktiv' if de else 'Deze leerlink is niet actief' %}
+    {% set detail = 'Bitten Sie die Person, die Sie eingeladen hat, um den aktuellen Link.' if de else 'Vraag degene die je heeft uitgenodigd om de actuele link.' %}
+  {% endif %}
+  <title>{{ title }} · xPED Academy</title>
+</head>
+<body class="el-player-body xped-surface-scope">
+  <main class="academy-error academy-learner-error" id="main-content">
+    <div class="academy-error-copy">
+      <span class="academy-error-brand"><img src="{{ url_for('static', filename='images/xped/academy-mark.webp' if de else 'images/xped/logo_nl.svg') }}" alt=""> xPED Academy</span>
+      <h1>{{ title }}</h1>
+      <p>{{ detail }}</p>
+      {% if status >= 500 %}<a href="" class="xped-btn xped-btn-primary">{{ 'Erneut versuchen' if de else 'Opnieuw proberen' }}</a>{% endif %}
+    </div>
+    <div class="academy-error-art" aria-hidden="true"></div>
+  </main>
+  <footer class="academy-learner-error-footer"><a href="/privacy">{{ 'Datenschutz' if de else 'Privacy' }}</a></footer>
+</body>
+</html>

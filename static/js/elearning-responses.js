@@ -1,5 +1,10 @@
 (function () {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
+  var platformDownload = window.Xped ? window.Xped.download : window.LectureProcessorDownload;
+  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
+  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
+  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
 
   var Model = window.XpedElearningModel;
   var expeditionId = document.body.dataset.expeditionId || '';
@@ -20,12 +25,12 @@
   var hasLoadedOnce = false;
   var requestId = 0;
   var auth;
-  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  try { auth = platformBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   if (!auth && document.querySelector('meta[name="academy-signin"]')) {
-    status.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
+    status.textContent = uiText('Sign-in is temporarily unavailable. Reload this page to try again.');
     return;
   }
-  var client = window.LectureProcessorAuth.createAuthClient(auth);
+  var client = platformAuth.createAuthClient(auth);
   cohortSelect.addEventListener('change', loadResponses);
   langSelect.addEventListener('change', loadResponses);
   retry.addEventListener('click', loadResponses);
@@ -47,7 +52,7 @@
   function syncExportButtons() {
     var hasFilter = !!(cohortSelect.value || langSelect.value);
     if (exportFilteredBtn) {
-      exportFilteredBtn.textContent = hasFilter ? 'Export filtered CSV' : 'Export CSV';
+      exportFilteredBtn.textContent = hasFilter ? uiText('Export filtered CSV') : uiText('Export CSV');
     }
     if (exportAllBtn) {
       exportAllBtn.hidden = !hasFilter;
@@ -57,6 +62,7 @@
   // Chart cards: interface labels follow the interface language; numbers use its locale.
   var NOT_COMPLETED = { nl: 'Niet voltooid', de: 'Nicht abgeschlossen', en: 'Not completed' };
   function uiLanguage() {
+    if (window.Xped && window.Xped.i18n) return window.Xped.i18n.language;
     var i18n = window.LectureI18n;
     var lang = (i18n && i18n.getLanguage && i18n.getLanguage()) || document.documentElement.lang || 'en';
     return NOT_COMPLETED[lang] ? lang : 'en';
@@ -72,7 +78,7 @@
     return value === null || value === undefined ? '—' : new Intl.NumberFormat(uiLocale(), { maximumFractionDigits: 1 }).format(value);
   }
   function sessionsLabel(count) {
-    return count + (count === 1 ? ' session' : ' sessions');
+    return count + (count === 1 ? uiText(' session') : uiText(' sessions'));
   }
 
   // One labelled bar: the label left, the count and share right, the bar beneath.
@@ -135,11 +141,11 @@
     var completed = summary.completedSessions !== undefined ? Number(summary.completedSessions) || 0 : Math.round(total * rate / 100);
     var title = document.createElement('h2');
     title.id = 'el-resp-kpis-title';
-    title.textContent = 'Completion rate';
+    title.textContent = uiText('Completion rate');
     var shares = document.createElement('dl');
     shares.className = 'el-split-figures';
     shares.append(
-      splitFigure('Completed', total ? formatPercent(rate) : '—', true),
+      splitFigure(uiText('Completed'), total ? formatPercent(rate) : '—', true),
       splitFigure(NOT_COMPLETED[uiLanguage()], total ? formatPercent(100 - rate) : '—', false, true)
     );
     var bar = chartBar(total ? rate : 0, 'el-split-bar' + (total ? '' : ' is-empty'));
@@ -155,11 +161,11 @@
     figures.className = 'el-split-stats';
     var seconds = Number(summary.medianSeconds) || 0;
     figures.append(
-      splitFigure('Testers', String(total)),
-      splitFigure('Median Time', seconds && seconds < 60 ? '<1 min' : Math.round(seconds / 60) + ' min')
+      splitFigure(uiText('Testers'), String(total)),
+      splitFigure(uiText('Median Time'), seconds && seconds < 60 ? '<1 min' : Math.round(seconds / 60) + ' min')
     );
     if (summary.avgClarity !== null && summary.avgClarity !== undefined || summary.avgEngagement !== null && summary.avgEngagement !== undefined) {
-      figures.append(splitFigure('Clarity / Engagement', formatScore(summary.avgClarity) + ' / ' + formatScore(summary.avgEngagement)));
+      figures.append(splitFigure(uiText('Clarity / Engagement'), formatScore(summary.avgClarity) + ' / ' + formatScore(summary.avgEngagement)));
     }
     kpisEl.replaceChildren(title, shares, bar, counts, figures);
   }
@@ -170,13 +176,13 @@
     syncExportButtons();
     // UX-119: Keep existing report visible with subtle Updating state while switching filters
     if (hasLoadedOnce && !report.hidden) {
-      var scope = [cohortSelect.value || 'all cohorts', langSelect.value.toUpperCase() || 'all languages'];
-      status.textContent = 'Updating ' + scope.join(' · ') + '. Previous results are shown below.';
+      var scope = [cohortSelect.value || uiText('all cohorts'), langSelect.value.toUpperCase() || uiText('all languages')];
+      status.textContent = uiText('Updating ') + scope.join(' · ') + '. Previous results are shown below.';
       report.setAttribute('aria-busy', 'true');
       report.classList.add('el-resp-updating');
     } else {
       report.setAttribute('aria-busy', 'true');
-      status.textContent = 'Loading responses…';
+      status.textContent = uiText('Loading responses…');
       report.hidden = true;
     }
     try {
@@ -188,11 +194,11 @@
       var resp = await client.authFetch(base + (qs.size ? '?' + qs : ''));
       var data = await resp.json();
       if (sequence !== requestId) return;
-      if (!resp.ok) throw new Error(data.error || 'Could not load responses.');
+      if (!resp.ok) throw new Error(uiText(data.error) || uiText('Could not load responses.'));
       var courseLang = data.expedition.defaultLanguage || 'nl';
       var reportLang = langSelect.value || document.documentElement.lang || courseLang;
       label.textContent = data.expedition.title || '';
-      cohortSelect.replaceChildren(new Option('All cohorts', ''));
+      cohortSelect.replaceChildren(new Option(uiText('All cohorts'), ''));
       (data.cohorts || []).forEach(function (name) { cohortSelect.add(new Option(name, name)); });
       if (cohort && !Array.from(cohortSelect.options).some(function (o) { return o.value === cohort; })) {
         cohortSelect.add(new Option(cohort, cohort));
@@ -200,8 +206,8 @@
       cohortSelect.value = cohort;
       syncExportButtons();
       status.textContent = cohort || langSelect.value
-        ? 'Showing responses for ' + [cohort, langSelect.value.toUpperCase()].filter(Boolean).join(' · ')
-        : 'Showing all responses';
+        ? uiText('Showing responses for ') + [cohort, langSelect.value.toUpperCase()].filter(Boolean).join(' · ')
+        : uiText('Showing all responses');
       report.classList.remove('el-resp-updating');
       report.setAttribute('aria-busy', 'false');
       report.hidden = false;
@@ -243,7 +249,7 @@
             var agg = statsMap[blk.id];
             if (!agg) return;
             var name = activityName(blk.type, reportLang);
-            var position = 'Station ' + (mIdx + 1) + ' · ' + (reportLang === 'de' ? 'Schritt' : reportLang === 'nl' ? 'Stap' : 'Step') + ' ' + (sIdx + 1);
+            var position = uiText('Station ') + (mIdx + 1) + ' · ' + (reportLang === 'de' ? uiText('Schritt') : reportLang === 'nl' ? uiText('Stap') : uiText('Step')) + ' ' + (sIdx + 1);
             var card = document.createElement('article');
             card.className = 'el-exp-card';
             var h = document.createElement('h2');
@@ -255,7 +261,7 @@
             sub.setAttribute('translate', 'no');
             if (agg.average !== undefined && agg.average !== null) {
               var avg = document.createElement('strong');
-              avg.textContent = 'Average score: ' + agg.average;
+              avg.textContent = uiText('Average score: ') + agg.average;
               card.appendChild(avg);
             }
             if (blk.type === 'balance_scale' && (agg.avgLoad !== null || agg.avgResource !== null)) {
@@ -264,12 +270,12 @@
               var lc = document.createElement('div');
               lc.className = 'el-summary-balance-col';
               var lt = document.createElement('strong');
-              lt.textContent = 'Avg Load (Draaglast): ' + (agg.avgLoad !== null ? agg.avgLoad : '—');
+              lt.textContent = uiText('Avg Load (Draaglast): ') + (agg.avgLoad !== null ? agg.avgLoad : '—');
               lc.appendChild(lt);
               var rc = document.createElement('div');
               rc.className = 'el-summary-balance-col';
               var rt = document.createElement('strong');
-              rt.textContent = 'Avg Resources (Draagkracht): ' + (agg.avgResource !== null ? agg.avgResource : '—');
+              rt.textContent = uiText('Avg Resources (Draagkracht): ') + (agg.avgResource !== null ? agg.avgResource : '—');
               rc.appendChild(rt);
               balRow.appendChild(lc);
               balRow.appendChild(rc);
@@ -283,7 +289,7 @@
               if (isMulti) {
                 var mNote = document.createElement('p');
                 mNote.className = 'el-exp-meta';
-                mNote.textContent = 'Share of ' + agg.count + (agg.count === 1 ? ' respondent.' : ' respondents.') + ' Each could choose more than one option, so the total can exceed 100%.';
+                mNote.textContent = uiText('Share of ') + agg.count + (agg.count === 1 ? uiText(' respondent.') : uiText(' respondents.')) + uiText(' Each could choose more than one option, so the total can exceed 100%.');
                 card.appendChild(mNote);
               }
               var choices = (blk.data.options || []).map(function (option) { return option.id; });
@@ -330,7 +336,7 @@
                 var cntMeta = document.createElement('p');
                 cntMeta.className = 'el-exp-meta';
                 var total = agg.sampleTotal === undefined ? agg.samples.length : agg.sampleTotal;
-                cntMeta.textContent = 'Showing ' + shown.length + ' of ' + total + ' reflection excerpts';
+                cntMeta.textContent = uiText('Showing ') + shown.length + uiText(' of ') + total + uiText(' reflection excerpts');
                 if (total > agg.samples.length) cntMeta.textContent += '. Export the CSV for all responses.';
                 samplesWrap.appendChild(cntMeta);
                 shown.forEach(function (txt) {
@@ -344,7 +350,7 @@
                   var moreBtn = document.createElement('button');
                   moreBtn.type = 'button';
                   moreBtn.className = 'btn small';
-                  moreBtn.textContent = showingAll ? 'Show fewer' : ('Show ' + agg.samples.length + ' excerpts');
+                  moreBtn.textContent = showingAll ? uiText('Show fewer') : (uiText('Show ') + agg.samples.length + uiText(' excerpts'));
                   moreBtn.addEventListener('click', function () {
                     showingAll = !showingAll;
                     drawSamples();
@@ -375,7 +381,7 @@
           var m = document.createElement('div');
           m.className = 'el-resp-comment-meta';
           m.setAttribute('translate', 'no');
-          m.textContent = (item.moduleTitle || 'Station') + ' · ' + (item.stepTitle || 'Step') + ' (' + (item.cohort || 'review') + ' · ' + String(item.language || 'nl').toUpperCase() + ')';
+          m.textContent = (item.moduleTitle || uiText('Station')) + ' · ' + (item.stepTitle || uiText('Step')) + ' (' + (item.cohort || uiText('review')) + ' · ' + String(item.language || 'nl').toUpperCase() + ')';
           var bodyP = document.createElement('div');
           bodyP.setAttribute('translate', 'no');
           bodyP.textContent = item.comment;
@@ -388,13 +394,13 @@
             jump.className = 'el-action-link';
             var qJump = new URLSearchParams({ step: item.stepId, from: 'responses' });
             qJump.set('module', station.id);
-            jump.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/edit?' + qJump.toString();
-            jump.textContent = 'Open in builder →';
+            jump.href = Model.coursePaths(expeditionId).edit + '?' + qJump.toString();
+            jump.textContent = uiText('Open in builder →');
             c.appendChild(jump);
           } else {
             var unavailable = document.createElement('span');
             unavailable.className = 'el-exp-meta';
-            unavailable.textContent = 'Step no longer available';
+            unavailable.textContent = uiText('Step no longer available');
             c.appendChild(unavailable);
           }
           commentsEl.appendChild(c);
@@ -405,13 +411,13 @@
       feedbackEl.textContent = '';
       var fb = data.pilotFeedback || [];
       if (!fb.length) {
-        feedbackEl.textContent = 'No pilot usability feedback submitted yet.';
+        feedbackEl.textContent = uiText('No pilot usability feedback submitted yet.');
       } else {
         fb.forEach(function (item) {
           var row = document.createElement('div');
           row.className = 'el-member-row';
           var left = document.createElement('div');
-          left.textContent = '[' + item.cohort + ' · ' + String(item.language || 'nl').toUpperCase() + '] Clarity: ' + (item.clarity || '—') + '/5 · Engagement: ' + (item.engagement || '—') + '/5 — ' + (item.comment || '(no comment)');
+          left.textContent = '[' + item.cohort + ' · ' + String(item.language || 'nl').toUpperCase() + uiText('] Clarity: ') + (item.clarity || '—') + '/5 · Engagement: ' + (item.engagement || '—') + '/5 — ' + (item.comment || uiText('(no comment)'));
           row.appendChild(left);
           feedbackEl.appendChild(row);
         });
@@ -421,7 +427,7 @@
       report.classList.remove('el-resp-updating');
       report.setAttribute('aria-busy', 'false');
       report.hidden = !hasLoadedOnce;
-      status.textContent = hasLoadedOnce ? err.message + ' Previous results are still shown.' : err.message;
+      status.textContent = hasLoadedOnce ? err.message + uiText(' Previous results are still shown.') : err.message;
       retry.hidden = false;
     }
   }
@@ -435,11 +441,11 @@
       }
       var url = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses/export.csv' + (qs.size ? '?' + qs : '');
       var resp = await client.authFetch(url);
-      if (!resp.ok) throw new Error('Could not export responses.');
+      if (!resp.ok) throw new Error(uiText('Could not export responses.'));
       var suffix = filtered && qs.size ? ('-' + Array.from(qs.values()).join('-')) : '';
-      await window.LectureProcessorDownload.downloadResponseBlob(resp, 'xped-responses-' + expeditionId + suffix + '.csv');
+      await platformDownload.downloadResponseBlob(resp, 'xped-responses-' + expeditionId + suffix + '.csv');
     } catch (err) {
-      if (err.code !== 'auth/session-changed') window.LectureProcessorUx.toast(err.message, { type: 'error' });
+      if (err.code !== 'auth/session-changed') platformUx.toast(err.message, { type: 'error' });
     }
   }
 
@@ -468,11 +474,11 @@
     label.textContent = '';
     lastSummary = null;
     [kpisEl, funnelEl, blocksEl, feedbackEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
-    cohortSelect.replaceChildren(new Option('All cohorts', ''));
+    cohortSelect.replaceChildren(new Option(uiText('All cohorts'), ''));
     langSelect.value = '';
     syncExportButtons();
     if (user) loadResponses();
-    else status.textContent = 'Sign in to view responses.';
+    else status.textContent = uiText('Sign in to view responses.');
   }
   if (auth) auth.onAuthStateChanged(accountChanged);
   else accountChanged(null);

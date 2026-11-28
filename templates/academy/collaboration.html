@@ -1,0 +1,25 @@
+{% extends 'academy/base.html' %}
+{% from 'academy/_collaboration_macros.html' import say with context %}
+{% block title %}{{ ('Team' if academy_view == 'team' else say('Expeditie','Expedition')) }} · xPED Academy{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+{% include '_academy_foundation.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/academy-collaboration.css') }}">
+{% endblock %}
+{% block body_attrs %} class="academy-body" data-academy-workspace="{{ academy_view }}" data-course-id="{{ expedition_id|default('') }}"{% endblock %}
+{% block body %}
+{% include '_academy_header.html' %}
+<main class="xc-main" id="main-content" tabindex="-1">
+  <div id="xc-content" aria-busy="true"></div>
+  <section id="xc-state" class="xc-state"><h1>{{ 'Team' if academy_view == 'team' else say('Expeditie','Expedition') }}</h1><p role="status">{{ say('Laden…','Wird geladen…') }}</p>
+    <a id="xc-signin" class="btn primary" href="{{ url_for('academy.signin', next=request.path) }}" hidden>{{ say('Inloggen','Anmelden') }}</a>
+    {% if legal_contact_email %}<a id="xc-contact" href="mailto:{{ legal_contact_email }}" hidden>{{ say('Neem contact op','Kontakt aufnehmen') }}</a>{% endif %}
+    <button class="btn" id="xc-retry" type="button" hidden>{{ say('Opnieuw proberen','Erneut versuchen') }}</button>
+  </section>
+</main>
+{% include '_academy_footer.html' %}
+{% include 'academy/runtime.html' %}
+<script src="{{ url_for('static', filename='js/vendor/qrcode-generator-2.0.4/qrcode.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/elearning-qr.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/academy-collaboration.js') }}" defer></script>
+{% endblock %}

@@ -1,75 +1,76 @@
+{% from '_academy_copy.html' import tr with context %}
 <dialog id="el-admin-dialog" class="el-dialog el-dialog-wide" closedby="any" aria-labelledby="el-admin-title">
   <header class="el-dialog-header">
-    <h2 id="el-admin-title">Studio admin</h2>
-    <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+    <h2 id="el-admin-title">{{ tr("Studio admin") }}</h2>
+    <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
   </header>
-  <nav class="el-admin-nav" aria-label="Studio admin sections">
-      <button class="btn small" type="button" id="el-admin-access-tab" aria-pressed="true">Access &amp; data</button>
-      {% if academy_mode %}<button class="btn small" type="button" id="el-admin-authors-tab" aria-pressed="false">Studio authors</button>{% endif %}
-      <button class="btn small" type="button" id="el-admin-stats-tab" aria-pressed="false">Statistics</button>
+  <nav class="el-admin-nav" aria-label="{{ tr("Studio admin sections") }}">
+      <button class="btn small" type="button" id="el-admin-access-tab" aria-pressed="true">{{ tr("Access & data") }}</button>
+      {% if academy_mode %}<button class="btn small" type="button" id="el-admin-authors-tab" aria-pressed="false">{{ tr("Studio authors") }}</button>{% endif %}
+      <button class="btn small" type="button" id="el-admin-stats-tab" aria-pressed="false">{{ tr("Statistics") }}</button>
   </nav>
   <div class="el-dialog-body">
     <div id="el-admin-access">
-      <label class="el-admin-course" for="el-admin-course">Expedition
+      <label class="el-admin-course" for="el-admin-course">{{ tr("Expedition") }}
         <select class="xped-input" id="el-admin-course"></select>
       </label>
-      <p id="el-admin-empty" class="el-exp-meta" hidden>Create an expedition to manage its access here.</p>
+      <p id="el-admin-empty" class="el-exp-meta" hidden>{{ tr("Create an expedition to manage its access here.") }}</p>
       <fieldset id="el-admin-controls" hidden>
-        <legend class="sr-only">Expedition access settings</legend>
+        <legend class="sr-only">{{ tr("Expedition access settings") }}</legend>
         <details open>
-          <summary>Account access</summary>
+          <summary>{{ tr("Account access") }}</summary>
           <div class="el-admin-section">
-            <p>Add the email address your collaborator will verify when signing in. You can grant access before they create an account.</p>
+            <p>{{ tr("Add the email address your collaborator will verify when signing in. You can grant access before they create an account.") }}</p>
             <form id="el-admin-member-form" class="el-admin-form">
-              <label>Email address<input class="xped-input" id="el-admin-email" type="email" required maxlength="254" autocomplete="off"></label>
-              <label>Role<select class="xped-input" id="el-admin-role">
-                <option value="edit">Co-Editor</option><option value="translate">Translator</option>
+              <label>{{ tr("Email address") }}<input class="xped-input" id="el-admin-email" type="email" required maxlength="254" autocomplete="off"></label>
+              <label>{{ tr("Role") }}<select class="xped-input" id="el-admin-role">
+                <option value="edit">{{ tr("Co-Editor") }}</option><option value="translate">{{ tr("Translator") }}</option>
               </select></label>
-              <button class="btn" type="submit">Save access</button>
+              <button class="btn" type="submit">{{ tr("Save access") }}</button>
             </form>
             <ul id="el-admin-members" class="el-admin-list"></ul>
-            <button class="btn small" type="button" id="el-admin-copy-studio">Copy collaborator link</button>
+            <button class="btn small" type="button" id="el-admin-copy-studio">{{ tr("Copy collaborator link") }}</button>
           </div>
         </details>
         <details>
-          <summary>External translator links</summary>
+          <summary>{{ tr("External translator links") }}</summary>
           <div class="el-admin-section">
-            <p>Give someone a link to translate one language without an account.</p>
+            <p>{{ tr("Give someone a link to translate one language without an account.") }}</p>
             <form id="el-admin-grant-form" class="el-admin-form">
-              <label>Recipient name<input class="xped-input" id="el-admin-name" required maxlength="80" autocomplete="off"></label>
-              <label>Target language<select class="xped-input" id="el-admin-lang">
-                <option value="de">Deutsch</option><option value="en">English</option><option value="nl">Nederlands</option>
+              <label>{{ tr("Recipient name") }}<input class="xped-input" id="el-admin-name" required maxlength="80" autocomplete="off"></label>
+              <label>{{ tr("Target language") }}<select class="xped-input" id="el-admin-lang">
+                <option value="de">Deutsch</option>{% if not academy_mode %}<option value="en">{{ tr("English") }}</option>{% endif %}<option value="nl">Nederlands</option>
               </select></label>
-              <button class="btn" type="submit">Create Link</button>
+              <button class="btn" type="submit">{{ tr("Create Link") }}</button>
             </form>
             <ul id="el-admin-grants" class="el-admin-list"></ul>
           </div>
         </details>
         <details>
-          <summary>Learner link &amp; data collection</summary>
+          <summary>{{ tr("Learner link & data collection") }}</summary>
           <div class="el-admin-section">
             <form id="el-admin-share-form">
-              <label class="el-admin-check"><input type="checkbox" name="enabled"> Enable learner link</label>
-              <div class="el-admin-link-row"><input class="xped-input" id="el-admin-link" aria-label="Learner link" readonly>
-                <button class="btn small" type="button" id="el-admin-copy">Copy link</button></div>
-              <label class="el-admin-course">Message when the link is paused<input class="xped-input" id="el-admin-paused" maxlength="400"></label>
-              <label class="el-admin-check"><input type="checkbox" name="collectResponses"> Offer learners the choice to share responses</label>
+              <label class="el-admin-check"><input type="checkbox" name="enabled"> {{ tr("Enable learner link") }}</label>
+              <div class="el-admin-link-row"><input class="xped-input" id="el-admin-link" aria-label="{{ tr("Learner link") }}" readonly>
+                <button class="btn small" type="button" id="el-admin-copy">{{ tr("Copy link") }}</button></div>
+              <label class="el-admin-course">{{ tr("Message when the link is paused") }}<input class="xped-input" id="el-admin-paused" maxlength="400"></label>
+              <label class="el-admin-check"><input type="checkbox" name="collectResponses"> {{ tr("Offer learners the choice to share responses") }}</label>
               <fieldset id="el-admin-extra">
-                <legend class="sr-only">Optional data collection</legend>
-                <label class="el-admin-check"><input type="checkbox" name="showPeerResults"> Show anonymized peer results</label>
-                <label class="el-admin-check"><input type="checkbox" name="collectPilotFeedback"> Collect pilot feedback</label>
-                <label class="el-admin-check"><input type="checkbox" name="allowStepComments"> Allow step comments</label>
+                <legend class="sr-only">{{ tr("Optional data collection") }}</legend>
+                <label class="el-admin-check"><input type="checkbox" name="showPeerResults"> {{ tr("Show anonymized peer results") }}</label>
+                <label class="el-admin-check"><input type="checkbox" name="collectPilotFeedback"> {{ tr("Collect pilot feedback") }}</label>
+                <label class="el-admin-check"><input type="checkbox" name="allowStepComments"> {{ tr("Allow step comments") }}</label>
               </fieldset>
-              <button class="btn" type="submit">Save learner settings</button>
+              <button class="btn" type="submit">{{ tr("Save learner settings") }}</button>
             </form>
             <details class="el-admin-reset">
-              <summary>Reset learner link</summary>
-              <p>Resetting the link deactivates the previous URL and its QR codes.</p>
-              <button class="btn small" type="button" id="el-admin-rotate">Reset link</button>
+              <summary>{{ tr("Reset learner link") }}</summary>
+              <p>{{ tr("Resetting the link deactivates the previous URL and its QR codes.") }}</p>
+              <button class="btn small" type="button" id="el-admin-rotate">{{ tr("Reset link") }}</button>
             </details>
             <div class="el-dash-actions">
-              <a id="el-admin-sharing-tools" class="el-action-link">Cohort links and QR codes</a>
-              <a id="el-admin-report" class="el-action-link">View expedition responses</a>
+              <a id="el-admin-sharing-tools" class="el-action-link">{{ tr("Cohort links and QR codes") }}</a>
+              <a id="el-admin-report" class="el-action-link">{{ tr("View expedition responses") }}</a>
             </div>
           </div>
         </details>
@@ -77,26 +78,26 @@
     </div>
     {% if academy_mode %}
     <section id="el-admin-authors" hidden aria-labelledby="el-admin-authors-title">
-      <h3 id="el-admin-authors-title">Studio authors</h3>
-      <p>Grant someone permission to create their own expeditions. They must sign in with the verified email address you add here.</p>
-      <p>Revoking access keeps the author’s expeditions and learner links. Restore author access to let them manage their expeditions again.</p>
+      <h3 id="el-admin-authors-title">{{ tr("Studio authors") }}</h3>
+      <p>{{ tr("Grant someone permission to create their own expeditions. They must sign in with the verified email address you add here.") }}</p>
+      <p>{{ tr("Revoking access keeps the author’s expeditions and learner links. Restore author access to let them manage their expeditions again.") }}</p>
       <fieldset id="el-admin-author-controls">
-        <legend class="sr-only">Manage Studio authors</legend>
+        <legend class="sr-only">{{ tr("Manage Studio authors") }}</legend>
         <form id="el-admin-author-form" class="el-admin-form">
-          <label>Email address<input class="xped-input" id="el-admin-author-email" type="email" required maxlength="254" autocomplete="off"></label>
-          <button class="btn" type="submit">Add author</button>
+          <label>{{ tr("Email address") }}<input class="xped-input" id="el-admin-author-email" type="email" required maxlength="254" autocomplete="off"></label>
+          <button class="btn" type="submit">{{ tr("Add author") }}</button>
         </form>
         <ul id="el-admin-author-list" class="el-admin-list"></ul>
       </fieldset>
     </section>
     {% endif %}
-    <section id="el-admin-stats" hidden aria-label="Overall statistics">
-      <h3>Overall statistics</h3>
-      <p>Completion counts sessions that reached the end, out of all recorded sessions in your expeditions. Private participation is excluded.</p>
+    <section id="el-admin-stats" hidden aria-label="{{ tr("Overall statistics") }}">
+      <h3>{{ tr("Overall statistics") }}</h3>
+      <p>{{ tr("Completion counts sessions that reached the end, out of all recorded sessions in your expeditions. Private participation is excluded.") }}</p>
       <dl id="el-admin-totals"></dl>
       <ul id="el-admin-breakdown" class="el-admin-list"></ul>
     </section>
     <p id="el-admin-status" role="status" aria-live="polite"></p>
-    <button id="el-admin-retry" type="button" class="btn small" hidden>Try again</button>
+    <button id="el-admin-retry" type="button" class="btn small" hidden>{{ tr("Try again") }}</button>
   </div>
 </dialog>

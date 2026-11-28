@@ -1,143 +1,69 @@
 {% extends '_base.html' %}
-{% block body_attrs %} class="el-library-body{% if academy_mode %} academy-body{% endif %}"{% endblock %}
-{% block title %}xPEDitie Pijn Studio{% if not academy_mode %} · Lecture Processor{% endif %}{% endblock %}
+{% from '_academy_copy.html' import tr with context %}
+{% block body_attrs %} class="el-library-body"{% endblock %}
+{% block title %}xPEDitie Pijn Studio · Lecture Processor{% endblock %}
 {% block head %}
+
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-admin.css') }}">
-  {% include '_academy_foundation.html' %}
 {% endblock %}
 {% block body %}
   {% set shell_title = 'xPEDitie Pijn Studio' %}
-  {% include '_academy_header.html' if academy_mode else '_app_shell.html' %}
+  {% include '_app_shell.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
       <header class="el-library-header">
         <div class="el-library-cover">
           <div>
-          <h1 class="page-title">Expeditions</h1>
-          <p class="page-lead">Build, translate and share your pain education modules.</p>
+          <h1 class="page-title">{{ tr("Expeditions") }}</h1>
+          <p class="page-lead">{{ tr("Build, translate and share your pain education modules.") }}</p>
           </div>
           <img src="{{ url_for('static', filename='images/xped/xped-jan.png') }}" width="175" height="112" alt="">
         </div>
         <div class="el-dash-actions" id="el-author-actions" hidden>
-          <button type="button" class="btn" id="el-admin-btn" hidden>Admin</button>
-          <button type="button" class="btn" id="el-import-json-btn">Import JSON</button>
+          <button type="button" class="btn" id="el-admin-btn" hidden>{{ tr("Admin") }}</button>
+          <button type="button" class="btn" id="el-import-json-btn">{{ tr("Import JSON") }}</button>
           <input type="file" id="el-import-json-input" accept="application/json" hidden>
-          <button type="button" class="btn primary" id="el-new-expedition-btn">New expedition</button>
+          <button type="button" class="btn primary" id="el-new-expedition-btn">{{ tr("New expedition") }}</button>
         </div>
       </header>
 
-      {% if academy_mode %}
-      <div class="academy-folder-bar" id="academy-folder-bar" hidden>
-        <label for="academy-folder-filter">Folder</label>
-        <select id="academy-folder-filter" class="xped-input"><option value="*">All expeditions</option></select>
-        <button type="button" class="btn small" id="academy-folder-create">New folder</button>
-        <button type="button" class="btn small" id="academy-folder-rename" hidden>Rename folder</button>
-        <button type="button" class="btn small" id="academy-folder-delete" hidden>Delete folder</button>
-      </div>
-      {% endif %}
+      <p class="xped-caption">Your existing expeditions are available here. For new Academy courses, open <a href="https://xped.academy/">xPED Academy</a>.</p>
+
       <div class="el-dash-search-row">
-        <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">Loading your expeditions…</div>
-        <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="Search expeditions…" aria-label="Search expeditions" hidden>
+        <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">{{ tr("Loading your expeditions…") }}</div>
+        <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="{{ tr("Search expeditions…") }}" aria-label="{{ tr("Search expeditions") }}" hidden>
       </div>
-      <a class="btn" id="el-signin" href="{{ '/signin?next=' ~ (request.path|urlencode) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>Sign in</a>
-      <button type="button" class="btn small" id="el-retry" hidden>Try again</button>
-      <section class="el-exp-list" id="el-dash-grid" aria-label="Expeditions"></section>
+      <a class="btn" id="el-signin" href="{{ '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
+      <button type="button" class="btn small" id="el-retry" hidden>{{ tr("Try again") }}</button>
+      <section class="el-exp-list" id="el-dash-grid" aria-label="{{ tr("Expeditions") }}"></section>
     </main>
-    {% if academy_mode %}
-      {% include '_academy_footer.html' %}
-    {% else %}
+
       {% include '_shell_footer.html' %}
       </div>
       </div>
-    {% endif %}
 
-  {% if academy_mode %}{% include '_academy_folders.html' %}{% endif %}
   {% include '_elearning_admin.html' %}
-  <dialog class="el-dialog" id="el-create-dialog" closedby="any" aria-labelledby="el-create-dialog-title">
-    <div class="el-dialog-header">
-      <h2 id="el-create-dialog-title">Create New Expedition</h2>
-      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
-    </div>
-    <form id="el-create-form" class="el-dialog-body">
-      <div class="el-field">
-        <label for="el-new-title">Expedition Title</label>
-        <input type="text" id="el-new-title" placeholder="e.g. Understanding pain" maxlength="200" required autofocus>
-      </div>
-      <div class="el-field">
-        <label for="el-new-lang">Primary Authoring Language</label>
-        <select data-app-select id="el-new-lang">
-          <option value="nl">Nederlands (NL)</option>
-          <option value="en">English (EN)</option>
-          <option value="de">Deutsch (DE)</option>
-        </select>
-      </div>
-      <div class="el-field">
-        <label for="el-new-template">Starting Structure</label>
-        <select data-app-select id="el-new-template">
-          <option value="blank">Blank expedition</option>
-          <option value="bps-skeleton">Three-station outline</option>
-          <option value="showcase">Interactive example</option>
-        </select>
-      </div>
-      <div class="el-template-preview" id="el-template-preview" aria-live="polite"></div>
-      <span class="sr-only" id="el-create-progress" role="status"></span>
-      <div class="el-dash-actions">
-        <p class="field-error" id="el-create-error" role="alert" hidden></p>
-        <button type="button" class="btn" id="el-create-cancel">Cancel</button>
-        <button type="submit" class="btn primary" id="el-create-confirm">Create &amp; Open Builder</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog class="el-dialog" id="el-import-dialog" closedby="any" aria-labelledby="el-import-dialog-title">
-    <div class="el-dialog-header">
-      <h2 id="el-import-dialog-title">Import Expedition Preview</h2>
-      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
-    </div>
-    <div class="el-dialog-body">
-      <div id="el-import-summary" class="el-template-preview" aria-live="polite"></div>
-      <div class="el-dash-actions">
-        <p class="field-error" id="el-import-error" role="alert" hidden></p>
-        <button type="button" class="btn" id="el-import-cancel">Cancel</button>
-        <button type="button" class="btn primary" id="el-import-confirm">Import &amp; Open Builder</button>
-      </div>
-    </div>
-  </dialog>
-
-  <dialog class="el-dialog" id="el-delete-dialog" closedby="any" aria-labelledby="el-delete-dialog-title">
-    <div class="el-dialog-header">
-      <h2 id="el-delete-dialog-title">Delete Expedition?</h2>
-      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
-    </div>
-    <div class="el-dialog-body">
-      <p id="el-delete-dialog-msg" translate="no"></p>
-      <p>This removes the expedition and deactivates its public share link.</p>
-      <div class="el-dash-actions">
-        <p class="field-error" id="el-delete-error" role="alert" hidden></p>
-        <button type="button" class="btn" id="el-delete-cancel">Cancel</button>
-        <button type="button" class="btn danger" id="el-delete-confirm">Delete</button>
-      </div>
-    </div>
-  </dialog>
-
-
+  {% set show_english = true %}
+  {% include 'elearning/library_dialogs.html' %}
 
   {% include '_firebase_scripts.html' %}
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
-  {% if not academy_mode %}
+
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
-  {% endif %}
+
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
-  {% if not academy_mode %}<script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>{% endif %}
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>
-  {% if academy_mode %}<script src="{{ url_for('static', filename='js/academy-folders.js') }}"></script>{% endif %}
+
   <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
 {% endblock %}

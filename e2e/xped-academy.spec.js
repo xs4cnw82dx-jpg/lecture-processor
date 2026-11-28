@@ -15,7 +15,7 @@ test.beforeAll(async () => {
   await new Promise(resolve => socket.close(resolve));
   academy = 'http://127.0.0.1:' + port;
   const python = existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3';
-  preview = spawn(python, ['scripts/run_ui_preview.py', '--academy', '--port', String(port)], { stdio: ['ignore', 'ignore', 'pipe'] });
+  preview = spawn(python, ['scripts/run_ui_preview.py', '--academy-memory', '--port', String(port)], { stdio: ['ignore', 'ignore', 'pipe'] });
   let diagnostics = '';
   preview.stderr.on('data', data => { diagnostics = (diagnostics + data).slice(-2000); });
   await expect.poll(async () => {
@@ -76,52 +76,76 @@ test.beforeEach(async ({ page }) => {
 test('a new Studio author signs into the empty library and signs out on the Academy domain', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(academy);
-  await expect(page.getByRole('heading', { name: 'Expeditions' })).toBeVisible();
-  await page.getByRole('link', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/signin\?next=/);
-  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/physio/elearning');
-  await expect(page.getByRole('heading', { name: 'Create your first expedition' })).toBeVisible();
-  await page.getByRole('button', { name: 'Create expedition', exact: true }).click();
+  await page.goto(academy + '/expedities');
+  await expect(page.getByRole('heading', { name: 'Expedities' })).toBeVisible();
+  await page.getByRole('link', { name: 'Inloggen', exact: true }).click();
+  await expect(page).toHaveURL(/\/inloggen\?next=/);
+  await page.getByLabel('E-mailadres', { exact: true }).fill('studio@example.test');
+  await page.getByLabel('Wachtwoord', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Inloggen', exact: true }).click();
+  await expect(page).toHaveURL(academy + '/expedities');
+  await expect(page.getByRole('heading', { name: 'Maak je eerste expeditie' })).toBeVisible();
+  await page.getByRole('button', { name: 'Expeditie maken', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'New expedition' })).toBeHidden();
+  await openAccountMenu(page);
+  await page.locator('#academy-signout').click();
+  await expect(page).toHaveURL(academy + '/');
+  await page.goto(academy + '/expedities');
+  await expect(page.getByRole('link', { name: 'Inloggen', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nieuwe expeditie' })).toBeHidden();
   expect(errors).toEqual([]);
 });
 
-test('the Academy sign-in returns to the library when given an unrelated destination', async ({ page }) => {
+for (const width of [390, 1440]) {
+  test('the Google mark and label fit inside the Academy sign-in button at ' + width, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(academy + '/inloggen');
+    const button = page.getByRole('button', { name: 'Doorgaan met Google', exact: true });
+    const mark = button.locator('img');
+    await expect(button).toBeVisible();
+    await mark.evaluate(image => image.decode());
+    const icon = await mark.boundingBox();
+    const label = await button.getByText('Doorgaan met Google', { exact: true }).boundingBox();
+    const bounds = await button.boundingBox();
+    expect(icon.width).toBeGreaterThan(0);
+    expect(icon.x).toBeGreaterThanOrEqual(bounds.x);
+    expect(icon.x + icon.width).toBeLessThan(label.x);
+    expect(label.x + label.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+    await page.getByRole('button', { name: 'Wachtwoord vergeten?' }).click();
+    await expect(button).toBeHidden();
+  });
+}
+
+test('the Academy sign-in returns home when given an unrelated destination', async ({ page }) => {
   await page.goto(academy + '/signin?next=' + encodeURIComponent('https://other.example.test/'));
-  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/physio/elearning');
-  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await page.getByLabel('E-mailadres', { exact: true }).fill('studio@example.test');
+  await page.getByLabel('Wachtwoord', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Inloggen', exact: true }).click();
+  await expect(page).toHaveURL(academy + '/');
+  await openAccountMenu(page);
+  await expect(page.locator('#academy-signout')).toBeVisible();
 });
 
 
 test('an author can request a reset and receive a verification prompt after signing up', async ({ page }) => {
   await page.goto(academy + '/signin');
-  await page.getByRole('button', { name: 'Forgot password?' }).click();
-  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
-  await expect(page.getByLabel('Password', { exact: true })).toBeHidden();
-  await page.getByRole('button', { name: 'Send reset link' }).click();
-  await expect(page.getByRole('status')).toContainText('check your inbox');
+  await page.getByRole('button', { name: 'Wachtwoord vergeten?' }).click();
+  await page.getByLabel('E-mailadres', { exact: true }).fill('studio@example.test');
+  await expect(page.getByLabel('Wachtwoord', { exact: true })).toBeHidden();
+  await page.getByRole('button', { name: 'Herstellink versturen' }).click();
+  await expect(page.getByRole('status')).toContainText('ontvang je een e-mail');
   expect(await page.evaluate(() => sessionStorage.getItem('reset-recipient'))).toBe('studio@example.test');
 
-  await page.getByRole('button', { name: 'Back to sign in' }).click();
-  await page.getByRole('button', { name: 'Create an account' }).click();
-  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'Verify your email' })).toBeVisible();
-  await expect(page.getByRole('status')).toContainText('Verification email sent');
+  await page.getByRole('button', { name: 'Terug naar inloggen' }).click();
+  await page.getByRole('button', { name: 'Account aanmaken' }).click();
+  await page.getByLabel('Wachtwoord', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Account aanmaken' }).click();
+  await expect(page.getByRole('heading', { name: 'Je e-mailadres bevestigen' })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('De bevestigingsmail is verstuurd');
   expect(await page.evaluate(() => sessionStorage.getItem('verification-recipient'))).toBe('studio@example.test');
-  await page.getByRole('button', { name: 'Use another account' }).click();
-  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Ander account gebruiken' }).click();
+  await expect(page.getByRole('heading', { name: 'Inloggen', exact: true })).toBeVisible();
 });
 
 test('author pages report unavailable sign-in when the Academy configuration is missing', async ({ page }) => {
@@ -138,18 +162,24 @@ test('author pages report unavailable sign-in when the Academy configuration is 
   page.on('pageerror', error => errors.push(error.message));
   for (const path of ['/signin', '/physio/elearning', '/physio/elearning/example/edit', '/physio/elearning/example/responses']) {
     await page.goto(academy + path);
-    await expect(page.getByText('Sign-in is temporarily unavailable. Reload this page to try again.', { exact: true }).first()).toBeVisible();
-    expect(await page.evaluate(() => window.LectureProcessorBootstrap.firebaseConfig)).toBeNull();
+    await expect(page.getByText('Inloggen is tijdelijk niet mogelijk. Laad de pagina opnieuw om het nog eens te proberen.', { exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => window.Xped.bootstrap.firebaseConfig)).toBeNull();
   }
   expect(errors).toEqual([]);
 });
 
+async function openAccountMenu(page) {
+  await page.waitForLoadState('domcontentloaded');
+  await page.locator('#ac-settings-toggle').click();
+  await expect(page.locator('#ac-settings-toggle')).toHaveAttribute('aria-expanded', 'true');
+}
+
 async function signInToLibrary(page) {
-  await page.goto(academy + '/signin');
-  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/physio/elearning');
+  await page.goto(academy + '/inloggen?next=%2Fexpedities');
+  await page.getByLabel('E-mailadres', { exact: true }).fill('studio@example.test');
+  await page.getByLabel('Wachtwoord', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Inloggen', exact: true }).click();
+  await expect(page).toHaveURL(academy + '/expedities');
 }
 
 for (const layout of [
@@ -159,7 +189,7 @@ for (const layout of [
   test('author organizes courses and reviews transfers on ' + layout.label, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: layout.width, height: layout.height });
     await page.addInitScript(theme => localStorage.setItem('lp-preferences', JSON.stringify({ theme })), layout.theme);
-    const folders = [{ id: 'account-review', name: 'Account review' }];
+    const folders = [{ id: 'account-review', name: 'Te beoordelen' }];
     const course = { id: 'one', title: 'Synthetic course', role: 'owner', moduleCount: 0, stepCount: 0, folderId: 'account-review' };
     const shared = { ...course, role: 'edit', id: 'two', title: 'Shared workshop', folderId: undefined };
     await page.route('**/api/elearning/expeditions', route => route.fulfill({
@@ -181,101 +211,89 @@ for (const layout of [
       return route.fulfill({ json: { ok: true } });
     });
     await signInToLibrary(page);
-    const filter = page.getByLabel('Folder', { exact: true });
+    const filter = page.locator('#academy-folder-filter');
+    const folderTrigger = page.locator('#academy-folder-filter-button');
+    const choose = async (trigger, name) => {
+      await trigger.click();
+      await page.getByRole('option', { name, exact: true }).click();
+    };
     const dialog = page.getByRole('dialog');
-    await filter.selectOption('account-review');
+    await choose(folderTrigger, 'Te beoordelen');
     await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Delete folder' })).toBeHidden();
-    await page.getByRole('button', { name: 'New folder' }).click();
-    await dialog.getByLabel('Folder name').fill('Placements');
-    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('button', { name: 'Map verwijderen' })).toBeHidden();
+    await page.getByRole('button', { name: 'Nieuwe map' }).click();
+    await dialog.getByLabel('Mapnaam').fill('Placements');
+    await dialog.getByRole('button', { name: 'Opslaan' }).click();
     await expect(filter).toHaveValue('personal');
-    await expect(page.getByRole('heading', { name: 'No expeditions in this folder' })).toBeVisible();
-    await page.getByRole('button', { name: 'Rename folder' }).click();
-    await dialog.getByLabel('Folder name').fill('Archive');
-    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('heading', { name: 'Deze map is leeg' })).toBeVisible();
+    await page.getByRole('button', { name: 'Map hernoemen' }).click();
+    await dialog.getByLabel('Mapnaam').fill('Archive');
+    await dialog.getByRole('button', { name: 'Opslaan' }).click();
     await expect(filter.locator('option:checked')).toHaveText('Archive');
-    await filter.selectOption('account-review');
-    await page.getByRole('button', { name: 'More actions for ' + course.title }).click();
-    await page.getByRole('menuitem', { name: 'Move to folder' }).click();
-    await dialog.getByLabel('Destination folder').selectOption('personal');
-    await dialog.getByRole('button', { name: 'Move', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'No expeditions in this folder' })).toBeVisible();
-    await filter.selectOption('personal');
+    await choose(folderTrigger, 'Te beoordelen');
+    await page.getByRole('button', { name: 'Meer acties voor ' + course.title }).click();
+    await page.getByRole('menuitem', { name: 'Naar map verplaatsen' }).click();
+    await choose(dialog.locator('#academy-folder-destination-button'), 'Archive');
+    await dialog.getByRole('button', { name: 'Verplaatsen', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Deze map is leeg' })).toBeVisible();
+    await choose(folderTrigger, 'Archive');
     await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await testInfo.attach('folder-library', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-    await page.getByRole('button', { name: 'Delete folder' }).click();
-    await expect(dialog).toContainText('Learner links and responses stay available');
-    await dialog.getByRole('button', { name: 'Delete folder' }).click();
+    await page.getByRole('button', { name: 'Map verwijderen' }).click();
+    await expect(dialog).toContainText('Deelnemerslinks en antwoorden blijven beschikbaar');
+    await dialog.getByRole('button', { name: 'Map verwijderen' }).click();
     await expect(filter).toHaveValue('*');
-    await filter.selectOption('');
+    await choose(folderTrigger, 'Zonder map');
     await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
   });
 }
 
-test('the Studio administrator can grant and revoke author access before creating a course', async ({ page }) => {
-  const calls = [];
-  const authors = new Set();
-  await page.route('**/api/academy/authors', async route => {
-    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
-    if (route.request().method() === 'POST') {
-      const body = route.request().postDataJSON();
-      calls.push(body);
-      if (body.action === 'grant') authors.add(body.email.toLowerCase());
-      else if (body.action === 'revoke') authors.delete(body.email);
-      return route.fulfill({ json: { ok: true } });
-    }
-    return route.fulfill({ json: { authors: [...authors] } });
-  });
+test('the Studio administrator can open Team from the library', async ({ page }) => {
   await signInToLibrary(page);
-  await page.getByRole('button', { name: 'Admin', exact: true }).click();
-  await page.getByRole('button', { name: 'Studio authors' }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('status')).toHaveText('No invited authors yet.');
-  await dialog.getByLabel('Email address', { exact: true }).filter({ visible: true }).fill('Author@example.test');
-  await dialog.getByRole('button', { name: 'Add author' }).click();
-  await expect(dialog.getByText('author@example.test', { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Revoke' }).click();
-  await dialog.getByRole('button', { name: 'Confirm removal' }).click();
-  await expect(dialog.getByRole('status')).toHaveText('No invited authors yet.');
-  await expect(dialog.getByText('author@example.test', { exact: true })).toHaveCount(0);
-  expect(calls).toEqual([{ action: 'grant', email: 'Author@example.test' }, { action: 'revoke', email: 'author@example.test' }]);
+  await page.locator('#el-team-link').click();
+  await expect(page).toHaveURL(academy + '/team');
+  await expect(page.getByRole('heading', { name: 'Team', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Uitnodigen' })).toBeVisible();
+  await expect(page.locator('#el-admin-dialog')).toHaveCount(0);
 });
 
 test('author invitations enable creation independently of course collaboration', async ({ page }) => {
   const library = { expeditions: [], canCreate: false, studioAdmin: false };
   await page.route('**/api/elearning/expeditions', route => route.fulfill({ json: library }));
   await signInToLibrary(page);
-  await expect(page.getByRole('heading', { name: 'Author access is by invitation' })).toBeVisible();
-  for (const name of ['Admin', 'New expedition', 'Import JSON', 'Create expedition']) {
+  await expect(page.getByRole('heading', { name: 'Auteur worden kan op uitnodiging' })).toBeVisible();
+  for (const name of ['Beheer', 'Nieuwe expeditie', 'JSON importeren', 'Expeditie maken']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
   }
   library.expeditions = [{ id: 'shared', title: 'Shared project', moduleCount: 0, stepCount: 0, role: 'edit' }];
   await page.reload();
-  await expect(page.getByRole('link', { name: 'Open Builder' })).toHaveAttribute('href', '/physio/elearning/shared/edit');
-  await expect(page.getByRole('button', { name: /^More actions/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Editor openen' })).toHaveAttribute('href', '/expedities/shared/bewerken');
+  await page.getByRole('button', { name: /^Meer acties/ }).click();
+  await expect(page.getByRole('menuitem', { name: 'Delen en toegang' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Dupliceren' })).toHaveCount(0);
   library.canCreate = true;
   await page.reload();
-  await expect(page.getByRole('button', { name: 'New expedition' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Import JSON' })).toBeVisible();
-  await page.getByRole('button', { name: /^More actions/ }).click();
-  await expect(page.getByText('Duplicate', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Nieuwe expeditie' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'JSON importeren' })).toBeVisible();
+  await page.getByRole('button', { name: /^Meer acties/ }).click();
+  await expect(page.getByText('Dupliceren', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Beheer', exact: true })).toHaveCount(0);
 });
 
 test('an unverified author can reopen verification from the Studio', async ({ page }) => {
-  await page.goto(academy);
+  await page.goto(academy + '/expedities');
   await page.evaluate(() => {
     sessionStorage.setItem('academy-preview-user', 'studio-owner');
     sessionStorage.setItem('academy-preview-verified', 'false');
   });
   await page.reload();
-  await page.getByRole('link', { name: 'Verify your email' }).click();
-  await expect(page.getByRole('heading', { name: 'Verify your email' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Resend verification email' })).toBeVisible();
+  await openAccountMenu(page);
+  await page.locator('#academy-verify-email').click();
+  await expect(page.getByRole('heading', { name: 'Je e-mailadres bevestigen' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Bevestigingsmail opnieuw sturen' })).toBeVisible();
 });
 
 test('Dutch privacy details include a working contact link on a small screen', async ({ page }) => {
@@ -283,22 +301,22 @@ test('Dutch privacy details include a working contact link on a small screen', a
   await page.addInitScript(() => localStorage.setItem('lp-preferences', JSON.stringify({ language: 'nl', theme: 'dark' })));
   await page.goto(academy + '/privacy');
   await expect(page.getByRole('heading', { name: 'Vragen over je gegevens' })).toBeVisible();
-  await expect(page.getByText('Voor hulp bij het openen', { exact: false })).toBeVisible();
+  await expect(page.getByText('Heb je hulp nodig bij het openen', { exact: false })).toBeVisible();
   await expect(page.getByRole('link', { name: 'contact@example.test' })).toHaveAttribute('href', 'mailto:contact@example.test');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test('a Studio user can download personal data and resume a confirmed deletion', async ({ page }) => {
   await signInToLibrary(page);
-  await page.getByText('Settings', { exact: true }).click();
-  await page.getByRole('link', { name: 'Studio account' }).click();
-  await expect(page.getByRole('heading', { name: 'Studio account', exact: true })).toBeVisible();
+  await openAccountMenu(page);
+  await page.getByRole('link', { name: 'Mijn account' }).click();
+  await expect(page.getByRole('heading', { name: 'Instellingen', exact: true })).toBeVisible();
   await page.route('**/api/academy/account/export', route => route.fulfill({
     json: { account: { email: 'studio@example.test' } },
     headers: { 'Content-Disposition': 'attachment; filename="xped-academy-account.json"' }
   }));
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download account data' }).click();
+  await page.getByRole('button', { name: 'Accountgegevens downloaden' }).click();
   expect((await download).suggestedFilename()).toBe('xped-academy-account.json');
   const requestTimes = [];
   await page.route('**/api/academy/account/delete', route => {
@@ -308,54 +326,296 @@ test('a Studio user can download personal data and resume a confirmed deletion',
     expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
     return route.fulfill({ status: attempts === 1 ? 202 : 200, headers: { 'Retry-After': '2' }, json: { complete: attempts > 1 } });
   });
-  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
-  await page.getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
-  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
-  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  await page.getByRole('button', { name: 'Account verwijderen', exact: true }).click();
+  await page.getByRole('button', { name: 'Annuleren' }).click();
+  await expect(page.getByRole('button', { name: 'Account definitief verwijderen' })).toBeHidden();
+  await page.getByRole('button', { name: 'Account verwijderen', exact: true }).click();
+  await page.getByRole('button', { name: 'Account definitief verwijderen' }).click();
   expect(requestTimes).toHaveLength(0);
-  await expect(page.getByRole('checkbox')).toHaveAccessibleDescription(/If you leave this page, return here and confirm again/);
+  await expect(page.getByRole('checkbox')).toHaveAccessibleDescription(/Verlaat je deze pagina.*bevestig opnieuw/);
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Permanently delete account' }).click();
-  await expect(page.getByRole('status')).toHaveText('Your Studio account has been deleted.');
+  await page.getByRole('button', { name: 'Account definitief verwijderen' }).click();
+  await expect(page.getByRole('status')).toHaveText('Je Studio-account is verwijderd.');
   expect(requestTimes).toHaveLength(2);
   expect(requestTimes[1] - requestTimes[0]).toBeGreaterThanOrEqual(1900);
-  await expect(page.getByRole('button', { name: 'Download account data' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Accountgegevens downloaden' })).toBeHidden();
 });
 
 test('a stale sign-in can return to the account page for another confirmation', async ({ page }) => {
   await signInToLibrary(page);
-  await page.goto(academy + '/account');
+  await page.goto(academy + '/instellingen');
   await page.route('**/api/academy/account/delete', route => route.fulfill({
-    status: 403, json: { error: 'Sign in again to finish deleting your account.' }
+    status: 403, json: { error: 'Log opnieuw in om het verwijderen van je account af te ronden.' }
   }));
-  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('button', { name: 'Account verwijderen', exact: true }).click();
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Permanently delete account' }).click();
-  await page.getByRole('button', { name: 'Sign in again' }).click();
-  await expect(page).toHaveURL(academy + '/signin?next=/account');
-  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/account');
-  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+  await page.getByRole('button', { name: 'Account definitief verwijderen' }).click();
+  await page.getByRole('button', { name: 'Opnieuw inloggen' }).click();
+  await expect(page).toHaveURL(academy + '/inloggen?next=/instellingen');
+  await page.getByLabel('E-mailadres', { exact: true }).fill('studio@example.test');
+  await page.getByLabel('Wachtwoord', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Inloggen', exact: true }).click();
+  await expect(page).toHaveURL(academy + '/instellingen');
+  await expect(page.getByRole('button', { name: 'Account definitief verwijderen' })).toBeHidden();
 });
 
 test('switching identity invalidates an open deletion confirmation', async ({ page }) => {
   await signInToLibrary(page);
-  await page.goto(academy + '/account');
+  await page.goto(academy + '/instellingen');
   let attempts = 0;
   await page.route('**/api/academy/account/delete', route => {
     attempts += 1;
     return route.fulfill({ json: { complete: true } });
   });
-  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('button', { name: 'Account verwijderen', exact: true }).click();
   await page.getByRole('checkbox').check();
   await page.evaluate(() => {
     const auth = window.firebase.auth();
     auth.currentUser = { ...auth.currentUser, uid: 'different-user', email: 'different@example.test' };
   });
-  await page.getByRole('button', { name: 'Permanently delete account' }).click();
-  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+  await page.getByRole('button', { name: 'Account definitief verwijderen' }).click();
+  await expect(page.getByRole('button', { name: 'Account definitief verwijderen' })).toBeHidden();
   expect(attempts).toBe(0);
+});
+
+for (const signedIn of [false, true]) {
+  test('Academy page links and browser identity stay on the Academy when ' + (signedIn ? 'signed in' : 'signed out'), async ({ page }) => {
+    if (signedIn) {
+      await page.goto(academy + '/inloggen');
+      await page.evaluate(() => sessionStorage.setItem('academy-preview-user', 'studio-owner'));
+    }
+    const requested = [];
+    page.on('request', request => requested.push(new URL(request.url())));
+    for (const path of ['/expedities', '/expedities/sample/bewerken?modus=vertalen', '/expedities/sample/resultaten', '/instellingen', '/privacy']) {
+      const response = await page.goto(academy + path);
+      expect(response.status()).toBe(200);
+      expect(new URL(page.url()).origin).toBe(academy);
+      const state = await page.evaluate(() => ({
+        project: window.Xped.bootstrap.firebaseConfig.projectId,
+        authenticated: window.firebase.auth().currentUser !== null,
+        legacyRuntime: Boolean(window.LectureProcessorAuth || window.LectureProcessorBootstrap || window.LectureI18n),
+        links: Array.from(document.querySelectorAll('a[href]'), node => node.href),
+      }));
+      expect(state.project).toBe('demo-xped-academy');
+      expect(state.authenticated).toBe(signedIn);
+      expect(state.legacyRuntime).toBe(false);
+      for (const href of state.links) {
+        const url = new URL(href);
+        if (url.protocol === 'mailto:' || url.protocol === 'blob:') continue;
+        expect(url.origin, href).toBe(academy);
+        expect(url.pathname, href).not.toMatch(/^\/(?:lecture-notes|dashboard|study|admin|physio)(?:\/|$)/);
+      }
+    }
+    expect(requested.some(url => url.hostname.includes('lecture-processor') || /\/(?:firebase-bootstrap|auth-utils|app-shell|shared-ui)\.(?:js|css)$/.test(url.pathname))).toBe(false);
+  });
+}
+
+for (const width of [390, 1440]) {
+  test('learner chooses privacy with visible keyboard focus and finishes at ' + width + 'px', async ({ page }, testInfo) => {
+    const Model = require('../static/js/elearning-model');
+    const course = Model.createExpeditionPreset('blank', 'Pijn begrijpen', 'nl', { academy: true });
+    course.modules[0].steps[0].blocks = [Model.createBlock('richtext')];
+    course.modules.push(Model.createModule('blank', 1));
+    const submissions = [];
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    // Exercise the actual initial server-render of a published course as well as the player.
+    const headers = { Authorization: 'Bearer academy-preview-token' };
+    const created = await page.request.post(academy + '/api/elearning/expeditions', { headers, data: course });
+    expect(created.status()).toBe(201);
+    const id = (await created.json()).expedition.id;
+    const sharing = await page.request.post(academy + '/api/elearning/expeditions/' + id + '/sharing', {
+      headers, data: { action: 'update_public', enabled: true, collectResponses: true }
+    });
+    expect(sharing.status()).toBe(200);
+    const token = (await sharing.json()).share.token;
+    await page.route('**/api/elearning/public/' + token + '/responses', route => {
+      submissions.push(route.request().method());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto(academy + '/start/' + token + '?lang=nl');
+    await expect(page.locator('.xped-hero-art img')).toHaveAttribute('src', course.startPage.heroMedia.staticPath);
+    await expect(page.locator('.xped-hero-kicker')).toHaveCount(0);
+    await page.locator('#el-comfort-trigger').click();
+    const sizes = page.locator('.el-text-scale-group');
+    const normal = sizes.getByRole('radio', { checked: true });
+    await normal.focus();
+    await page.keyboard.press('ArrowRight');
+    const larger = sizes.locator('[data-scale=lg]');
+    await expect(larger).toBeFocused();
+    await expect(larger).toHaveAttribute('aria-checked', 'true');
+    expect(await larger.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
+    await page.keyboard.press('Home');
+    await expect(sizes.locator('[data-scale=sm]')).toBeFocused();
+    await page.locator('#el-comfort-trigger').click();
+    await page.locator('.xped-hero-cta-row button').click();
+    const consent = page.locator('.el-consent-card');
+    await expect(consent.getByRole('heading', { name: 'Jouw gegevens' })).toBeVisible();
+    const next = consent.locator('button[type=submit]');
+    await expect(next).toBeEnabled();
+    await next.focus();
+    await page.keyboard.press('Enter');
+    await expect(consent.getByRole('alert')).toContainText('Kies');
+    await expect(consent.getByRole('radio').first()).toBeFocused();
+    await consent.locator('input[value=private]').check();
+    await expect(consent.getByRole('alert')).toBeHidden();
+    await next.click();
+    await page.locator('.el-player-nav .xped-btn-primary').click();
+    await page.locator('.el-milestone-card .xped-btn').first().click();
+    await page.locator('.el-player-nav .xped-btn-primary').click();
+    const finish = page.locator('.xped-completion-card');
+    await expect(finish).toBeVisible();
+    await expect(finish.locator('.academy-route-station')).toHaveCount(2);
+    expect(submissions).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await testInfo.attach('completion', { body: await page.screenshot(), contentType: 'image/png' });
+  });
+}
+
+test('an author previews and replaces an existing private course cover', async ({ page }) => {
+  const Model = require('../static/js/elearning-model');
+  const course = {
+    ...Model.createExpeditionPreset('blank', 'Mijn cursus', 'nl', { academy: true }),
+    role: 'owner', revision: 1,
+  };
+  course.startPage.heroMedia = { kind: 'asset', assetId: 'my-cover' };
+  await page.goto(academy + '/signin');
+  await page.evaluate(() => sessionStorage.setItem('academy-preview-user', 'studio-owner'));
+  await page.route('**/api/elearning/expeditions/visual', route => route.fulfill({ json: { expedition: course } }));
+  await page.route('**/api/elearning/expeditions/visual/lease', route => route.fulfill({ json: { granted: true, lease_token: 'test-lease' } }));
+  await page.route('**/api/elearning/expeditions/visual/assets/my-cover', route => {
+    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
+    if (route.request().method() === 'HEAD') return route.fulfill({
+      headers: { 'Content-Type': 'image/png', 'Content-Length': '31000', 'Content-Disposition': "inline; filename*=UTF-8''Mijn%20omslag.png" },
+    });
+    return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=', 'base64') });
+  });
+  await page.goto(academy + '/physio/elearning/visual/edit');
+  const preview = page.locator('.academy-media-file');
+  await expect(preview).toContainText('Mijn omslag.png');
+  await expect(preview).toContainText('1 × 1 px');
+  await expect(preview).toContainText(/30[.,]3/);
+  await page.locator('.el-asset-library summary').click();
+  await page.locator('.el-asset-thumb').filter({ has: page.locator('img[src$="academy-rest.webp"]') }).click();
+  await expect(preview).toContainText('Rustmoment');
+  await expect(preview.locator('img')).toHaveAttribute('src', /academy-rest.webp$/);
+});
+
+test('Dutch is the first Studio language and a signed-in German choice survives another browser visit', async ({ page, context }) => {
+  let saved = null;
+  await page.route('**/api/academy/preferences', async route => {
+    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
+    if (route.request().method() === 'PUT') saved = route.request().postDataJSON().language;
+    return route.fulfill({ json: { language: saved } });
+  });
+  await signInToLibrary(page);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
+  await openAccountMenu(page);
+  await page.getByRole('button', { name: 'Deutsch', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+  await expect(page.getByRole('heading', { name: 'Expeditionen', exact: true })).toBeVisible();
+  expect(saved).toBe('de');
+  await context.clearCookies();
+  await page.goto(academy + '/instellingen');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+  await expect(page.getByRole('heading', { name: 'Einstellungen', exact: true })).toBeVisible();
+  await page.goto(academy + '/privacy');
+  await expect(page.getByRole('heading', { name: 'Fragen zu Ihren Daten' })).toBeVisible();
+});
+
+test('system appearance follows device changes and an explicit choice is retained', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto(academy + '/instellingen');
+  const root = page.locator('html');
+  await expect(root).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('main [data-academy-theme="system"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(root).toHaveAttribute('data-theme', 'dark');
+  await page.locator('main [data-academy-theme="light"]').click();
+  await page.reload();
+  await expect(root).toHaveAttribute('data-theme', 'light');
+  await page.locator('main [data-academy-theme="system"]').click();
+  await expect(root).toHaveAttribute('data-theme', 'dark');
+});
+
+test('review links open the requested field, approving its unchanged translation preserves the English archive', async ({ page }) => {
+  const model = require('../static/js/elearning-model.js');
+  const course = { ...model.createExpeditionPreset('blank', 'Cursus ter beoordeling', 'nl'), id: 'review', role: 'translate', revision: 1 };
+  course.startPage.title = { nl: 'Welkom onderweg', de: 'Willkommen unterwegs', en: 'Retained historical text', _review: { de: true } };
+  course.enabledLanguages = ['nl', 'de', 'en'];
+  await signInToLibrary(page);
+  await page.route('**/api/elearning/expeditions/review', route => route.fulfill({ json: { expedition: course } }));
+  await page.route('**/api/elearning/expeditions/review/translations', async route => {
+    const data = route.request().postDataJSON();
+    expect(data.targetLanguage).toBe('de');
+    expect(data.textUpdates).toEqual({ 'startPage.title': 'Willkommen unterwegs' });
+    delete course.startPage.title._review;
+    course.revision += 1;
+    return route.fulfill({ json: { expedition: course } });
+  });
+  await page.goto(academy + '/expedities/review/bewerken?modus=vertalen&taal=de&veld=startPage.title');
+  const row = page.locator('[data-field-key="startPage.title"]');
+  await expect(row.getByRole('textbox')).toBeFocused();
+  await expect(row.getByRole('textbox')).toHaveValue('Willkommen unterwegs');
+  await expect(page.getByText('Deze expeditie bevat ook Engelse tekst.', { exact: false })).toBeVisible();
+  await row.getByRole('button', { name: 'Vertaling goedkeuren' }).click();
+  await expect.poll(() => course.revision).toBe(2);
+  expect(course.startPage.title.en).toBe('Retained historical text');
+});
+
+test('Dutch exercise scores and German editing notices follow their own language', async ({ page, context }) => {
+  const model = require('../static/js/elearning-model.js');
+  const course = { ...model.createExpeditionPreset('blank', 'Oefening', 'nl'), id: 'balans', role: 'owner', revision: 1 };
+  const station = course.modules[0];
+  const step = station.steps[0];
+  const balance = model.createBlock('balance_scale');
+  balance.data.factors = [
+    { id: 'belasting', category: 'load', label: { nl: 'Belasting' } },
+    { id: 'herstel', category: 'resource', label: { nl: 'Herstel' } },
+  ];
+  step.blocks = [balance];
+  let granted = true;
+  await signInToLibrary(page);
+  await context.addCookies([{ url: academy, name: 'xped-language', value: 'de' }]);
+  await page.route('**/api/elearning/expeditions/balans', route => route.fulfill({ json: { expedition: course } }));
+  await page.route('**/api/elearning/expeditions/balans/lease', route => route.fulfill({ json: {
+    granted, lease_token: 'synthetic-edit', editor: { name: 'A. Auteur', updated_at: Math.floor(Date.now() / 1000) - 180 },
+  } }));
+  await page.goto(academy + '/expedities/balans/bewerken?module=' + station.id + '&step=' + step.id);
+  const activity = page.locator('.xped-balance-stage').first();
+  await expect(activity.locator('.xped-balance-status')).toContainText('In balans');
+  await activity.locator('.xped-range.is-resource').press('End');
+  await expect(activity.locator('.xped-balance-status')).toContainText('Sterke draagkracht');
+  granted = false;
+  await page.reload();
+  await expect(page.getByText('A. Auteur bearbeitet diese Expedition', { exact: false })).toContainText('vor 3 Minuten');
+  await expect(page.getByText('Sie können die Vorschau öffnen.', { exact: false })).toBeVisible();
+});
+
+test('dynamic interface labels use the scoped catalog and authored titles remain literal', async ({ page }) => {
+  const literalTitle = 'Demo {do not translate}';
+  await page.route('**/academy/messages/nl/library.js', async route => {
+    const result = await route.fetch();
+    const source = await result.text();
+    const data = JSON.parse(source.slice('window.XpedMessages='.length, -1));
+    for (const key of Object.keys(data)) data[key] = '⟦' + data[key] + '⟧';
+    await route.fulfill({ response: result, body: 'window.XpedMessages=' + JSON.stringify(data) + ';' });
+  });
+  await page.route('**/api/elearning/expeditions', route => route.fulfill({ json: {
+    expeditions: [{ id: 'pseudo', title: literalTitle, role: 'owner', defaultLanguage: 'nl', moduleCount: 1, stepCount: 1 }],
+    folders: [], studioAdmin: true, canCreate: true
+  } }));
+  await signInToLibrary(page);
+  await expect(page.getByRole('link', { name: literalTitle })).toBeVisible();
+  await expect(page.getByRole('link', { name: '⟦Editor openen⟧' })).toBeVisible();
+  await expect(page.locator('body')).not.toContainText(/[▁�]/u);
+});
+
+test('creation presents localized starter descriptions before inserting any course material', async ({ page, context }) => {
+  await context.addCookies([{ url: academy, name: 'xped-language', value: 'de' }]);
+  await page.goto(academy + '/expedities');
+  await page.evaluate(() => sessionStorage.setItem('academy-preview-user', 'studio-owner'));
+  await page.reload();
+  await page.getByRole('button', { name: 'Neue Expedition', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Beginnen Sie mit einer neutralen Station und einem leeren Schritt.');
+  await expect(page.getByRole('dialog')).not.toContainText('Start from scratch');
 });

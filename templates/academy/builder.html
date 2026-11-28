@@ -1,0 +1,82 @@
+{% extends 'academy/base.html' %}
+{% from '_academy_copy.html' import tr with context %}
+{% block body_attrs %}
+  class="el-studio-body"
+  data-expedition-id="{{ expedition_id }}"
+  data-grant-token="{{ grant_token }}"
+  data-initial-mode="{{ initial_mode }}"
+{% endblock %}
+{% block title %}{% if initial_mode == 'translate' %}{{ 'Übersetzen' if academy_locale == 'de' else 'Vertalen' }}{% else %}{{ 'Expedition bearbeiten' if academy_locale == 'de' else 'Expeditie bewerken' }}{% endif %} · xPED Academy{% endblock %}
+{% block head %}
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-builder-authoring.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-report.css') }}">
+  {% include '_academy_foundation.html' %}
+{% endblock %}
+{% block body %}
+  {% set back_to_course = expedition_id and not grant_token %}
+  {% if not grant_token %}
+    {% set academy_editor_focus = true %}
+    {% include '_academy_header.html' %}
+  {% endif %}
+  <header class="el-topbar">
+    <div class="el-topbar-left">
+      {% if not grant_token %}
+        {% from 'academy/_shell_icons.html' import icon %}
+        <button type="button" id="ac-nav-toggle" class="ac-icon ac-editor-menu" aria-expanded="false" aria-controls="ac-rail" aria-label="{{ xped_copy('Navigatie openen','Navigation öffnen') if xped_copy is defined else 'Navigatie openen' }}">{{ icon('menu',18) }}</button>
+      {% endif %}
+      {% set back_label = xped_copy('Terug naar de expeditie','Zurück zur Expedition') if back_to_course else tr("Back to Expeditions") %}
+      <a href="{{ url_for('academy.course', expedition_id=expedition_id) if back_to_course else url_for('academy.library') }}" class="el-icon-btn" id="el-back-link" aria-label="{{ back_label }}" title="{{ back_label }}"><span>{{ xped_copy('Expeditie','Expedition') if back_to_course else tr("Expeditions") }}</span></a>
+      <div class="el-title-wrap">
+        <textarea rows="1" class="el-title-input" id="el-exp-title" aria-label="{{ tr("Expedition title") }}" maxlength="200"></textarea>
+        <button type="button" class="el-btn el-btn-sm" id="el-title-done">{{ tr("Done") }}</button>
+        <span id="el-share-visibility" hidden></span>
+        <span class="el-save-chip" id="el-save-state" role="status" aria-live="polite">{{ tr("Loading…") }}</span>
+        <button type="button" class="el-btn el-btn-sm el-save-retry" id="el-save-retry" hidden>{{ tr("Retry save") }}</button>
+      </div>
+    </div>
+
+    <div class="el-topbar-center">
+      <div class="el-mode-tabs" role="tablist" aria-label="{{ tr("Workspace mode") }}">
+        <button type="button" role="tab" class="el-mode-tab is-active" data-mode="edit" aria-selected="true">{{ tr("Create") }}</button>
+        <button type="button" role="tab" class="el-mode-tab" data-mode="translate" aria-selected="false">{{ tr("Translate") }}</button>
+        <button type="button" role="tab" class="el-mode-tab" data-mode="preview" aria-selected="false">{{ tr("Preview") }}</button>
+      </div>
+    </div>
+
+    <div class="el-topbar-right">
+      <div class="el-tools-anchor">
+        <button type="button" class="el-icon-btn el-utilities-toggle" id="el-utilities-toggle" aria-label="{{ tr("Editor tools") }}" aria-controls="el-editor-utilities" aria-expanded="false"></button>
+        <div id="el-editor-utilities" class="el-utilities">
+          <a class="el-btn el-btn-sm el-mobile-expeditions" href="{{ url_for('academy.library') }}">{{ tr("Expeditions") }}</a>
+          <div id="el-edit-lang-host"></div>
+          <div class="el-topbar-sep" aria-hidden="true"></div>
+          <button type="button" class="el-icon-btn" id="el-undo-btn" aria-label="{{ tr("Undo") }}" title="{{ tr("Undo") }}" disabled></button>
+          <button type="button" class="el-icon-btn" id="el-redo-btn" aria-label="{{ tr("Redo") }}" title="{{ tr("Redo") }}" disabled></button>
+          <div id="el-more-menu-host"></div>
+        </div>
+      </div>
+      <button type="button" class="el-btn el-btn-primary" id="el-share-btn" hidden>{{ tr("Share") }}</button>
+    </div>
+  </header>
+
+  <div id="el-return-responses" class="el-return-bar" hidden>
+    <span>{{ tr("Opened from Responses review comments.") }}</span>
+    <a id="el-return-responses-link" href="{{ url_for('academy.library') }}" class="el-btn el-btn-sm">{{ tr("Back to Responses") }}</a>
+  </div>
+
+  {% include 'elearning/builder_workspace.html' %}
+  {% include 'elearning/builder_translation.html' %}
+  {% include 'elearning/builder_preview.html' %}
+  {% include 'elearning/builder_dialogs.html' %}
+  {% include 'academy/runtime.html' %}
+  <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename='js/vendor/qrcode-generator-2.0.4/qrcode.min.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_qr_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_route_map_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_blocks_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_builder_js) }}"></script>
+{% endblock %}
