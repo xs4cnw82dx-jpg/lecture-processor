@@ -16,7 +16,7 @@
   let view = 'signin';
   let busy = false;
   let auth;
-  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) {
+  try { auth = window.Xped.bootstrap.getAuth(); } catch (_) {
     byId('auth-credentials').hidden = true;
     status.textContent = uiText('Sign-in is temporarily unavailable. Reload this page to try again.');
     return;
@@ -48,15 +48,15 @@
   function continueWithUser(user) {
     if (!user) return;
     const next = new URLSearchParams(window.location.search).get('next') || '/';
-    if (!user.emailVerified && next !== '/account') { show('verify'); return; }
-    // Resume Studio links only. Resolve with the browser's URL parser to also
-    // handle backslashes and disguised protocol-relative URLs.
-    let target = '/';
-    try {
-      const url = new URL(next, window.location.origin);
-      if (url.origin === window.location.origin && (url.pathname === '/' || url.pathname === '/account' || url.pathname === '/physio/elearning'
-        || url.pathname.startsWith('/physio/elearning/'))) target = url.pathname + url.search + url.hash;
-    } catch (_) { /* return to the library */ }
+    var url;
+    try { url = new URL(next, window.location.origin); } catch (_) { url = new URL('/', window.location.origin); }
+    var allowed = url.origin === window.location.origin && (
+      ['/', '/instellingen', '/account', '/team', '/vertalingen', '/resultaten', '/expedities', '/physio/elearning'].includes(url.pathname)
+      || url.pathname.startsWith('/expedities/') || url.pathname.startsWith('/physio/elearning/')
+    );
+    const accountReturn = allowed && ['/account', '/instellingen'].includes(url.pathname);
+    if (!user.emailVerified && !accountReturn) { show('verify'); return; }
+    const target = allowed ? url.pathname + url.search + url.hash : '/';
     window.location.replace(target);
   }
 

@@ -1,11 +1,13 @@
-{% extends '_base.html' %}
+{% extends studio_layout|default('_base.html') %}
 {% from '_academy_copy.html' import tr with context %}
 {% block body_attrs %} class="el-library-body{% if academy_mode %} academy-body{% endif %}"{% endblock %}
 {% block title %}xPEDitie Pijn Studio{% if not academy_mode %} · Lecture Processor{% endif %}{% endblock %}
 {% block head %}
+  {% block platform_styles %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  {% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-admin.css') }}">
@@ -31,6 +33,9 @@
         </div>
       </header>
 
+      {% if not academy_mode %}
+      <p class="xped-caption">Your existing expeditions are available here. For new Academy courses, open <a href="https://xped.academy/">xPED Academy</a>.</p>
+      {% endif %}
       {% if academy_mode %}
       <div class="academy-folder-bar" id="academy-folder-bar" hidden>
         <label for="academy-folder-filter">{{ tr("Folder") }}</label>
@@ -44,7 +49,7 @@
         <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">{{ tr("Loading your expeditions…") }}</div>
         <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="{{ tr("Search expeditions…") }}" aria-label="{{ tr("Search expeditions") }}" hidden>
       </div>
-      <a class="btn" id="el-signin" href="{{ '/signin?next=' ~ (request.path|urlencode) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
+      <a class="btn" id="el-signin" href="{{ url_for('academy.signin', next=request.full_path.rstrip('?')) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
       <button type="button" class="btn small" id="el-retry" hidden>{{ tr("Try again") }}</button>
       <section class="el-exp-list" id="el-dash-grid" aria-label="{{ tr("Expeditions") }}"></section>
     </main>
@@ -127,6 +132,7 @@
 
 
 
+  {% block platform_runtime %}
   {% include '_firebase_scripts.html' %}
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   {% if not academy_mode %}
@@ -136,6 +142,7 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
   {% if not academy_mode %}<script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>{% endif %}
+  {% endblock %}
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>

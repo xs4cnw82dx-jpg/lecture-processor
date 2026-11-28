@@ -1569,7 +1569,25 @@
     return { expedition: expedition, conflicts: conflicts };
   }
 
+  // Share the Studio domain model across deployments; links stay on their data-owning site.
+  function coursePaths(id) {
+    var component = encodeURIComponent(id);
+    var academy = !!(root.Xped && root.Xped.bootstrap);
+    var base = (academy ? '/expedities/' : '/physio/elearning/') + component;
+    return {
+      overview: academy ? base : base + '/edit',
+      edit: base + (academy ? '/bewerken' : '/edit'),
+      report: base + (academy ? '/resultaten' : '/responses'),
+    };
+  }
+
+  function learnerPath(token) {
+    return ((root.Xped && root.Xped.bootstrap) ? '/start/' : '/elearning/p/') + encodeURIComponent(token);
+  }
+
   var api = {
+    coursePaths: coursePaths,
+    learnerPath: learnerPath,
     mergeCourseEdits: mergeCourseEdits,
     SUPPORTED_LANGS: SUPPORTED_LANGS,
     LANG_LABELS: LANG_LABELS,

@@ -1,3 +1,4 @@
+:root { --studio-brand-ink: #062940; --studio-brand-white: #fff; --studio-brand-divider: #527082; }
 .academy-body {
   min-height: 100dvh;
   margin: 0;
@@ -8,8 +9,8 @@
   font-family: var(--xped-font-body);
 }
 .academy-header {
-  background: #062940;
-  color: #fff;
+  background: var(--studio-brand-ink);
+  color: var(--studio-brand-white);
 }
 .academy-nav {
   box-sizing: border-box;
@@ -30,7 +31,7 @@
   text-decoration: none;
 }
 .academy-brand img { display: block; width: 41px; height: auto; }
-.academy-brand-name { display: grid; gap: 2px; border-inline-start: 1px solid #527082; padding-inline-start: 10px; }
+.academy-brand-name { display: grid; gap: 2px; border-inline-start: 1px solid var(--studio-brand-divider); padding-inline-start: 10px; }
 .academy-brand-name span { font: 700 .8rem var(--xped-font-body); }
 .academy-brand:hover strong { text-decoration: underline; }
 .academy-footer, .academy-player-footer {
@@ -89,7 +90,7 @@
   cursor: pointer;
   padding: 8px 11px;
   color: var(--xped-navy-deep);
-  background: #fff;
+  background: var(--studio-brand-white);
 }
 .academy-header .academy-preferences .app-disclosure-chevron { stroke: currentColor; }
 

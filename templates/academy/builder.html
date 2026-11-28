@@ -1,0 +1,5 @@
+{% extends 'elearning_builder.html' %}
+{% set studio_layout = 'academy/base.html' %}
+{% block platform_styles %}{% endblock %}
+{% block platform_runtime %}{% include 'academy/runtime.html' %}{% endblock %}
+{% block title %}{% if initial_mode == 'translate' %}{{ 'Übersetzen' if academy_locale == 'de' else 'Vertalen' }}{% else %}{{ 'Expedition bearbeiten' if academy_locale == 'de' else 'Expeditie bewerken' }}{% endif %} · xPED Academy{% endblock %}

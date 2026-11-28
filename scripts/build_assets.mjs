@@ -17,6 +17,7 @@ async function buildTarget(target, writeOutput) {
     entryPoints: [path.join(projectRoot, target.entry)],
     outfile: path.join(projectRoot, target.out),
     bundle: target.bundle || false,
+    define: target.define || {},
     ...(target.format ? { format: target.format, globalName: target.globalName } : {}),
     minify: true,
     legalComments: 'none',
@@ -37,12 +38,14 @@ async function isTargetCurrent(target) {
   }
 }
 
-async function listTemplateFiles() {
-  const templatesDir = path.join(projectRoot, 'templates');
-  const entries = await readdir(templatesDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.html'))
-    .map((entry) => path.join(templatesDir, entry.name));
+async function listTemplateFiles(directory = path.join(projectRoot, 'templates')) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const item = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await listTemplateFiles(item));
+    else if (entry.isFile() && entry.name.endsWith('.html')) files.push(item);
+  }
+  return files;
 }
 
 async function getExternalScriptsMissingIntegrity() {
@@ -64,7 +67,7 @@ async function getExternalScriptsMissingIntegrity() {
 
 async function getUntrackedLocalScripts() {
   const templateFiles = await listTemplateFiles();
-  const minifiedEntries = new Set(targets.map((target) => target.entry));
+  const minifiedEntries = new Set(targets.flatMap((target) => [target.entry, target.out]));
   const allowedUnminified = new Set(intentionallyUnminifiedScripts);
   const untracked = new Set();
   const localScriptPattern = /js\/[A-Za-z0-9_.-]+\.js/g;

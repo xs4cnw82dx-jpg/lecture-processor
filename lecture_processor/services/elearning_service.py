@@ -14,7 +14,7 @@ from statistics import median
 from threading import Lock
 from copy import deepcopy
 
-from flask import current_app, g, jsonify, request, send_file
+from flask import current_app, g, jsonify, request, send_file, url_for
 from google.cloud.firestore_v1.field_path import FieldPath
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
@@ -61,6 +61,11 @@ def _store(runtime) -> ElearningStore:
 
 def _exp_path(expedition_id: str) -> str:
     return 'elearning_expeditions/' + model.identifier(expedition_id, 'expedition id')
+
+
+def _grant_path(token: str) -> str:
+    endpoint = 'academy.translator' if current_app.config.get('XPED_ACADEMY') else 'elearning.translator_page'
+    return url_for(endpoint, grant_token=token)
 
 
 def _grant_serializer() -> URLSafeTimedSerializer:
@@ -695,7 +700,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 'label': g.get('label', ''),
                 'revoked': bool(g.get('revoked')),
                 'createdAt': g.get('created_at', 0),
-                'urlPath': '/elearning/translate/' + g['token'] if not g.get('revoked') else '',
+                'urlPath': _grant_path(g['token']) if not g.get('revoked') else '',
             }
             for g in db.list('elearning_grants', 'expedition_id', expedition_id)
             if not g.get('revoked')
@@ -795,7 +800,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 'role': grant_role,
                 'targetLanguage': target_lang,
                 'label': label,
-                'urlPath': '/elearning/translate/' + raw_token,
+                'urlPath': _grant_path(raw_token),
             }), 201
 
         if action == 'revoke_grant':
@@ -1031,11 +1036,11 @@ def _resolve_public_expedition(runtime, share_token: str, unit=None):
         raise model.ElearningError('This expedition is no longer available.', 404)
     share = exp.get('share') or {}
     if share.get('token') != safe_token:
-        raise model.ElearningError('This expedition link has expired.', 410)
+        raise model.ElearningError('This expedition link has expired.', 410, code='link_expired')
     if not share.get('enabled'):
         raise model.ElearningError(
             str(share.get('pausedMessage') or 'This learning module is temporarily paused.'),
-            410,
+            410, code='author_message' if share.get('pausedMessage') else 'link_paused',
         )
     return db, exp
 

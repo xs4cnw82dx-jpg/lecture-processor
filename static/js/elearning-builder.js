@@ -1,6 +1,9 @@
 (function () {
   'use strict';
   var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
+  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
+  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
+  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -12,15 +15,15 @@
   var expeditionId = bodyData.expeditionId || '';
   var grantToken = bodyData.grantToken || '';
   var initialMode = bodyData.initialMode || 'edit';
-  var ux = window.LectureProcessorUx;
-  var bootstrap = window.LectureProcessorBootstrap;
+  var ux = platformUx;
+  var bootstrap = platformBootstrap;
   var auth = null;
   if (!grantToken) {
     try { auth = bootstrap.getAuth(); } catch (error) {
       if (!document.querySelector('meta[name="academy-signin"]')) throw error;
     }
   }
-  var authClient = grantToken ? null : window.LectureProcessorAuth.createAuthClient(auth);
+  var authClient = grantToken ? null : platformAuth.createAuthClient(auth);
   var accountSession = null;
   var activeUser = null;
   var loadedAccount = false;
@@ -4162,7 +4165,7 @@
     groupInput.setAttribute('aria-invalid', String(!!invalid));
     document.getElementById('el-share-cohort-error').hidden = !invalid;
     var cohort = share.collectResponses ? groupInput.value : '';
-    var url = window.location.origin + '/elearning/p/' + encodeURIComponent(share.token || '');
+    var url = window.location.origin + Model.learnerPath(share.token || '');
     if (cohort) url += '?cohort=' + encodeURIComponent(cohort);
     if (invalid || !share.token) url = '';
     document.getElementById('el-share-url').value = url;
@@ -4203,6 +4206,8 @@
       var owner = state.role === 'owner';
       Object.values(shareFields).forEach(function (id) { document.getElementById(id).disabled = !owner; });
       document.getElementById('el-share-rotate-btn').hidden = !owner;
+      var resetPanel = document.getElementById('academy-link-reset');
+      if (resetPanel) { resetPanel.hidden = !owner; resetPanel.open = false; }
       shareDialog.querySelectorAll('[data-share-tab]:not([data-share-tab="learners"])').forEach(function (tab) { tab.hidden = !owner; });
       document.getElementById('el-share-status').textContent = '';
       document.getElementById('el-share-cohort').oninput = updateShareUrlAndQr;
@@ -4277,7 +4282,7 @@
     grants.forEach(function (g) {
       var row = document.createElement('div');
       row.className = 'el-member-row';
-      var url = window.location.origin + (g.urlPath || ('/elearning/translate/' + encodeURIComponent(g.token || '')));
+      var url = window.location.origin + (g.urlPath || ((window.Xped ? '/vertalen/' : '/elearning/translate/') + encodeURIComponent(g.token || '')));
       var grantName = (g.label || uiText('Translator')) + ' (' + String(g.targetLanguage || 'de').toUpperCase() + ')';
       var inp = document.createElement('input');
       inp.type = 'text';
@@ -4491,7 +4496,7 @@
       {
         label: uiText('Responses & Analytics'),
         icon: 'chart',
-        onClick: function () { window.location.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/responses'; },
+        onClick: function () { window.location.href = Model.coursePaths(expeditionId).report; },
       },
       {
         label: uiText('Export course content'),
@@ -5058,7 +5063,7 @@
     panel.textContent = message;
     if (auth && !grantToken && !activeUser) {
       var link = document.createElement('a');
-      link.href = window.LectureProcessorAuth.buildSignInUrl(window.location.pathname);
+      link.href = platformAuth.buildSignInUrl(window.location.pathname + window.location.search + window.location.hash);
       link.textContent = uiText('Sign in');
       panel.append(' ', link);
     }
@@ -5122,13 +5127,18 @@
       editLangDD.setItems(LANG_OPTIONS, state.editLang);
       previewLangDD.setItems(LANG_OPTIONS, state.previewLang);
       if (state.role === 'translate') state.mode = 'translate';
+      var targetLanguage = urlParams.get('taal');
+      if (window.Xped && !grantToken && state.mode === 'translate' && ['de', 'nl'].includes(targetLanguage)) {
+        state.trTarget = targetLanguage;
+        state.trSource = targetLanguage === 'de' ? 'nl' : 'de';
+      }
 
       // UX-118: Support deep linking from Responses reviewer comments with archived-step fallback
       if (openedFromResponses) {
         var retBar = document.getElementById('el-return-responses');
         var retLink = document.getElementById('el-return-responses-link');
         if (retBar && retLink) {
-          retLink.href = '/physio/elearning/' + encodeURIComponent(expeditionId) + '/responses';
+          retLink.href = Model.coursePaths(expeditionId).report;
           retBar.hidden = false;
         }
       }

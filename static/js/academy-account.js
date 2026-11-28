@@ -54,15 +54,15 @@
       () => changeLanguage(control.dataset.academyLanguage || control.value));
   });
   var button = document.getElementById('academy-signout');
-  var bootstrap = window.Xped.bootstrap || window.LectureProcessorBootstrap;
-  const authLinks = window.Xped.auth || window.LectureProcessorAuth;
+  var bootstrap = window.Xped.bootstrap;
+  const authLinks = window.Xped.auth;
   if (authLinks) authLinks.updateSignInLinks();
   if (!bootstrap) return;
   var auth;
   try { auth = bootstrap.getAuth(); } catch (_) { return; }
 
   var verify = document.getElementById('academy-verify-email');
-  if (verify) verify.href = '/signin?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+  if (verify) verify.href = '/inloggen?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
   bootstrap.onAuthStateReady(auth, async function (user) {
     const requestVersion = ++preferenceVersion;
     if (button) button.hidden = !user;
@@ -85,7 +85,7 @@
       window.location.replace('/');
     } catch (_) {
       button.disabled = false;
-      (window.Xped.ux || window.LectureProcessorUx).toast(locale.copy('Uitloggen is niet gelukt. Probeer het opnieuw.',
+      (window.Xped.ux).toast(locale.copy('Uitloggen is niet gelukt. Probeer het opnieuw.',
         'Sie konnten nicht abgemeldet werden. Bitte versuchen Sie es erneut.'), { type: 'error' });
     }
   });

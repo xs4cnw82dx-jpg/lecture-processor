@@ -1,8 +1,7 @@
-{% extends '_base.html' %}
+{% extends 'academy/base.html' %}
 {% from '_academy_copy.html' import tr with context %}
 {% block title %}{{ tr("Privacy") }} · xPEDitie Pijn Studio{% endblock %}
 {% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   {% include '_academy_foundation.html' %}
 {% endblock %}
@@ -21,7 +20,7 @@
     <p>{{ tr("Studio pages for authors load two weights of the General Sans typeface from Fontshare, a service of the Indian Type Foundry. Opening these pages sends your IP address and browser details to Fontshare's servers. Learner pages do not load these fonts.") }}</p>
     <h2>{{ tr("Author accounts and courses") }}</h2>
     <p>{{ tr("The Studio uses Firebase Authentication for sign-in. Course records and pilot responses are stored in Firestore. Uploaded course media is stored in Supabase. Authors can grant collaborators access to an expedition and choose when to share a learner link.") }}</p>
-    <p><a href="/account">{{ tr("Manage your Studio account") }}</a></p>
+    <p><a href="{{ url_for('academy.settings') }}">{{ tr("Manage your Studio account") }}</a></p>
     <h2>{{ tr("Questions about your data") }}</h2>
     <p>{{ tr("For questions about a pilot or a shared response, contact the course organizer who sent your expedition link.") }}</p>
     {% if legal_contact_email %}<p>{{ tr("For help accessing or deleting your Studio account, or for other privacy requests, email") }} <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a>.</p>{% endif %}

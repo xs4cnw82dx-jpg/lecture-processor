@@ -1,11 +1,13 @@
-{% extends '_base.html' %}
+{% extends studio_layout|default('_base.html') %}
 {% from '_academy_copy.html' import tr with context %}
 {% block body_attrs %} class="el-library-body{% if academy_mode %} academy-body{% endif %}" data-expedition-id="{{ expedition_id }}"{% endblock %}
 {% block title %}{{ tr("Pilot responses") }} · {{ 'xPEDitie Pijn Studio' if academy_mode else 'Lecture Processor' }}{% endblock %}
 {% block head %}
+  {% block platform_styles %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  {% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
   {% include '_academy_foundation.html' %}
@@ -14,7 +16,7 @@
   {% set shell_title = 'Responses & Pilot Analytics' %}
   {% include '_academy_header.html' if academy_mode else '_app_shell.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
-      <a href="/physio/elearning/{{ expedition_id }}/edit" class="el-back-link">{{ tr("← Back to Builder") }}</a>
+      <a href="{{ url_for('academy.builder' if academy_mode else 'elearning.studio_builder_page', expedition_id=expedition_id) }}" class="el-back-link">{{ tr("← Back to Builder") }}</a>
       <header class="el-dash-header">
         <div>
           <h1 id="el-resp-title" class="page-title">{{ tr("Pilot responses") }}</h1>
@@ -37,7 +39,7 @@
 
       <div id="el-resp-status" role="status">{{ tr("Loading responses…") }}</div>
       <button class="btn small" id="el-resp-retry" type="button" hidden>{{ tr("Try again") }}</button>
-      <a class="btn" id="el-signin" href="{{ '/signin?next=' ~ (request.path|urlencode) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
+      <a class="btn" id="el-signin" href="{{ url_for('academy.signin', next=request.full_path.rstrip('?')) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
       <div id="el-response-report" hidden>
       <section class="el-exp-card el-split-card" id="el-resp-kpis" aria-labelledby="el-resp-kpis-title"></section>
       <section class="el-exp-card" id="el-resp-funnel-card">
@@ -63,6 +65,7 @@
       </div>
     {% endif %}
 
+  {% block platform_runtime %}
   {% include '_firebase_scripts.html' %}
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   {% if not academy_mode %}
@@ -72,6 +75,7 @@
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
   {% if not academy_mode %}<script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>{% endif %}
+  {% endblock %}
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_responses_js) }}"></script>

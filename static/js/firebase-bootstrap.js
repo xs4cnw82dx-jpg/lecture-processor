@@ -1,7 +1,10 @@
+/* global XPED_ACADEMY_BUILD */
 (function (global) {
   'use strict';
 
-  var FIREBASE_CONFIG = {
+  const academyBuild = typeof XPED_ACADEMY_BUILD !== 'undefined' && XPED_ACADEMY_BUILD;
+
+  var FIREBASE_CONFIG = academyBuild ? null : {
     apiKey: 'AIzaSyBAAeEUCPNvP5qnqpP3M6HnFZ6vaaijUvM',
     authDomain: 'lecture-processor-cdff6.firebaseapp.com',
     projectId: 'lecture-processor-cdff6',
@@ -11,7 +14,7 @@
   };
 
   var doc = global.document;
-  var academy = !!(doc && doc.querySelector && doc.querySelector('meta[name="academy-signin"]'));
+  var academy = academyBuild || !!(doc && doc.querySelector && doc.querySelector('meta[name="academy-signin"]'));
   var firebaseConfig = academy ? academyConfig() : FIREBASE_CONFIG;
 
   function academyConfig() {
@@ -23,7 +26,7 @@
         return typeof config[key] === 'string' && config[key].trim() !== '';
       })) return null;
       if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(config.projectId)
-          || config.projectId === FIREBASE_CONFIG.projectId
+          || config.projectId === 'lecture-processor-cdff6'
           || config.authDomain !== config.projectId + '.firebaseapp.com') return null;
       return Object.freeze(config);
     } catch (_) {
@@ -51,8 +54,9 @@
   function getAuth() {
     ensureFirebaseApp();
     var auth = global.firebase.auth();
-    if (!auth.__lectureProcessorLocalPersistenceSet && auth.setPersistence && global.firebase.auth.Auth && global.firebase.auth.Auth.Persistence) {
-      auth.__lectureProcessorLocalPersistenceSet = true;
+    var persistenceKey = academyBuild ? '__xpedLocalPersistenceSet' : '__lectureProcessorLocalPersistenceSet';
+    if (!auth[persistenceKey] && auth.setPersistence && global.firebase.auth.Auth && global.firebase.auth.Auth.Persistence) {
+      auth[persistenceKey] = true;
       auth.setPersistence(global.firebase.auth.Auth.Persistence.LOCAL).catch(function () {});
     }
     return auth;
@@ -222,7 +226,7 @@
     };
   }
 
-  global.LectureProcessorBootstrap = {
+  var bootstrap = {
     authStateReady: authStateReady,
     firebaseConfig: firebaseConfig,
     ensureFirebaseApp: ensureFirebaseApp,
@@ -230,4 +234,10 @@
     getAuth: getAuth,
     onAuthStateReady: onAuthStateReady,
   };
+  if (academyBuild) {
+    global.Xped = global.Xped || {};
+    global.Xped.bootstrap = bootstrap;
+  } else {
+    global.LectureProcessorBootstrap = bootstrap;
+  }
 })(window);

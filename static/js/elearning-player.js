@@ -1054,9 +1054,12 @@
         var h1 = document.createElement('h1');
         h1.textContent = Model.ui(state.lang, 'unavailable');
         var p = document.createElement('p');
-        p.textContent = resp.status === 410 ? (data.error || Model.ui(state.lang, 'pausedFallback')) : Model.ui(state.lang, 'notFound');
-        errCard.appendChild(h1);
-        errCard.appendChild(p);
+        var message = Model.ui(state.lang, 'notFound');
+        if (resp.status === 410 && data.error_code !== 'link_expired') {
+          message = data.error_code === 'link_paused' ? Model.ui(state.lang, 'pausedFallback') : (data.error || Model.ui(state.lang, 'pausedFallback'));
+        }
+        p.textContent = message;
+        errCard.append(h1, p);
         mainEl.appendChild(errCard);
         return;
       }

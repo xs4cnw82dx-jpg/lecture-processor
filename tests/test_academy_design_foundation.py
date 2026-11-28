@@ -8,8 +8,8 @@ from scripts.academy_preview import academy_preview
 
 
 FONTSHARE_STYLESHEET = 'https://api.fontshare.com/v2/css?f[]=general-sans@500,600&display=swap'
-STUDIO_PAGES = ('/physio/elearning', '/physio/elearning/course/edit', '/physio/elearning/course/responses',
-                '/signin', '/privacy', '/account')
+STUDIO_PAGES = ('/expedities', '/expedities/course/bewerken', '/expedities/course/resultaten',
+                '/inloggen', '/privacy', '/instellingen')
 
 
 @pytest.fixture()
@@ -30,12 +30,15 @@ def test_academy_author_pages_layer_the_foundation_last(academy_client, path):
     assert page.get('data-product') == 'academy'
     sheets = _stylesheets(page)
     assert FONTSHARE_STYLESHEET in sheets
-    assert sheets[-1].split('?')[0] == '/static/css/elearning-foundation.css'
-    assert academy_client.get(sheets[-1]).status_code == 200
+    paths = [sheet.split('?')[0] for sheet in sheets]
+    assert paths.index('/static/css/academy-base.css') < paths.index('/static/css/elearning-foundation.css')
+    for sheet in sheets:
+        if sheet.startswith('/static/'):
+            assert academy_client.get(sheet).status_code == 200, sheet
 
 
 def test_academy_policy_allows_only_the_fontshare_hosts_the_studio_uses(academy_client):
-    policy = academy_client.get('/physio/elearning').headers['Content-Security-Policy']
+    policy = academy_client.get('/expedities').headers['Content-Security-Policy']
     directives = dict(part.strip().split(' ', 1) for part in policy.split(';'))
     assert 'https://api.fontshare.com' in directives['style-src'].split()
     assert 'https://cdn.fontshare.com' in directives['font-src'].split()
@@ -43,8 +46,8 @@ def test_academy_policy_allows_only_the_fontshare_hosts_the_studio_uses(academy_
 
 
 def test_learner_pages_make_no_font_requests_to_fontshare(academy_client):
-    player = academy_client.get('/elearning/p/synthetic-course-token')
-    assert player.status_code == 200
+    player = academy_client.get('/start/synthetic-course-token')
+    assert player.status_code == 404
     assert 'fontshare' not in player.text
     assert html.fromstring(player.data).get('data-product') is None
 

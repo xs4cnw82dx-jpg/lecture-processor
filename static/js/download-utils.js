@@ -1,5 +1,8 @@
+/* global XPED_ACADEMY_BUILD */
 (function (global) {
   'use strict';
+
+  const academyBuild = typeof XPED_ACADEMY_BUILD !== 'undefined' && XPED_ACADEMY_BUILD;
 
   function parseFilenameFromDisposition(disposition, fallbackName) {
     var value = String(disposition || '');
@@ -36,9 +39,14 @@
     });
   }
 
-  global.LectureProcessorDownload = {
+  var download = {
     parseFilenameFromDisposition: parseFilenameFromDisposition,
     saveBlobAsFile: saveBlobAsFile,
     downloadResponseBlob: downloadResponseBlob,
   };
+  if (academyBuild) {
+    global.Xped.download = download;
+  } else {
+    global.LectureProcessorDownload = download;
+  }
 })(window);

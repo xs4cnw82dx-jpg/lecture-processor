@@ -1,8 +1,7 @@
-{% extends '_base.html' %}
+{% extends 'academy/base.html' %}
 {% from '_academy_copy.html' import tr with context %}
 {% block title %}{{ tr("Sign in") }} · xPEDitie Pijn Studio{% endblock %}
 {% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   {% include '_academy_foundation.html' %}
 {% endblock %}
@@ -37,6 +36,6 @@
     <noscript>{{ tr("Enable JavaScript to sign in to the Studio.") }}</noscript>
   </main>
   {% include '_academy_footer.html' %}
-  {% include '_firebase_scripts.html' %}
+  {% include 'academy/runtime.html' %}
   <script src="{{ url_for('static', filename='js/academy-signin.js') }}"></script>
 {% endblock %}

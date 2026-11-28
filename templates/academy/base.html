@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="{% block html_lang %}{{ academy_locale|default('nl') }}{% endblock %}" data-product="academy">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="{% block viewport %}width=device-width, initial-scale=1{% endblock %}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-base.css') }}">
+  {% include '_academy_head.html' %}
+  <script type="application/json" id="academy-firebase-config">{{ academy_firebase_config|tojson }}</script>
+  <script src="{{ url_for('static', filename='js/academy-runtime.min.js') }}"></script>
+  <title>{% block title %}xPEDitie Pijn Academy{% endblock %}</title>
+  {% block head %}{% endblock %}
+</head>
+<body{% block body_attrs %}{% endblock %}>
+  {% block body %}{% endblock %}
+</body>
+</html>
