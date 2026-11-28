@@ -48,7 +48,7 @@ def test_academy_accepts_its_own_identity_and_starts_with_an_empty_library(acade
     assert academy_client.get(library, headers={'Authorization': 'Bearer unrelated-project'}).status_code == 401
     response = academy_client.get(library, headers={'Authorization': 'Bearer academy-preview-token'})
     assert response.status_code == 200, response.text
-    assert response.json == {'expeditions': [], 'storageAvailable': True, 'studioAdmin': True, 'canCreate': True}
+    assert response.json == {'expeditions': [], 'storageAvailable': True, 'studioAdmin': True, 'canCreate': True, 'folders': []}
     assert academy_client.get('/api/elearning/admin/statistics').status_code == 401
 
 
@@ -90,7 +90,8 @@ def test_admin_email_fallback_respects_uid_precedence(academy_client, monkeypatc
     assert response.json['studioAdmin'] is is_admin
 
 
-def test_unverified_email_cannot_use_studio_admin(academy_client, monkeypatch):
+@pytest.mark.parametrize('path', ['/api/academy/authors', '/api/elearning/expeditions', '/api/elearning/admin/statistics'])
+def test_unverified_email_cannot_use_studio_admin(academy_client, monkeypatch, path):
     from lecture_processor import academy
 
     monkeypatch.delenv('XPED_STUDIO_ADMIN_UID')
@@ -99,8 +100,10 @@ def test_unverified_email_cannot_use_studio_admin(academy_client, monkeypatch):
         'uid': 'another-id', 'email': 'studio@example.test', 'email_verified': False,
     })
     client = academy.create_app().test_client()
-    response = client.get('/api/elearning/admin/statistics', headers={'Authorization': 'Bearer unverified'})
-    assert response.status_code == 401
+    response = client.get(path, headers={'Authorization': 'Bearer unverified'})
+    assert response.status_code == 403
+    assert response.json['error_code'] == 'email_not_verified'
+    assert 'verify your email' in response.json['error'].lower()
 
 
 def test_invalid_inline_credential_is_rejected_without_disclosing_its_value(monkeypatch, tmp_path):
@@ -136,3 +139,13 @@ def test_inline_service_account_and_firestore_use_the_same_named_project(monkeyp
     initialize.assert_called_once_with(certificate.return_value, {'projectId': project}, name='academy-' + project)
     firestore_client.assert_called_once_with(app=sdk_app)
     assert app is sdk_app and database is firestore_client.return_value
+
+
+def test_privacy_contact_uses_only_the_deployment_mailbox(academy_client, monkeypatch):
+    monkeypatch.setenv('LEGAL_CONTACT_EMAIL', 'support@example.test')
+    page = html.fromstring(academy_client.get('/privacy').data)
+    assert page.xpath('//a[@href="mailto:support@example.test"]')
+
+    monkeypatch.delenv('LEGAL_CONTACT_EMAIL')
+    page = html.fromstring(academy_client.get('/privacy').data)
+    assert not page.xpath('//a[starts-with(@href, "mailto:")]')

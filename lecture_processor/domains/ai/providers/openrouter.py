@@ -103,7 +103,7 @@ class OpenRouterProvider:
         raise failure
 
     def generate(self, model, parts, *, options, schema=None, max_output_tokens=65536,
-                 retry_tracker=None, operation_name=None):
+                 retry_tracker=None, operation_name=None, before_request=None):
         if self._closed:
             raise RuntimeError('The provider workflow is closed.')
         request = prepare_request(model, parts, options=options, schema=schema,
@@ -111,9 +111,13 @@ class OpenRouterProvider:
         self._ensure_client()
         from lecture_processor.domains.ai.provider import run_with_provider_retry
 
+        def send():
+            if before_request is not None:
+                before_request()
+            return self._generate_once(request, model=model, schema=schema)
+
         return run_with_provider_retry(
-            operation_name or 'generate_content',
-            lambda: self._generate_once(request, model=model, schema=schema),
+            operation_name or 'generate_content', send,
             retry_tracker=retry_tracker, runtime=self.runtime,
         )
 

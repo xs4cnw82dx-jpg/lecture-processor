@@ -10,13 +10,15 @@
     appId: '1:374793454161:web:c68b21590e9a1fafa32e70',
   };
 
-  var academy = !!global.document?.querySelector?.('meta[name="academy-signin"]');
+  var doc = global.document;
+  var academy = !!(doc && doc.querySelector && doc.querySelector('meta[name="academy-signin"]'));
   var firebaseConfig = academy ? academyConfig() : FIREBASE_CONFIG;
 
   function academyConfig() {
     try {
       var node = global.document.getElementById('academy-firebase-config');
-      var config = node && JSON.parse(node.textContent);
+      if (!node || node.tagName !== 'SCRIPT' || node.type !== 'application/json') return null;
+      var config = JSON.parse(node.textContent);
       if (!config || !['projectId', 'apiKey', 'authDomain', 'appId'].every(function (key) {
         return typeof config[key] === 'string' && config[key].trim() !== '';
       })) return null;

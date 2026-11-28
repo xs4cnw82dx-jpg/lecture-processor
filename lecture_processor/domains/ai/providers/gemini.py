@@ -73,9 +73,13 @@ def normalize_response(response, model):
         total_tokens=getattr(meta, 'total_token_count', 0) or 0,
         thinking_tokens=thinking,
     )
+    candidates = getattr(response, 'candidates', None)
+    reason = getattr(candidates[0], 'finish_reason', None) if candidates else None
+    reason = getattr(reason, 'value', reason)
     return GenerationResult(
         text=getattr(response, 'text', ''), parsed=getattr(response, 'parsed', None),
         usage=usage, provider='gemini', model=model, raw_response=response,
+        finish_reason=reason.lower() if isinstance(reason, str) else None,
     )
 
 
@@ -222,7 +226,7 @@ class GeminiProvider:
             except Exception:
                 logger = getattr(self.runtime, 'logger', None)
                 if logger is not None:
-                    logger.warning('Could not clean up a provider workflow file.')
+                    logger.warning('Could not clean up provider file %s.', getattr(uploaded, 'name', None))
         self._owned_files.clear()
         self._files.clear()
         self._pending_files.clear()

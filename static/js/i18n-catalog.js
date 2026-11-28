@@ -3,6 +3,22 @@
   'use strict';
   root.LectureI18nCatalog = {
   "nl": {
+    "Folder name": "Mapnaam",
+    "Destination folder": "Doelmap",
+    "All expeditions": "Alle expedities",
+    "Unfiled": "Zonder map",
+    "Account review": "Accountbeoordeling",
+    "Rename folder": "Map hernoemen",
+    "Move expedition": "Expeditie verplaatsen",
+    "Move to folder": "Verplaatsen naar map",
+    "Move": "Verplaatsen",
+    "No expeditions in this folder": "Geen expedities in deze map",
+    "Expeditions in this folder will move to Unfiled. Learner links and responses stay available.": "Expedities in deze map worden verplaatst naar Zonder map. Deelnemerslinks en reacties blijven beschikbaar.",
+    "Enter a folder name of 1 to 80 characters.": "Voer een mapnaam van 1 tot 80 tekens in.",
+    "Choose a different folder name. Account review is reserved.": "Kies een andere mapnaam. Accountbeoordeling is gereserveerd.",
+    "This folder is unavailable.": "Deze map is niet beschikbaar.",
+    "This folder is being removed.": "Deze map wordt verwijderd.",
+    "Account review is a reserved Studio folder.": "Accountbeoordeling is een gereserveerde Studio-map.",
     "Overview": "Overzicht",
     "Dashboard": "Dashboard",
     "Voice Notes": "Spraaknotities",

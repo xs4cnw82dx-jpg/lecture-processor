@@ -88,14 +88,15 @@ class SessionSpy:
         self._call('wait', stage, part, operation_name=operation_name, retry_tracker=retry_tracker)
 
     def generate(self, stage, parts, *, schema=None, max_output_tokens=65536,
-                 retry_tracker=None, operation_name=None):
+                 retry_tracker=None, operation_name=None, source_slide_text=None, record_discarded=None):
         parts = tuple(parts)
         assert parts and all(isinstance(part, (TextPart, PdfPart, AudioPart)) for part in parts)
         for part in parts:
             if isinstance(part, (PdfPart, AudioPart)):
                 assert any(owned is part for owned in self.owned), 'Caller skipped explicit file preparation'
         self._call('generate', stage, operation_name=operation_name, retry_tracker=retry_tracker)
-        self.calls[-1].update(parts=parts, cap=max_output_tokens, schema=schema)
+        self.calls[-1].update(parts=parts, cap=max_output_tokens, schema=schema,
+                              source_slides=source_slide_text, record_discarded=record_discarded)
         return GenerationResult(
             text=response_text(operation_name), parsed=None,
             usage=Usage(input_tokens=7, output_tokens=5, thinking_tokens=2, total_tokens=19),
@@ -261,6 +262,10 @@ def test_admitted_worker_owns_session_routes_parts_and_records_result_model(monk
         assert isinstance(file_calls[0]['parts'][1], TextPart)
     for call in generated:
         key = {'slides_extraction': 'slide_extraction', 'notes_merge': 'merge'}.get(call['stage'], call['stage'])
+        if call['stage'] in {'slides_extraction', 'notes_merge'}:
+            assert callable(call['record_discarded'])
+        if call['stage'] == 'notes_merge':
+            assert call['source_slides'] == response_text('slide_extraction')
         usage = harness.job['token_usage_by_stage'][key]
         assert (usage['input_tokens'], usage['output_tokens'], usage['total_tokens']) == (7, 5, 19)
         assert usage['model'] == 'gemini-selected-' + call['stage'].replace('_', '-')
@@ -377,3 +382,15 @@ def test_denied_job_does_not_open_session_or_use_provider(monkeypatch, tmp_path,
     assert harness.native_calls == [] and harness.refunds == [] and harness.database.packs() == []
     assert not any(path.exists() for path in harness.local_inputs)
     assert len(harness.logs) == 1
+
+
+def test_failed_interview_summary_keeps_sections_and_refunds_only_one_extra(monkeypatch, tmp_path):
+    harness = PipelineStages(monkeypatch, tmp_path, 'interview', features=True,
+                             failure=('generate', 'interview_summary_generation'))
+    harness.run()
+    assert_owned_lifecycle(harness)
+    assert harness.job['status'] == 'complete'
+    assert harness.job['interview_features_successful'] == ['sections']
+    assert harness.job['result'] == harness.job['interview_sections']
+    assert harness.job['extra_slides_refunded'] == 1
+    assert len(harness.refunds) == 1

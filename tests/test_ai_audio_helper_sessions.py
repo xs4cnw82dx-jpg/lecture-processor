@@ -198,3 +198,39 @@ def test_proposed_mismatched_resource_session_pairs_reject_before_fallback(audio
         getattr(audio.core, helper)(value, 'audio/mpeg', **options)
     assert audio.calls == session.calls == [] and session.closes == 0
     assert 'falling back' not in caplog.text
+
+
+def test_failed_usage_recording_does_not_repeat_a_successful_generation(audio):
+    part = AudioPart('/synthetic/input.mp3', 'audio/mpeg')
+    session = Session([normalized(TIMESTAMP_TEXT), normalized('Unnecessary fallback')])
+    calls = []
+
+    def fail_record(stage, usage, *, model):
+        calls.append(stage)
+        raise RuntimeError('Synthetic recording failure')
+
+    with pytest.raises(RuntimeError, match='Synthetic recording failure'):
+        audio.core.transcribe_audio_with_timestamps(part, part.mime_type, provider_session=session, on_usage=fail_record)
+    assert len(session.calls) == 1
+    assert calls == ['audio_transcription']
+
+
+def test_failed_timestamp_generation_accounts_only_for_the_fallback(audio):
+    part = AudioPart('/synthetic/input.mp3', 'audio/mpeg')
+    session = Session([ValueError('Synthetic generation failure'), normalized('Fallback', FALLBACK_COUNTS)])
+    records = []
+    text, segments, counts = audio.core.transcribe_audio_with_timestamps(
+        part, part.mime_type, provider_session=session, include_usage=True,
+        on_usage=lambda stage, usage, *, model: records.append((stage, usage, model)),
+    )
+    assert (text, segments, counts) == ('Fallback', [], FALLBACK_COUNTS)
+    assert records == [('audio_transcription_fallback', FALLBACK_COUNTS, 'gemini-synthetic-audio')]
+
+
+@pytest.mark.parametrize('helper', ['transcribe_audio_plain', 'transcribe_audio_with_timestamps'])
+def test_inconsistent_audio_mime_is_rejected_before_generation(audio, helper):
+    session = Session([normalized(TIMESTAMP_TEXT)])
+    part = AudioPart('/synthetic/input.mp3', 'audio/mpeg')
+    with pytest.raises(ValueError, match='MIME'):
+        getattr(audio.core, helper)(part, 'audio/wav', provider_session=session)
+    assert not session.calls

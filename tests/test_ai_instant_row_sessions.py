@@ -9,7 +9,7 @@ from lecture_processor.domains.ai import batch_orchestrator as batch
 from lecture_processor.domains.ai import instant_batch_orchestrator as instant
 from lecture_processor.domains.ai.providers import factory
 from lecture_processor.domains.ai.providers.contracts import (
-    GenerationResult, PreparedFilePart, TextPart, Usage,
+    GenerationResult, PdfPart, PreparedFilePart, TextPart, Usage,
 )
 from lecture_processor.domains.ai.providers.gemini import GeminiProvider
 from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
@@ -46,7 +46,8 @@ class Session:
 
 @pytest.fixture
 def row_env(core, monkeypatch):
-    state = SimpleNamespace(events=[], sessions=[], upload_error=None)
+    state = SimpleNamespace(events=[], sessions=[], upload_error=None, prepare=batch._upload_row_files,
+                            cleanup=instant._cleanup_row_files)
 
     def open_session(runtime, **_kwargs):
         assert runtime is core
@@ -55,7 +56,7 @@ def row_env(core, monkeypatch):
         state.sessions.append(session)
         return session
 
-    def upload(row, runtime=None):
+    def upload(row, runtime=None, *, upload_slides=True):
         state.events.append('upload')
         if state.upload_error:
             raise state.upload_error
@@ -110,6 +111,10 @@ def test_each_row_uses_one_session_and_named_stages(core, row_env, mode, stages)
     assert row_env.events.count('close') == 1
     assert row_env.events.index('cleanup') < row_env.events.index('close')
     for stage, parts, options in session.calls:
+        if stage in {'slides_extraction', 'notes_merge', 'text_combine'}:
+            assert callable(options['record_discarded'])
+        if stage in {'notes_merge', 'text_combine'}:
+            assert options['source_slide_text'] == row['slide_text']
         assert options['retry_tracker'] is session.calls[0][2]['retry_tracker']
         if stage == 'slides_extraction':
             assert parts[0] == PreparedFilePart('fake://slides/1', 'application/pdf')
@@ -127,6 +132,31 @@ def test_each_row_uses_one_session_and_named_stages(core, row_env, mode, stages)
         assert usage['slide_extraction']['model'] == 'routed-slides_extraction'
     if 'audio_transcription' in stages:
         assert usage['audio_transcription']['model'] == 'routed-audio_transcription'
+
+
+def test_openrouter_instant_slides_read_row_owned_pdf_then_clean_up(core, row_env, monkeypatch, tmp_path):
+    pdf = tmp_path / 'slides.pdf'
+    pdf.write_bytes(b'%PDF-synthetic')
+    route = dict(core.AI_ROUTING_SNAPSHOT.routes)
+    route['slides_extraction'] = Route('openrouter', 'anthropic/claude-haiku-5.5',
+                                       {'reasoning_effort': 'medium', 'max_output_tokens': 32768})
+    monkeypatch.setattr(core, 'AI_ROUTING_SNAPSHOT', RoutingSnapshot(route))
+    monkeypatch.setattr(batch, '_upload_row_files', row_env.prepare)
+    monkeypatch.setattr(instant, '_cleanup_row_files', row_env.cleanup)
+    monkeypatch.setattr(core.client.files, 'upload', lambda **kw: pytest.fail('Unexpected Gemini upload'))
+    original = Session.generate
+
+    def generate(session, stage, parts, **options):
+        assert stage == 'slides_extraction'
+        assert parts[0] == PdfPart(str(pdf))
+        assert pdf.read_bytes() == b'%PDF-synthetic'
+        return original(session, stage, parts, **options)
+
+    monkeypatch.setattr(Session, 'generate', generate)
+    row = run_row(core, row_env, 'slides-only', slides_local_path=str(pdf))
+    assert row.get('status') != 'error' and row['slide_text'] == 'Synthetic slides_extraction output.'
+    assert not pdf.exists()
+    assert not row.get('slides_file_uri')
 
 
 def test_timestamped_rows_fall_back_through_the_same_session(core, row_env, monkeypatch):

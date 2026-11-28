@@ -40,7 +40,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     let app;
     const user = {
-      uid: 'studio-owner', email: 'studio@example.test', emailVerified: true,
+      uid: 'studio-owner', email: 'studio@example.test', emailVerified: sessionStorage.getItem('academy-preview-verified') !== 'false',
       getIdToken: async () => 'academy-preview-token',
     };
     const auth = {
@@ -152,6 +152,70 @@ async function signInToLibrary(page) {
   await expect(page).toHaveURL(academy + '/physio/elearning');
 }
 
+for (const layout of [
+  { label: 'phone in dark mode', width: 390, height: 844, theme: 'dark' },
+  { label: 'desktop in light mode', width: 1280, height: 900, theme: 'light' },
+]) {
+  test('author organizes courses and reviews transfers on ' + layout.label, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: layout.width, height: layout.height });
+    await page.addInitScript(theme => localStorage.setItem('lp-preferences', JSON.stringify({ theme })), layout.theme);
+    const folders = [{ id: 'account-review', name: 'Account review' }];
+    const course = { id: 'one', title: 'Synthetic course', role: 'owner', moduleCount: 0, stepCount: 0, folderId: 'account-review' };
+    const shared = { ...course, role: 'edit', id: 'two', title: 'Shared workshop', folderId: undefined };
+    await page.route('**/api/elearning/expeditions', route => route.fulfill({
+      json: { canCreate: true, studioAdmin: true, folders, expeditions: [course, shared] },
+    }));
+    await page.route('**/api/academy/folders', route => {
+      folders.push({ id: 'personal', name: route.request().postDataJSON().name });
+      return route.fulfill({ status: 201, json: { id: 'personal' } });
+    });
+    await page.route('**/api/academy/folders/personal', route => {
+      if (route.request().method() === 'DELETE') {
+        folders.pop();
+        course.folderId = '';
+      } else folders[1].name = route.request().postDataJSON().name;
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.route('**/api/academy/expeditions/one/folder', route => {
+      course.folderId = route.request().postDataJSON().folderId;
+      return route.fulfill({ json: { ok: true } });
+    });
+    await signInToLibrary(page);
+    const filter = page.getByLabel('Folder', { exact: true });
+    const dialog = page.getByRole('dialog');
+    await filter.selectOption('account-review');
+    await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Delete folder' })).toBeHidden();
+    await page.getByRole('button', { name: 'New folder' }).click();
+    await dialog.getByLabel('Folder name').fill('Placements');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(filter).toHaveValue('personal');
+    await expect(page.getByRole('heading', { name: 'No expeditions in this folder' })).toBeVisible();
+    await page.getByRole('button', { name: 'Rename folder' }).click();
+    await dialog.getByLabel('Folder name').fill('Archive');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(filter.locator('option:checked')).toHaveText('Archive');
+    await filter.selectOption('account-review');
+    await page.getByRole('button', { name: 'More actions for ' + course.title }).click();
+    await page.getByRole('menuitem', { name: 'Move to folder' }).click();
+    await dialog.getByLabel('Destination folder').selectOption('personal');
+    await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'No expeditions in this folder' })).toBeVisible();
+    await filter.selectOption('personal');
+    await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await testInfo.attach('folder-library', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+    await page.getByRole('button', { name: 'Delete folder' }).click();
+    await expect(dialog).toContainText('Learner links and responses stay available');
+    await dialog.getByRole('button', { name: 'Delete folder' }).click();
+    await expect(filter).toHaveValue('*');
+    await filter.selectOption('');
+    await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
+  });
+}
+
 test('the Studio administrator can grant and revoke author access before creating a course', async ({ page }) => {
   const calls = [];
   const authors = new Set();
@@ -200,4 +264,98 @@ test('author invitations enable creation independently of course collaboration',
   await page.getByRole('button', { name: /^More actions/ }).click();
   await expect(page.getByText('Duplicate', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+});
+
+test('an unverified author can reopen verification from the Studio', async ({ page }) => {
+  await page.goto(academy);
+  await page.evaluate(() => {
+    sessionStorage.setItem('academy-preview-user', 'studio-owner');
+    sessionStorage.setItem('academy-preview-verified', 'false');
+  });
+  await page.reload();
+  await page.getByRole('link', { name: 'Verify your email' }).click();
+  await expect(page.getByRole('heading', { name: 'Verify your email' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Resend verification email' })).toBeVisible();
+});
+
+test('Dutch privacy details include a working contact link on a small screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.addInitScript(() => localStorage.setItem('lp-preferences', JSON.stringify({ language: 'nl', theme: 'dark' })));
+  await page.goto(academy + '/privacy');
+  await expect(page.getByRole('heading', { name: 'Vragen over je gegevens' })).toBeVisible();
+  await expect(page.getByText('Voor hulp bij het openen', { exact: false })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'contact@example.test' })).toHaveAttribute('href', 'mailto:contact@example.test');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('a Studio user can download personal data and resume a confirmed deletion', async ({ page }) => {
+  await signInToLibrary(page);
+  await page.getByText('Settings', { exact: true }).click();
+  await page.getByRole('link', { name: 'Studio account' }).click();
+  await expect(page.getByRole('heading', { name: 'Studio account', exact: true })).toBeVisible();
+  await page.route('**/api/academy/account/export', route => route.fulfill({
+    json: { account: { email: 'studio@example.test' } },
+    headers: { 'Content-Disposition': 'attachment; filename="xped-academy-account.json"' }
+  }));
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download account data' }).click();
+  expect((await download).suggestedFilename()).toBe('xped-academy-account.json');
+  const requestTimes = [];
+  await page.route('**/api/academy/account/delete', route => {
+    requestTimes.push(Date.now());
+    const attempts = requestTimes.length;
+    expect(route.request().postDataJSON()).toEqual({ confirmUid: 'studio-owner' });
+    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
+    return route.fulfill({ status: attempts === 1 ? 202 : 200, headers: { 'Retry-After': '2' }, json: { complete: attempts > 1 } });
+  });
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  expect(requestTimes).toHaveLength(0);
+  await expect(page.getByRole('checkbox')).toHaveAccessibleDescription(/If you leave this page, return here and confirm again/);
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  await expect(page.getByRole('status')).toHaveText('Your Studio account has been deleted.');
+  expect(requestTimes).toHaveLength(2);
+  expect(requestTimes[1] - requestTimes[0]).toBeGreaterThanOrEqual(1900);
+  await expect(page.getByRole('button', { name: 'Download account data' })).toBeHidden();
+});
+
+test('a stale sign-in can return to the account page for another confirmation', async ({ page }) => {
+  await signInToLibrary(page);
+  await page.goto(academy + '/account');
+  await page.route('**/api/academy/account/delete', route => route.fulfill({
+    status: 403, json: { error: 'Sign in again to finish deleting your account.' }
+  }));
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  await page.getByRole('button', { name: 'Sign in again' }).click();
+  await expect(page).toHaveURL(academy + '/signin?next=/account');
+  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(academy + '/account');
+  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+});
+
+test('switching identity invalidates an open deletion confirmation', async ({ page }) => {
+  await signInToLibrary(page);
+  await page.goto(academy + '/account');
+  let attempts = 0;
+  await page.route('**/api/academy/account/delete', route => {
+    attempts += 1;
+    return route.fulfill({ json: { complete: true } });
+  });
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('checkbox').check();
+  await page.evaluate(() => {
+    const auth = window.firebase.auth();
+    auth.currentUser = { ...auth.currentUser, uid: 'different-user', email: 'different@example.test' };
+  });
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+  expect(attempts).toBe(0);
 });

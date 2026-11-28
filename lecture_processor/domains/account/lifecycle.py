@@ -113,6 +113,14 @@ def require_account_access(uid, runtime=None, *, allow_deleting=False, transacti
             raise AccountUnavailableError('Account state is unavailable.')
     except Exception as error:
         raise AccountUnavailableError('Account state is unavailable.') from error
+    require_deletion_state_access(state, allow_deleting=allow_deleting)
+
+
+def require_deletion_state_access(state, *, allow_deleting=False):
+    if state is None:
+        return
+    if not isinstance(state, dict):
+        raise AccountUnavailableError('Account state is unavailable.')
     status = str(state.get('status', '') or state.get('phase', '') or '').strip().lower()
     if status == 'cancelled':
         return

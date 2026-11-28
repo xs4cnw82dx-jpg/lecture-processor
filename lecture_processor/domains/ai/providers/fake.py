@@ -160,10 +160,11 @@ class FakeProvider:
 
     def generate(self, model, parts, *, schema=None, max_output_tokens=65536,
                  retry_tracker=None, operation_name=None):
-        return replace(self._delegate.generate(
+        result = self._delegate.generate(
             model, parts, schema=schema, max_output_tokens=max_output_tokens,
             retry_tracker=retry_tracker, operation_name=operation_name,
-        ), provider='fake')
+        )
+        return replace(result, provider='fake', finish_reason=result.finish_reason or 'stop')
 
     def close(self):
         self._delegate.close()
