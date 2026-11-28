@@ -251,7 +251,7 @@
   transform-origin: top center;
   transition: opacity var(--ac-motion-fast) var(--ac-ease), transform var(--ac-motion-medium) var(--ac-ease), visibility 0s var(--ac-motion-medium);
 }
-[data-product="academy"] .app-select .app-select-menu.visible { transform: none; }
+[data-product="academy"] .app-select .app-select-menu.visible { transform: none; transition-delay: 0s; }
 [data-product="academy"] .app-select .app-select-item {
   display: flex;
   align-items: center;

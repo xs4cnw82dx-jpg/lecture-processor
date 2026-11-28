@@ -45,39 +45,40 @@ test('Finder reopens recent destinations in the same tab using current names and
   await page.route('**/api/academy/navigation', route => route.fulfill({json:payload(title, admin)}));
   await page.goto(academyOrigin + '/expedities');
   let finder = await showFinder(page);
-  await finder.getByRole('searchbox').fill('besloten');
-  await finder.getByRole('link', {name:title, exact:true}).click();
+  await finder.getByRole('combobox').fill('besloten');
+  await finder.getByRole('option', {name:title, exact:true}).click();
   await expect(page).toHaveURL(academyOrigin + '/expedities/' + courseId);
 
   title = 'De hernoemde wandeling';
   finder = await showFinder(page);
   let recent = finder.locator('[data-ac-recent]');
-  await expect(recent.getByRole('link')).toHaveText(title);
-  await expect(finder.getByRole('link').first()).toHaveText(title);
-  await finder.getByRole('searchbox').fill('reviewer');
-  await finder.getByRole('link', {name:memberEmail}).click();
+  await expect(recent.getByRole('option')).toHaveText(title);
+  await expect(finder.getByRole('option').first()).toHaveText(title);
+  await finder.getByRole('combobox').fill('reviewer');
+  await finder.getByRole('option', {name:memberEmail}).click();
   await expect(page).toHaveURL(academyOrigin + '/team?persoon=' + encodeURIComponent(memberEmail));
   await page.reload();
   finder = await showFinder(page);
   recent = finder.locator('[data-ac-recent]');
-  await expect(recent.getByRole('link')).toHaveText([memberEmail, title]);
+  await expect(recent.getByRole('option')).toHaveText([memberEmail, title]);
   await page.keyboard.press('ArrowDown');
-  await expect(recent.getByRole('link').first()).toBeFocused();
+  await expect(finder.getByRole('combobox')).toBeFocused();
+  await expect(finder.getByRole('combobox')).toHaveAttribute('aria-activedescendant', await recent.getByRole('option').first().getAttribute('id'));
 
   const stored = await page.evaluate(() => JSON.stringify(sessionStorage));
   for (const identifyingText of [memberEmail, encodeURIComponent(memberEmail), title, 'Een besloten wandeling']) {
     expect(stored).not.toContain(identifyingText);
   }
-  await finder.getByRole('searchbox').fill('instelling');
-  await finder.getByRole('link', {name:'Instellingen',exact:true}).click();
+  await finder.getByRole('combobox').fill('instelling');
+  await finder.getByRole('option', {name:'Instellingen',exact:true}).click();
   await expect(page).toHaveURL(academyOrigin + '/instellingen');
   admin = false;
   title = '';
   finder = await showFinder(page);
   recent = finder.locator('[data-ac-recent]');
-  await expect(recent.getByRole('link')).toHaveText(['Instellingen']);
-  await expect(finder.getByRole('link', {name:memberEmail})).toHaveCount(0);
-  await expect(finder.getByRole('link', {name:'Instellingen',exact:true})).toHaveCount(1);
+  await expect(recent.getByRole('option')).toHaveText(['Instellingen']);
+  await expect(finder.getByRole('option', {name:memberEmail})).toHaveCount(0);
+  await expect(finder.getByRole('option', {name:'Instellingen',exact:true})).toHaveCount(1);
 });
 
 test('a delayed search cannot restore the previous member’s history after an account switch or sign-out', async ({page, academyOrigin}) => {
@@ -91,8 +92,8 @@ test('a delayed search cannot restore the previous member’s history after an a
   });
   await page.goto(academyOrigin + '/expedities');
   let finder = await showFinder(page);
-  await finder.getByRole('searchbox').fill('oude route');
-  await finder.getByRole('link', {name:'Oude route',exact:true}).click();
+  await finder.getByRole('combobox').fill('oude route');
+  await finder.getByRole('option', {name:'Oude route',exact:true}).click();
   await expect(page).toHaveURL(academyOrigin + '/expedities/' + courseId);
   paused = true;
   finder = await showFinder(page);
@@ -100,19 +101,43 @@ test('a delayed search cannot restore the previous member’s history after an a
     await expect.poll(() => previousRequest).toBe(true);
     await expect(finder.locator('[data-ac-recent]')).toBeHidden();
     await page.evaluate(() => window.selectFixtureMember('member-b'));
-    await finder.getByRole('searchbox').fill('nieuwe route');
-    await expect(finder.getByRole('link', {name:'Nieuwe route',exact:true})).toBeVisible();
+    await finder.getByRole('combobox').fill('nieuwe route');
+    await expect(finder.getByRole('option', {name:'Nieuwe route',exact:true})).toBeVisible();
     release();
-    await finder.getByRole('searchbox').fill('');
+    await finder.getByRole('combobox').fill('');
     await expect(finder.locator('[data-ac-recent]')).toBeHidden();
-    await finder.getByRole('searchbox').fill('oude route');
-    await expect(finder.getByRole('link', {name:'Oude route',exact:true})).toHaveCount(0);
-    await finder.getByRole('searchbox').fill('nieuwe route');
-    await finder.getByRole('link', {name:'Nieuwe route',exact:true}).click();
+    await finder.getByRole('combobox').fill('oude route');
+    await expect(finder.getByRole('option', {name:'Oude route',exact:true})).toHaveCount(0);
+    await finder.getByRole('combobox').fill('nieuwe route');
+    await finder.getByRole('option', {name:'Nieuwe route',exact:true}).click();
     await showFinder(page);
     await expect(finder.locator('[data-ac-recent] a')).toHaveText(['Nieuwe route']);
     await page.evaluate(() => window.selectFixtureMember(null));
     await expect(finder.locator('[data-ac-recent]')).toBeHidden();
     expect(await page.evaluate(() => sessionStorage.getItem('xped.finder.history'))).toBeNull();
   } finally { release(); }
+});
+
+test('an author can select from a long permission-scoped course and person list without leaving the search field', async ({page, academyOrigin}) => {
+  const courses = Array.from({length:12}, (_, i) => ({type:'course',course:'course-' + i,title:'Leermodule ' + i,role:'owner'}));
+  const people = Array.from({length:10}, (_, i) => 'teamlid' + i + '@example.test');
+  await page.route('**/api/academy/navigation', route => route.fulfill({json:{canCreate:true, studioAdmin:true, items:courses, people}}));
+  await page.goto(academyOrigin + '/expedities');
+  let finder = await showFinder(page);
+  const query = finder.getByRole('combobox');
+  await query.fill('leermodule 11');
+  const course = finder.getByRole('option',{name:'Leermodule 11',exact:true});
+  await expect(course).toBeVisible();
+  await query.press('ArrowUp');
+  await expect(query).toBeFocused();
+  await expect(query).toHaveAttribute('aria-activedescendant',await course.getAttribute('id'));
+  await query.press('Enter');
+  await expect(page).toHaveURL(academyOrigin + '/expedities/course-11');
+  finder = await showFinder(page);
+  const search = finder.getByRole('combobox');
+  await search.fill('teamlid9');
+  await expect(finder.getByRole('option')).toHaveCount(1);
+  await search.press('ArrowDown');
+  await search.press('Enter');
+  await expect(page).toHaveURL(academyOrigin + '/team?persoon=' + encodeURIComponent(people[9]));
 });

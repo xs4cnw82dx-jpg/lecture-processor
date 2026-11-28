@@ -139,8 +139,8 @@ html[lang="nl"] .ac-brand-signature { width: 129px; }
 .ac-search-results { display: grid; gap: 2px; padding: 8px; }
 .ac-search-results a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--ac-radius-control); text-decoration: none; color: inherit; font: 500 14px/1.5 var(--ac-font); }
 .ac-search-results a svg:last-child { margin-inline-start: auto; color: var(--theme-muted); }
-.ac-search-results a:is(:hover,:focus-visible) { background: var(--ac-selected); color: var(--ac-selected-ink); }
-.ac-search-results p { margin: 14px 10px; }
+.ac-search-results a:is(:hover,:focus-visible), .ac-search-results [role="option"][aria-selected="true"] { background: var(--ac-selected); color: var(--ac-selected-ink); }
+.ac-search-results p, .ac-search-dialog [data-ac-no-results] { margin: 14px 10px; }
 @media (min-width: 1024px) {
   html[data-ac-folded] body:not(.el-studio-body) .ac-rail-top { padding: 25px 11px; }
   html[data-ac-folded] body:not(.el-studio-body) .ac-rail-top .ac-brand { padding: 7px; align-items: center; border-radius: var(--ac-radius-control); }

@@ -36,6 +36,9 @@
     return text.replace(/#|\{(\w+)\}/g, (field, name) => field === '#' ? number(count) : values[name] ?? field);
   }
   const uiText = t;
+  function selectLabels() {
+    return { hint:uiText('select.searchHint'), search:uiText('select.searchLabel'), empty:uiText('select.noMatches') };
+  }
   function courseStatus(course) {
     if (course.shareEnabled && course.collectResponses) return ['collecting', uiText('status.collecting')];
     if (course.shareEnabled) return ['live', uiText('status.live')];
@@ -113,5 +116,5 @@
   };
   root.Xped.learnerPath = token => '/start/' + encodeURIComponent(token);
   root.Xped.translatorPath = token => '/vertalen/' + encodeURIComponent(token);
-  root.Xped.i18n = Object.freeze({ language, locale, copy, t, courseStatus, number, date, relative, percent, duration, localizeCalendars, theme: () => selectedTheme, setLanguage, setTheme });
+  root.Xped.i18n = Object.freeze({ language, locale, copy, t, courseStatus, number, date, relative, percent, duration, localizeCalendars, selectLabels, theme: () => selectedTheme, setLanguage, setTheme });
 })(window);

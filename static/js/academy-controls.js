@@ -14,9 +14,6 @@
     if (scope.matches?.(optionSelector)) selects.push(scope);
     for (const select of selects) {
       select.dataset.appSelect = '';
-      const german = doc.documentElement.lang === 'de';
-      select.dataset.appSelectSearchPlaceholder = german ? 'Option suchen…' : 'Zoek een optie…';
-      select.dataset.appSelectSearchLabel = german ? 'Optionen durchsuchen' : 'Opties doorzoeken';
       ux.enhanceNativeSelect(select);
     }
   }
