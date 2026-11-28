@@ -23,7 +23,9 @@ def _recovery_page(query, field, limit, cursors, *, inequality=False):
     # Equality queries sort by document name. The inequality index sorts by
     # its value first. Include the name to disambiguate ties without offsets.
     query = query.limit(limit)
-    cursor = cursors.get(field)
+    # Consume this cursor before querying so a failed continuation starts
+    # over next pass and leaves the other scans' positions intact.
+    cursor = cursors.pop(field, None)
     page_query = query
     if cursor:
         if inequality:
@@ -38,8 +40,6 @@ def _recovery_page(query, field, limit, cursors, *, inequality=False):
         if inequality:
             following[field] = last.to_dict()[field]
         cursors[field] = following
-    else:
-        cursors.pop(field, None)
     return page
 
 

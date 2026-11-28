@@ -594,3 +594,26 @@ def test_pending_refund_pages_visit_each_document_with_tied_values(pending_field
     pages = [runtime_jobs_repo.query_pending_refunds(runtime.db, 'runtime_jobs', limit=1, cursors=cursors)
              for _ in range(4)]
     assert [[doc.id for doc in page] for page in pages] == [['a'], ['b'], ['c'], ['a']]
+
+
+
+def test_failed_continuation_restarts_the_affected_recovery_scan(monkeypatch):
+    runtime, _store = runtime_fixture()
+    for job_id in ('a', 'b'):
+        runtime_jobs_repo.doc_ref(runtime.db, 'runtime_jobs', job_id).set({'status': 'starting'})
+    cursors = {}
+
+    def scan():
+        return [doc.id for doc in runtime_jobs_repo.query_statuses(
+            runtime.db, 'runtime_jobs', {'starting'}, limit=1, cursors=cursors)]
+
+    assert scan() == ['a']
+    query_type = type(runtime.db.collection('runtime_jobs'))
+
+    def unavailable_cursor(_query, _cursor):
+        raise RuntimeError('Synthetic cursor query failure')
+
+    monkeypatch.setattr(query_type, 'start_after', unavailable_cursor)
+    with pytest.raises(RuntimeError, match='Synthetic cursor'):
+        scan()
+    assert scan() == ['a']
