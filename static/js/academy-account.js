@@ -70,7 +70,6 @@
 
   var verify = document.getElementById('academy-verify-email');
   if (verify) verify.href = '/inloggen?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
-  const uiText = locale.t;
   var actor;
   bootstrap.onAuthStateReady(auth, async function (user) {
     const nextActor = user?.uid || null;
