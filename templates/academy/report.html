@@ -13,7 +13,7 @@
   {% set shell_title = 'Responses & Pilot Analytics' %}
   {% include '_academy_header.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
-      <a href="{{ url_for('academy.builder', expedition_id=expedition_id) }}" class="el-back-link">{{ tr("← Back to Builder") }}</a>
+      <a id="academy-report-editor" href="{{ url_for('academy.builder', expedition_id=expedition_id, **{'from': 'responses'}) }}" class="el-back-link">{{ tr("← Back to Builder") }}</a>
       <header class="el-dash-header">
         <div>
           <h1 id="el-resp-title" class="page-title">{{ tr("Pilot responses") }}</h1>

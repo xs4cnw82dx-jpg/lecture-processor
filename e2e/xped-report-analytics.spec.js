@@ -137,6 +137,11 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     await expect(page).not.toHaveURL(/cohort=coaches/);
     await expect(page).toHaveURL(/cohort=group-b/);
     await expect(page).toHaveURL(/from=2026-10-01/);
+    const editorLink = new URL(await page.locator('#academy-report-editor').getAttribute('href'), academyOrigin);
+    expect(editorLink.searchParams.get('from')).toBe('responses');
+    const returnFilters = new URLSearchParams(editorLink.searchParams.get('filters'));
+    expect(returnFilters.getAll('cohort')).toEqual(['group-b']);
+    expect(returnFilters.get('from')).toBe('2026-10-01');
     await page.locator('#academy-station-report').scrollIntoViewIfNeeded();
     if (size.width < 600) {
       const scroller = page.getByRole('region', {name:'Vergelijk de stations'});

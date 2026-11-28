@@ -228,6 +228,10 @@
   function syncAddress() {
     var qs = filterQuery();
     window.history.replaceState(window.history.state, '', window.location.pathname + (qs.size ? '?' + qs : '') + window.location.hash);
+    var editorLink = document.getElementById('academy-report-editor');
+    var editorQuery = new URLSearchParams({ from: 'responses' });
+    if (qs.size) editorQuery.set('filters', qs.toString());
+    editorLink.href = Model.coursePaths(expeditionId).edit + '?' + editorQuery;
   }
   // Options are rebuilt rather than relabelled, so the enhanced select picks up the new text.
   function labelPeriods() {
