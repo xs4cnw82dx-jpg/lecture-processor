@@ -516,7 +516,7 @@
       if (!pendingDeleteExp) return;
       var target = pendingDeleteExp;
       var confirm = document.getElementById('el-delete-confirm');
-      confirm.disabled = true;
+      setBusy(confirm, true);
       try {
         await api('/api/elearning/expeditions/' + encodeURIComponent(target.id), { method: 'DELETE' });
         if (Icons) Icons.closeDialogAnimated(deleteDialog);
@@ -525,11 +525,17 @@
         loadList();
       } catch (err) {
         if (pendingDeleteExp === target) dialogError('delete', err);
-      } finally { confirm.disabled = false; }
+      } finally { setBusy(confirm, false); }
     });
     deleteDialog.addEventListener('close', function () { deleteDialog.returnValue = ''; });
   }
   if (Icons) Icons.wireAnimatedDialogs();
+
+  // Long-running dialog actions use the Academy busy state when it is available (item 39).
+  function setBusy(button, on, label) {
+    if (window.XpedAcademyControls && window.XpedAcademyControls.busy) window.XpedAcademyControls.busy(button, on, label);
+    else button.disabled = !!on;
+  }
 
   function lockDialog(dialog, saving) {
     dialog.setAttribute('closedby', saving ? 'none' : 'any');
@@ -564,9 +570,9 @@
     var origText = confirm.textContent;
     var progress = document.getElementById('el-create-progress');
     progress.textContent = uiText('Creating expedition…');
-    confirm.disabled = true;
+    // The busy state hides the label behind the spinner, so the button keeps its width.
+    setBusy(confirm, true, origText);
     lockDialog(createDialog, true);
-    confirm.textContent = uiText('Creating expedition…');
     var payload = Model.createExpeditionPreset(preset, titleInput.value, lang, { academy: academy });
     if (academy) payload.enabledLanguages = ['nl', 'de'];
     try {
@@ -579,7 +585,7 @@
       dialogError('create', err);
       progress.textContent = '';
       confirm.textContent = origText;
-      confirm.disabled = false;
+      setBusy(confirm, false);
     }
   });
 
@@ -595,9 +601,8 @@
       if (!pendingImportPayload) return;
       var btn = document.getElementById('el-import-confirm');
       if (btn.disabled) return;
-      btn.disabled = true;
+      setBusy(btn, true, uiText('Importing…'));
       lockDialog(importDialog, true);
-      btn.textContent = uiText('Importing…');
       try {
         var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(pendingImportPayload) });
         pendingImportPayload = null;
@@ -608,7 +613,7 @@
         if (err.code === 'auth/session-changed') return;
         lockDialog(importDialog, false);
         dialogError('import', err);
-        btn.disabled = false;
+        setBusy(btn, false);
         btn.textContent = uiText('Import & Open Builder');
       }
     });

@@ -154,9 +154,24 @@
 :is([data-product="academy"], [data-academy-player]) details > summary::-webkit-details-marker { display: none; }
 :is([data-product="academy"], [data-academy-player]) details:not(.app-disclosure,.academy-preferences,[data-app-menu]) > summary::after {
   content: ''; display: inline-block; width: 7px; height: 7px; margin-inline-start: 10px; vertical-align: .16em;
-  border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s ease;
+  border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform var(--ac-motion-fast) ease;
 }
 :is([data-product="academy"], [data-academy-player]) details:not(.app-disclosure,.academy-preferences,[data-app-menu])[open] > summary::after { transform: rotate(45deg); }
+/* Item 89: every Academy disclosure opens and closes with the same height animation where the
+   browser supports it. Native <details> semantics and keyboard behaviour are unchanged. */
+@supports (interpolate-size: allow-keywords) {
+  :is([data-product="academy"], [data-academy-player]) { interpolate-size: allow-keywords; }
+  :is([data-product="academy"], [data-academy-player]) details:not([data-app-menu], .academy-preferences, .academy-filter-menu, .academy-report-exports)::details-content {
+    block-size: 0;
+    overflow-y: clip;
+    transition: block-size var(--ac-motion-medium) cubic-bezier(.2, .8, .2, 1), content-visibility var(--ac-motion-medium) allow-discrete;
+  }
+  :is([data-product="academy"], [data-academy-player]) details:not([data-app-menu], .academy-preferences, .academy-filter-menu, .academy-report-exports)[open]::details-content { block-size: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is([data-product="academy"], [data-academy-player]) details::details-content { transition: none; }
+  :is([data-product="academy"], [data-academy-player]) details > summary::after { transition: none; }
+}
 [data-product="academy"] button[aria-busy="true"] { position: relative; color: transparent; }
 [data-product="academy"] button[aria-busy="true"]::after {
   position: absolute; top: calc(50% - 7px); left: calc(50% - 7px);

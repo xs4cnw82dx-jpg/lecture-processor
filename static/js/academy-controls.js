@@ -187,6 +187,28 @@
     });
   }
 
+  // Item 39: one busy state for long-running actions. The button keeps its width,
+  // shows the shared spinner, ignores further clicks and the start is announced once.
+  let busyRegion;
+  function busy(button, on, label) {
+    if (!button) return;
+    button.disabled = !!on;
+    if (on) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
+    if (!on) return;
+    if (!busyRegion) {
+      busyRegion = doc.createElement('p');
+      busyRegion.className = 'sr-only';
+      busyRegion.setAttribute('role', 'status');
+      busyRegion.setAttribute('aria-live', 'polite');
+      doc.body.append(busyRegion);
+    }
+    const german = doc.documentElement.lang === 'de';
+    const action = (label || button.getAttribute('aria-label') || button.textContent || '').trim();
+    busyRegion.textContent = '';
+    root.setTimeout(() => { busyRegion.textContent = (german ? 'Wird ausgeführt: ' : 'Bezig: ') + action; }, 50);
+  }
+
   // A station per node; real step counts and measured reach are optional.
   function routeStrip(stations, options = {}) {
     const strip = doc.createElement('span');
@@ -224,7 +246,7 @@
     initSegments();
     initTips();
   }
-  root.XpedAcademyControls = { routeStrip };
+  root.XpedAcademyControls = { routeStrip, busy };
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', init);
   else init();
 })(window);
