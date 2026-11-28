@@ -100,9 +100,9 @@ def test_every_academy_catalog_key_is_used_and_preserves_its_placeholders():
         if path.name.startswith(('elearning-', 'academy-')) and not path.name.endswith('.min.js'):
             expected.update(ast.literal_eval(match[1]) for match in token.finditer(path.read_text()))
     parser = Environment()
-    for path in (root / 'templates').glob('*.html'):
+    for path in (root / 'templates').rglob('*.html'):
         source = path.read_text()
-        if '_academy_copy.html' in source:
+        if '_academy_copy.html' in source or 'elearning' in path.relative_to(root / 'templates').parts:
             for call in parser.parse(source).find_all(nodes.Call):
                 if (getattr(call.node, 'name', None) == 'tr' and len(call.args) == 1
                         and isinstance(call.args[0], nodes.Const)):
