@@ -15,7 +15,10 @@ const test = base.extend({
     const python = existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3';
     const child = spawn(python, ['scripts/run_ui_preview.py', '--academy-memory', '--port', String(port)], {stdio:'ignore'});
     try {
-      await expect.poll(async () => { try { return (await fetch(origin + '/healthz')).status; } catch (_) { return 0; } }).toBe(200);
+      await expect.poll(async () => {
+        try { return (await fetch(origin + '/healthz')).status; }
+        catch (_) { return 0; }
+      }, { timeout: 25000, message: 'The isolated Academy server should be ready' }).toBe(200);
       await use(origin);
     } finally { child.kill('SIGTERM'); }
   }, {scope:'worker'}],
