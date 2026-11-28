@@ -27,6 +27,12 @@
     const text = messages[key] ?? key;
     return values ? text.replace(/\{(\w+)\}/g, (field, name) => values[name] ?? field) : text;
   }
+  function courseStatus(course) {
+    if (course.shareEnabled && course.collectResponses) return ['collecting', copy('Verzamelt resultaten', 'Erfasst Ergebnisse')];
+    if (course.shareEnabled) return ['live', 'Live'];
+    if (course.hasPublished) return ['paused', copy('Gepauzeerd', 'Pausiert')];
+    return ['draft', copy('Concept', 'Entwurf')];
+  }
   function number(value, options) { return new Intl.NumberFormat(locale, options).format(value); }
   function date(value, options) { return new Intl.DateTimeFormat(locale, options).format(value); }
   function relative(epochSeconds, now = Date.now()) {
@@ -61,5 +67,5 @@
   applyAppearance();
   systemAppearance?.addEventListener('change', applyAppearance);
   root.Xped = root.Xped || {};
-  root.Xped.i18n = Object.freeze({ language, locale, copy, t, number, date, relative, theme: () => selectedTheme, setLanguage, setTheme });
+  root.Xped.i18n = Object.freeze({ language, locale, copy, t, courseStatus, number, date, relative, theme: () => selectedTheme, setLanguage, setTheme });
 })(window);

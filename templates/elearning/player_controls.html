@@ -1,8 +1,18 @@
 <header class="el-player-header">
     <div class="el-player-header-inner">
       <button type="button" class="el-player-brand" id="el-player-home-btn" aria-label="{{ tr("Return to start page") }}">
+        {% if academy_mode %}
+        {% set brand_language = 'de' if academy_locale == 'de' else 'nl' %}
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="{{ url_for('static', filename='images/xped/logo_' ~ brand_language ~ '.svg') }}">
+          <img src="{{ url_for('static', filename='images/xped/logo_' ~ brand_language ~ '_light.svg') }}" alt="">
+        </picture>
+        <span class="el-player-product">Academy</span>
+        <span id="el-player-course-label">{{ learner_title }}</span>
+        {% else %}
         <img src="{{ url_for('static', filename='images/xped/logo_nl.svg') }}" alt="xPEDitie Pijn">
         <span id="el-player-course-label">xPEDitie Pijn</span>
+        {% endif %}
       </button>
 
       <div class="el-player-controls">
@@ -37,7 +47,7 @@
 
   <main class="el-player-main" id="el-player-main" tabindex="-1">
     <div class="xped-card el-player-state" id="el-player-loading" role="status">
-      <h1>xPEDitie Pijn</h1>
+      <h1>{{ learner_title if academy_mode else 'xPEDitie Pijn' }}</h1>
       <p>{{ tr("Even laden…") }}</p>
     </div>
   </main>

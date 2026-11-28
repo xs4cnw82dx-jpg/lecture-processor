@@ -1,0 +1,3 @@
+{% set mark = 'logo_de.svg' if academy_locale == 'de' else 'logo_nl.svg' %}
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/xped/favicon-32.png') }}">
+<link rel="icon" type="image/svg+xml" sizes="any" href="{{ url_for('static', filename='images/xped/' ~ mark) }}">

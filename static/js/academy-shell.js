@@ -10,8 +10,7 @@
   var fold = document.getElementById('ac-fold');
   var search = document.getElementById('ac-search');
   var searchTrigger = document.getElementById('ac-search-trigger');
-  var compact = window.matchMedia('(max-width: 800px)');
-  var inEditor = !!document.querySelector('.ac-editor-menu');
+  var compact = window.matchMedia('(max-width: 1023px)');
   var inerted = [];
   var previousFocus;
   var courseCrumb = document.querySelector('[data-ac-course-name]');
@@ -42,13 +41,11 @@
     });
   }
 
-  function usesDrawer() { return compact.matches || inEditor; }
-
   function setDrawer(open, focusTrigger) {
     if (!rail || !menu) return;
     inerted.forEach(function (node) { node.inert = false; });
     inerted = [];
-    if (open && usesDrawer()) {
+    if (open && compact.matches) {
       closeSettings(false);
       previousFocus = document.activeElement;
       frame.dataset.acDrawer = 'open';
@@ -68,7 +65,7 @@
       delete frame.dataset.acDrawer;
       rail.removeAttribute('role');
       rail.removeAttribute('aria-modal');
-      rail.inert = usesDrawer();
+      rail.inert = compact.matches;
       backdrop.hidden = true;
       menu.setAttribute('aria-expanded', 'false');
       if (focusTrigger && previousFocus && previousFocus.isConnected) previousFocus.focus();

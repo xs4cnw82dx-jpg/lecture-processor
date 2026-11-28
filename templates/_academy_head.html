@@ -1,6 +1,5 @@
 <meta name="academy-signin" content="{{ url_for('academy.signin') }}">
-{% set german_mark = academy_locale|default('nl') == 'de' %}
-<link rel="icon" href="{{ url_for('static', filename='images/xped/academy-mark.webp' if german_mark else 'images/xped/logo_nl.svg') }}" type="{{ 'image/webp' if german_mark else 'image/svg+xml' }}">
+{% include 'academy/_favicons.html' %}
 {% include '_academy_locale_head.html' %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/academy.css') }}">
 <script src="{{ url_for('static', filename='js/academy-account.js') }}" defer></script>

@@ -272,6 +272,8 @@ def _summary_card(exp: dict, role: str) -> dict:
         'deletionPending': bool(exp.get('deleted')),
         'collectResponses': model.collects_responses(share),
         'shareEnabled': bool(share.get('enabled') and not exp.get('deleted')),
+        **({'hasPublished': bool(share.get('enabled') or exp.get('publicRevisionWeeks'))}
+           if current_app.config.get('XPED_ACADEMY') else {}),
         'shareToken': share.get('token', '') if role in ('owner', 'edit') else '',
         'coverMedia': model.course_cover(exp),
         'languageCoverage': model.compute_language_coverage(exp, canonical_source=current_app.config.get('XPED_ACADEMY')),

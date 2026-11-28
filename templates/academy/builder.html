@@ -28,7 +28,11 @@
         <button type="button" id="ac-nav-toggle" class="ac-icon ac-editor-menu" aria-expanded="false" aria-controls="ac-rail" aria-label="{{ xped_copy('Navigatie openen','Navigation öffnen') if xped_copy is defined else 'Navigatie openen' }}">{{ icon('menu',18) }}</button>
       {% endif %}
       {% set back_label = xped_copy('Terug naar de expeditie','Zurück zur Expedition') if back_to_course else tr("Back to Expeditions") %}
-      <a href="{{ url_for('academy.course', expedition_id=expedition_id) if back_to_course else url_for('academy.library') }}" class="el-icon-btn" id="el-back-link" aria-label="{{ back_label }}" title="{{ back_label }}"><span>{{ xped_copy('Expeditie','Expedition') if back_to_course else tr("Expeditions") }}</span></a>
+      <nav class="ac-editor-crumbs" aria-label="{{ xped_copy('Kruimelpad','Brotkrumennavigation') }}">
+        {% if back_to_course %}<a class="ac-editor-library" href="{{ url_for('academy.library') }}">{{ tr("Expeditions") }}</a>{{ icon('chevron',12) }}{% endif %}
+        <a href="{{ url_for('academy.course', expedition_id=expedition_id) if back_to_course else url_for('academy.library') }}" class="el-icon-btn" id="el-back-link" aria-label="{{ back_label }}" title="{{ back_label }}"><span>{{ xped_copy('Expeditie','Expedition') if back_to_course else tr("Expeditions") }}</span></a>
+        {% if back_to_course %}<span class="ac-editor-view" aria-current="page">{{ xped_copy('Bewerken','Bearbeiten') }}</span>{% endif %}
+      </nav>
       <div class="el-title-wrap">
         <textarea rows="1" class="el-title-input" id="el-exp-title" aria-label="{{ tr("Expedition title") }}" maxlength="200"></textarea>
         <button type="button" class="el-btn el-btn-sm" id="el-title-done">{{ tr("Done") }}</button>

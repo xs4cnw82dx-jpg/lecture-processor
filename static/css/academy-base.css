@@ -95,8 +95,11 @@ button:disabled { cursor: default; }
   padding-block: clamp(3rem, 10vh, 8rem);
 }
 .academy-error-brand { display: inline-flex; align-items: center; gap: .75rem; color: inherit; text-decoration: none; font-weight: 500; }
-.academy-error-brand img { width: 7.5rem; height: 2.25rem; padding: .4rem .6rem; object-fit: contain; border-radius: .35rem; background: var(--xped-navy-deep); }
-html[lang="de"] .academy-error-brand img { width: 2.5rem; padding: .1rem; background: transparent; }
+.academy-error-brand img { width: 9rem; height: auto; }
+.academy-error-brand .el-mark-on-dark,
+:root[data-theme="dark"] .academy-error-brand .el-mark-on-light { display: none; }
+:root[data-theme="dark"] .academy-error-brand .el-mark-on-dark { display: block; }
+.academy-error-brand span { padding-inline-start: .75rem; border-inline-start: 1px solid currentColor; }
 .academy-error-copy h1 { font-size: clamp(2rem, 4vw, 3.75rem); line-height: 1.05; margin: .5rem 0 1rem; }
 .academy-error-code { color: var(--theme-muted); margin: 2.5rem 0 0; font-variant-numeric: tabular-nums; }
 .academy-error-copy .btn { margin-top: 1rem; }
@@ -195,7 +198,12 @@ html[lang="de"] .academy-error-brand img { width: 2.5rem; padding: .1rem; backgr
   color: var(--learner-cover-ink);
 }
 .xped-surface-scope[data-learner-appearance] .xped-hero-art::before { background: none; }
-[data-learner-appearance="dark"].xped-surface-scope .el-player-brand img { filter: brightness(0) invert(1); }
+[data-academy-player] .el-player-brand picture { display: flex; flex: 0 1 auto; min-width: 0; }
+[data-academy-player] .el-player-brand picture img { display: block; max-width: 100%; }
+[data-academy-player] .el-player-product { flex-shrink: 0; font-weight: 500; font-size: .9375rem; }
+@media (max-width: 479px) {
+  [data-academy-player] .el-player-product { display: none; }
+}
 [data-learner-appearance="dark"].xped-surface-scope .el-milestone-card { background: var(--xped-navy-deep); }
 [data-learner-appearance="dark"].xped-surface-scope :is(.el-text-scale-group, .el-theme-toggle-group) button[aria-checked="true"] {
   background: var(--xped-surface);

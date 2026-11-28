@@ -2,12 +2,10 @@
   'use strict';
 
   const doc = document;
+  let popoverId = 0;
   const $ = id => doc.getElementById('xc-' + id);
-  const lang = doc.documentElement.lang === 'de' ? 'de' : 'nl';
-  const say = (nl, de) => lang === 'de' ? de : nl;
-  const nr = new Intl.NumberFormat(lang);
-  const stamp = new Intl.DateTimeFormat(lang, { dateStyle: 'medium' });
-  const date = value => Number.isFinite(value) && value >= 86400 ? stamp.format(value * 1000) : '—';
+  const { language: lang, copy: say, number, date: formatDate } = window.Xped.i18n;
+  const date = value => Number.isFinite(value) && value >= 86400 ? formatDate(value * 1000, { dateStyle: 'medium' }) : '—';
   const roles = {
     owner: say('Eigenaar', 'Eigentümer:in'), admin: say('Beheerder', 'Administrator:in'),
     author: say('Auteur', 'Autor:in'), edit: say('Mede-auteur', 'Mitautor:in'), translate: say('Vertaler', 'Übersetzer:in'),
@@ -145,7 +143,10 @@
   function copyField(raw, title) {
     const full = safeURL(raw);
     const group = node('div', null, 'xc-copy');
-    const a = link(full.replace(/^https?:\/\//, ''), full);
+    const displayed = full.replace(/^https?:\/\//, '');
+    const a = link('', full);
+    a.append(node('span', displayed.slice(0,-4), 'xc-url-prefix'), node('span', displayed.slice(-4), 'xc-url-suffix'));
+    a.setAttribute('aria-label', displayed);
     a.title = full;
     const copy = action(say('Kopiëren', 'Kopieren'), async () => {
       try {
@@ -178,9 +179,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   function showQR(url, trigger) {
-    const previous = doc.getElementById('xc-qr-popover');
-    if (previous?.matches(':popover-open')) { previous.hidePopover(); if (previous.dataset.url === url) return; }
-
     const svg = window.XpedElearningQR.createSvgElement(url);
     svg.setAttribute('aria-label', say('QR-code voor de link', 'QR-Code für den Link'));
     const image = node('div', null, 'xc-qr'); image.append(svg);
@@ -199,18 +197,27 @@
     });
     const actions = node('div', null, 'xc-actions'); actions.append(svgButton, pngButton);
     const title = say('QR-code', 'QR-Code');
-    if (!('showPopover' in HTMLElement.prototype)) { dialog(title, [image, actions], '', null); return; }
+    anchoredDetails(trigger, title, [image, actions]);
+  }
+
+  function anchoredDetails(trigger, title, children) {
+    if (!('showPopover' in HTMLElement.prototype)) { dialog(title, children, '', null); return; }
+    const previous = doc.querySelector('.xc-qr-popover:popover-open');
+    if (previous) {
+      const same = trigger.getAttribute('aria-controls') === previous.id;
+      previous.hidePopover();
+      if (same) return;
+    }
     const panel = node('div', null, 'xc-qr-popover');
     panel.popover = 'auto';
-    panel.id = 'xc-qr-popover';
-    panel.dataset.url = url;
+    panel.id = 'xc-details-' + (++popoverId);
     panel.setAttribute('role','dialog');
     panel.setAttribute('aria-label',title);
     const close = action(say('Sluiten', 'Schließen'), () => panel.hidePopover(), 'xc-text-action');
     const header = node('header');
     header.append(node('strong', title), close);
-    panel.append(header, image, actions);
-    trigger.closest('.xc-copy').append(panel);
+    panel.append(header, ...children);
+    trigger.parentElement.append(panel);
     trigger.classList.add('xc-qr-target');
     trigger.setAttribute('aria-controls', panel.id);
     trigger.setAttribute('aria-expanded', 'true');
@@ -250,6 +257,15 @@
     image.src = source;
   }
 
+  function showCourseStatus(course) {
+    const label = $('state-mark');
+    const shareEnabled = !!course.share?.enabled;
+    label.textContent = course.role === 'translate' ? roles.translate : window.Xped.i18n.courseStatus({
+      shareEnabled, collectResponses: course.share?.collectResponses, hasPublished: course.hasPublished,
+    })[1];
+    label.classList.toggle('is-live',shareEnabled);
+  }
+
   function showCourse() {
     const c = workspace.course, role = c.role;
     const title = c.title || say('Expeditie', 'Expedition');
@@ -257,11 +273,9 @@
     doc.dispatchEvent(new CustomEvent('academy:course-title',{detail:title}));
     void showCover(workspace.cover).catch(() => { /* The course remains usable when its optional image is offline. */ });
     doc.title = title + ' · xPED Academy';
-    const status = $('state-mark');
-    status.textContent = role === 'translate' ? roles.translate : c.share?.enabled ? say('Deelnemerslink actief', 'Teilnahmelink aktiv') : say('Privéconcept', 'Privater Entwurf');
-    status.classList.toggle('is-live', !!c.share?.enabled);
+    showCourseStatus(c);
     const modules = c.modules || [], steps = modules.reduce((count, mod) => count + mod.steps, 0);
-    $('count').textContent = nr.format(modules.length) + ' ' + (modules.length === 1 ? say('station', 'Station') : say('stations', 'Stationen')) + ' · ' + nr.format(steps) + ' ' + (steps === 1 ? say('stap','Schritt') : say('stappen','Schritte'));
+    $('count').textContent = number(modules.length) + ' ' + (modules.length === 1 ? say('station', 'Station') : say('stations', 'Stationen')) + ' · ' + number(steps) + ' ' + (steps === 1 ? say('stap','Schritt') : say('stappen','Schritte'));
     if (window.XpedAcademyControls && modules.length) $('strip').append(window.XpedAcademyControls.routeStrip(modules, { size: 'regular' }));
     for (const mod of modules) {
       const item = node('li');
@@ -270,7 +284,7 @@
       const dest = path + '/bewerken?' + new URLSearchParams(role === 'translate' ? { modus: 'vertalen', taal: workspace.target } : firstStep ? { module: mod.id, step: firstStep } : {});
       const label = link(stationTitle, dest);
       label.translate = false;
-      item.append(label, node('small', nr.format(mod.steps) + ' ' + (mod.steps === 1 ? say('stap', 'Schritt') : say('stappen', 'Schritte'))));
+      item.append(label, node('small', number(mod.steps) + ' ' + (mod.steps === 1 ? say('stap', 'Schritt') : say('stappen', 'Schritte'))));
       $('stations').append(item);
     }
     if (!modules.length) $('stations').append(node('li', say('Deze expeditie heeft nog geen stations.', 'Diese Expedition hat noch keine Stationen.')));
@@ -282,7 +296,7 @@
     if (role === 'translate') $('edit').href = translationURL;
     $('translation-heading').textContent = say('Vertaling naar ', 'Übersetzung nach ') + workspace.target.toUpperCase();
     const coverage = workspace.coverage[workspace.target] || { translated: 0, total: workspace.translations.length };
-    $('coverage').textContent = nr.format(coverage.translated) + ' / ' + nr.format(coverage.total) + ' ' + say('teksten vertaald', 'Texte übersetzt');
+    $('coverage').textContent = number(coverage.translated) + ' / ' + number(coverage.total) + ' ' + say('teksten vertaald', 'Texte übersetzt');
     $('review-only').addEventListener('change', showTranslations);
     showTranslations();
     if ($('pause')) $('pause').addEventListener('submit', async event => {
@@ -303,7 +317,7 @@
       item.append(userText('p', row.source || row.nl || '—'), userText('p', row.target || '—'));
       const review = node('div', null, 'xc-translation-action');
       const status = row.status === 'needs_review' ? say('Te controleren', 'Zu prüfen') : row.status === 'untranslated' ? say('Ontbreekt', 'Fehlt') : say('Vertaald', 'Übersetzt');
-      const params = new URLSearchParams({ modus: 'vertalen', taal: workspace.target, filter: 'alle', veld: row.key });
+      const params = new URLSearchParams({ modus: 'vertalen', taal: workspace.target, filter: 'alle', veld: row.key, tab: 'vertalingen' });
       const edit = link(row.status === 'needs_review' ? say('Controleren','Prüfen') : say('Bewerken','Bearbeiten'), path + '/bewerken?' + params, 'xc-text-action');
       edit.setAttribute('aria-label', edit.textContent + ' · ' + (row.source || row.nl || row.target).slice(0, 70));
       review.append(node('small', status), edit);
@@ -319,6 +333,13 @@
       const active = a === selected;
       if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
       $(a.dataset.view).hidden = !active;
+    }
+    // Keep the originating course tab on ordinary links, including open in a new tab.
+    for (const link of content.querySelectorAll('a[href]')) {
+      const destination = new URL(link.href);
+      if (destination.origin !== location.origin || destination.pathname !== path + '/bewerken') continue;
+      destination.searchParams.set('tab', selected.dataset.view);
+      link.href = destination.href;
     }
     if (['delen', 'instellingen'].includes(selected.dataset.view)) void loadSharing();
   }
@@ -348,9 +369,12 @@
     if (data.token) host.append(copyField('/start/' + encodeURIComponent(data.token), say('Deelnemerslink','Teilnahmelink')));
     if (!$('sharing-settings')) return;
     $('paused-message').value = data.pausedMessage || '';
+    $('response-dependency').hidden = !!data.collectResponses;
     for (const input of $('sharing-settings').querySelectorAll('[data-xc-setting]')) {
       input.checked = !!data[input.name];
-      input.disabled = !data.collectResponses && ['showPeerResults','collectPilotFeedback','allowStepComments'].includes(input.name);
+      input.disabled = !data.collectResponses && !!input.closest('#xc-response-options');
+      if (input.disabled) input.setAttribute('aria-describedby','xc-response-dependency');
+      else input.removeAttribute('aria-describedby');
       input.onchange = async () => {
         const controls = $('sharing-settings');
         controls.disabled = true;
@@ -359,8 +383,8 @@
           const result = await api(shareEndpoint, { action: 'update_public', [input.name]: input.checked });
           if (!isCurrent(version)) return;
           sharing.share = result.share; workspace.course.share = result.share;
-          $('state-mark').classList.toggle('is-live', !!result.share.enabled);
-          $('state-mark').textContent = result.share.enabled ? say('Deelnemerslink actief', 'Teilnahmelink aktiv') : say('Privéconcept', 'Privater Entwurf');
+          if (result.share.enabled) workspace.course.hasPublished = true;
+          showCourseStatus(workspace.course);
           $('sharing-status').textContent = say('Opgeslagen', 'Gespeichert');
         } catch (error) { if (isCurrent(version)) notice(error.message, null, 'error'); }
         finally { if (isCurrent(version)) { controls.disabled = false; showSharing(); } }
@@ -452,7 +476,7 @@
   }
   function showTeam() {
     const people = workspace.people;
-    $('team-count').textContent = nr.format(people.length) + ' ' + (people.length === 1 ? say('persoon','Person') : say('personen','Personen'));
+    $('team-count').textContent = number(people.length) + ' ' + (people.length === 1 ? say('persoon','Person') : say('personen','Personen'));
     const table = node('table', null, 'xc-team-table');
     const head = table.createTHead().insertRow();
     const labels = [say('Persoon','Person'), say('Rol','Rolle'), say('Expedities','Expeditionen'), say('Laatste aanmelding','Letzte Anmeldung'), 'Status', say('Acties','Aktionen')];
@@ -469,14 +493,19 @@
       const titles = person.admin ? [roles.admin] : [...(person.author ? [roles.author] : []), ...assigned.map(role => roles[role])];
       row.insertCell().textContent = titles.join(' · ');
       const courses = row.insertCell();
-      if (person.courses.length) courses.append(action(nr.format(person.courses.length), () => {
-        const list = node('ul', null, 'xc-course-list'); person.courses.forEach(course => {
-          const li = node('li'), anchor = link(course.title, '/expedities/' + encodeURIComponent(course.id));
-          anchor.translate = false; li.append(anchor, node('small', roles[course.role])); list.append(li);
-        });
-        dialog(person.name || person.email, [list], '', null);
-      }, 'xc-text-action'));
-      else courses.textContent = '0';
+      if (person.courses.length) {
+        const showCourses = action(number(person.courses.length), event => {
+          const list = node('ul', null, 'xc-course-list'); person.courses.forEach(course => {
+            const li = node('li'), anchor = link(course.title, '/expedities/' + encodeURIComponent(course.id));
+            anchor.translate = false; li.append(anchor, node('small', roles[course.role])); list.append(li);
+          });
+          anchoredDetails(event.currentTarget, person.name || person.email, [list]);
+        }, 'xc-text-action');
+        showCourses.setAttribute('aria-haspopup','dialog');
+        showCourses.setAttribute('aria-expanded','false');
+        showCourses.setAttribute('aria-label',say('Expedities van ','Expeditionen von ') + (person.name || person.email) + ' (' + number(person.courses.length) + ')');
+        courses.append(showCourses);
+      } else courses.textContent = '0';
       row.insertCell().textContent = date(person.lastSignIn);
       row.insertCell().append(node('span', person.active || person.admin ? say('Actief','Aktiv') : workspace.profilesAvailable === false ? say('Onbekend','Unbekannt') : say('Uitgenodigd','Eingeladen'), 'xc-person-state' + (person.active || person.admin ? ' is-active' : '')));
       const actions = row.insertCell();

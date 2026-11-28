@@ -23,6 +23,7 @@
   var pendingCopies = new Map();
   var actionsEl = document.getElementById('el-author-actions');
   var academy = !!document.querySelector('meta[name="academy-signin"]');
+  var library = window.XpedAcademyLibrary;
   var canCreate = !academy;
   var requestedAction = academy ? new URLSearchParams(location.search).get('actie') : '';
   var retry = document.getElementById('el-retry');
@@ -148,7 +149,7 @@
   function copyLabel(nl, de) { return document.documentElement.lang === 'de' ? de : nl; }
 
   function pendingCopyRow(expedition) {
-    var row = document.createElement('article');
+    var row = document.createElement('tr');
     row.className = 'el-exp-row xc-copy-pending';
     row.dataset.pendingCopy = expedition.id;
     row.tabIndex = -1;
@@ -158,7 +159,9 @@
     title.translate = false;
     var message = document.createElement('span');
     message.textContent = copyLabel('Wordt gekopieerd…', 'Wird kopiert…');
-    row.append(title, message);
+    var cell = row.insertCell();
+    cell.colSpan = 7;
+    cell.append(title, message);
     return row;
   }
 
@@ -210,6 +213,7 @@
       : items;
 
     grid.textContent = '';
+    if (library) library.showHelp(visible.length > 0);
     if (!items.length) {
       statusEl.textContent = '';
       var empty = document.createElement('div');
@@ -265,8 +269,13 @@
       : (items.length + (items.length === 1 ? uiText(' expedition') : uiText(' expeditions')));
 
     var focusDuplicateLink = null;
+    var list = grid;
+    if (library) {
+      list = library.table(function () { renderExpeditions(allExpeditions); });
+      visible = library.sorted(visible);
+    }
     visible.forEach(function (exp) {
-      var card = document.createElement('article');
+      var card = document.createElement(library ? 'tr' : 'article');
       card.className = 'el-exp-row' + (justDuplicatedId && exp.id === justDuplicatedId ? ' is-just-duplicated' : '');
       card.dataset.expeditionRow = exp.id;
       var editUrl = Model.coursePaths(exp.id).edit;
@@ -286,6 +295,8 @@
         tImg.loading = 'lazy';
         tImg.className = 'is-xped-art';
         thumb.appendChild(tImg);
+      } else if (library) {
+        thumb.appendChild(library.fallbackCover(exp));
       } else if (Icons) {
         thumb.appendChild(Icons.icon('compass', 22));
       }
@@ -305,39 +316,40 @@
       title.textContent = exp.title || uiText('Untitled Expedition');
       title.setAttribute('translate', 'no');
       h2.appendChild(title);
-      var badge = document.createElement('span');
-      badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
-      badge.textContent = exp.deletionPending ? uiText('Removal pending') : (exp.shareEnabled ? (exp.collectResponses ? uiText('Pilot link active') : uiText('Learner link active')) : uiText('Private draft'));
-      top.append(h2, badge);
-
+      top.appendChild(h2);
+      detail.appendChild(top);
       var meta = document.createElement('p');
       meta.className = 'el-exp-meta';
-      var role = exp.role === 'owner' ? uiText('Owner') : (exp.role === 'translate' ? uiText('Translator') : uiText('Co-Editor'));
-      var metaParts = [
-        role,
-        exp.moduleCount + (exp.moduleCount === 1 ? uiText(' station') : uiText(' stations')),
-        exp.stepCount + (exp.stepCount === 1 ? uiText(' step') : uiText(' steps')),
-      ];
-      metaParts.forEach(function (value, i) {
-        if (i) meta.append(' · ');
-        var item = document.createElement('span');
-        item.textContent = value;
-        meta.appendChild(item);
-      });
-      // UX-003: Relative recency with exact timestamp tooltip
-      var rec = formatRelativeTime(exp.updatedAt);
-      if (rec.rel) {
-        meta.append(' · ');
-        var tNode = document.createElement('time');
-        tNode.dateTime = new Date(exp.updatedAt * 1000).toISOString();
-        tNode.title = rec.exact;
-        tNode.tabIndex = 0;
-        tNode.setAttribute('aria-label', rec.rel + ', ' + rec.exact);
-        tNode.textContent = rec.rel;
-        meta.appendChild(tNode);
+      if (!library) {
+        var badge = document.createElement('span');
+        badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
+        badge.textContent = exp.deletionPending ? uiText('Removal pending') : (exp.shareEnabled ? (exp.collectResponses ? uiText('Pilot link active') : uiText('Learner link active')) : uiText('Private draft'));
+        top.appendChild(badge);
+        var role = exp.role === 'owner' ? uiText('Owner') : (exp.role === 'translate' ? uiText('Translator') : uiText('Co-Editor'));
+        var metaParts = [
+          role,
+          exp.moduleCount + (exp.moduleCount === 1 ? uiText(' station') : uiText(' stations')),
+          exp.stepCount + (exp.stepCount === 1 ? uiText(' step') : uiText(' steps')),
+        ];
+        metaParts.forEach(function (value, i) {
+          if (i) meta.append(' · ');
+          var item = document.createElement('span');
+          item.textContent = value;
+          meta.appendChild(item);
+        });
+        detail.appendChild(meta);
       }
-
-      detail.append(top, meta);
+      var rec = formatRelativeTime(exp.updatedAt);
+      var timeNode = null;
+      if (rec.rel) {
+        timeNode = document.createElement('time');
+        timeNode.dateTime = new Date(exp.updatedAt * 1000).toISOString();
+        timeNode.title = rec.exact;
+        timeNode.tabIndex = 0;
+        timeNode.setAttribute('aria-label', rec.rel + ', ' + rec.exact);
+        timeNode.textContent = rec.rel;
+        if (!library) meta.append(' · ', timeNode);
+      }
 
       // UX-010: Per-locale translation coverage readiness badges
       var cov = exp.languageCoverage || null;
@@ -352,7 +364,8 @@
         var stat = cov && cov[code];
         var pill = document.createElement(stat && stat.total > 0 ? 'button' : 'span');
         if (stat && stat.total > 0 && Number.isFinite(Number(stat.translated))) {
-          var pct = Math.round((Number(stat.translated) / Number(stat.total)) * 100);
+          var ready = library ? Math.max(0, stat.translated - (stat.needsReview || 0)) : stat.translated;
+          var pct = Math.round((ready / Number(stat.total)) * 100);
           pill.type = 'button';
           pill.setAttribute('aria-controls', coverageDetail.id);
           pill.setAttribute('aria-expanded', 'false');
@@ -365,13 +378,31 @@
           });
           pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
           pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? uiText(' · review') : '');
+          if (library) {
+            pill.setAttribute('aria-label', pill.textContent);
+            var progress = document.createElement('progress');
+            progress.max = stat.total;
+            progress.value = ready;
+            progress.setAttribute('aria-hidden','true');
+            pill.replaceChildren(document.createTextNode(code.toUpperCase()), progress);
+            pill.title = pct + '%';
+          }
         } else {
           pill.className = 'el-lang-cov';
           pill.textContent = code.toUpperCase();
         }
         covRow.appendChild(pill);
+        if (library && stat?.needsReview > 0 && code !== exp.defaultLanguage && !exp.deletionPending) {
+          var review = document.createElement('a');
+          var target = new URLSearchParams({modus: 'vertalen', taal: code, filter: 'controleren'});
+          review.href = editUrl + '?' + target;
+          review.className = 'ac-review-flag';
+          review.textContent = code.toUpperCase() + ' · ' + copyLabel('Te controleren','Zu prüfen');
+          review.setAttribute('aria-label', review.textContent + ' · ' + exp.title);
+          covRow.appendChild(review);
+        }
       });
-      detail.append(covRow, coverageDetail);
+      if (!library) detail.append(covRow, coverageDetail);
       mainWrap.appendChild(detail);
 
       var actions = document.createElement('div');
@@ -412,6 +443,7 @@
             document.getElementById('el-delete-dialog-msg').textContent = exp.title;
             document.getElementById('el-delete-error').hidden = true;
             deleteDialog.showModal();
+            if (library) void library.showDeletionImpact(exp, api);
             document.getElementById('el-delete-cancel').focus();
           } });
         }
@@ -420,9 +452,10 @@
           actions.appendChild(menu.el);
         }
       }
-      card.append(mainWrap, actions);
-      grid.appendChild(card);
-      if (pendingCopies.has(exp.id)) grid.appendChild(pendingCopyRow(exp));
+      if (library) library.finishRow(card, exp, mainWrap, covRow, coverageDetail, timeNode, actions);
+      else card.append(mainWrap, actions);
+      list.appendChild(card);
+      if (pendingCopies.has(exp.id)) list.appendChild(pendingCopyRow(exp));
     });
 
     // UX-005: Focus newly duplicated copy row
@@ -656,6 +689,7 @@
     if (deleteDialog.open) deleteDialog.close();
     if (createDialog.open) createDialog.close();
     grid.replaceChildren();
+    if (library) library.showHelp(false);
     document.getElementById('el-delete-dialog-msg').textContent = '';
     titleInput.value = '';
     canCreate = !academy;

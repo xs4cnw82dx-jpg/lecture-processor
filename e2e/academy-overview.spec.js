@@ -41,6 +41,7 @@ test('dashboard filters, statistics and keyboard course links use one overview r
   });
   await page.goto(academyOrigin);
   await expect(page.locator('.ao-metric-big')).toHaveText('58,3%');
+  await expect(page.locator('.ao-split-counts')).toContainText('41,7%');
   const cards = page.locator('#ao-kpis');
   await expect(cards.getByRole('button')).toHaveCount(4);
   await expect(cards.getByRole('button', {name:/Gestarte sessies/})).toContainText('+4 t.o.v. vorige periode');
@@ -54,7 +55,7 @@ test('dashboard filters, statistics and keyboard course links use one overview r
   await expect(cards.getByRole('button',{name:/Mediane actieve tijd/})).toContainText('Geen vergelijkingsgegevens');
   await page.getByRole('button',{name:'Routes tonen'}).click();
   await expect(page.locator('#ao-rows [role="img"]')).toHaveCount(2);
-  const links=page.locator('#ao-rows a');
+  const links=page.locator('#ao-rows .ao-course-link');
   await links.first().focus();
   await page.keyboard.press('j');
   await expect(links.nth(1)).toBeFocused();
@@ -95,4 +96,28 @@ test('an admin can dismiss the archived-language notice for previously translate
   await page.reload();
   await expect(page.getByRole('link',{name:'Nieuwe expeditie',exact:true})).toBeVisible();
   await expect(archive).toBeHidden();
+});
+
+
+test('authors can review pending translations and see their own private cover after sorting', async ({page,academyOrigin}) => {
+  const courses = [course('alpha','Alfa','owner'),course('beta','Beta','edit'),course('done','Klaar','owner')];
+  courses[0].coverMedia = {kind:'asset',assetId:'uploaded-cover'};
+  courses[2].languageCoverage.de.needsReview = 0;
+  const requests = [];
+  await page.route('**/api/academy/overview*',route=>route.fulfill({json:overview(courses)}));
+  await page.route('**/api/elearning/expeditions/alpha/assets/uploaded-cover',route=>{
+    requests.push(route.request().headers().authorization);
+    return route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3xUAAAAASUVORK5CYII=','base64')});
+  });
+  await page.goto(academyOrigin);
+  for (const {id,title} of courses.slice(0,2)) {
+    await expect(page.getByRole('link',{name:'Te controleren (1) · DE · '+title})).toHaveAttribute('href','/expedities/'+id+'/bewerken?modus=vertalen&taal=de&filter=controleren');
+  }
+  await expect(page.getByRole('row').filter({hasText:'Klaar'}).getByRole('link',{name:/Te controleren/})).toHaveCount(0);
+  const image = page.getByRole('link',{name:'Alfa',exact:true}).locator('img');
+  await image.scrollIntoViewIfNeeded();
+  await expect.poll(()=>image.evaluate(img => img.currentSrc.startsWith('blob:') && img.naturalWidth)).toBe(1);
+  await page.getByRole('button',{name:'Expeditie',exact:true}).click();
+  await expect.poll(()=>image.evaluate(img => img.currentSrc.startsWith('blob:') && img.naturalWidth)).toBe(1);
+  expect(requests).toEqual(['Bearer academy-preview-token']);
 });
