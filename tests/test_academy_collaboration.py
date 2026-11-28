@@ -33,6 +33,10 @@ def test_hub_enforces_course_roles_and_omits_management_markup_until_authorized(
         workspace = client.get(hub, headers=headers).json
         fragment = html.fragment_fromstring(workspace['html'], create_parent=True)
         assert workspace['course']['role'] == role
+        assert 'members' not in workspace['course']
+        assert not any('blocks' in station for station in workspace['course']['modules'])
+        if role == 'translate':
+            assert 'share' not in workspace['course']
         assert not fragment.xpath('//*[@id="xc-sharing-settings" or @id="xc-pause"]')
         assert bool(fragment.xpath('//*[@id="xc-delen"]')) == (role == 'edit')
         assert client.get('/api/academy/team', headers=headers).status_code == 403

@@ -979,6 +979,12 @@ def _walk_localized_fields(expedition: dict):
                                     )
 
 
+def course_cover(expedition: dict) -> dict:
+    start = expedition.get('startPage') or {}
+    local = safe_media_ref((start.get('heroMediaOverrides') or {}).get(expedition.get('defaultLanguage')))
+    return local if local['kind'] != 'none' else safe_media_ref(start.get('heroMedia'))
+
+
 def compute_language_coverage(expedition: dict) -> dict:
     """Compute per-language translation counts across all non-empty translatable fields."""
     default_lang = normalize_lang(expedition.get('defaultLanguage', 'nl'))

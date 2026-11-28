@@ -2,7 +2,6 @@
 {% from 'academy/_collaboration_macros.html' import say with context %}
 {% block title %}{{ ('Team' if academy_view == 'team' else say('Expeditie','Expedition')) }} · xPED Academy{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
 {% include '_academy_foundation.html' %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-collaboration.css') }}">

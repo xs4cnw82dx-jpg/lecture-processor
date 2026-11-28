@@ -7,7 +7,7 @@
   const say = (nl, de) => lang === 'de' ? de : nl;
   const nr = new Intl.NumberFormat(lang);
   const stamp = new Intl.DateTimeFormat(lang, { dateStyle: 'medium' });
-  const date = value => value > 0 ? stamp.format(value * 1000) : '—';
+  const date = value => Number.isFinite(value) && value >= 86400 ? stamp.format(value * 1000) : '—';
   const roles = {
     owner: say('Eigenaar', 'Eigentümer:in'), admin: say('Beheerder', 'Administrator:in'),
     author: say('Auteur', 'Autor:in'), edit: say('Mede-auteur', 'Mitautor:in'), translate: say('Vertaler', 'Übersetzer:in'),
@@ -17,7 +17,7 @@
   const path = '/expedities/' + encodeURIComponent(courseId);
   let focusPerson = new URLSearchParams(location.search).get('persoon')?.trim().toLowerCase();
   const shareEndpoint = '/api/elearning/expeditions/' + encodeURIComponent(courseId) + '/sharing';
-  let auth, client, workspace, sharing, identity, epoch = 0, task, loading, undoTimer;
+  let auth, client, workspace, sharing, identity, epoch = 0, task, loading, undoTimer, coverURL;
   const content = $('content');
 
   function node(tag, value, className) {
@@ -70,17 +70,19 @@
     if ($('contact')) $('contact').hidden = !options.contact;
     content.setAttribute('aria-busy', String(!!options.busy));
   }
-  function notice(message, undo) {
+  function notice(message, undo, type = 'success') {
     const host = $('feedback');
     if (!host) return;
     clearTimeout(undoTimer);
-    host.replaceChildren(node('span', message));
+    const text = node('span');
+    host.replaceChildren(text);
+    window.Xped.ux.toast(message, { element: host, textElement: text, type, duration: undo ? 8000 : 5000, hide: () => host.replaceChildren() });
     if (undo) {
       const button = action(say('Ongedaan maken', 'Rückgängig'), async () => {
         clearTimeout(undoTimer);
         button.disabled = true;
         try { await undo(); notice(say('Toegang hersteld.', 'Zugriff wiederhergestellt.')); }
-        catch (error) { notice(error.message); }
+        catch (error) { notice(error.message, null, 'error'); }
       }, 'xc-text-action');
       host.append(button);
       undoTimer = setTimeout(() => { if (host.contains(button)) button.remove(); }, 8000);
@@ -128,7 +130,7 @@
     const confirm = action(say('Bevestigen', 'Bestätigen'), async () => {
       confirm.disabled = cancel.disabled = true;
       try { await run(); pane.remove(); }
-      catch (error) { notice(error.message); confirm.disabled = cancel.disabled = false; }
+      catch (error) { notice(error.message, null, 'error'); confirm.disabled = cancel.disabled = false; }
     }, 'xc-text-action is-danger');
     pane.append(cancel, confirm);
     button.after(pane);
@@ -160,7 +162,10 @@
       }
     }, 'xc-text-action');
     copy.setAttribute('aria-label', say('Link kopiëren', 'Link kopieren'));
-    group.append(a, copy, action('QR', () => showQR(full), 'xc-text-action'));
+    const qr = action('QR', () => showQR(full, qr), 'xc-text-action');
+    qr.setAttribute('aria-haspopup', 'dialog');
+    qr.setAttribute('aria-expanded', 'false');
+    group.append(a, copy, qr);
     return group;
   }
   function download(blob, name) {
@@ -172,7 +177,10 @@
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function showQR(url) {
+  function showQR(url, trigger) {
+    const previous = doc.getElementById('xc-qr-popover');
+    if (previous?.matches(':popover-open')) { previous.hidePopover(); if (previous.dataset.url === url) return; }
+
     const svg = window.XpedElearningQR.createSvgElement(url);
     svg.setAttribute('aria-label', say('QR-code voor de link', 'QR-Code für den Link'));
     const image = node('div', null, 'xc-qr'); image.append(svg);
@@ -186,32 +194,82 @@
         const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
         ctx.drawImage(img, 0, 0, 1024, 1024);
         canvas.toBlob(file => { if (file) download(file, 'xped-qr.png'); }, 'image/png');
-      } catch (_) { $('dialog-error').textContent = say('De afbeelding kon niet worden gemaakt.', 'Das Bild konnte nicht erstellt werden.'); }
+      } catch (_) { notice(say('De afbeelding kon niet worden gemaakt.', 'Das Bild konnte nicht erstellt werden.')); }
       finally { URL.revokeObjectURL(source); }
     });
     const actions = node('div', null, 'xc-actions'); actions.append(svgButton, pngButton);
-    dialog(say('QR-code','QR-Code'), [image, actions], '', null);
+    const title = say('QR-code', 'QR-Code');
+    if (!('showPopover' in HTMLElement.prototype)) { dialog(title, [image, actions], '', null); return; }
+    const panel = node('div', null, 'xc-qr-popover');
+    panel.popover = 'auto';
+    panel.id = 'xc-qr-popover';
+    panel.dataset.url = url;
+    panel.setAttribute('role','dialog');
+    panel.setAttribute('aria-label',title);
+    const close = action(say('Sluiten', 'Schließen'), () => panel.hidePopover(), 'xc-text-action');
+    const header = node('header');
+    header.append(node('strong', title), close);
+    panel.append(header, image, actions);
+    trigger.closest('.xc-copy').append(panel);
+    trigger.classList.add('xc-qr-target');
+    trigger.setAttribute('aria-controls', panel.id);
+    trigger.setAttribute('aria-expanded', 'true');
+    panel.addEventListener('beforetoggle', event => {
+      if (event.newState !== 'closed') return;
+      trigger.classList.remove('xc-qr-target');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.removeAttribute('aria-controls');
+      queueMicrotask(() => {
+        if (panel.contains(doc.activeElement) || doc.activeElement === doc.body) trigger.focus();
+        panel.remove();
+      });
+    });
+    panel.showPopover();
+    close.focus();
+  }
+
+  async function showCover(cover) {
+    if (!cover || cover.kind === 'none') return;
+    const version = epoch;
+    const image = $('cover-image');
+    const figure = $('cover');
+    let source;
+    if (cover.kind === 'xped') {
+      if (!/^\/static\/images\/xped\/[a-zA-Z0-9_.-]+$/.test(cover.staticPath || '')) return;
+      source = cover.staticPath;
+    } else if (cover.kind === 'asset' && cover.assetId) {
+      const response = await client.authFetch('/api/elearning/expeditions/' + encodeURIComponent(courseId) + '/assets/' + encodeURIComponent(cover.assetId));
+      if (!response.ok || !isCurrent(version)) return;
+      const blob = await response.blob();
+      if (!isCurrent(version) || !blob.type.startsWith('image/')) return;
+      source = coverURL = URL.createObjectURL(blob);
+    } else return;
+    image.addEventListener('load', () => {
+      if (isCurrent(version)) figure.hidden = false;
+    }, { once: true });
+    image.src = source;
   }
 
   function showCourse() {
     const c = workspace.course, role = c.role;
     const title = c.title || say('Expeditie', 'Expedition');
     $('title').textContent = title;
+    void showCover(workspace.cover).catch(() => { /* The course remains usable when its optional image is offline. */ });
     doc.title = title + ' · xPED Academy';
     const status = $('state-mark');
     status.textContent = role === 'translate' ? roles.translate : c.share?.enabled ? say('Deelnemerslink actief', 'Teilnahmelink aktiv') : say('Privéconcept', 'Privater Entwurf');
     status.classList.toggle('is-live', !!c.share?.enabled);
-    const modules = c.modules || [], steps = modules.reduce((count, mod) => count + (mod.steps?.length || 0), 0);
-    $('count').textContent = nr.format(modules.length) + ' ' + (modules.length === 1 ? 'station' : say('stations', 'Stationen')) + ' · ' + nr.format(steps) + ' ' + (steps === 1 ? say('stap','Schritt') : say('stappen','Schritte'));
+    const modules = c.modules || [], steps = modules.reduce((count, mod) => count + mod.steps, 0);
+    $('count').textContent = nr.format(modules.length) + ' ' + (modules.length === 1 ? say('station', 'Station') : say('stations', 'Stationen')) + ' · ' + nr.format(steps) + ' ' + (steps === 1 ? say('stap','Schritt') : say('stappen','Schritte'));
     if (window.XpedAcademyControls && modules.length) $('strip').append(window.XpedAcademyControls.routeStrip(modules, { size: 'regular' }));
     for (const mod of modules) {
       const item = node('li');
       const stationTitle = textOf(mod.title) || say('Station', 'Station');
-      const firstStep = mod.steps?.[0];
-      const dest = path + '/bewerken?' + new URLSearchParams(role === 'translate' ? { modus: 'vertalen', taal: workspace.target } : firstStep ? { module: mod.id, step: firstStep.id } : {});
+      const firstStep = mod.firstStepId;
+      const dest = path + '/bewerken?' + new URLSearchParams(role === 'translate' ? { modus: 'vertalen', taal: workspace.target } : firstStep ? { module: mod.id, step: firstStep } : {});
       const label = link(stationTitle, dest);
       label.translate = false;
-      item.append(label, node('small', nr.format(mod.steps?.length || 0) + ' ' + (mod.steps?.length === 1 ? say('stap', 'Schritt') : say('stappen', 'Schritte'))));
+      item.append(label, node('small', nr.format(mod.steps) + ' ' + (mod.steps === 1 ? say('stap', 'Schritt') : say('stappen', 'Schritte'))));
       $('stations').append(item);
     }
     if (!modules.length) $('stations').append(node('li', say('Deze expeditie heeft nog geen stations.', 'Diese Expedition hat noch keine Stationen.')));
@@ -231,7 +289,7 @@
       const button = event.submitter;
       button.disabled = true;
       try { const result = await api(shareEndpoint, { action: 'update_public', pausedMessage: $('paused-message').value }); sharing.share = result.share; notice(say('Bericht opgeslagen.', 'Nachricht gespeichert.')); }
-      catch (error) { notice(error.message); } finally { button.disabled = false; }
+      catch (error) { notice(error.message, null, 'error'); } finally { button.disabled = false; }
     });
     showView();
   }
@@ -242,7 +300,13 @@
     for (const row of rows) {
       const item = node('div', null, 'xc-translation');
       item.append(userText('p', row.source || row.nl || '—'), userText('p', row.target || '—'));
-      item.append(node('small', row.status === 'needs_review' ? say('Te controleren', 'Zu prüfen') : row.status === 'untranslated' ? say('Ontbreekt', 'Fehlt') : say('Vertaald', 'Übersetzt')));
+      const review = node('div', null, 'xc-translation-action');
+      const status = row.status === 'needs_review' ? say('Te controleren', 'Zu prüfen') : row.status === 'untranslated' ? say('Ontbreekt', 'Fehlt') : say('Vertaald', 'Übersetzt');
+      const params = new URLSearchParams({ modus: 'vertalen', taal: workspace.target, filter: 'alle', veld: row.key });
+      const edit = link(row.status === 'needs_review' ? say('Controleren','Prüfen') : say('Bewerken','Bearbeiten'), path + '/bewerken?' + params, 'xc-text-action');
+      edit.setAttribute('aria-label', edit.textContent + ' · ' + (row.source || row.nl || row.target).slice(0, 70));
+      review.append(node('small', status), edit);
+      item.append(review);
       list.append(item);
     }
   }
@@ -269,7 +333,7 @@
         showSharing();
       } catch (error) {
         if (isCurrent(version)) {
-          notice(error.message);
+          notice(error.message, null, 'error');
           const retry = action(say('Opnieuw proberen','Erneut versuchen'), () => loadSharing(true));
           $('feedback').append(retry);
         }
@@ -297,7 +361,7 @@
           $('state-mark').classList.toggle('is-live', !!result.share.enabled);
           $('state-mark').textContent = result.share.enabled ? say('Deelnemerslink actief', 'Teilnahmelink aktiv') : say('Privéconcept', 'Privater Entwurf');
           $('sharing-status').textContent = say('Opgeslagen', 'Gespeichert');
-        } catch (error) { if (isCurrent(version)) notice(error.message); }
+        } catch (error) { if (isCurrent(version)) notice(error.message, null, 'error'); }
         finally { if (isCurrent(version)) { controls.disabled = false; showSharing(); } }
       };
     }
@@ -395,7 +459,7 @@
     const tbody = table.createTBody();
     for (const person of people.slice().sort((a,b) => (b.admin || false) - (a.admin || false) || a.email.localeCompare(b.email,lang))) {
       const row = tbody.insertRow(), first = row.insertCell();
-      if (person.email.toLowerCase() === focusPerson) { row.classList.add('is-selected'); row.tabIndex = -1; }
+      if (focusPerson && [person.email, person.name].some(value => value && value.trim().toLowerCase() === focusPerson)) { row.classList.add('is-selected'); row.tabIndex = -1; }
       const id = node('div', null, 'xc-identity'), avatar = node('span', (person.name || person.email).split(/[\s.@_-]+/).slice(0,2).map(word => word.charAt(0)).join('').toUpperCase(), 'xc-avatar');
       avatar.setAttribute('aria-hidden','true'); const info = node('span', null, 'xc-person-info');
       if (person.name) info.append(userText('strong', person.name), userText('small', person.email)); else info.append(userText('strong', person.email));
@@ -451,9 +515,11 @@
   async function load(user) {
     const version = ++epoch;
     if ($('dialog')?.open) $('dialog').close();
+    if (coverURL) { URL.revokeObjectURL(coverURL); coverURL = ''; }
     clearTimeout(undoTimer); identity = user; task = workspace = sharing = loading = null;
     content.replaceChildren();
     if (!user || !user.emailVerified) {
+      window.dispatchEvent(new CustomEvent('academy:workspace-access', { detail: { canCreate: false, studioAdmin: false, courses: [] } }));
       state(user ? say('Bevestig je e-mailadres om deze pagina te openen.', 'Bestätigen Sie Ihre E-Mail-Adresse, um diese Seite zu öffnen.') : say('Log in om deze pagina te openen.', 'Melden Sie sich an, um diese Seite zu öffnen.'), { signin:true });
       return;
     }
@@ -464,7 +530,12 @@
       // The server includes only controls for the verified account and course role.
       const fragment = new DOMParser().parseFromString(result.html, 'text/html');
       content.replaceChildren(...fragment.body.childNodes);
-      workspace = result; bindControls();
+      workspace = result;
+      window.dispatchEvent(new CustomEvent('academy:workspace-access', { detail: {
+        canCreate: teamPage || !!result.canCreate, studioAdmin: teamPage || !!result.studioAdmin,
+        courses: result.course ? [{role: result.course.role}] : [],
+      } }));
+      bindControls();
       if (teamPage) showTeam(); else showCourse();
       $('state').hidden = true; content.setAttribute('aria-busy','false');
     } catch (error) {

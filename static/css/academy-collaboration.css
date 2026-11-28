@@ -1,7 +1,21 @@
-.xc-main { --xc-line: var(--theme-line); --xc-ink: var(--theme-ink); --xc-muted: var(--theme-muted-strong); --xc-surface: var(--theme-surface); --xc-soft: var(--theme-surface-soft); --xc-teal: #116c59; --xc-mint: #dff2e5; --xc-forest: #0f4c42; --xc-navy: #062940; --xc-danger: var(--theme-danger-ink); box-sizing: border-box; width: 100%; max-width: 1192px; margin: 0 auto; padding: clamp(24px,4vw,56px) clamp(16px,4vw,52px); min-width: 0; color: var(--xc-ink); }
+.xc-main { --xc-line: var(--theme-line); --xc-ink: var(--theme-ink); --xc-muted: var(--theme-muted-strong); --xc-surface: var(--theme-surface); --xc-soft: var(--theme-surface-soft); --xc-teal: #116c59; --xc-mint: #dff2e5; --xc-forest: #0f4c42; --xc-navy: #062940; --xc-hero: #e6f2e8; --xc-hero-muted: #345e50; --xc-danger: var(--theme-danger-ink); box-sizing: border-box; width: 100%; max-width: 1192px; margin: 0 auto; padding: clamp(24px,4vw,56px) clamp(16px,4vw,52px); min-width: 0; color: var(--xc-ink); }
 .xc-main [hidden] { display: none !important; }
 .xc-page-heading, .xc-section-title, .xc-actions { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
 .xc-page-heading { margin-bottom: 26px; }
+.xc-course-heading {
+  display: grid; grid-template-columns: minmax(0,1fr) auto; gap: clamp(12px,3vw,36px);
+  margin: 0 0 18px; padding: clamp(20px,3vw,32px); background: var(--xc-hero);
+  color: var(--xc-navy); border-inline-start: 4px solid var(--xc-teal); border-radius: 10px;
+}
+.xc-course-heading .xc-status,.xc-course-heading .xc-route-summary { color: var(--xc-hero-muted); }
+.xc-course-heading .xc-status { margin: 0 0 8px; }
+.xc-course-heading .btn { margin-top: 14px; }
+.xc-route-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 14px; }
+.xc-course-cover { width: clamp(125px,17vw,218px); height: clamp(90px,12vw,145px); }
+.xc-course-cover img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.xc-course-heading #xc-strip { display: inline-flex; margin: 0; }
+:root[data-theme="dark"] .xc-main { --xc-hero: #123b38; --xc-hero-muted: #bddcce; }
+:root[data-theme="dark"] .xc-course-heading { color: var(--xc-ink); }
 .xc-main :is(h1,h2,p,dl,ol,ul) { margin: 0; }
 .xc-main h1 { font: 700 clamp(28px,4vw,42px)/1.08 var(--xped-font-display, sans-serif); overflow-wrap: anywhere; letter-spacing: -.02em; }
 .xc-main h2 { font: 600 18px/1.4 var(--xped-font-body, sans-serif); }
@@ -77,6 +91,17 @@
 .xc-fields { margin-top: 15px; gap: 14px; }
 .xc-course-checks { min-width: 0; border: 1px solid var(--xc-line); border-radius: 8px; padding: 8px 12px; }
 .xc-course-checks p { font-size: 13px; }
+.xc-qr-popover {
+  position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); margin: 0;
+  padding: 16px; width: min(300px, calc(100vw - 24px)); border: 1px solid var(--xc-line);
+  border-radius: 12px; background: var(--xc-surface); color: var(--xc-ink); box-shadow: var(--ac-shadow-popover);
+}
+.xc-qr-popover header { display: flex; align-items: center; justify-content: space-between; }
+@supports (position-area: block-end) {
+  .xc-qr-target { anchor-name: --xc-qr-anchor; }
+  .xc-qr-popover { inset: auto; position-anchor: --xc-qr-anchor; position-area: block-end span-inline-start; position-try-fallbacks: flip-block, flip-inline; margin-block: 6px; transform: none; }
+}
+.xc-translation-action { display: grid; justify-items: start; }
 .xc-qr { max-width: 260px; margin: auto; width: 100%; }
 .xc-qr svg { width: 100%; height: auto; }
 #xc-dialog-error:not(:empty) { color: var(--xc-danger); margin-top: 8px; }
@@ -87,7 +112,13 @@
   .xc-overview { grid-template-columns: 1fr; }
   .xc-main { padding: 24px 16px; }
   .xc-page-heading { align-items: start; }
+  .xc-tabs { flex-wrap: wrap; column-gap: 14px; row-gap: 2px; padding-block-end: 4px; }
+  .xc-tabs a { padding: 5px 1px; }
   .xc-page-heading .btn { flex: none; }
+  .xc-course-heading { padding: 18px; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px; }
+  .xc-course-cover { width: clamp(64px,19vw,100px); height: 94px; }
+  .xc-course-heading #xc-strip { max-width: 95px; overflow: hidden; }
+  .xc-course-heading .xc-route-summary { gap: 2px 8px; }
   .xc-translation { grid-template-columns: 1fr; gap: 4px; }
   .xc-team-table tbody,.xc-team-table tr { display: block; }
   .xc-team-table thead { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }

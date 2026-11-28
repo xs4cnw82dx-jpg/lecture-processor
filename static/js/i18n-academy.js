@@ -2,6 +2,8 @@
   'use strict';
   root.LectureI18nCatalog = root.LectureI18nCatalog || { nl: {}, en: {} };
   Object.assign(root.LectureI18nCatalog.nl, {
+  "Team": "Team",
+  "Your existing expeditions are available here. For new Academy courses, open": "Je bestaande expedities vind je hier. Open voor nieuwe Academy-expedities",
   "This author will lose access to their own expeditions until you restore access.": "Deze auteur heeft geen toegang meer tot de eigen expedities totdat je de toegang herstelt.",
   "Studio authors": "Studio-auteurs",
   "Manage Studio authors": "Studio-auteurs beheren",
