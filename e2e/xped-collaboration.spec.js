@@ -148,3 +148,55 @@ test('team assignments grant actual scoped author and translator access', async 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await info.attach('team-phone', {body:await page.screenshot({path:process.env.XPED_COLLAB_EVIDENCE ? process.env.XPED_COLLAB_EVIDENCE+'/team-390.png' : undefined}),contentType:'image/png'});
 });
+
+test('library duplicates immediately from the keyboard and restores focus on success or failure', async ({page}) => {
+  await account(page);
+  const course = await createCourse('Kleine stappen');
+  await page.goto(origin + '/expedities');
+  const original = page.locator('[data-expedition-row="' + course.id + '"]');
+  const menu = original.getByRole('button',{ name:/More actions|Meer acties|Weitere Aktionen/ });
+  const duplicate = page.getByRole('menuitem',{name:/Duplicate|Dupliceren|Duplizieren/});
+  let fail = true, release;
+  await page.route('**/expeditions/' + course.id + '/duplicate', async route => {
+    await new Promise(resolve => { release = resolve; });
+    if (fail) return route.fulfill({status:503,json:{error:'Tijdelijk niet beschikbaar.'}});
+    return route.continue();
+  });
+  const pending = page.locator('[data-pending-copy="' + course.id + '"]');
+  async function begin() {
+    await menu.focus();
+    await page.keyboard.press('Enter');
+    await duplicate.focus();
+    await page.keyboard.press('Enter');
+    await expect(pending).toBeVisible();
+    await expect(pending).toHaveAttribute('aria-busy','true');
+    await expect(pending).toContainText('Kopie van Kleine stappen');
+    await expect(pending).toBeFocused();
+    await expect.poll(() => typeof release).toBe('function');
+  }
+  await begin();
+  release();
+  await expect(pending).toHaveCount(0);
+  await expect(menu).toBeFocused();
+  await expect(page.getByRole('alert')).toContainText('Tijdelijk');
+  fail = false; release = undefined;
+  await begin();
+  release();
+  await expect(pending).toHaveCount(0);
+  const copied = page.locator('.is-just-duplicated');
+  await expect(copied).toContainText('Kopie van Kleine stappen');
+  await expect(copied.locator('.el-exp-card-actions a').first()).toBeFocused();
+  const savedId = await copied.getAttribute('data-expedition-row');
+  expect(savedId).not.toBe(course.id);
+  await expect(page.locator('.app-toast').getByRole('link')).toHaveAttribute('href','/expedities/' + savedId);
+});
+
+test('library command links open only the controls the author can use', async ({page}) => {
+  await account(page);
+  await page.goto(origin + '/expedities?actie=nieuw');
+  await expect(page.locator('#el-create-dialog')).toBeVisible();
+  await expect(page.locator('#el-new-title')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.goto(origin + '/expedities?actie=importeren');
+  await expect(page.locator('#el-import-json-btn')).toBeFocused();
+});

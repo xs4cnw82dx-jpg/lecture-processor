@@ -534,7 +534,13 @@ def duplicate_expedition(runtime, expedition_id: str):
     _require_author(runtime, user)
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     copy_payload = model.normalize_expedition_payload(exp)
-    copy_payload['title'] = (copy_payload['title'] + ' (Copy)')[:200]
+    academy = current_app.config.get('XPED_ACADEMY')
+    if academy:
+        options = request.get_json(silent=True)
+        german = isinstance(options, dict) and options.get('interfaceLanguage') == 'de'
+        copy_payload['title'] = (('Kopie von ' if german else 'Kopie van ') + copy_payload['title'])[:200]
+    else:
+        copy_payload['title'] = (copy_payload['title'] + ' (Copy)')[:200]
     new_eid = model.new_id('exp')
     share_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
     ts = now()
@@ -597,7 +603,10 @@ def duplicate_expedition(runtime, expedition_id: str):
         except Exception:
             elearning_storage.delete_expedition(db, new_eid, user['uid'])
             raise
-    return jsonify(expedition=_public_studio_view(doc, 'owner')), 201
+    result = {'expedition': _public_studio_view(doc, 'owner')}
+    if academy:
+        result['summary'] = {**_summary_card(doc, 'owner'), 'folderId': doc.get('folder_id', '')}
+    return jsonify(result), 201
 
 
 def _is_studio_admin(runtime, user):
