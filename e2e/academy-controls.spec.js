@@ -175,3 +175,69 @@ test('preview switches are single-choice groups that follow the arrow keys', asy
   await expect(dark).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#el-preview-container')).toHaveAttribute('data-learner-appearance', 'dark');
 });
+
+async function expectPaintedThumb(group) {
+  const active = group.getByRole('radio', { checked: true });
+  const thumb = group.locator('.academy-segment-thumb');
+  await expect(active).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const image = (await thumb.screenshot()).toString('base64');
+  const [sample, surface, track] = await thumb.evaluate(async (el, encoded) => {
+    const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext('2d');
+    context.drawImage(bitmap, 0, 0);
+    const pixel = context.getImageData(Math.floor(bitmap.width / 2), 4, 1, 1).data;
+    bitmap.close();
+    return [`rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`, getComputedStyle(el).backgroundColor, getComputedStyle(el.parentElement).backgroundColor];
+  }, image);
+  expect(sample).toBe(surface);
+  expect(sample).not.toBe(track);
+}
+
+test('the selection thumb slides to the actual width of the next label and respects reduced motion', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto(origin + '/expedities/' + course.id + '/bewerken');
+  await page.getByRole('tab', { name: 'Voorbeeld' }).click();
+  const group = page.locator('.el-vp-width-switch');
+  const thumb = group.locator('.academy-segment-thumb');
+  const radios = group.getByRole('radio');
+  const selected = group.getByRole('radio', { checked: true });
+  const alignmentError = async () => {
+    const [slider, label] = await Promise.all([thumb.boundingBox(), selected.boundingBox()]);
+    if (!slider || !label) return Infinity;
+    return Math.max(...['x', 'y', 'width', 'height'].map(key => Math.abs(slider[key] - label[key])));
+  };
+  await expect.poll(alignmentError).toBeLessThan(1.1);
+  expect(Math.abs((await radios.first().boundingBox()).width - (await radios.last().boundingBox()).width)).toBeGreaterThan(5);
+  await thumb.evaluate(el => el.addEventListener('transitionrun', event => {
+    if (event.propertyName === 'transform') el.dataset.observedDuration = el.getAnimations()
+      .find(animation => animation.transitionProperty === 'transform')?.effect.getTiming().duration;
+  }));
+  await radios.first().press('End');
+  await expect(radios.last()).toBeChecked();
+  await expect(thumb).toHaveAttribute('data-observed-duration', '150');
+  await expect.poll(alignmentError).toBeLessThan(1.1);
+  await expectPaintedThumb(group);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await radios.last().press('Home');
+  await expect(radios.first()).toBeChecked();
+  expect(await thumb.evaluate(el => getComputedStyle(el).transitionProperty)).toBe('none');
+  expect(await thumb.evaluate(el => el.getAnimations().length)).toBe(0);
+  await expect.poll(alignmentError).toBeLessThan(1.1);
+});
+
+test('the learner text-size switch visibly paints its selected thumb', async ({ page }) => {
+  const sharing = await page.request.post(origin + '/api/elearning/expeditions/' + course.id + '/sharing', {
+    headers: { Authorization: 'Bearer academy-preview-token' }, data: { action: 'update_public', enabled: true }
+  });
+  expect(sharing.ok()).toBe(true);
+  const token = (await sharing.json()).share.token;
+  await page.goto(origin + '/start/' + token);
+  await page.getByRole('button', { name: 'Leescomfort' }).click();
+  const size = page.locator('.el-text-scale-group');
+  await size.getByRole('radio', { checked: true }).press('End');
+  await expect(size.getByRole('radio').last()).toBeChecked();
+  await expectPaintedThumb(size);
+});

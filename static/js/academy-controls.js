@@ -60,10 +60,38 @@
   }
 
   function initSegments() {
-    for (const group of doc.querySelectorAll(segmentSelector)) {
-      syncSegments(group);
-      const observer = new MutationObserver(() => syncSegments(group));
+    for (const group of doc.querySelectorAll(segmentSelector + ', .el-mode-tabs')) {
+      const isTabList = group.matches('.el-mode-tabs');
+      const thumb = doc.createElement('span');
+      thumb.className = 'academy-segment-thumb';
+      thumb.setAttribute('aria-hidden', 'true');
+      thumb.hidden = true;
+      group.classList.add('academy-segment-track');
+      group.prepend(thumb);
+      // The selected label can change size after showing a panel, loading fonts or resizing.
+      function positionThumb() {
+        const active = group.querySelector('button.is-active');
+        const visible = Boolean(active?.offsetWidth);
+        group.toggleAttribute('data-segment-ready', visible);
+        thumb.hidden = !visible;
+        if (!visible) return;
+        thumb.style.width = active.offsetWidth + 'px';
+        thumb.style.height = active.offsetHeight + 'px';
+        thumb.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+      }
+      function update() {
+        if (!isTabList) syncSegments(group);
+        positionThumb();
+      }
+      update();
+      const observer = new MutationObserver(update);
       observer.observe(group, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-pressed'] });
+      if (root.ResizeObserver) {
+        const resize = new root.ResizeObserver(positionThumb);
+        resize.observe(group);
+        for (const button of group.querySelectorAll('button')) resize.observe(button);
+      }
+      if (isTabList) continue;
       group.addEventListener('keydown', function (event) {
         const keys = ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Home', 'End'];
         if (!keys.includes(event.key)) return;
