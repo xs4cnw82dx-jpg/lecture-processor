@@ -773,6 +773,7 @@
     "Change role": "Rolle ändern",
     "Choose a non-empty audio file of at most 15 MB.": "Wählen Sie eine Audiodatei mit Inhalt und höchstens 15 MB.",
     "Choose a response collection setting.": "Legen Sie fest, ob die Expedition Antworten erfassen darf.",
+    "Choose a valid date.": "Wählen Sie ein gültiges Datum.",
     "Choose a valid target language (nl, en, or de).": "Wählen Sie Niederländisch oder Deutsch als Zielsprache.",
     "Choose an expedition JSON file containing a list of stations.": "Wählen Sie eine Expeditionsdatei im JSON-Format, die eine Liste von Stationen enthält.",
     "Choose an image or audio file to upload.": "Wählen Sie eine Bild- oder Audiodatei zum Hochladen aus.",

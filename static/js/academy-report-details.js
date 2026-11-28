@@ -140,6 +140,7 @@
       notes.forEach(note => body.append(el('blockquote', note.comment)));
     }
     const params = new URLSearchParams({ step: id, module: module.id, from: 'responses' });
+    if (location.search) params.set('filters',location.search.slice(1));
     dialog.querySelector('[data-detail-edit]').href = root.XpedElearningModel.coursePaths(state.expedition.id).edit + '?' + params;
     dialog.querySelector('[data-detail-prev]').disabled = selected === 0;
     dialog.querySelector('[data-detail-next]').disabled = selected === state.funnel.length - 1;

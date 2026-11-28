@@ -22,8 +22,8 @@ function reportData() {
     summary: { totalSessions: 40, completedSessions: 22, completionRate: 55, timedSessions: 30,
       activeSeconds: quartiles(900, 600, 1260, 30) },
     stations: [
-      { moduleId: 'mod1', moduleTitle: loc('Opening'), estimatedMinutes: 5, time: quartiles(560, 400, 700, 30) },
-      { moduleId: 'mod2', moduleTitle: loc('Plan'), estimatedMinutes: 10, time: quartiles(300, 200, 420, 12) },
+      { moduleId: 'mod1', moduleTitle: loc('Opening'), reached: 40, estimatedMinutes: 5, time: quartiles(560, 400, 700, 30) },
+      { moduleId: 'mod2', moduleTitle: loc('Plan'), reached: 20, estimatedMinutes: 10, time: quartiles(300, 200, 420, 12) },
     ],
     funnel: [
       { moduleId: 'mod1', moduleTitle: loc('Opening'), stepId: 's1', stepTitle: loc('Question'), reached: 40, time: quartiles(95, 60, 140, 30) },
@@ -123,6 +123,12 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     await expect(trend.locator('svg')).toHaveCount(0);
     await expect(trend).toContainText('Gestart 30');
     await expect(page).toHaveURL(/days=7/);
+    await expect(page).toHaveTitle('Resultaten · Course draft · xPED Academy');
+    await expect(funnel.getByRole('img',{name:/Bereik per station/})).toHaveAccessibleName(/Opening 100.*Plan 55/);
+    await funnel.getByRole('button',{name:'Explainer'}).click();
+    const editorURL = new URL(await drawer.locator('[data-detail-edit]').getAttribute('href'),academyOrigin);
+    expect(new URLSearchParams(editorURL.searchParams.get('filters')).get('days')).toBe('7');
+    await page.keyboard.press('Escape');
     expect(requests.some(query=>query.includes('days=7'))).toBe(true);
     await page.goto(academyOrigin + '/expedities/visual/resultaten?cohort=coaches&cohort=group-b&from=2026-10-01&to=2026-10-31');
     await expect(page.locator('#academy-filter-chips')).toContainText('coaches');
@@ -131,6 +137,11 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     await expect(page).not.toHaveURL(/cohort=coaches/);
     await expect(page).toHaveURL(/cohort=group-b/);
     await expect(page).toHaveURL(/from=2026-10-01/);
+    const editorLink = new URL(await page.locator('#academy-report-editor').getAttribute('href'), academyOrigin);
+    expect(editorLink.searchParams.get('from')).toBe('responses');
+    const returnFilters = new URLSearchParams(editorLink.searchParams.get('filters'));
+    expect(returnFilters.getAll('cohort')).toEqual(['group-b']);
+    expect(returnFilters.get('from')).toBe('2026-10-01');
     await page.locator('#academy-station-report').scrollIntoViewIfNeeded();
     if (size.width < 600) {
       const scroller = page.getByRole('region', {name:'Vergelijk de stations'});

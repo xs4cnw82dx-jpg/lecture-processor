@@ -41,6 +41,13 @@
 <section id="xc-vertalingen" class="xc-panel" hidden>
   <div class="xc-section-title"><div><h2 id="xc-translation-heading"></h2><p id="xc-coverage"></p></div>
   <a class="btn" id="xc-translate" href="{{ url_for('academy.builder', expedition_id=expedition_id, modus='vertalen') }}">{{ say('Vertaalomgeving openen','Übersetzung öffnen') }}</a></div>
+  {% if role == 'owner' %}
+  <form id="xc-deadline-form" class="xc-form">
+    <label for="xc-deadline">{{ say('Streefdatum vertaling','Zieldatum der Übersetzung') }}</label>
+    <input type="date" id="xc-deadline">
+    <button class="btn" type="submit">{{ say('Datum opslaan','Datum speichern') }}</button>
+  </form>
+  {% else %}<p id="xc-deadline-label" hidden></p>{% endif %}
   <label class="xc-check"><input type="checkbox" id="xc-review-only" checked>{{ say('Alleen ontbrekende of te controleren teksten','Nur fehlende oder zu prüfende Texte') }}</label>
   <div id="xc-translation-rows"></div>
 </section>

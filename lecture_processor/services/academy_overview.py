@@ -124,6 +124,8 @@ def dashboard(runtime, args):
         entry['owner'] = exp.get('owner_email', '') if role == 'owner' else ''
         entries.append(entry)
         if role == 'translate':
+            target = 'nl' if exp.get('defaultLanguage') == 'de' else 'de'
+            entry['dueDate'] = (exp.get('_translationDates') or {}).get(target)
             continue
         sessions = db.dashboard_sessions(eid, previous, stop, FIELDS)
         group = PeriodStatistics()
