@@ -2,7 +2,7 @@
 
 _REASONS = frozenset({
     'timeout', 'connection_error', 'http_error', 'body_error',
-    'invalid_response', 'finish_error',
+    'invalid_response', 'finish_error', 'incomplete',
 })
 _TRANSIENT_CODES = frozenset({408, 409, 425, 429})
 
@@ -30,11 +30,10 @@ class ProviderRequestError(RuntimeError):
         self.status_code = numeric_status(http_status)
         self.provider_code = numeric_status(provider_code)
         statuses = (self.provider_code, self.status_code)
-        self.retryable = reason in {'timeout', 'connection_error'} or any(
-            code is not None and (code in _TRANSIENT_CODES or 500 <= code <= 599)
-            for code in statuses
-        )
-        failure_status = next((code for code in statuses if code is not None and code >= 400), None)
+        failures = [code for code in statuses if code is not None and code >= 400]
+        definitive = next((code for code in failures if code < 500 and code not in _TRANSIENT_CODES), None)
+        self.retryable = definitive is None and (reason in {'timeout', 'connection_error'} or bool(failures))
+        failure_status = definitive or next(iter(failures), None)
         self.error_code = (
             'TIMEOUT' if reason == 'timeout'
             else f'HTTP_{failure_status}' if failure_status is not None

@@ -481,3 +481,139 @@ def test_extraction_failure_records_pending_refund_and_preserves_receipt_in_hist
     store.now += 181
     assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
     assert store.docs('users')['owner']['credits'] == 100
+
+
+@pytest.mark.parametrize('receipt_change', ['remove', 'null', 'mismatched'])
+def test_runtime_lost_ack_requires_matching_receipt_before_cache_or_dispatch(receipt_change):
+    runtime, store = runtime_fixture()
+    ref = runtime.runtime_jobs_repo.doc_ref(runtime.db, runtime.RUNTIME_JOBS_COLLECTION, 'job')
+
+    def lose_ack(_operations):
+        store.after_commit = None
+        saved = ref.get().to_dict()
+        if receipt_change == 'remove':
+            saved.pop('billing_receipt')
+        elif receipt_change == 'null':
+            saved['billing_receipt'] = None
+        else:
+            saved['billing_receipt']['charge_ref'] = 'runtime-job:some-other-job'
+        ref.set(saved)
+        raise RuntimeError('Synthetic lost acknowledgement')
+
+    store.after_commit = lose_ack
+    with pytest.raises(ledger.LedgerUnavailable, match='Could not reserve credits for processing'):
+        job_charges.admit_runtime_job('owner', 'job', 'lecture-notes', PRIMARY, runtime=runtime)
+    assert not runtime.jobs
+    assert store.docs('users')['owner']['credits'] == 92
+    assert len(store.docs('credit_charges')) == 1
+
+
+@pytest.mark.parametrize('terminal', [False, True])
+def test_stale_job_rebuilds_missing_receipt_from_its_own_journal_and_refunds_once(terminal):
+    runtime, store = runtime_fixture()
+    components = {**PRIMARY, 'extras': {'action': 'interview_extra', 'units': 2}}
+    job_charges.admit_runtime_job('owner', 'job', 'lecture-notes', components, runtime=runtime)
+    ref = runtime.runtime_jobs_repo.doc_ref(runtime.db, runtime.RUNTIME_JOBS_COLLECTION, 'job')
+    row = ref.get().to_dict()
+    row.pop('billing_receipt')
+    if terminal:
+        # The older recovery worker could only flag the primary refund after
+        # finding a missing receipt. Both component amounts still exist in the journal.
+        row.update(status='error', step_description='Interrupted by server restart',
+                   credit_refund_error='runtime_recovery_refund_failed',
+                   credit_refund_pending=True, extra_slides_refund_pending=0)
+    ref.set(row)
+    runtime.jobs.clear()
+    store.now += 181
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert store.docs('users')['owner']['credits'] == 100
+    assert store.docs('users')['owner']['total_processed'] == 0
+    assert store.docs('runtime_jobs')['job']['billing_receipt']['charge_ref'] == 'runtime-job:job'
+    store.now += 181
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+    assert len(store.docs('credit_refunds')) == 2
+
+
+def test_recovery_preserves_unavailable_receipt_for_retry_without_refunding_another_job():
+    runtime, store = runtime_fixture()
+    job_charges.admit_runtime_job('owner', 'job', 'lecture-notes', PRIMARY, runtime=runtime)
+    ref = runtime.runtime_jobs_repo.doc_ref(runtime.db, runtime.RUNTIME_JOBS_COLLECTION, 'job')
+    row = ref.get().to_dict()
+    row['billing_receipt'] = {'charge_ref': 'runtime-job:foreign'}
+    ref.set(row)
+    journal_ref = ledger.charge_document_ref(runtime.db, 'owner', 'runtime-job:job')
+    journal = journal_ref.get().to_dict()
+    journal_ref.set({**journal, 'admission': {'kind': 'runtime_job', 'job_id': 'foreign'}})
+    runtime.jobs.clear()
+    store.now += 181
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+    assert not store.docs('credit_refunds')
+    assert ref.get().to_dict()['status'] == 'starting'
+    retry_at = ref.get().to_dict()['recovery_journal_retry_at']
+    journal_ref.set(journal)
+    journal_reads = store.reads.count(journal_ref.path)
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+    assert store.reads.count(journal_ref.path) == journal_reads
+    store.now = retry_at
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert store.docs('users')['owner']['credits'] == 100
+
+
+
+def test_full_recovery_pages_advance_past_unreadable_journals():
+    runtime, store = runtime_fixture()
+    runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT = 1
+    runtime.RUNTIME_JOB_RECOVERY_CURSORS = {}
+    for job_id in ('first', 'second'):
+        job_charges.admit_runtime_job('owner', job_id, 'lecture-notes', PRIMARY, runtime=runtime)
+    ref = runtime.runtime_jobs_repo.doc_ref(runtime.db, runtime.RUNTIME_JOBS_COLLECTION, 'first')
+    ref.update({'billing_receipt': {}})
+    journal = ledger.charge_document_ref(runtime.db, 'owner', 'runtime-job:first')
+    store.fail_reads.add(journal.path)
+    runtime.jobs.clear()
+    store.now += 181
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert store.docs('runtime_jobs')['second']['status'] == 'error'
+    assert store.docs('users')['owner']['credits'] == 92
+    assert ref.get().to_dict()['status'] == 'starting'
+    store.fail_reads.clear()
+    store.now = ref.get().to_dict()['recovery_journal_retry_at']
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 1
+    assert store.docs('users')['owner']['credits'] == 100
+    assert recovery.recover_stale_runtime_jobs(runtime=runtime) == 0
+
+
+@pytest.mark.parametrize('pending_field', ['credit_refund_pending', 'extra_slides_refund_pending'])
+def test_pending_refund_pages_visit_each_document_with_tied_values(pending_field):
+    runtime, _store = runtime_fixture()
+    for key in ('a', 'b', 'c'):
+        runtime_jobs_repo.doc_ref(runtime.db, 'runtime_jobs', key).set(
+            {pending_field: True if pending_field == 'credit_refund_pending' else 2})
+    cursors = {}
+    pages = [runtime_jobs_repo.query_pending_refunds(runtime.db, 'runtime_jobs', limit=1, cursors=cursors)
+             for _ in range(4)]
+    assert [[doc.id for doc in page] for page in pages] == [['a'], ['b'], ['c'], ['a']]
+
+
+
+def test_failed_continuation_restarts_the_affected_recovery_scan(monkeypatch):
+    runtime, _store = runtime_fixture()
+    for job_id in ('a', 'b'):
+        runtime_jobs_repo.doc_ref(runtime.db, 'runtime_jobs', job_id).set({'status': 'starting'})
+    cursors = {}
+
+    def scan():
+        return [doc.id for doc in runtime_jobs_repo.query_statuses(
+            runtime.db, 'runtime_jobs', {'starting'}, limit=1, cursors=cursors)]
+
+    assert scan() == ['a']
+    query_type = type(runtime.db.collection('runtime_jobs'))
+
+    def unavailable_cursor(_query, _cursor):
+        raise RuntimeError('Synthetic cursor query failure')
+
+    monkeypatch.setattr(query_type, 'start_after', unavailable_cursor)
+    with pytest.raises(RuntimeError, match='Synthetic cursor'):
+        scan()
+    assert scan() == ['a']

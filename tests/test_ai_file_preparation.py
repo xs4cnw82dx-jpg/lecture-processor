@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from lecture_processor.domains.ai.providers import factory
-from lecture_processor.domains.ai.providers.contracts import AudioPart, ImagePart, PdfPart, PreparedFilePart, TextPart
+from lecture_processor.domains.ai.providers.contracts import AudioPart, GenerationResult, ImagePart, PdfPart, PreparedFilePart, TextPart, Usage
 from lecture_processor.domains.ai.providers.fake import FakeGeminiClient
 from lecture_processor.domains.ai.providers.gemini import GeminiProvider
 from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
@@ -361,12 +361,13 @@ def test_openrouter_pdf_over_the_request_limit_uses_the_stage_gemini_model(tmp_p
 
     harness = Harness()
     harness.runtime.MODEL_SLIDES = 'synthetic-gemini-slides'
+    harness.response.candidates = [SimpleNamespace(finish_reason='STOP')]
     harness.runtime.logger = SimpleNamespace(warning=lambda *args: harness.warnings.append(args))
     sent = []
 
     def openrouter_generate(_self, model, parts, **_kwargs):
         sent.append(model)
-        return 'openrouter-result'
+        return GenerationResult('openrouter-result', None, Usage(), 'openrouter', model, finish_reason='stop')
 
     monkeypatch.setattr(openrouter.OpenRouterProvider, 'generate', openrouter_generate)
     part = sized_pdf(tmp_path, 10 * 1024 * 1024 + extra_bytes)
@@ -381,7 +382,7 @@ def test_openrouter_pdf_over_the_request_limit_uses_the_stage_gemini_model(tmp_p
         assert harness.deletes == ['files/synthetic-1']
         assert harness.warnings == [('PDF input exceeds the OpenRouter request limit; using Gemini for %s.', STAGE)]
     else:
-        assert result == 'openrouter-result' and sent == ['anthropic/claude-sonnet-5.5']
+        assert result.text == 'openrouter-result' and sent == ['anthropic/claude-sonnet-5.5']
         assert harness.uploads == harness.generations == harness.warnings == []
     assert part.path.is_file()
 
@@ -391,6 +392,7 @@ def test_openrouter_pdf_limit_counts_every_attachment(tmp_path, monkeypatch):
 
     harness = Harness()
     harness.runtime.MODEL_SLIDES = 'synthetic-gemini-slides'
+    harness.response.candidates = [SimpleNamespace(finish_reason='STOP')]
     monkeypatch.setattr(openrouter.OpenRouterProvider, 'generate',
                         lambda *_args, **_kwargs: pytest.fail('Combined attachments exceed the OpenRouter limit'))
     pdf = sized_pdf(tmp_path, 10 * 1024 * 1024)
@@ -407,7 +409,32 @@ def test_openrouter_pdf_limit_counts_every_attachment(tmp_path, monkeypatch):
 def test_openrouter_only_input_rules_apply_before_the_size_fallback(tmp_path, monkeypatch, other):
     harness = Harness()
     harness.runtime.MODEL_SLIDES = 'synthetic-gemini-slides'
+    harness.response.candidates = [SimpleNamespace(finish_reason='STOP')]
     with session_for(harness.runtime, monkeypatch, route=openrouter_route()) as session:
         with pytest.raises(ValueError, match='Gemini'):
             session.generate(STAGE, [sized_pdf(tmp_path, 10 * 1024 * 1024 + 1), other], operation_name=GENERATE)
     assert harness.uploads == harness.generations == []
+
+
+def test_oversize_fallback_rejects_truncated_native_document_and_records_usage(tmp_path, monkeypatch):
+    from lecture_processor.domains.ai.providers.errors import ProviderRequestError
+    harness = Harness()
+    harness.runtime.MODEL_SLIDES = 'synthetic-gemini-slides'
+    harness.response.candidates = [SimpleNamespace(finish_reason='MAX_TOKENS')]
+    discarded = {}
+    with session_for(harness.runtime, monkeypatch, route=openrouter_route()) as session:
+        with pytest.raises(ProviderRequestError, match='INCOMPLETE'):
+            session.generate(STAGE, [sized_pdf(tmp_path, 10 * 1024 * 1024 + 1)],
+                             record_discarded=discarded.__setitem__)
+    assert list(discarded.keys()) == ['slides_extraction_incomplete_fallback']
+    assert discarded['slides_extraction_incomplete_fallback'].usage.input_tokens == 11
+    assert len(harness.uploads) == len(harness.generations) == 1
+
+
+def test_private_overnight_rejects_oversize_pdf_without_opening_either_adapter(tmp_path):
+    runtime = Harness().runtime
+    snapshot = RoutingSnapshot({STAGE: openrouter_route()})
+    with factory.open_provider_session(runtime, routes=snapshot, allow_gemini_fallback=False) as session:
+        with pytest.raises(ValueError, match='private request limit'):
+            session.generate(STAGE, [sized_pdf(tmp_path, 10 * 1024 * 1024 + 1)])
+        assert not session._adapters

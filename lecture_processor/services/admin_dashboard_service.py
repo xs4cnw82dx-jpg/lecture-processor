@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from lecture_processor.domains.admin import metrics as admin_metrics
 from lecture_processor.domains.admin import rollups as admin_rollups
 from lecture_processor.domains.ai import batch_orchestrator
+from lecture_processor.domains.billing.storage import STORAGE_ERRORS
 from lecture_processor.domains.shared import sanitize_csv_row
 from lecture_processor.services import admin_support
 
@@ -229,6 +230,16 @@ def admin_overview(app_ctx, request):
                 **_unified_history_fields(purchase, purchase=True),
             })
 
+        refund_reviews = []
+        if app_ctx.db is not None:
+            try:
+                for doc in app_ctx.repositories.purchases.list_refunds_for_review(app_ctx.db):
+                    purchase = doc.to_dict() or {}
+                    refund_reviews.append({'session_id': doc.id, 'refund_id': purchase.get('stripe_refund_id', ''),
+                                           'status': purchase.get('refund_status', '')})
+            except STORAGE_ERRORS:
+                admin_metrics.mark_admin_data_warning('refund_reviews', 'query_failed', runtime=app_ctx)
+
         recent_rate_limit_docs = admin_metrics.safe_query_docs_in_window(
             collection_name='rate_limit_logs',
             timestamp_field='created_at',
@@ -307,6 +318,7 @@ def admin_overview(app_ctx, request):
             },
             'recent_jobs': recent_jobs,
             'recent_purchases': recent_purchases,
+            'refund_reviews': refund_reviews,
             'recent_rate_limits': recent_rate_limits,
             'data_warnings': admin_metrics.get_admin_data_warnings(runtime=app_ctx),
             'deployment': admin_metrics.build_admin_deployment_info(request.host, runtime=app_ctx),

@@ -79,6 +79,12 @@ def _read_admission_after_commit_error(ref, unavailable_message):
     return snapshot.to_dict() or {} if snapshot.exists else {}
 
 
+def has_runtime_receipt(job, charge_ref):
+    receipt = job.get('billing_receipt')
+    return (isinstance(receipt, dict) and receipt.get('charge_ref') == charge_ref
+            and isinstance(receipt.get('components'), dict) and bool(receipt['components']))
+
+
 def admit_runtime_job(uid, job_id, mode, components, *, job_scope='', processed_count=1, runtime=None):
     """Commit the debit and a recoverable job before any background dispatch."""
     runtime = _runtime(runtime)
@@ -124,7 +130,8 @@ def admit_runtime_job(uid, job_id, mode, components, *, job_scope='', processed_
         # The matching admission is authoritative; never issue a second debit.
         message = 'Could not reserve credits for processing.'
         payload = _read_admission_after_commit_error(job_ref, message)
-        if (payload.get('user_id') != uid or payload.get('charge_ref') != charge_ref
+        if (not has_runtime_receipt(payload, charge_ref)
+                or payload.get('user_id') != uid or payload.get('charge_ref') != charge_ref
                 or payload.get('credit_admission_state') != 'admitted'
                 or payload.get('status') not in {'starting', 'queued'}
                 or payload.get('recovery_claimed_at')):

@@ -48,13 +48,18 @@ def validate_openrouter_options(model, options):
     """Return an immutable policy copy, or reject it with a content-free error."""
     if (not isinstance(model, str) or model not in OPENROUTER_MODELS
             or not isinstance(options, Mapping)
-            or set(options) != {'reasoning_effort', 'max_output_tokens'}):
+            or not {'reasoning_effort', 'max_output_tokens'} <= set(options)
+            or set(options) - {'reasoning_effort', 'max_output_tokens', 'retry_max_output_tokens'}):
         raise ValueError(_INVALID_CONFIG)
     effort, limit = options['reasoning_effort'], options['max_output_tokens']
     if (not isinstance(effort, str) or effort not in OPENROUTER_MODELS[model]
             or type(limit) is not int or not 0 < limit <= OPENROUTER_MAX_OUTPUT_TOKENS):
         raise ValueError(_INVALID_CONFIG)
-    return MappingProxyType({'reasoning_effort': effort, 'max_output_tokens': limit})
+    if 'retry_max_output_tokens' in options:
+        retry_limit = options['retry_max_output_tokens']
+        if type(retry_limit) is not int or not limit < retry_limit <= OPENROUTER_MAX_OUTPUT_TOKENS:
+            raise ValueError(_INVALID_CONFIG)
+    return MappingProxyType(dict(options))
 
 
 @dataclass(frozen=True)
@@ -137,6 +142,8 @@ def parse_routing(payload, defaults):
               or (entry['provider'] == 'openrouter' and entry['model'] not in OPENROUTER_MODELS)):
             reason = 'invalid_model'
         elif not isinstance(entry['options'], dict):
+            reason = 'unsupported_options'
+        elif 'retry_max_output_tokens' in entry['options'] and stage != 'notes_merge':
             reason = 'unsupported_options'
         else:
             try:

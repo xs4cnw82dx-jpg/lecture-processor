@@ -213,6 +213,17 @@ def _validate_journal(journal, uid, ref):
         raise LedgerUnavailable('Credit amounts are unavailable.')
 
 
+def read_runtime_job_receipt(transaction, uid, job_id, *, runtime):
+    charge_ref = f'runtime-job:{job_id}'
+    ref = charge_document_ref(runtime.db, uid, charge_ref)
+    journal = _snapshot_data(ref.get(transaction=transaction), required=True)
+    _validate_journal(journal, uid, charge_ref)
+    admission = journal.get('admission') or {}
+    if admission.get('kind') != 'runtime_job' or admission.get('job_id') != job_id:
+        raise LedgerConflict('Credit journal belongs to another processing admission.')
+    return _receipt(journal)
+
+
 def _legacy_debit(user, quoted):
     balances = {field: _legacy_balance(user, field) for field in policy.LEGACY_FIELD_RATES}
     original = dict(balances)

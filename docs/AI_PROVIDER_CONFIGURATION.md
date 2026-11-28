@@ -60,6 +60,25 @@ Forced isolated runners intercept routing before constructing any real
 provider client. Adapter contract tests use an injected HTTP mock transport
 with a literal test key and blocked network access.
 
+## Document completion and fallback
+
+An OpenRouter slide extraction, notes merge or text combine requires a nonempty
+response with a `stop` finish reason. For notes, the route may specify a
+`retry_max_output_tokens` above its initial `max_output_tokens`. For example,
+an initial 32,768 and retry limit of 65,536 permit one larger generation after
+a `length` finish. The caller's ceiling bounds both attempts.
+
+When the available caps are exhausted, or a transient OpenRouter error outlasts
+application retries, these stages can use the existing Gemini stage model once.
+A complete Gemini result is required on this path as well. Input, policy,
+endpoint eligibility and credential errors terminate the operation. The job
+retains usage for discarded completions and records provider fallback in the
+application log. A request above 100,000 reported input tokens logs its stage
+and token count. Merged documents keep only informative placeholders grounded
+in the provided slide text. Notes merge uses the literal English marker prefix.
+Text combine uses the literal Dutch prefix required by its slide-input templates.
+The requested output language applies to the surrounding prose.
+
 ## Workflow file preparation
 
 A provider session can separate file upload, processing and generation with
@@ -117,3 +136,19 @@ boundary, so a reported charge takes precedence.
 
 SDK references: [pinned usage documentation](https://github.com/openai/openai-python/tree/v2.54.0)
 and [OpenRouter SDK guidance](https://openrouter.ai/docs/guides/community/openai-sdk).
+
+## Overnight document stages
+
+An overnight job uses normal OpenRouter requests for document stages routed to
+that provider. Its requests use the same pinned endpoint, ZDR settings, file
+limits, output ceilings and completion checks as synchronous jobs. Private
+overnight requests stay on the selected provider even after errors or
+truncation. Audio continues through Gemini Batch. When a lecture uses private
+slide extraction, the worker completes Gemini audio before sending the local PDF.
+
+The worker claims a mixed-provider batch before preparing files. Each private
+result is committed against the active worker and row. Cancellation or recovery
+prevents a later result from publishing. If a worker disappears after a request
+was sent, stale recovery settles unfinished rows and refunds eligible credits.
+A second worker cannot replay the same request. Provider accounting uses standard
+rates for normal requests. User credits still use the overnight price.

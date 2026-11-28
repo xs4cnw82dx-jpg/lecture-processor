@@ -3,10 +3,12 @@ import logging
 from pathlib import Path
 
 from .contracts import AudioPart, PreparedFilePart
+from .document_stages import DOCUMENT_STAGES, complete_document, document_parts
+from .errors import ProviderRequestError
 from .gemini import GeminiProvider, validate_file_part
 from .openrouter_request import exceeds_pdf_request_limit
-from .routing import (AUDIO_STAGES, STAGE_MODEL_ATTRIBUTES, STAGES, Route, default_models, load_routing,
-                      validate_openrouter_options)
+from .routing import (AUDIO_STAGES, STAGES, STAGE_MODEL_ATTRIBUTES, Route, default_models,
+                      load_routing, validate_openrouter_options)
 
 
 class _ClientRuntime:
@@ -19,10 +21,12 @@ class _ClientRuntime:
 
 
 class ProviderSession:
-    def __init__(self, runtime, *, routes=None):
+    def __init__(self, runtime, *, routes=None, allow_gemini_fallback=True, before_request=None):
         from lecture_processor.runtime.bootstrap import is_forced_fake_provider
 
         self.runtime = runtime
+        self._allow_gemini_fallback = allow_gemini_fallback
+        self._before_request = before_request
         self.routes = routes if routes is not None else getattr(runtime, 'AI_ROUTING_SNAPSHOT', None)
         if self.routes is None:
             root = Path(getattr(runtime, 'PROJECT_ROOT_DIR', Path(__file__).resolve().parents[4]))
@@ -79,32 +83,96 @@ class ProviderSession:
         self._prepare_file(stage, part, 'wait_for_file', operation_name, retry_tracker)
 
     def generate(self, stage, parts, *, schema=None, max_output_tokens=65536,
-                 retry_tracker=None, operation_name=None):
+                 retry_tracker=None, operation_name=None, source_slide_text='', record_discarded=None):
         route = self._route(stage)
-        if route.provider == 'openrouter':
-            parts = tuple(parts)
-            if any(isinstance(part, AudioPart) for part in parts):
-                raise ValueError('Audio generation requires Gemini.')
-            # Prepared parts are Gemini Files references; never fall back or re-read them elsewhere.
-            if any(isinstance(part, PreparedFilePart) for part in parts):
-                raise ValueError('Prepared provider files require Gemini.')
-            if exceeds_pdf_request_limit(parts):
-                # Gemini uploads the file instead of inlining it, so large documents stay supported.
-                logger = getattr(self.runtime, 'logger', None) or logging.getLogger(__name__)
-                logger.warning('PDF input exceeds the OpenRouter request limit; using Gemini for %s.', stage)
-                route = Route('gemini', getattr(self.runtime, STAGE_MODEL_ATTRIBUTES[stage]))
-        options = None
-        if route.provider == 'openrouter':
-            options = validate_openrouter_options(route.model, route.options)
-            if type(max_output_tokens) is not int or max_output_tokens <= 0:
-                raise ValueError('Invalid generation output limit.')
-            max_output_tokens = min(max_output_tokens, options['max_output_tokens'])
-        extra = {'options': options} if route.provider == 'openrouter' and not self._forced else {}
-        return self._adapter(route).generate(
-            route.model, parts, schema=schema, max_output_tokens=max_output_tokens,
-            retry_tracker=retry_tracker, operation_name=operation_name or stage,
-            **extra,
+        call = dict(schema=schema, retry_tracker=retry_tracker, operation_name=operation_name or stage)
+        if route.provider == 'gemini':
+            return self._adapter(route).generate(route.model, parts, max_output_tokens=max_output_tokens, **call)
+
+        options = validate_openrouter_options(route.model, route.options)
+        if type(max_output_tokens) is not int or max_output_tokens <= 0:
+            raise ValueError('Invalid generation output limit.')
+        parts = tuple(parts)
+        if any(isinstance(part, AudioPart) for part in parts):
+            raise ValueError('Audio generation requires Gemini.')
+        if any(isinstance(part, PreparedFilePart) for part in parts):
+            raise ValueError('Prepared provider files require Gemini.')
+        if exceeds_pdf_request_limit(parts):
+            if not self._allow_gemini_fallback:
+                raise ValueError('PDF input exceeds the private request limit.')
+            logger = getattr(self.runtime, 'logger', None) or logging.getLogger(__name__)
+            logger.warning('PDF input exceeds the OpenRouter request limit; using Gemini for %s.', stage)
+            return self._gemini_fallback(stage, parts, max_output_tokens, call, source_slide_text, record_discarded)
+        initial_cap = min(max_output_tokens, options['max_output_tokens'])
+        if stage in DOCUMENT_STAGES:
+            return self._generate_document(stage, route, parts, initial_cap, max_output_tokens, call,
+                                           source_slide_text, record_discarded)
+        result = self._generate_openrouter(route, parts, initial_cap, call)
+        if result.finish_reason == 'length':
+            if record_discarded:
+                record_discarded(f'{stage}_incomplete', result)
+            raise ProviderRequestError('incomplete')
+        return result
+
+    def _generate_document(self, stage, route, parts, initial_cap, max_output_tokens, call,
+                           source_slide_text, record_discarded):
+        logger = getattr(self.runtime, 'logger', None) or logging.getLogger(__name__)
+        caps = [initial_cap]
+        if stage == 'notes_merge':
+            retry_cap = min(max_output_tokens, route.options.get('retry_max_output_tokens', initial_cap))
+            if retry_cap > initial_cap:
+                caps.append(retry_cap)
+        adapted_parts = document_parts(stage, parts)
+        for index, cap in enumerate(caps, start=1):
+            try:
+                attempt_call = call if index == 1 else {**call, 'operation_name': call['operation_name'] + ':higher_cap'}
+                result = self._generate_openrouter(route, adapted_parts, cap, attempt_call)
+            except ProviderRequestError as error:
+                # Never bypass refusals, authentication, endpoint constraints or input validation.
+                if not error.retryable or not self._allow_gemini_fallback:
+                    raise
+                logger.warning('OpenRouter %s ended with %s after retries.', stage, error.error_code)
+                break
+            if result.usage.input_tokens > 100_000:
+                logger.info('OpenRouter %s exceeded the 100K input tier (%d tokens).', stage, result.usage.input_tokens)
+            complete = complete_document(stage, result, source_slide_text)
+            if complete is not None:
+                return complete
+            if record_discarded:
+                record_discarded(f'{stage}_incomplete_{index}', result)
+            logger.warning('Discarded incomplete OpenRouter %s attempt %d (cap %d).', stage, index, cap)
+            if result.finish_reason != 'length':
+                break
+
+        if not self._allow_gemini_fallback:
+            raise ProviderRequestError('incomplete')
+        logger.warning('Using the configured Gemini fallback for %s.', stage)
+        return self._gemini_fallback(stage, parts, max_output_tokens, call, source_slide_text, record_discarded)
+
+    def _gemini_fallback(self, stage, parts, max_output_tokens, call, source_slide_text, record_discarded):
+        fallback = Route('gemini', getattr(self.runtime, STAGE_MODEL_ATTRIBUTES[stage]))
+        fallback_call = {**call, 'operation_name': call['operation_name'] + ':gemini_fallback'}
+        result = self._adapter(fallback).generate(
+            fallback.model, parts, max_output_tokens=max_output_tokens, **fallback_call,
         )
+        if stage not in DOCUMENT_STAGES:
+            return result
+        complete = complete_document(stage, result, source_slide_text)
+        if complete is not None:
+            return complete
+        if record_discarded:
+            record_discarded(f'{stage}_incomplete_fallback', result)
+        raise ProviderRequestError('incomplete')
+
+    def _generate_openrouter(self, route, parts, cap, call):
+        options = {'reasoning_effort': route.options['reasoning_effort'], 'max_output_tokens': cap}
+        extra = {} if self._forced else {'options': options}
+        if self._before_request is not None:
+            if self._forced:
+                self._before_request()
+            else:
+                extra['before_request'] = self._before_request
+        return self._adapter(route).generate(route.model, parts, max_output_tokens=cap, **extra, **call)
 
     def close(self):
         if not self._closed:
@@ -119,5 +187,6 @@ class ProviderSession:
         self.close()
 
 
-def open_provider_session(runtime, *, routes=None):
-    return ProviderSession(runtime, routes=routes)
+def open_provider_session(runtime, *, routes=None, allow_gemini_fallback=True, before_request=None):
+    return ProviderSession(runtime, routes=routes, allow_gemini_fallback=allow_gemini_fallback,
+                           before_request=before_request)

@@ -87,14 +87,14 @@ const academyConfig = {
   projectId: 'demo-academy', appId: '1:234:web:567',
 };
 
-function academyBootstrap(json, existingConfig) {
+function academyBootstrap(json, existingConfig, tagName = 'SCRIPT', type = 'application/json') {
   const initialized = [];
   let app = existingConfig ? { options: existingConfig } : null;
   const auth = { currentUser: null };
   const context = {
     document: {
       querySelector: () => ({}),
-      getElementById: () => json === undefined ? null : { textContent: json },
+      getElementById: () => json === undefined ? null : { textContent: json, tagName, type },
     },
     firebase: {
       app() { if (!app) throw Error('No app'); return app; },
@@ -134,4 +134,12 @@ test('Academy rejects a previously initialized Firebase app belonging to another
   const { bootstrap, initialized } = academyBootstrap(JSON.stringify(academyConfig), lectureConfig);
   assert.throws(() => bootstrap.getAuth(), /does not match/);
   assert.deepEqual(initialized, []);
+});
+
+test('Academy accepts its config only from a non-executable JSON script', () => {
+  for (const [tag, type] of [['DIV', 'application/json'], ['SCRIPT', 'text/javascript']]) {
+    const { bootstrap, initialized } = academyBootstrap(JSON.stringify(academyConfig), null, tag, type);
+    assert.throws(() => bootstrap.getAuth(), /Academy sign-in is not configured/);
+    assert.deepEqual(initialized, []);
+  }
 });

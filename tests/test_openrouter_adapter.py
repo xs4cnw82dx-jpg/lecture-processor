@@ -408,3 +408,90 @@ logger.warning('application-control-after')
     assert 'Transient provider error' in combined and 'HTTP_503' in combined
     assert PRIVATE not in combined and KEY not in combined
     assert 'Request options:' not in combined
+
+
+def test_notes_retry_sends_larger_reviewed_cap_and_accounts_for_both_responses(adapter_runtime):
+    from lecture_processor.domains.ai.provider import TokenAccumulator
+    from lecture_processor.domains.ai.providers.factory import ProviderSession
+    from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
+
+    options = {**OPTIONS, 'retry_max_output_tokens': 65536}
+    snapshot = RoutingSnapshot({'notes_merge': Route('openrouter', MODEL, options)})
+
+    def respond(request):
+        body = json.loads(request.content)
+        assert body['provider']['only'] == ['google-vertex/global'] and body['provider']['zdr']
+        result = success()
+        if body['max_tokens'] == 32768:
+            result['choices'][0] = {'finish_reason': 'length', 'message': {'content': None}}
+        result['usage']['cost'] = 0.125
+        return 200, result
+
+    transport = _Transport(respond)
+    tokens = TokenAccumulator(runtime=adapter_runtime)
+    with ProviderSession(adapter_runtime, routes=snapshot) as session:
+        session._adapters['openrouter'] = OpenRouterProvider(adapter_runtime, transport=transport, api_key=KEY)
+        # The adapter already has an isolated transport and the fixture blocks all sockets.
+        session._forced = False
+        result = session.generate('notes_merge', [TextPart('synthetic')], record_discarded=tokens.record_result)
+        tokens.record_result('merge', result)
+
+    assert [json.loads(req.content)['max_tokens'] for req in transport.requests] == [32768, 65536]
+    usage = tokens.as_dict()
+    assert usage['token_total'] == 74
+    assert {key: val['cost_usd'] for key, val in usage['token_usage_by_stage'].items()} == {
+        'notes_merge_incomplete_1': 0.125, 'merge': 0.125,
+    }
+
+
+def test_truncated_non_document_schema_records_partial_usage_before_failure(adapter_runtime):
+    from lecture_processor.domains.ai.provider import TokenAccumulator
+    from lecture_processor.domains.ai.providers.factory import ProviderSession
+    from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
+
+    partial = success()
+    partial['choices'][0].update(finish_reason='length', message={'content': '{"answer":'})
+    partial['usage']['cost'] = 0.004
+    transport = _Transport(lambda _: (200, partial))
+    snapshot = RoutingSnapshot({'interview_coding': Route('openrouter', MODEL, OPTIONS)})
+    tokens = TokenAccumulator(runtime=adapter_runtime)
+    with ProviderSession(adapter_runtime, routes=snapshot) as session:
+        session._forced = False
+        session._adapters['openrouter'] = OpenRouterProvider(adapter_runtime, transport=transport, api_key=KEY)
+        with pytest.raises(ProviderRequestError, match='INCOMPLETE'):
+            session.generate('interview_coding', [TextPart('fixture')], schema={'type': 'object'},
+                             record_discarded=tokens.record_result)
+    assert len(transport.requests) == 1
+    usage = tokens.as_dict()
+    assert usage['token_total'] == 37
+    assert usage['token_usage_by_stage']['interview_coding_incomplete']['cost_usd'] == 0.004
+
+
+@pytest.mark.parametrize('behavior', ['truncated', 'transient', 'stopped'])
+def test_private_session_never_crosses_providers_and_rechecks_before_retry(adapter_runtime, behavior):
+    from lecture_processor.domains.ai.batch_orchestrator import _BatchStopped
+    from lecture_processor.domains.ai.providers.factory import ProviderSession
+    from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
+
+    def respond(_request):
+        if behavior == 'truncated':
+            payload = success()
+            payload['choices'][0]['finish_reason'] = 'length'
+            return 200, payload
+        return 503, {'error': {'code': 503}}
+
+    transport = _Transport(respond)
+    def active():
+        if behavior == 'stopped' and transport.requests:
+            raise _BatchStopped()
+
+    snapshot = RoutingSnapshot({'notes_merge': Route('openrouter', MODEL, OPTIONS)})
+    with ProviderSession(adapter_runtime, routes=snapshot, allow_gemini_fallback=False,
+                         before_request=active) as session:
+        session._forced = False
+        session._adapters['openrouter'] = OpenRouterProvider(adapter_runtime, transport=transport, api_key=KEY)
+        expected = _BatchStopped if behavior == 'stopped' else ProviderRequestError
+        with pytest.raises(expected):
+            session.generate('notes_merge', [TextPart('synthetic')])
+        assert set(session._adapters) == {'openrouter'}
+    assert len(transport.requests) == (3 if behavior == 'transient' else 1)

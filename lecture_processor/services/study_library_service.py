@@ -388,28 +388,28 @@ def update_study_pack(app_ctx, request, decoded_token, pack_id):
     if not isinstance(payload, dict):
         return app_ctx.jsonify({'error': 'Invalid payload'}), 400
 
-    try:
+    def rejected(payload, status):
+        # Preserve the existing 404/403 priority on invalid edits. Successful
+        # writes obtain ownership and audio metadata in one transaction.
+
         pack_ref = app_ctx.repositories.study.study_pack_doc_ref(app_ctx.db, pack_id)
         doc = pack_ref.get()
         if not doc.exists:
             return app_ctx.jsonify({'error': 'Study pack not found'}), 404
-        pack = doc.to_dict()
-        if pack.get('uid', '') != uid:
+        if (doc.to_dict() or {}).get('uid') != uid:
             return app_ctx.jsonify({'error': 'Forbidden'}), 403
+        return app_ctx.jsonify(payload), status
+
+    try:
         replaces_content = any(field in payload for field in CONTENT_FIELDS)
         base_revision = payload.get('base_content_revision') if replaces_content else None
         if replaces_content and 'base_content_revision' in payload and (
             not isinstance(base_revision, str) or not CONTENT_REVISION.fullmatch(base_revision)
         ):
-            return app_ctx.jsonify({
+            return rejected({
                 'error': 'base_content_revision must be a valid content revision.',
                 'error_code': 'invalid_content_revision',
-            }), 400
-        # Do not hydrate legacy audio metadata before the save's authority and
-        # revision checks: rejected edits must not write or recreate a pack.
-        audio_storage_key = study_audio.get_audio_storage_key_from_pack(pack, runtime=app_ctx)
-        has_audio_file = study_audio.audio_storage_key_has_file(audio_storage_key, runtime=app_ctx)
-
+            }, 400)
         updates = {'updated_at': app_ctx.time.time()}
         if 'title' in payload:
             updates['title'] = str(payload.get('title', '')).strip()[:120]
@@ -438,22 +438,25 @@ def update_study_pack(app_ctx, request, decoded_token, pack_id):
             if folder_id:
                 folder_doc = app_ctx.repositories.study.get_study_folder_doc(app_ctx.db, folder_id)
                 if not folder_doc.exists:
-                    return app_ctx.jsonify({'error': 'Folder not found'}), 404
+                    return rejected({'error': 'Folder not found'}, 404)
                 folder_data = folder_doc.to_dict()
                 if folder_data.get('uid', '') != uid:
-                    return app_ctx.jsonify({'error': 'Forbidden'}), 403
+                    return rejected({'error': 'Forbidden'}, 403)
                 updates['folder_id'] = folder_id
                 updates['folder_name'] = folder_data.get('name', '')
         if 'daily_card_goal' in payload:
             goal_valid, daily_card_goal = study_api_support.parse_daily_card_goal_input(payload.get('daily_card_goal'), runtime=app_ctx)
             if not goal_valid:
-                return app_ctx.jsonify({'error': 'daily_card_goal must be between 1 and 500'}), 400
+                return rejected({'error': 'daily_card_goal must be between 1 and 500'}, 400)
             updates['daily_card_goal'] = daily_card_goal
 
         if 'flashcards' in payload:
-            updates['flashcards'] = study_picture_service.sanitize_cards(
-                app_ctx, uid, pack_id, payload.get('flashcards', []), validate_assets=False,
-            )
+            try:
+                updates['flashcards'] = study_picture_service.sanitize_cards(
+                    app_ctx, uid, pack_id, payload.get('flashcards', []), validate_assets=False,
+                )
+            except BookError as error:
+                return rejected({'error': str(error)}, error.status)
             updates['flashcards_count'] = len(updates['flashcards'])
         if 'test_questions' in payload:
             updates['test_questions'] = app_ctx.sanitize_questions(payload.get('test_questions', []), 500)
@@ -466,19 +469,11 @@ def update_study_pack(app_ctx, request, decoded_token, pack_id):
                 else []
             )
             updates['notes_audio_map'] = notes_audio_map
-            updates['has_audio_sync'] = (
-                app_ctx.FEATURE_AUDIO_SECTION_SYNC
-                and has_audio_file
-                and bool(notes_audio_map)
-            )
-        elif not has_audio_file:
-            updates['has_audio_sync'] = False
         if 'notes_highlights' in payload:
             notes_highlights_action, notes_highlights = study_api_support.parse_notes_highlights_input(payload.get('notes_highlights'), runtime=app_ctx)
             if notes_highlights_action == 'invalid':
-                return app_ctx.jsonify({'error': 'notes_highlights must contain valid ranges and allowed colors'}), 400
+                return rejected({'error': 'notes_highlights must contain valid ranges and allowed colors'}, 400)
             updates['notes_highlights'] = notes_highlights if notes_highlights_action == 'set' else None
-        updates['has_audio_playback'] = has_audio_file
 
         if replaces_content and 'base_content_revision' not in payload:
             # Stage one permits existing clients. Keep this rollout signal

@@ -111,6 +111,10 @@ def test_each_row_uses_one_session_and_named_stages(core, row_env, mode, stages)
     assert row_env.events.count('close') == 1
     assert row_env.events.index('cleanup') < row_env.events.index('close')
     for stage, parts, options in session.calls:
+        if stage in {'slides_extraction', 'notes_merge', 'text_combine'}:
+            assert callable(options['record_discarded'])
+        if stage in {'notes_merge', 'text_combine'}:
+            assert options['source_slide_text'] == row['slide_text']
         assert options['retry_tracker'] is session.calls[0][2]['retry_tracker']
         if stage == 'slides_extraction':
             assert parts[0] == PreparedFilePart('fake://slides/1', 'application/pdf')

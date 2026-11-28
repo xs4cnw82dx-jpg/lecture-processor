@@ -75,7 +75,7 @@ def make_recovery_state(monkeypatch):
         state['reads'] += 1
         return JobReference(state, job_id).get()
 
-    def query_statuses(_db, _collection, statuses, limit):
+    def query_statuses(_db, _collection, statuses, limit, cursors):
         state['queries'] += 1
         return [JobReference(state, job_id).get() for job_id, job in state['durable'].items()
                 if job.get('status') in statuses][:limit]

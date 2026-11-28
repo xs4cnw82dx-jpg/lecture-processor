@@ -9,7 +9,7 @@ from scripts.academy_preview import academy_preview
 
 FONTSHARE_STYLESHEET = 'https://api.fontshare.com/v2/css?f[]=general-sans@500,600&display=swap'
 STUDIO_PAGES = ('/physio/elearning', '/physio/elearning/course/edit', '/physio/elearning/course/responses',
-                '/signin', '/privacy')
+                '/signin', '/privacy', '/account')
 
 
 @pytest.fixture()
