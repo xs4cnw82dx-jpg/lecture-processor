@@ -13,7 +13,12 @@
   var blocksEl = document.getElementById('el-resp-blocks');
   var feedbackEl = document.getElementById('el-resp-feedback');
 
-  var cohortSelect = document.getElementById('el-resp-cohort');
+  var groupField = document.getElementById('academy-report-groups');
+  var activeGroups = new Set();
+  var dates = document.getElementById('academy-date-filter');
+  var fromDate = dates.elements.from;
+  var toDate = dates.elements.to;
+  var chips = document.getElementById('academy-filter-chips');
   var langSelect = document.getElementById('el-resp-lang');
   var periodSelect = document.getElementById('el-resp-period');
   var timeEl = document.getElementById('el-resp-time');
@@ -25,7 +30,6 @@
   var label = document.getElementById('el-resp-expedition');
   var retry = document.getElementById('el-resp-retry');
   var exportFilteredBtn = document.getElementById('el-resp-export-csv');
-  var exportAllBtn = document.getElementById('el-resp-export-all-csv');
   var hasLoadedOnce = false;
   var requestId = 0;
   var auth;
@@ -35,9 +39,25 @@
     return;
   }
   var client = platformAuth.createAuthClient(auth);
-  cohortSelect.addEventListener('change', loadResponses);
+  groupField.addEventListener('change', function (event) {
+    var box = event.target;
+    if (box.checked) activeGroups.add(box.value); else activeGroups.delete(box.value);
+    loadResponses();
+  });
+  dates.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (fromDate.value && toDate.value && toDate.value < fromDate.value) {
+      toDate.setCustomValidity(uiLanguage() === 'de' ? 'Das Enddatum liegt vor dem Anfang.' : 'De einddatum ligt vóór de begindatum.');
+      toDate.reportValidity();
+      return;
+    }
+    periodSelect.value = '';
+    dates.parentElement.open = false;
+    loadResponses();
+  });
+  dates.addEventListener('input',function () { toDate.setCustomValidity(''); });
   langSelect.addEventListener('change', loadResponses);
-  periodSelect.addEventListener('change', loadResponses);
+  periodSelect.addEventListener('change', function () { fromDate.value = toDate.value = ''; loadResponses(); });
   retry.addEventListener('click', loadResponses);
 
   function activityName(type, lang) {
@@ -52,16 +72,6 @@
       mini_plan: [uiText('Persoonlijk miniplan'), uiText('Personal mini-plan'), 'Persönlicher Mini-Plan'],
     };
     return names[type] ? names[type][lang === 'nl' ? 0 : lang === 'de' ? 2 : 1] : Model.getBlockMeta(type).label;
-  }
-
-  function syncExportButtons() {
-    var hasFilter = !!(cohortSelect.value || langSelect.value || periodSelect.value);
-    if (exportFilteredBtn) {
-      exportFilteredBtn.textContent = 'CSV';
-    }
-    if (exportAllBtn) {
-      exportAllBtn.hidden = !hasFilter;
-    }
   }
 
   // Report copy, keyed per interface language (Dutch first). Numbers use the same locale.
@@ -171,7 +181,9 @@
   // Filters live in the address, so a report view can be shared or reloaded.
   function filterQuery() {
     var qs = new URLSearchParams();
-    if (cohortSelect.value) qs.set('cohort', cohortSelect.value);
+    activeGroups.forEach(function (name) { qs.append('cohort', name); });
+    if (fromDate.value) qs.set('from', fromDate.value);
+    if (toDate.value) qs.set('to', toDate.value);
     if (langSelect.value) qs.set('language', langSelect.value);
     if (periodSelect.value) qs.set('days', periodSelect.value);
     return qs;
@@ -195,12 +207,48 @@
     if (/^(7|30|90)$/.test(params.get('days') || '')) periodSelect.value = params.get('days');
     var lang = params.get('language') || '';
     if (Array.from(langSelect.options).some(function (option) { return option.value === lang; })) langSelect.value = lang;
-    var cohort = params.get('cohort') || '';
-    if (/^[a-zA-Z0-9_.-]{1,48}$/.test(cohort)) {
-      cohortSelect.add(new Option(cohort, cohort));
-      cohortSelect.value = cohort;
-    }
+    activeGroups = new Set(params.getAll('cohort').filter(function (name) { return /^[a-zA-Z0-9_.-]{1,48}$/.test(name); }));
+    fromDate.value = params.get('from') || '';
+    toDate.value = params.get('to') || '';
   })();
+
+  function groupName(value) { return value === 'default' ? (uiLanguage() === 'de' ? 'Ohne Gruppe' : 'Zonder groep') : value; }
+
+  function renderFilterControls(cohorts) {
+    var legend = groupField.querySelector('legend');
+    groupField.replaceChildren(legend);
+    new Set([...cohorts, ...activeGroups]).forEach(function (name) {
+      var label = document.createElement('label'), box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = name;
+      box.checked = activeGroups.has(name);
+      label.append(box, groupName(name));
+      groupField.append(label);
+    });
+    if (!cohorts.length && !activeGroups.size) {
+      var empty = document.createElement('p');
+      empty.textContent = uiLanguage() === 'de' ? 'Noch keine Gruppen.' : 'Nog geen groepen.';
+      groupField.append(empty);
+    }
+    chips.replaceChildren();
+    for (const [key, value] of filterQuery()) {
+      var chip = document.createElement('button');
+      var labels = {cohort:groupName(value),from:(uiLanguage()==='de'?'Von ':'Van ')+value,to:(uiLanguage()==='de'?'Bis ':'T/m ')+value,
+        language:value.toUpperCase(),days:copy('lastDays',{n:value})};
+      chip.textContent = labels[key] + ' ×';
+      chip.setAttribute('aria-label',(uiLanguage()==='de'?'Filter entfernen: ':'Filter verwijderen: ')+labels[key]);
+      chip.onclick = function () {
+        if (key === 'cohort') activeGroups.delete(value);
+        if (key === 'language') langSelect.value='';
+        if (key === 'days') periodSelect.value='';
+        if (key === 'from') fromDate.value='';
+        if (key === 'to') toDate.value='';
+        loadResponses();
+      };
+      chips.appendChild(chip);
+    }
+    chips.hidden = !chips.childElementCount;
+  }
 
   // Bars are <progress> elements: the page policy forbids inline styles.
   function chartBar(value, className, max) {
@@ -307,7 +355,28 @@
       item.append(head, steps);
       list.appendChild(item);
     });
-    timeEl.replaceChildren(title, figures, list, chartNote(copy('timeNote', { n: summary.timedSessions || active.count })));
+    var distribution = document.createElement('figure');
+    distribution.className = 'academy-time-distribution';
+    var totals = stations.map(function (station) { return station.activeSecondsTotal || 0; });
+    var total = totals.reduce(function (sum, value) { return sum+value; },0);
+    if (total) {
+      var svg = svgNode('svg',{viewBox:'0 0 100 8',preserveAspectRatio:'none','aria-hidden':'true'});
+      var legend = document.createElement('ul');
+      var left = 0;
+      stations.forEach(function (station,i) {
+        var percent = 100*totals[i]/total;
+        var item = document.createElement('li');
+        item.textContent = Model.getLocalized(station.moduleTitle, reportLang, courseLang) + ' · ' + formatPercent(percent);
+        svg.appendChild(svgNode('rect',{x:left,y:0,width:percent,height:8,class:'academy-time-segment tone-'+i%4}));
+        left += percent;
+        legend.appendChild(item);
+      });
+      var caption = document.createElement('figcaption');
+      caption.textContent = uiLanguage()==='de' ? 'Anteil der gemessenen aktiven Zeit pro Station' : 'Aandeel in de gemeten actieve tijd per station';
+      distribution.append(caption,svg,legend);
+    }
+    distribution.hidden = !total;
+    timeEl.replaceChildren(title, figures, distribution, list, chartNote(copy('timeNote', { n: summary.timedSessions || active.count })));
   }
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
@@ -461,10 +530,8 @@
   }
 
   // Completion as two shares of one bar, with the supporting figures beneath.
-  var lastSummary = null;
   var lastAnalytics = null;
   function renderSummary(summary) {
-    lastSummary = summary;
     var total = Number(summary.totalSessions) || 0;
     var rate = summary.completionRate !== undefined && summary.completionRate !== null
       ? Number(summary.completionRate) : (total ? 100 * (Number(summary.completedSessions) || 0) / total : 0);
@@ -498,17 +565,23 @@
     if (summary.avgClarity !== null && summary.avgClarity !== undefined || summary.avgEngagement !== null && summary.avgEngagement !== undefined) {
       figures.append(splitFigure(uiText('Clarity / Engagement'), formatScore(summary.avgClarity) + ' / ' + formatScore(summary.avgEngagement)));
     }
-    kpisEl.replaceChildren(title, shares, bar, counts, figures);
+    var guide = document.createElement('details');
+    var toggle = document.createElement('summary');
+    toggle.textContent = uiLanguage()==='de' ? 'Was bedeuten die Kennzahlen?' : 'Wat betekenen deze cijfers?';
+    var note = document.createElement('p');
+    note.textContent = uiLanguage()==='de'
+      ? 'Abschlussquote: abgeschlossene geteilte Sitzungen geteilt durch alle geteilten Sitzungen im Filter. Dauer: Zeit zwischen erster und letzter Übermittlung, einschließlich Pausen. Bewertungen reichen von 1 bis 5. Aktive Zeit wird nur nach Zustimmung zum Zeithinweis gemessen.'
+      : 'Voltooiingsgraad: afgeronde gedeelde sessies gedeeld door alle gedeelde sessies binnen het filter. Duur: tijd tussen de eerste en laatste inzending, inclusief pauzes. Beoordelingen lopen van 1 tot 5. Actieve tijd meten we alleen na toestemming voor de tijdregistratie.';
+    guide.append(toggle,note);
+    kpisEl.replaceChildren(title, shares, bar, counts, figures, guide);
   }
 
   async function loadResponses() {
     var sequence = ++requestId;
     retry.hidden = true;
-    syncExportButtons();
     // UX-119: Keep existing report visible with subtle Updating state while switching filters
     if (hasLoadedOnce && !report.hidden) {
-      var scope = [cohortSelect.value || uiText('all cohorts'), langSelect.value.toUpperCase() || uiText('all languages')];
-      status.textContent = uiText('Updating ') + scope.join(' · ') + '. Previous results are shown below.';
+      status.textContent = uiLanguage() === 'de' ? 'Die Ergebnisse werden aktualisiert.' : 'De resultaten worden bijgewerkt.';
       report.setAttribute('aria-busy', 'true');
       report.classList.add('el-resp-updating');
     } else {
@@ -518,7 +591,6 @@
     }
     try {
       var qs = filterQuery();
-      var cohort = cohortSelect.value;
       syncAddress();
       var base = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses';
       var resp = await client.authFetch(base + (qs.size ? '?' + qs : ''));
@@ -528,18 +600,9 @@
       var courseLang = data.expedition.defaultLanguage || 'nl';
       var reportLang = langSelect.value || document.documentElement.lang || courseLang;
       label.textContent = data.expedition.title || '';
-      cohortSelect.replaceChildren(new Option(uiText('All cohorts'), ''));
-      (data.cohorts || []).forEach(function (name) { cohortSelect.add(new Option(name, name)); });
-      if (cohort && !Array.from(cohortSelect.options).some(function (o) { return o.value === cohort; })) {
-        cohortSelect.add(new Option(cohort, cohort));
-      }
-      cohortSelect.value = cohort;
-      syncExportButtons();
-      // The page script runs before the deferred i18n script, so label the period choices once data arrives.
+      renderFilterControls(data.cohorts || []);
       labelPeriods();
-      status.textContent = cohort || langSelect.value
-        ? uiText('Showing responses for ') + [cohort, langSelect.value.toUpperCase()].filter(Boolean).join(' · ')
-        : uiText('Showing all responses');
+      status.textContent = uiLanguage() === 'de' ? 'Ergebnisse für die gewählten Filter.' : 'Resultaten voor de gekozen filters.';
       report.classList.remove('el-resp-updating');
       report.setAttribute('aria-busy', 'false');
       report.hidden = false;
@@ -744,7 +807,7 @@
           var m = document.createElement('div');
           m.className = 'el-resp-comment-meta';
           m.setAttribute('translate', 'no');
-          m.textContent = (item.moduleTitle || uiText('Station')) + ' · ' + (item.stepTitle || uiText('Step')) + ' (' + (item.cohort || uiText('review')) + ' · ' + String(item.language || 'nl').toUpperCase() + ')';
+          m.textContent = (item.moduleTitle || uiText('Station')) + ' · ' + (item.stepTitle || uiText('Step')) + ' (' + groupName(item.cohort || 'default') + ' · ' + String(item.language || 'nl').toUpperCase() + ')';
           var bodyP = document.createElement('div');
           bodyP.setAttribute('translate', 'no');
           bodyP.textContent = item.comment;
@@ -797,12 +860,7 @@
 
   async function downloadCsv(filtered, extension = 'csv') {
     try {
-      var qs = new URLSearchParams();
-      if (filtered) {
-        if (cohortSelect.value) qs.set('cohort', cohortSelect.value);
-        if (langSelect.value) qs.set('language', langSelect.value);
-        if (periodSelect.value) qs.set('days', periodSelect.value);
-      }
+      var qs = filtered ? filterQuery() : new URLSearchParams();
       var url = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses/export.' + extension + (qs.size ? '?' + qs : '');
       var resp = await client.authFetch(url);
       if (!resp.ok) throw new Error(uiText('Could not export responses.'));
@@ -813,25 +871,8 @@
     }
   }
 
-  // The Dutch catalog can arrive after the first render: reformat numbers and
-  // the labels this script localizes itself, without fetching again.
-  window.addEventListener('lp:language-changed', function () {
-    labelPeriods();
-    if (!lastSummary || report.hidden) return;
-    renderSummary(lastSummary);
-    if (lastAnalytics) {
-      renderTime(lastAnalytics.data, lastAnalytics.reportLang, lastAnalytics.courseLang);
-      renderTrend(lastAnalytics.data.weekly);
-      renderOrderControl();
-    }
-    report.querySelectorAll('.el-chart-share[data-percent]').forEach(function (share) {
-      share.textContent = formatPercent(share.dataset.percent);
-    });
-  });
-
   if (exportFilteredBtn) exportFilteredBtn.addEventListener('click', function () { downloadCsv(true); });
   document.getElementById('el-resp-export-xlsx').addEventListener('click', function () { downloadCsv(true, 'xlsx'); });
-  if (exportAllBtn) exportAllBtn.addEventListener('click', function () { downloadCsv(false); });
 
   function accountChanged(user) {
     ++requestId;
@@ -843,14 +884,12 @@
     retry.hidden = true;
     document.getElementById('el-signin').hidden = !!user;
     label.textContent = '';
-    lastSummary = null;
     lastAnalytics = null;
     window.Xped.reportDetails.reset();
     [kpisEl, funnelEl, blocksEl, feedbackEl, timeEl, trendEl, orderEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
     timeEl.hidden = trendEl.hidden = orderEl.hidden = true;
-    cohortSelect.replaceChildren(new Option(uiText('All cohorts'), ''));
-    langSelect.value = '';
-    syncExportButtons();
+    groupField.querySelectorAll('label,p').forEach(function (item) { item.remove(); });
+    chips.hidden = true;
     if (user) loadResponses();
     else status.textContent = uiText('Sign in to view responses.');
   }

@@ -1391,7 +1391,7 @@ def get_responses(runtime, expedition_id: str):
         stamp = now()
         summary_metrics, stations = reporting.course_metrics(exp, rows, funnel, block_stats)
         extra = {'stations': stations, 'weekly': reporting.weekly_activity(
-            rows, exp.get('publicRevisionWeeks', []), stamp, reporting.period_start(request.args, stamp))}
+            rows, exp.get('publicRevisionWeeks', []), stamp, *reporting.period_bounds(request.args, stamp))}
     return jsonify(
         expedition={'id': exp['id'], 'title': exp.get('title', ''), 'defaultLanguage': exp.get('defaultLanguage', 'nl'), 'modules': exp.get('modules', [])},
         summary={

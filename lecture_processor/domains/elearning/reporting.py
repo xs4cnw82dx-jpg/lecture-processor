@@ -1,7 +1,7 @@
 """Academy reporting over consented response rows and the current course outline."""
 from collections import Counter
 import csv
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import io
 import json
 import math
@@ -15,19 +15,33 @@ MAX_STEP_SECONDS = 4 * 60 * 60
 MAX_REVISION_WEEKS = 52
 
 
-def period_start(args, now):
-    days = args.get('days', '')
-    return now - int(days) * 86400 if days in ('7', '30', '90') else None
+def period_bounds(args, now):
+    def midnight(key):
+        try:
+            day = date.fromisoformat(args.get(key, ''))
+            if key == 'to':
+                day += timedelta(days=1)
+            return datetime.combine(day, time.min, tzinfo=timezone.utc).timestamp()
+        except (ValueError, OverflowError, OSError):
+            return None
+
+    start, end = midnight('from'), midnight('to')
+    if start is None and end is None and args.get('days') in ('7', '30', '90'):
+        start = now - int(args['days']) * 86400
+    return start, end
 
 
 def filter_responses(rows, args, now):
     cohorts = set(filter(None, args.getlist('cohort')))
     language = (args.get('language') or '').lower()
-    since = period_start(args, now)
-    return [row for row in rows
-            if (not cohorts or (row.get('cohort') or 'default') in cohorts)
-            and (not language or row.get('language') == language)
-            and (since is None or (row.get('started_at') or row.get('updated_at') or 0) >= since)]
+    start, end = period_bounds(args, now)
+    def matches(row):
+        stamp = row.get('started_at') or row.get('updated_at') or 0
+        return ((not cohorts or (row.get('cohort') or 'default') in cohorts)
+                and (not language or row.get('language') == language)
+                and (start is None or stamp >= start)
+                and (end is None or stamp < end))
+    return [row for row in rows if matches(row)]
 
 
 def merge_seconds(stored, reported, steps):
@@ -78,7 +92,7 @@ def record_public_revision(course, ts):
     course['publicRevisionWeeks'] = [markers[key] for key in sorted(markers)[-MAX_REVISION_WEEKS:]]
 
 
-def weekly_activity(rows, markers, now, since):
+def weekly_activity(rows, markers, now, since, until):
     started, completed = Counter(), Counter()
     for row in rows:
         stamp = row.get('started_at') or row.get('updated_at')
@@ -89,9 +103,9 @@ def weekly_activity(rows, markers, now, since):
                 completed[week] += 1
     if not started:
         return []
-    end = _monday(now)
+    end = _monday(min(now, until - 1) if until is not None else now)
     first = max(_monday(since) if since else min(started), end - timedelta(weeks=25))
-    marks = {entry['week']: entry for entry in markers if not since or entry['at'] >= since}
+    marks = {entry['week']: entry for entry in markers if (not since or entry['at'] >= since) and (not until or entry['at'] < until)}
     result = []
     while first <= end:
         key = first.isoformat()
@@ -158,11 +172,12 @@ def course_metrics(course, rows, funnel, block_stats):
         ids = [step['id'] for step in module.get('steps', [])]
         reached = set().union(*(visitors[sid] for sid in ids))
         advanced = continued[ids[-1]] if ids else set()
-        stations.append(dict(moduleId=module['id'], moduleTitle=module.get('title', {}), reached=len(reached),
+        totals = [sum(value.get(sid, 0) for sid in ids) for value in times]
+        stations.append(dict(activeSecondsTotal=sum(totals), moduleId=module['id'], moduleTitle=module.get('title', {}), reached=len(reached),
                              continued=len(advanced), lost=len(reached - advanced),
                              comments=sum(comments[sid] for sid in ids), correctAnswers=sum(scores[sid] for sid in ids),
                              gradedAnswers=sum(graded[sid] for sid in ids), estimatedMinutes=module.get('estimatedMinutes'),
-                             time=quartiles(sum(value.get(sid, 0) for sid in ids) for value in times)))
+                             time=quartiles(totals)))
     active = quartiles(sum(value.get(sid, 0) for sid in positions) for value in times)
     return {'activeSeconds': active, 'timedSessions': active['count'] if active else 0}, stations
 

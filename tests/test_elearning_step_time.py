@@ -6,7 +6,9 @@ from lecture_processor.domains.elearning.reporting import MAX_STEP_SECONDS
 from tests.test_elearning_api import _create_sample, _post_pilot_response, auth_headers
 
 # Reuse the isolated store and verified Firebase fixture of the Studio API tests.
-from tests.support.academy_analytics import academy_studio as setup
+from tests.support.academy_analytics import academy_studio as academy_studio_fixture
+
+setup = academy_studio_fixture
 
 
 def _export(client, expedition_id):
