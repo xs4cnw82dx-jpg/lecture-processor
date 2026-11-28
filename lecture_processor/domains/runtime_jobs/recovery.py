@@ -1,6 +1,7 @@
 from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
 from lecture_processor.domains.billing import job_charges, ledger
 from lecture_processor.domains.billing import receipts as billing_receipts
+from lecture_processor.domains.billing.storage import STORAGE_ERRORS
 from lecture_processor.domains.runtime_jobs import execution
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
 from lecture_processor.domains.study import audio as study_audio
@@ -38,6 +39,8 @@ def _runtime_job_is_stale(job_data, *, now_ts, runtime=None):
         return False
     status = str(job_data.get('status', '') or '').lower()
     if status not in ACTIVE_RUNTIME_JOB_STATUSES and not _pending_refund_components(job_data):
+        return False
+    if float(job_data.get('recovery_journal_retry_at') or 0) > now_ts:
         return False
     timestamp = _active_job_timestamp(job_data)
     if timestamp <= 0:
@@ -127,10 +130,22 @@ def _claim_stale_runtime_job(doc, *, now_ts, runtime=None):
         }
         charge_ref = job_data.get('charge_ref')
         if charge_ref and job_data.get('job_scope') != 'interview-coding':
-            if charge_ref != f'runtime-job:{job_id}':
-                raise ledger.LedgerConflict('Runtime job does not match its original charge.')
-            if not job_charges.has_runtime_receipt(job_data, charge_ref):
-                receipt = ledger.read_runtime_job_receipt(txn, job_data['user_id'], job_id, runtime=resolved_runtime)
+            try:
+                if charge_ref != f'runtime-job:{job_id}':
+                    raise ledger.LedgerConflict('Runtime job does not match its original charge.')
+                receipt = None
+                if not job_charges.has_runtime_receipt(job_data, charge_ref):
+                    receipt = ledger.read_runtime_job_receipt(txn, job_data.get('user_id'), job_id, runtime=resolved_runtime)
+            except STORAGE_ERRORS as error:
+                # Keep the original job, heartbeat and refund target. A later
+                # pass can retry once the journal is available or repaired.
+                failures = min(5, int(job_data.get('recovery_journal_failures') or 0) + 1)
+                retry_at = float(now_ts) + min(3600, 300 * 2 ** (failures - 1))
+                txn.set(job_ref, {'recovery_journal_retry_at': retry_at, 'recovery_journal_failures': failures}, merge=True)
+                return type(error).__name__
+            if job_data.get('recovery_journal_failures'):
+                updates.update(recovery_journal_retry_at=0, recovery_journal_failures=0)
+            if receipt is not None:
                 updates['billing_receipt'] = receipt
                 # Older restart recovery marked the primary pending but could
                 # not count the interrupted job's extras without its receipt.
@@ -148,6 +163,8 @@ def _claim_stale_runtime_job(doc, *, now_ts, runtime=None):
     except Exception:
         resolved_runtime.logger.warning('Runtime-job recovery claim failed for %s', job_id, exc_info=True)
         return None
+    if isinstance(claimed, str):
+        resolved_runtime.logger.warning('Runtime-job recovery deferred for %s: %s', job_id, claimed)
     return dict(claimed) if isinstance(claimed, dict) else None
 
 
@@ -158,18 +175,19 @@ def recover_stale_runtime_jobs(runtime=None):
 
     now_ts = resolved_runtime.time.time()
     recovered = 0
+    cursors = getattr(resolved_runtime, 'RUNTIME_JOB_RECOVERY_CURSORS', None)
     try:
         stale_docs = resolved_runtime.runtime_jobs_repo.query_statuses(
             resolved_runtime.db,
             resolved_runtime.RUNTIME_JOBS_COLLECTION,
             ACTIVE_RUNTIME_JOB_STATUSES,
-            limit=resolved_runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT,
+            limit=resolved_runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT, cursors=cursors,
         )
         pending_query = getattr(resolved_runtime.runtime_jobs_repo, 'query_pending_refunds', None)
         if callable(pending_query):
             pending_docs = pending_query(
                 resolved_runtime.db, resolved_runtime.RUNTIME_JOBS_COLLECTION,
-                limit=resolved_runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT,
+                limit=resolved_runtime.RUNTIME_JOB_RECOVERY_BATCH_LIMIT, cursors=cursors,
             )
             stale_docs = list({doc.id: doc for doc in [*stale_docs, *pending_docs]}.values())
     except Exception:

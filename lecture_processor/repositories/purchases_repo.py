@@ -2,6 +2,8 @@
 
 from .query_utils import apply_where
 
+REFUND_REVIEWS = 'checkout_refund_reviews'
+
 
 def _collection(db):
     if db is None:
@@ -38,3 +40,31 @@ def query_by_uid(db, uid, limit):
 def query_by_session_id(db, stripe_session_id, limit=1):
     query = apply_where(_collection(db), 'stripe_session_id', '==', stripe_session_id).limit(limit)
     return list(query.stream())
+
+
+def mark_refund_for_review(db, firestore_module, session_id, refund_id, status):
+    # A stale webhook may observe failure just before another handler records
+    # success. Both transactions synchronize on the existing purchase receipt.
+    purchase = doc_ref(db, session_id)
+    review = db.collection(REFUND_REVIEWS).document(session_id)
+    payload = {'stripe_refund_id': refund_id, 'refund_status': status}
+
+    @firestore_module.transactional
+    def mark(txn):
+        if purchase.get(transaction=txn).exists:
+            return
+        if review.get(transaction=txn).to_dict() != payload:
+            txn.set(review, payload)
+
+    mark(db.transaction())
+
+
+def record_deleted_checkout_refund(db, session_id, receipt):
+    batch = db.batch()
+    batch.set(doc_ref(db, session_id), receipt, merge=True)
+    batch.delete(db.collection(REFUND_REVIEWS).document(session_id))
+    batch.commit()
+
+
+def list_refunds_for_review(db, limit=20):
+    return list(db.collection(REFUND_REVIEWS).limit(limit).stream())

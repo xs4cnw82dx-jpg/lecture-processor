@@ -17,7 +17,7 @@ with app.test_request_context('/admin'):
 `, path.resolve('templates'), path.resolve('static'), asset], { encoding: 'utf8', env: { PATH: process.env.PATH } });
 const pricing = JSON.parse(readFileSync('config/model_pricing.json', 'utf8'));
 
-async function openAdmin(page, { hash = '', language = 'en', theme = 'light' } = {}) {
+async function openAdmin(page, { hash = '', language = 'en', theme = 'light', refundReviews = [] } = {}) {
   const state = { requests: [], errors: [] };
   page.on('pageerror', (error) => state.errors.push(error.message));
   await page.addInitScript((preferences) => {
@@ -33,7 +33,7 @@ async function openAdmin(page, { hash = '', language = 'en', theme = 'light' } =
     const pathname = new URL(route.request().url()).pathname;
     state.requests.push(pathname);
     const payload = pathname === '/api/admin/model-pricing' ? pricing
-      : pathname === '/api/admin/overview' ? { metrics: { total_users: 3 }, runtime_checks: { firebase_ready: true }, deployment: {} }
+      : pathname === '/api/admin/overview' ? { refund_reviews: refundReviews, metrics: { total_users: 3 }, runtime_checks: { firebase_ready: true }, deployment: {} }
         : pathname === '/api/user-preferences' ? { preferences: { interface_language: language, theme } } : {};
     return route.fulfill({ json: payload });
   });
@@ -174,4 +174,20 @@ test('Escape in a phone submenu returns to its trigger before closing navigation
   await page.keyboard.press('Escape');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle).toBeFocused();
+});
+
+
+test('admin purchases shows unresolved deleted-account refunds for Stripe review', async ({ page }) => {
+  const { errors } = await openAdmin(page, { hash: '#activity/purchases', refundReviews: [
+    { session_id: 'cs_synthetic', refund_id: 're_synthetic', status: 'requires_action' },
+  ] });
+  const panel = page.locator('#refund-review-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText('existing successful refund');
+  await expect(panel).toContainText('checkout_session_id');
+  await expect(panel).toContainText('account_deleted');
+  await expect(panel.getByRole('cell', { name: 're_synthetic' })).toBeVisible();
+  await expect(panel.getByRole('cell', { name: 'requires_action' })).toBeVisible();
+  await expect(panel.getByRole('button')).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

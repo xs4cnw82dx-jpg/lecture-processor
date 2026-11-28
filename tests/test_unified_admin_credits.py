@@ -10,7 +10,7 @@ import uuid
 from flask import Flask, Response, jsonify, request, stream_with_context
 import pytest
 
-from lecture_processor.repositories import admin_credit_grants_repo, users_repo
+from lecture_processor.repositories import admin_credit_grants_repo, purchases_repo, users_repo
 from lecture_processor.services import admin_api_service, admin_dashboard_service
 from tests.credit_test_support import make_credit_runtime
 
@@ -297,6 +297,7 @@ def dashboard_runtime(monkeypatch, *, include_unified=True):
             ('job_logs', 'new'): {'job_id': 'new', 'uid': 'u1', 'status': 'error', 'credit_scheme': 2, 'charge_ref': 'job:new', 'charged_credits': 8, 'refunded_credits': 8, 'finished_at': 2},
         })
     runtime, store = admin_runtime(enabled=False, documents=records)
+    runtime.repositories.purchases = purchases_repo
     runtime.csv, runtime.json = csv, json
     runtime.Response, runtime.stream_with_context = Response, stream_with_context
     runtime.ANALYTICS_FUNNEL_STAGES = []
@@ -355,6 +356,7 @@ def test_dashboard_and_rollups_keep_counts_and_revenue_separate_from_credit_unit
     runtime, _store = dashboard_runtime(monkeypatch)
     metrics = admin_dashboard_service.admin_metrics
     rollups = admin_dashboard_service.admin_rollups
+    purchases_repo.mark_refund_for_review(runtime.db, runtime.firestore, 'cs_synthetic', 're_synthetic', 'failed')
     aggregate = rollups._aggregate_bucket_from_source('1970-01-01', 'daily', runtime=runtime)
     assert aggregate['purchases'] == {'count': 2, 'total_revenue_cents': 2998}
     assert aggregate['jobs']['total'] == 2
@@ -370,6 +372,7 @@ def test_dashboard_and_rollups_keep_counts_and_revenue_separate_from_credit_unit
     status, body = call(runtime, admin_dashboard_service.admin_overview, uid=False)
 
     assert status == 200
+    assert body['refund_reviews'] == [{'session_id': 'cs_synthetic', 'refund_id': 're_synthetic', 'status': 'failed'}]
     assert body['metrics']['purchase_count'] == 2
     assert body['metrics']['total_revenue_cents'] == 2998
     assert body['metrics']['refunded_jobs'] == 1

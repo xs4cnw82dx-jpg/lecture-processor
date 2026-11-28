@@ -1223,6 +1223,16 @@ function renderDashboard(data) {
     });
     renderRows('jobs-body', jobRows, 'No jobs found in selected window.', 10);
 
+    const reviewRows = (data.refund_reviews || []).map((review) => {
+        const row = document.createElement('tr');
+        for (const value of [review.session_id, review.refund_id, review.status]) {
+            row.insertCell().textContent = value;
+        }
+        return row;
+    });
+    document.getElementById('refund-review-body').replaceChildren(...reviewRows);
+    document.getElementById('refund-review-panel').hidden = reviewRows.length === 0;
+
     const purchaseRows = (data.recent_purchases || []).map((purchase) => {
         const tr = document.createElement('tr');
         const tdTime = document.createElement('td');
