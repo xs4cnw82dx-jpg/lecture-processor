@@ -62,6 +62,14 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
       requests.push(new URL(route.request().url()).search);
       return route.fulfill({json:data});
     });
+    if (size.width === 390) {
+      // The report must render when its controls arrive after the page finishes parsing.
+      await page.route('**/static/js/academy-controls.js*', async route => {
+        const source = await route.fetch();
+        await page.waitForFunction(() => document.readyState === 'interactive' && document.getElementById('el-resp-funnel'));
+        await route.fulfill({ response: source });
+      });
+    }
     await page.goto(academyOrigin + '/expedities/visual/resultaten');
     const time = page.locator('#el-resp-time');
     await expect(time.getByRole('heading',{name:'Tijdsbesteding'})).toBeVisible();
