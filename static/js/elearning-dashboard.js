@@ -19,6 +19,7 @@
   var pendingImportPayload = null;
   var allExpeditions = [];
   var justDuplicatedId = '';
+  var pendingCopies = new Map();
   var actionsEl = document.getElementById('el-author-actions');
   var academy = !!document.querySelector('meta[name="academy-signin"]');
   var canCreate = !academy;
@@ -139,6 +140,61 @@
     return link;
   }
 
+  function copyLabel(nl, de) { return document.documentElement.lang === 'de' ? de : nl; }
+
+  function pendingCopyRow(expedition) {
+    var row = document.createElement('article');
+    row.className = 'el-exp-row xc-copy-pending';
+    row.dataset.pendingCopy = expedition.id;
+    row.tabIndex = -1;
+    row.setAttribute('aria-busy', 'true');
+    var title = document.createElement('h2');
+    title.textContent = copyLabel('Kopie van ', 'Kopie von ') + expedition.title;
+    title.translate = false;
+    var message = document.createElement('span');
+    message.textContent = copyLabel('Wordt gekopieerd…', 'Wird kopiert…');
+    row.append(title, message);
+    return row;
+  }
+
+  async function duplicateAcademyCourse(expedition) {
+    if (pendingCopies.has(expedition.id)) return;
+    var session = client.captureSession();
+    pendingCopies.set(expedition.id, session);
+    renderExpeditions(allExpeditions);
+    grid.querySelector('[data-pending-copy="' + CSS.escape(expedition.id) + '"]')?.focus();
+    try {
+      var result = await api('/api/elearning/expeditions/' + encodeURIComponent(expedition.id) + '/duplicate', {
+        method: 'POST', body: JSON.stringify({ interfaceLanguage: document.documentElement.lang }),
+      });
+      session.assertCurrent();
+      if (pendingCopies.get(expedition.id) !== session) return;
+      pendingCopies.delete(expedition.id);
+      justDuplicatedId = result.expedition.id;
+      if (result.summary) {
+        // A previously started library fetch can contain the list from before this copy existed.
+        listRequest++;
+        allExpeditions = [result.summary].concat(allExpeditions.filter(function (item) { return item.id !== result.summary.id; }));
+        if (folders) folders.reveal(result.summary);
+        renderExpeditions(allExpeditions);
+      } else await loadList();
+      var copied = Model.coursePaths(result.expedition.id).overview;
+      platformUx.toast(copyLabel('Kopie gemaakt.', 'Kopie erstellt.'), {
+        type: 'success', duration: 5000,
+        render: function (region, message) {
+          region.replaceChildren(document.createTextNode(message + ' '), actionLink(copyLabel('Openen', 'Öffnen'), copied));
+        },
+      });
+    } catch (error) {
+      if (pendingCopies.get(expedition.id) !== session) return;
+      pendingCopies.delete(expedition.id);
+      if (error.code === 'auth/session-changed') return;
+      renderExpeditions(allExpeditions);
+      grid.querySelector('[data-expedition-row="' + CSS.escape(expedition.id) + '"] .el-exp-card-actions [aria-haspopup="menu"]')?.focus();
+      toast(error.message, 'error');
+    }
+  }
+
   function renderExpeditions(items) {
     if (folders && folders.selected()) items = items.filter(folders.matches);
     var q = searchInput ? searchInput.value.trim().toLowerCase() : '';
@@ -207,6 +263,7 @@
     visible.forEach(function (exp) {
       var card = document.createElement('article');
       card.className = 'el-exp-row' + (justDuplicatedId && exp.id === justDuplicatedId ? ' is-just-duplicated' : '');
+      card.dataset.expeditionRow = exp.id;
       var editUrl = Model.coursePaths(exp.id).edit;
 
       var mainWrap = document.createElement('div');
@@ -323,13 +380,14 @@
       }
       if (!exp.deletionPending && exp.role !== 'translate') {
         actions.appendChild(actionLink('Responses', Model.coursePaths(exp.id).report));
-        if (academy) menuItems.push({ label: document.documentElement.lang === 'de' ? 'Freigabe und Zugriff' : 'Delen en toegang', icon: 'share', href: Model.coursePaths(exp.id).overview + '#delen' });
+        if (academy) menuItems.push({ label: document.documentElement.lang === 'de' ? 'Freigabe und Zugriff' : 'Delen en toegang', icon: 'share', onClick: function () { window.location.assign(Model.coursePaths(exp.id).overview + '#delen'); } });
         if (exp.shareEnabled && exp.shareToken) {
           menuItems.push({ label: 'Open learner link', icon: 'external', href: Model.learnerPath(exp.shareToken) });
         }
       }
       if (canCreate && !exp.deletionPending && exp.role !== 'translate') {
         menuItems.push({ label: 'Duplicate', icon: 'copy', onClick: async function () {
+          if (academy) { await duplicateAcademyCourse(exp); return; }
           try {
             var dupRes = await api('/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/duplicate', { method: 'POST', body: '{}' });
             justDuplicatedId = (dupRes && dupRes.expedition && dupRes.expedition.id) || '';
@@ -359,6 +417,7 @@
       }
       card.append(mainWrap, actions);
       grid.appendChild(card);
+      if (pendingCopies.has(exp.id)) grid.appendChild(pendingCopyRow(exp));
     });
 
     // UX-005: Focus newly duplicated copy row
@@ -576,6 +635,7 @@
     lockDialog(importDialog, false);
     if (importDialog.open) importDialog.close();
     allExpeditions = [];
+    pendingCopies.clear();
     justDuplicatedId = '';
     searchInput.value = '';
     searchInput.hidden = true;

@@ -135,6 +135,11 @@
         var folder = current(course.folderId);
         return (folder ? folder.id : '') === filter.value;
       },
+      reveal: function (course) {
+        if (this.matches(course)) return;
+        filter.value = '*';
+        actions();
+      },
       move: function (course) { open('move', course); },
     };
   };
