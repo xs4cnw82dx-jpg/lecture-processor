@@ -79,7 +79,7 @@ body:has(> .ac-rail) .el-dash {
   display: flex; align-items: center; gap: 12px; max-width: 1450px; height: 62px;
   padding-inline: clamp(18px,3.4vw,54px); margin-inline: auto;
 }
-.ac-bar-actions { position: relative; display: flex; align-items: center; gap: 12px; margin-inline-start: auto; }
+.ac-bar-actions { position: relative; align-self: stretch; display: flex; align-items: center; gap: 12px; margin-inline-start: auto; }
 .ac-crumbs { display: flex; align-items: center; min-width: 0; gap: 9px; }
 .ac-crumbs a,.ac-crumbs span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/1.5 var(--ac-font); }
 .ac-crumbs a { color: var(--theme-muted-strong); text-decoration: none; }
