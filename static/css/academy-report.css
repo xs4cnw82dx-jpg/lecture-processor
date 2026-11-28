@@ -103,3 +103,9 @@
   background: var(--ac-pine);
 }
 #el-response-report.el-resp-updating { opacity: .6; }
+
+#academy-report-reset { color: var(--theme-danger-ink); }
+#academy-reset-dialog p { margin: 0 0 var(--ac-space-3); overflow-wrap: anywhere; }
+#academy-reset-confirm { color: var(--theme-danger-ink); background: var(--theme-danger-soft); border-color: var(--theme-danger-line); }
+#academy-reset-error { color: var(--theme-danger-ink); }
+@media print { #academy-report-reset { display: none; } }
