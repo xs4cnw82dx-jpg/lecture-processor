@@ -59,6 +59,7 @@
 <dialog id="ac-search" class="ac-search-dialog" aria-labelledby="ac-search-label">
   <div class="ac-search-input">{{ icon('search') }}<label class="sr-only" for="ac-jump" id="ac-search-label">{{ say('Zoek een pagina','Seite suchen') }}</label><input id="ac-jump" type="search" placeholder="{{ say('Zoek een pagina…','Seite suchen…') }}" autocomplete="off"><button type="button" class="ac-icon" data-ac-close-search aria-label="{{ say('Sluiten','Schließen') }}">{{ icon('close',18) }}</button></div>
   <nav data-ac-pages class="ac-search-results" aria-label="{{ say('Zoekresultaten','Suchergebnisse') }}">
+    <div data-ac-recent hidden></div>
     {% for href, glyph, nl, de in sections + [('/instellingen','settings','Instellingen','Einstellungen')] %}<a href="{{ href }}">{{ icon(glyph,18) }}<span>{{ say(nl,de) }}</span>{{ icon('arrow',15) }}</a>{% endfor %}
     <div data-ac-matches></div>
     <p hidden data-ac-no-results>{{ say('Geen pagina gevonden. Probeer een andere zoekterm.','Keine Seite gefunden. Versuchen Sie einen anderen Suchbegriff.') }}</p>
