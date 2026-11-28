@@ -181,9 +181,14 @@ for (const layout of [
       return route.fulfill({ json: { ok: true } });
     });
     await signInToLibrary(page);
-    const filter = page.getByLabel('Folder', { exact: true });
+    const filter = page.locator('#academy-folder-filter');
+    const folderTrigger = page.locator('#academy-folder-filter-button');
+    const choose = async (trigger, name) => {
+      await trigger.click();
+      await page.getByRole('option', { name, exact: true }).click();
+    };
     const dialog = page.getByRole('dialog');
-    await filter.selectOption('account-review');
+    await choose(folderTrigger, 'Account review');
     await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
     await expect(page.getByRole('button', { name: 'Delete folder' })).toBeHidden();
@@ -196,13 +201,13 @@ for (const layout of [
     await dialog.getByLabel('Folder name').fill('Archive');
     await dialog.getByRole('button', { name: 'Save' }).click();
     await expect(filter.locator('option:checked')).toHaveText('Archive');
-    await filter.selectOption('account-review');
+    await choose(folderTrigger, 'Account review');
     await page.getByRole('button', { name: 'More actions for ' + course.title }).click();
     await page.getByRole('menuitem', { name: 'Move to folder' }).click();
-    await dialog.getByLabel('Destination folder').selectOption('personal');
+    await choose(dialog.locator('#academy-folder-destination-button'), 'Archive');
     await dialog.getByRole('button', { name: 'Move', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'No expeditions in this folder' })).toBeVisible();
-    await filter.selectOption('personal');
+    await choose(folderTrigger, 'Archive');
     await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await testInfo.attach('folder-library', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
@@ -210,7 +215,7 @@ for (const layout of [
     await expect(dialog).toContainText('Learner links and responses stay available');
     await dialog.getByRole('button', { name: 'Delete folder' }).click();
     await expect(filter).toHaveValue('*');
-    await filter.selectOption('');
+    await choose(folderTrigger, 'Unfiled');
     await expect(page.getByRole('link', { name: course.title, exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: shared.title, exact: true })).toBeHidden();
   });
@@ -358,4 +363,86 @@ test('switching identity invalidates an open deletion confirmation', async ({ pa
   await page.getByRole('button', { name: 'Permanently delete account' }).click();
   await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
   expect(attempts).toBe(0);
+});
+
+for (const width of [390, 1440]) {
+  test('learner chooses privacy with visible keyboard focus and finishes at ' + width + 'px', async ({ page }, testInfo) => {
+    const Model = require('../static/js/elearning-model');
+    const course = Model.createExpeditionPreset('blank', 'Pijn begrijpen', 'nl', { academy: true });
+    course.shareOptions = { enabled: true, collectResponses: true, collectionVersion: 1 };
+    course.modules[0].steps[0].blocks = [Model.createBlock('richtext')];
+    course.modules.push(Model.createModule('blank', 1));
+    const submissions = [];
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await page.route('**/api/elearning/public/experience', route => route.fulfill({ json: { expedition: course } }));
+    await page.route('**/api/elearning/public/experience/responses', route => {
+      submissions.push(route.request().method());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto(academy + '/elearning/p/experience?lang=nl');
+    await expect(page.locator('.xped-hero-art img')).toHaveAttribute('src', course.startPage.heroMedia.staticPath);
+    await expect(page.locator('.xped-hero-kicker')).toHaveCount(0);
+    await page.locator('#el-comfort-trigger').click();
+    const sizes = page.locator('.el-text-scale-group');
+    const normal = sizes.getByRole('radio', { checked: true });
+    await normal.focus();
+    await page.keyboard.press('ArrowRight');
+    const larger = sizes.locator('[data-scale=lg]');
+    await expect(larger).toBeFocused();
+    await expect(larger).toHaveAttribute('aria-checked', 'true');
+    expect(await larger.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
+    await page.keyboard.press('Home');
+    await expect(sizes.locator('[data-scale=sm]')).toBeFocused();
+    await page.locator('#el-comfort-trigger').click();
+    await page.locator('.xped-hero-cta-row button').click();
+    const consent = page.locator('.el-consent-card');
+    await expect(consent.getByRole('heading', { name: 'Jouw gegevens' })).toBeVisible();
+    const next = consent.locator('button[type=submit]');
+    await expect(next).toBeEnabled();
+    await next.focus();
+    await page.keyboard.press('Enter');
+    await expect(consent.getByRole('alert')).toContainText('Kies');
+    await expect(consent.getByRole('radio').first()).toBeFocused();
+    await consent.locator('input[value=private]').check();
+    await expect(consent.getByRole('alert')).toBeHidden();
+    await next.click();
+    await page.locator('.el-player-nav .xped-btn-primary').click();
+    await page.locator('.el-milestone-card .xped-btn').first().click();
+    await page.locator('.el-player-nav .xped-btn-primary').click();
+    const finish = page.locator('.xped-completion-card');
+    await expect(finish).toBeVisible();
+    await expect(finish.locator('.academy-route-station')).toHaveCount(2);
+    expect(submissions).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await testInfo.attach('completion', { body: await page.screenshot(), contentType: 'image/png' });
+  });
+}
+
+test('an author previews and replaces an existing private course cover', async ({ page }) => {
+  const Model = require('../static/js/elearning-model');
+  const course = {
+    ...Model.createExpeditionPreset('blank', 'Mijn cursus', 'nl', { academy: true }),
+    role: 'owner', revision: 1,
+  };
+  course.startPage.heroMedia = { kind: 'asset', assetId: 'my-cover' };
+  await page.goto(academy + '/signin');
+  await page.evaluate(() => sessionStorage.setItem('academy-preview-user', 'studio-owner'));
+  await page.route('**/api/elearning/expeditions/visual', route => route.fulfill({ json: { expedition: course } }));
+  await page.route('**/api/elearning/expeditions/visual/lease', route => route.fulfill({ json: { granted: true, lease_token: 'test-lease' } }));
+  await page.route('**/api/elearning/expeditions/visual/assets/my-cover', route => {
+    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
+    if (route.request().method() === 'HEAD') return route.fulfill({
+      headers: { 'Content-Type': 'image/png', 'Content-Length': '31000', 'Content-Disposition': "inline; filename*=UTF-8''Mijn%20omslag.png" },
+    });
+    return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aM1sAAAAASUVORK5CYII=', 'base64') });
+  });
+  await page.goto(academy + '/physio/elearning/visual/edit');
+  const preview = page.locator('.academy-media-file');
+  await expect(preview).toContainText('Mijn omslag.png');
+  await expect(preview).toContainText('1 × 1 px');
+  await expect(preview).toContainText(/30[.,]3/);
+  await page.locator('.el-asset-library summary').click();
+  await page.locator('.el-asset-thumb').filter({ has: page.locator('img[src$="academy-rest.webp"]') }).click();
+  await expect(preview).toContainText('Rustmoment');
+  await expect(preview.locator('img')).toHaveAttribute('src', /academy-rest.webp$/);
 });

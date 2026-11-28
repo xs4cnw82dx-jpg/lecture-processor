@@ -25,6 +25,7 @@
   var loadedAccount = false;
   var leavingAccount = false;
   var privateMedia = new Map();
+  var mediaInfo = new Map();
   var saveVersion = 0;
   var savedVersion = 0;
   var acceptedCourse = null;
@@ -317,6 +318,7 @@
       resource.then(function (url) { URL.revokeObjectURL(url); }).catch(function () {});
     });
     privateMedia.clear();
+    mediaInfo.clear();
   }
 
   function currentModuleAndStep() {
@@ -1640,6 +1642,50 @@
     return lab;
   }
 
+  function currentMediaPreview(ref, asset, audioOnly) {
+    var german = document.documentElement.lang === 'de';
+    var preview = document.createElement('div');
+    preview.className = 'academy-media-file';
+    var info = document.createElement('span');
+    var title = document.createElement('strong');
+    title.textContent = asset ? (asset.labels?.[german ? 'de' : 'nl'] || asset.label)
+      : audioOnly ? (german ? 'Audiodatei' : 'Audiobestand') : (german ? 'Bild' : 'Afbeelding');
+    var detail = document.createElement('small');
+    var size = '';
+    var dimensions = '';
+    function update() { detail.textContent = [dimensions, size].filter(Boolean).join(' · '); }
+    var url = ref.kind === 'asset' ? assetUrl(ref.assetId) : ref.staticPath;
+    if (!audioOnly && url) {
+      var image = document.createElement('img');
+      image.alt = '';
+      image.addEventListener('load', function () {
+        dimensions = image.naturalWidth + ' × ' + image.naturalHeight + ' px';
+        update();
+      });
+      setMediaSource(image, url);
+      preview.appendChild(image);
+    } else if (audioOnly) preview.appendChild(Icons.icon('play', 28));
+    info.append(title, detail);
+    preview.appendChild(info);
+    if (url && !mediaInfo.has(url)) {
+      var lookup = (ref.kind === 'asset' ? request(url, { method: 'HEAD' }) : fetch(url, { method: 'HEAD' }))
+        .then(function (response) {
+          if (!response.ok) throw new Error();
+          var disposition = response.headers.get('Content-Disposition') || '';
+          var name = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+          return { name: name ? decodeURIComponent(name[1]) : '', bytes: Number(response.headers.get('Content-Length')) };
+        }).catch(function () { mediaInfo.delete(url); return null; });
+      mediaInfo.set(url, lookup);
+    }
+    if (url) mediaInfo.get(url).then(function (item) {
+      if (!item || leavingAccount) return;
+      if (item.name) title.textContent = item.name;
+      if (item.bytes > 0) size = mediaSize(item.bytes);
+      update();
+    });
+    return preview;
+  }
+
   function buildVisualPicker(currentRef, targetForUpload, onPick, audioOnly) {
     var box = document.createElement('div');
     box.className = 'el-field';
@@ -1650,8 +1696,14 @@
       onPick(ref, asset);
     }
 
+    var academy = document.documentElement.dataset.product === 'academy';
+    var selectedAsset = Model.XPED_ASSETS.find(function (asset) { return currentRef?.staticPath === asset.path; });
+    if (academy && hasMedia) {
+      box.classList.add('academy-media-occupied');
+      box.appendChild(currentMediaPreview(currentRef, selectedAsset, audioOnly));
+    }
     box.appendChild(Blocks.createDropzone(
-      audioOnly ? (hasMedia ? 'Replace audio clip' : 'Upload audio clip') : (hasMedia ? 'Replace custom photo' : 'Upload custom photo'),
+      academy && hasMedia ? (document.documentElement.lang === 'de' ? 'Ersetzen' : 'Vervangen') : audioOnly ? (hasMedia ? 'Replace audio clip' : 'Upload audio clip') : (hasMedia ? 'Replace custom photo' : 'Upload custom photo'),
       audioOnly ? 'MP3, M4A or OGG' : 'Drop or click · PNG, JPG, WebP',
       audioOnly ? 'audio/*' : 'image/png,image/jpeg,image/webp',
       function (file) { uploadFileForBlock(targetForUpload, file); }
@@ -1668,6 +1720,11 @@
         ? ('Uploading ' + upState.fileName + '…')
         : (upState.fileName + ': ' + upState.error);
       upBar.appendChild(upText);
+      if (academy && upState.status === 'uploading') {
+        var progress = document.createElement('progress');
+        progress.setAttribute('aria-label', upText.textContent);
+        upBar.appendChild(progress);
+      }
       if (upState.status === 'error' && upState.file) {
         var retryUp = document.createElement('button');
         retryUp.type = 'button';
@@ -1686,7 +1743,7 @@
       var rmBtn = document.createElement('button');
       rmBtn.type = 'button';
       rmBtn.className = 'el-btn el-btn-danger el-btn-sm';
-      rmBtn.textContent = audioOnly ? 'Remove audio' : 'Remove image';
+      rmBtn.textContent = academy ? (document.documentElement.lang === 'de' ? 'Entfernen' : 'Verwijderen') : audioOnly ? 'Remove audio' : 'Remove image';
       rmBtn.addEventListener('click', function () {
         chooseMedia({ kind: 'none', assetId: '', staticPath: '' });
       });
@@ -1703,7 +1760,7 @@
         state.openInspectorDetails[detKey] = library.open;
       });
       var summary = document.createElement('summary');
-      var current = Model.XPED_ASSETS.find(function (asset) { return currentRef?.staticPath === asset.path; });
+      var current = selectedAsset;
       if (current) {
         var thumbnail = document.createElement('img');
         thumbnail.src = current.path;
@@ -1725,6 +1782,8 @@
       grid.appendChild(noneBtn);
 
       Model.XPED_ASSETS.forEach(function (asset) {
+        if (!academy && asset.academyOnly) return;
+        var label = asset.labels?.[document.documentElement.lang] || asset.label;
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'el-asset-thumb' + (currentRef && currentRef.staticPath === asset.path ? ' is-selected' : '');
@@ -1734,11 +1793,11 @@
         img.loading = 'lazy';
         btn.setAttribute('aria-pressed', String(currentRef?.staticPath === asset.path));
         var sp = document.createElement('span');
-        sp.textContent = asset.label;
+        sp.textContent = label;
         var desc = document.createElement('small');
         desc.id = Model.uid('scene');
         desc.textContent = Model.getLocalized(asset.alt, state.editLang, state.exp.defaultLanguage);
-        btn.setAttribute('aria-label', asset.label);
+        btn.setAttribute('aria-label', label);
         btn.setAttribute('aria-describedby', desc.id);
         btn.append(img, sp, desc);
         btn.addEventListener('click', function () {

@@ -18,6 +18,8 @@
 
   var UI_STRINGS = {
     nl: {
+      consentHeading: 'Jouw gegevens',
+      consentChoiceRequired: 'Kies een van de twee opties om verder te gaan.',
       courseHighlights: 'Wat je kunt verwachten',
       answerPrivacy: 'Over je antwoorden',
       reflectionAccess: 'De makers van deze cursus kunnen je reflectie lezen.',
@@ -134,6 +136,8 @@
       down: 'Omlaag',
     },
     en: {
+      consentHeading: 'Your information',
+      consentChoiceRequired: 'Choose one of the two options to continue.',
       courseHighlights: 'What to expect',
       answerPrivacy: 'About your answers',
       reflectionAccess: 'Course authors can read your reflection.',
@@ -250,6 +254,8 @@
       down: 'Down',
     },
     de: {
+      consentHeading: 'Ihre Daten',
+      consentChoiceRequired: 'Wählen Sie eine der beiden Optionen, um fortzufahren.',
       courseHighlights: 'Was dich erwartet',
       answerPrivacy: 'Über deine Antworten',
       reflectionAccess: 'Die Kursverantwortlichen können deine Reflexion lesen.',
@@ -525,6 +531,24 @@
         en: 'xPEDitie Pain logo',
         de: 'Logo von xPEDition Schmerz',
       },
+    },
+    {
+      id: 'samen-op-route', academyOnly: true,
+      label: 'Samen op pad', labels: { nl: 'Samen op pad', de: 'Gemeinsam unterwegs', en: 'Travelling together' },
+      path: '/static/images/xped/academy-together.webp',
+      alt: { nl: 'Twee wandelaars volgen een gestippelde route.', de: 'Zwei Wandernde folgen einem gepunkteten Weg.', en: 'Two walkers follow a dotted trail.' },
+    },
+    {
+      id: 'rustmoment', academyOnly: true,
+      label: 'Rustmoment', labels: { nl: 'Rustmoment', de: 'Ruhepause', en: 'A moment of rest' },
+      path: '/static/images/xped/academy-rest.webp',
+      alt: { nl: 'Een persoon zit met gekruiste benen.', de: 'Eine Person sitzt im Schneidersitz.', en: 'A person sits cross-legged.' },
+    },
+    {
+      id: 'eerste-stappen', academyOnly: true,
+      label: 'Eerste stappen', labels: { nl: 'Eerste stappen', de: 'Erste Schritte', en: 'First steps' },
+      path: '/static/images/xped/academy-steps.webp',
+      alt: { nl: 'Een spoor van mintgroene voetstappen.', de: 'Eine Spur mintgrüner Fußabdrücke.', en: 'A trail of mint-green footprints.' },
     },
   ];
 
@@ -1145,7 +1169,7 @@
     return mod;
   }
 
-  function createExpeditionPreset(presetKey, title, defaultLang) {
+  function createExpeditionPreset(presetKey, title, defaultLang, options) {
     var lang = SUPPORTED_LANGS.indexOf(defaultLang) >= 0 ? defaultLang : 'nl';
     var cleanTitle = title || 'Untitled Expedition';
     var startTitle = loc('', '', '');
@@ -1175,6 +1199,10 @@
       glossary: DEFAULT_GLOSSARY.map(function (g) { return Object.assign({}, g); }),
       modules: [],
     };
+    if (options?.academy) {
+      var coverId = { 'bps-skeleton': 'rustmoment', showcase: 'eerste-stappen' }[presetKey] || 'samen-op-route';
+      base.startPage.heroMedia.staticPath = XPED_ASSETS.find(function (asset) { return asset.id === coverId; }).path;
+    }
     if (presetKey === 'bps-skeleton') {
       var mBio = createModule('ask-teach-reflect', 0);
       mBio.title = loc('Station 1: Het zenuwstelsel (Bio)', 'Station 1: The nervous system (Bio)', '');
