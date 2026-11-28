@@ -1738,7 +1738,7 @@
     // A value picker: listbox semantics, the current value focused on open, optional descriptions (item 34).
     var items = (options || []).map(function (opt) { return { value: opt[0], label: opt[1], description: typeof opt[2] === 'string' ? opt[2] : undefined }; });
     var dd = Icons.createDropdown({
-      select: true,
+      select: document.documentElement.dataset.product === 'academy',
       className: 'is-full',
       triggerClass: 'el-dd-trigger is-full',
       ariaLabel: label,

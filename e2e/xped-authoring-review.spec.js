@@ -9,7 +9,7 @@ const blockNode = (page, block) => page.locator('#el-canvas-card [data-block-id=
 const properties = page => page.locator('#el-inspector');
 async function choice(page, field, item) {
   await page.getByRole('button', { name: field, exact: true }).click();
-  await page.getByRole('option', { name: item, exact: typeof item === 'string' }).click();
+  await page.getByRole('menuitem', { name: item, exact: typeof item === 'string' }).click();
 }
 async function author(page, arrange, options = {}) {
   const fixture = await editorFixture(page, { saveStructure: async (route, body, exp) => {
@@ -546,7 +546,7 @@ test.describe('figure organization on a touch display', () => {
     await blockNode(page, photo).locator('img').tap();
     await page.getByRole('button', { name: 'Block properties' }).tap();
     await page.getByRole('button', { name: 'Move block to another step…' }).tap();
-    await page.getByRole('option', { name: /Explanation & video/ }).tap();
+    await page.getByRole('menuitem', { name: /Explanation & video/ }).tap();
     const position = page.getByLabel('Insert position');
     await position.selectOption('0');
     await page.getByRole('button', { name: 'Move block here' }).tap();
