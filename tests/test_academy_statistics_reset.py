@@ -2,6 +2,8 @@
 import csv
 import io
 
+from google.api_core.exceptions import InvalidArgument, ResourceExhausted
+
 from lecture_processor.services import elearning_account_service, elearning_service as service
 from tests.support.academy_analytics import academy_studio as academy_fixture
 from tests.test_academy_authors import (ADMIN, AUTHOR, OTHER, change_author, create_course,
@@ -140,3 +142,40 @@ def test_reset_error_rolls_back_deletion_and_collection_token(academy, monkeypat
 
 def test_reset_endpoint_is_exclusive_to_academy(client):
     assert client.post('/api/elearning/expeditions/course-id/responses/reset', headers=OWNER, json={}).status_code == 404
+
+
+def test_oversized_firestore_transactions_are_retried_in_smaller_pages_and_quotas_surface(academy, monkeypatch):
+    client, store = academy
+    course = _create_sample(client)
+    course_url, _ = paths(course)
+    report_url = course_url + '/responses'
+    for index in range(10):
+        store.put(f'elearning_responses/large-{index}', {'expedition_id':course['id'], 'session_id':str(index)})
+    version = client.get(report_url, headers=OWNER).json['statisticsReset']['version']
+    confirmation = {'version':version, 'confirmTitle':course['title']}
+    monkeypatch.setattr(service, 'RESPONSE_RESET_PAGE', 8)
+    attempts = []
+    atomic = store.atomic
+    def limited_atomic(operation):
+        def check(tx):
+            before = len(tx.data)
+            result = operation(tx)
+            removed = before - len(tx.data)
+            attempts.append(removed)
+            if removed > 2:
+                raise InvalidArgument('Transaction too large: maximum request size of 10485760 bytes')
+            return result
+        return atomic(check)
+    monkeypatch.setattr(store, 'atomic', limited_atomic)
+    assert client.post(report_url + '/reset', headers=OWNER, json=confirmation).status_code == 202
+    assert attempts == [8, 4, 2]
+    attempts.clear()
+    assert client.post(report_url + '/reset', headers=OWNER, json=confirmation).status_code == 202
+    assert attempts == [2]
+    quota_calls = []
+    def quota(operation):
+        quota_calls.append(True)
+        raise ResourceExhausted('Quota exceeded for read requests')
+    monkeypatch.setattr(store, 'atomic', quota)
+    assert client.post(report_url + '/reset', headers=OWNER, json=confirmation).status_code == 503
+    assert quota_calls == [True]

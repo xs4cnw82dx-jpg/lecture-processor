@@ -100,21 +100,30 @@ class ElearningStore:
     def list(self, collection: str, field=None, value=None, operator: str = '==', limit: int | None = 200, fields=None):
         return list(self.stream(collection, field, value, operator, limit, fields))
 
-    def dashboard_sessions(self, scope, start, end, fields):
-        field, value = scope
-        query = apply_where(self.db.collection('elearning_responses'), field, '==', value)
+    def dashboard_sessions(self, expedition_id, start, end, fields, *, generation=None):
+        # Use the same course/date composite index across resets. Older generations
+        # coexist only while a reset is clearing its bounded batches.
+        query = apply_where(self.db.collection('elearning_responses'), 'expedition_id', '==', expedition_id)
+        if generation:
+            fields = [*fields, 'statisticsScope']
+
+        def current(row):
+            return not generation or row.get('statisticsScope') == generation
+
         period = apply_where(apply_where(query, 'started_at', '>=', start), 'started_at', '<', end)
         count = 0
         try:
             for doc in period.select(fields).stream():
                 count += 1
-                yield decode(doc.to_dict())
+                row = decode(doc.to_dict())
+                if current(row):
+                    yield row
         except FailedPrecondition as exc:
             if count or 'index' not in str(exc).lower():
                 raise
             # Serve new projects through the existing single-course index while the period index builds.
-            rows = self.stream('elearning_responses', field, value, limit=None, fields=fields)
-            yield from (row for row in rows if start <= (row.get('started_at') or 0) < end)
+            rows = self.stream('elearning_responses', 'expedition_id', expedition_id, limit=None, fields=fields)
+            yield from (row for row in rows if start <= (row.get('started_at') or 0) < end and current(row))
         finally:
             record('reads', max(1, count))
 

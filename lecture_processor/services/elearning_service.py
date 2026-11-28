@@ -16,6 +16,7 @@ from urllib.parse import quote
 from copy import deepcopy
 
 from flask import current_app, g, jsonify, request, send_file, url_for
+from google.api_core.exceptions import InvalidArgument, ResourceExhausted
 from google.cloud.firestore_v1.field_path import FieldPath
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
@@ -1465,7 +1466,11 @@ def reset_statistics(runtime, expedition_id: str):
     if not isinstance(expected, str) or not expected or not isinstance(body.get('confirmTitle'), str):
         raise model.ElearningError('Confirm the expedition title and the statistics version.', 400)
 
+    page_limit = RESPONSE_RESET_PAGE
+    attempted_size = page_limit
+
     def clear_page(tx):
+        nonlocal attempted_size
         _, course, _, _, _ = access(runtime, expedition_id, required='owner', unit=tx,
                                      course_fields=('id', 'title', 'share', '_statisticsReset'))
         if course.get('title') != body['confirmTitle']:
@@ -1485,21 +1490,38 @@ def reset_statistics(runtime, expedition_id: str):
         # Legacy sessions have no generation field. Their course index also includes
         # new sessions; read only identifiers and protect the new generation here.
         old_scope = ('expedition_id' if expected == expedition_id else 'statisticsScope', expected)
-        page = tx.response_page(old_scope, reset.get('after', ''), RESPONSE_RESET_PAGE + 1)
-        pending = len(page) > RESPONSE_RESET_PAGE
-        for row in page[:RESPONSE_RESET_PAGE]:
+        size = attempted_size = min(page_limit, reset.get('pageSize', RESPONSE_RESET_PAGE))
+        page = tx.response_page(old_scope, reset.get('after', ''), size + 1)
+        pending = len(page) > size
+        for row in page[:size]:
             if row.get('expedition_id') == expedition_id and row.get('statisticsScope') != reset['version']:
                 tx.delete('elearning_responses/' + row['_id'])
         reset['pending'] = pending
         if pending:
-            reset['after'] = page[RESPONSE_RESET_PAGE - 1]['_id']
+            reset['after'] = page[size - 1]['_id']
+            reset['pageSize'] = size
         else:
             reset.pop('after', None)
+            reset.pop('pageSize', None)
         changes['_statisticsReset'] = reset
         tx.update_fields(_exp_path(expedition_id), changes)
         return pending
 
-    pending = _store(runtime).atomic(clear_page)
+    db = _store(runtime)
+    while True:
+        try:
+            pending = db.atomic(clear_page)
+            break
+        except (InvalidArgument, ResourceExhausted) as exc:
+            # Firestore includes deleted documents and their index entries in the
+            # transaction's 10 MiB limit. A failed commit made no changes.
+            message = str(exc).lower()
+            oversized = any(word in message for word in ('transaction', 'request', 'payload')) and any(
+                phrase in message for phrase in ('too large', 'too big', 'maximum request size', 'size limit',
+                                                 'size exceeds', '10485760', '10 mib', '10mib'))
+            if attempted_size == 1 or not oversized:
+                raise
+            page_limit = max(1, attempted_size // 2)
     return jsonify(reset=True, pending=pending), 202 if pending else 200
 
 

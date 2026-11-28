@@ -15,9 +15,13 @@ MAX_STEP_SECONDS = 4 * 60 * 60
 MAX_REVISION_WEEKS = 52
 
 
+def response_generation(course):
+    return (course.get('_statisticsReset') or {}).get('version')
+
+
 def response_scope(course):
     """Existing courses use their original index until their first statistics reset."""
-    version = (course.get('_statisticsReset') or {}).get('version')
+    version = response_generation(course)
     return ('statisticsScope', version) if version else ('expedition_id', course['id'])
 
 

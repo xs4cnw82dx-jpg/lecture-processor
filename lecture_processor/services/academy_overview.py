@@ -127,7 +127,7 @@ def dashboard(runtime, args):
             target = 'nl' if exp.get('defaultLanguage') == 'de' else 'de'
             entry['dueDate'] = (exp.get('_translationDates') or {}).get(target)
             continue
-        sessions = db.dashboard_sessions(reporting.response_scope(exp), previous, stop, FIELDS)
+        sessions = db.dashboard_sessions(eid, previous, stop, FIELDS, generation=reporting.response_generation(exp))
         group = PeriodStatistics()
         ids = [step['id'] for station in exp.get('modules') or [] if station.get('visibleToLearners', True)
                for step in station.get('steps') or []]
