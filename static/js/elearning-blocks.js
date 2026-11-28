@@ -1646,9 +1646,9 @@
           else loadT += v;
         });
         var statusMap = {
-          nl: loadT > resT ? uiText('Meer draaglast') : (resT > loadT ? uiText('Sterke draagkracht') : uiText('In balans')),
-          en: loadT > resT ? uiText('Higher load') : (resT > loadT ? uiText('Strong resources') : uiText('In balance')),
-          de: loadT > resT ? uiText('Höhere Belastung') : (resT > loadT ? uiText('Starke Ressourcen') : uiText('Im Gleichgewicht')),
+          nl: loadT > resT ? 'Meer draaglast' : (resT > loadT ? 'Sterke draagkracht' : 'In balans'),
+          en: loadT > resT ? 'Higher load' : (resT > loadT ? 'Strong resources' : 'In balance'),
+          de: loadT > resT ? 'Höhere Belastung' : (resT > loadT ? 'Starke Ressourcen' : 'Im Gleichgewicht'),
         };
         statusEl.textContent = (statusMap[lang] || statusMap.nl) + ' · ' + loadT + uiText(' vs ') + resT;
         svgSlot.textContent = '';
