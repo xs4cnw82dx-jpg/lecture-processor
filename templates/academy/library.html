@@ -1,5 +1,6 @@
 {% extends 'academy/base.html' %}
 {% from '_academy_copy.html' import tr with context %}
+{% from 'academy/_loading.html' import loading %}
 {% block body_attrs %} class="el-library-body academy-body"{% endblock %}
 {% block title %}{{ 'Expeditionen' if academy_locale == 'de' else 'Expedities' }} · xPED Academy{% endblock %}
 {% block head %}
@@ -38,7 +39,7 @@
       </div>
 
       <div class="el-dash-search-row">
-        <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">{{ tr("Loading your expeditions…") }}</div>
+        <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite"></div>
         <button type="button" id="ac-library-keys" class="btn small" hidden aria-haspopup="dialog" aria-controls="ac-library-help">{{ xped_copy('Sneltoetsen','Tastenkürzel') }} <kbd>?</kbd></button>
         <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="{{ tr("Search expeditions…") }}" aria-label="{{ tr("Search expeditions") }}" hidden>
       </div>
@@ -50,6 +51,7 @@
       <a class="btn" id="el-signin" href="{{ url_for('academy.signin', next=request.full_path.rstrip('?')) }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
       <button type="button" class="btn small" id="el-retry" hidden>{{ tr("Try again") }}</button>
       <section class="el-exp-list" id="el-dash-grid" aria-label="{{ tr("Expeditions") }}"></section>
+      {{ loading('library') }}
     </main>
 
       {% include '_academy_footer.html' %}

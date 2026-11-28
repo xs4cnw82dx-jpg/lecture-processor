@@ -467,6 +467,10 @@
 
   async function loadList(folderSelection) {
     var request = ++listRequest;
+    if (library && !grid.childElementCount) {
+      grid.setAttribute('aria-busy', 'true');
+      statusEl.textContent = uiText('Loading your expeditions…');
+    }
     retry.hidden = true;
     try {
       var data = await api('/api/elearning/expeditions');
@@ -493,6 +497,8 @@
       if (request !== listRequest || err.code === 'auth/session-changed') return;
       retry.hidden = false;
       statusEl.textContent = err.message;
+    } finally {
+      if (library && request === listRequest) grid.setAttribute('aria-busy', 'false');
     }
   }
 
@@ -689,6 +695,7 @@
     if (deleteDialog.open) deleteDialog.close();
     if (createDialog.open) createDialog.close();
     grid.replaceChildren();
+    if (library) grid.setAttribute('aria-busy', 'false');
     if (library) library.showHelp(false);
     document.getElementById('el-delete-dialog-msg').textContent = '';
     titleInput.value = '';

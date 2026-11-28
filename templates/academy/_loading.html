@@ -1,0 +1,10 @@
+{% macro loading(kind) -%}
+  <div class="ac-loading ac-loading-{{ kind }}" aria-hidden="true">
+    {% if kind == 'report' %}
+      <div class="ac-loading-tiles">{% for _ in range(4) %}<span></span>{% endfor %}</div>
+    {% endif %}
+    {% for _ in range(4) %}
+      <div class="ac-loading-row"><span></span><span></span><span></span><span></span></div>
+    {% endfor %}
+  </div>
+{%- endmacro %}

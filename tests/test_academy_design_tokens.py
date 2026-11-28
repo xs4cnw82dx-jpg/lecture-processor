@@ -57,3 +57,16 @@ def test_academy_components_use_palette_tokens_and_supported_font_weights():
                 assert not re.search(r'#[a-fA-F0-9]{3,8}\b', value), (path.name, prop, value)
             if prop == 'font-weight' or prop.startswith('--font-weight'):
                 assert value.strip() not in ('800', '900'), (path.name, prop, value)
+
+
+def test_studio_component_corners_use_the_shared_shape_scale():
+    """Protect the component scale, while allowing circles, square edges and artwork."""
+    light, _ = _palettes()
+    assert {name: value for name, value in light.items() if name.startswith('--ac-radius-')} == {
+        '--ac-radius-control': '6px', '--ac-radius-surface': '10px', '--ac-radius-round': '999px',
+    }
+    files = [FOUNDATION, *(FOUNDATION.parent.glob('academy-*.css')), FOUNDATION.parent / 'academy.css']
+    for path in files:
+        for value in re.findall(r'(?<![\w-])border-radius\s*:\s*([^;}]+)', path.read_text()):
+            for part in value.strip().split():
+                assert part in {'0', 'var(--ac-radius-control)', 'var(--ac-radius-surface)', 'var(--ac-radius-round)'} or part.endswith('%'), (path.name, value)
