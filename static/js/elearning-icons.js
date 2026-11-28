@@ -78,13 +78,17 @@
   /* Smooth animated accessible dropdown menu component (replaces raw OS selects & menus). */
   var closeActiveMenu = null;
 
+  var descriptionCount = 0;
   function createDropdown(options) {
     var wrap = document.createElement('div');
     wrap.className = 'el-dd' + (options.className ? (' ' + options.className) : '');
     var trigger = document.createElement('button');
     trigger.type = 'button';
     trigger.className = options.triggerClass || 'el-dd-trigger';
-    trigger.setAttribute('aria-haspopup', 'menu');
+    // Item 34: a value picker (select: true) is a listbox of options; action menus stay menus.
+    var asSelect = options.select === true;
+    var itemRole = asSelect ? 'option' : 'menuitem';
+    trigger.setAttribute('aria-haspopup', asSelect ? 'listbox' : 'menu');
     trigger.setAttribute('aria-expanded', 'false');
     if (options.ariaLabel) trigger.setAttribute('aria-label', options.ariaLabel);
 
@@ -98,7 +102,7 @@
 
     var menu = document.createElement('div');
     menu.className = 'el-dd-menu' + (options.align === 'right' ? ' is-right' : '');
-    menu.setAttribute('role', 'menu');
+    menu.setAttribute('role', asSelect ? 'listbox' : 'menu');
 
     var isOpen = false;
     function close() { setOpen(false); }
@@ -139,11 +143,20 @@
         if (item.href) { btn.href = item.href; btn.target = '_blank'; btn.rel = 'noopener'; }
         else btn.type = 'button';
         btn.className = 'el-dd-item' + (item.danger ? ' is-danger' : '') + (item.value !== undefined && item.value === currentValue ? ' is-selected' : '');
-        btn.setAttribute('role', 'menuitem');
+        btn.setAttribute('role', itemRole);
+        if (asSelect) btn.setAttribute('aria-selected', String(item.value !== undefined && item.value === currentValue));
         if (item.icon) btn.appendChild(icon(item.icon, 15));
         var txt = document.createElement('span');
         txt.textContent = item.label;
         btn.appendChild(txt);
+        if (item.description) {
+          var desc = document.createElement('span');
+          desc.className = 'el-dd-item-desc';
+          desc.id = 'el-dd-desc-' + (++descriptionCount);
+          desc.textContent = item.description;
+          btn.appendChild(desc);
+          btn.setAttribute('aria-describedby', desc.id);
+        }
         if (item.value !== undefined && item.value === currentValue) {
           activeLabel = item.shortLabel || item.label;
           var chk = icon('check', 14);
@@ -164,10 +177,10 @@
 
     trigger.addEventListener('click', function () {
       setOpen(!isOpen);
-      if (isOpen) menu.querySelector('[role="menuitem"]')?.focus();
+      if (isOpen) (menu.querySelector('[aria-selected="true"]') || menu.querySelector('[role="' + itemRole + '"]'))?.focus();
     });
     wrap.addEventListener('keydown', function (event) {
-      var items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+      var items = Array.from(menu.querySelectorAll('[role="' + itemRole + '"]'));
       if (!items.length) return;
       if (event.key === 'Escape' && isOpen) {
         event.preventDefault();

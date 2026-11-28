@@ -1016,3 +1016,10 @@
 @media (max-width: 720px) {
   [data-product="academy"] nav.xc-tabs.academy-tab-row { flex-wrap: nowrap; }
 }
+
+/* Item 34: option descriptions in value pickers. */
+[data-product="academy"] .el-dd-item .el-dd-item-desc { display: block; flex-basis: 100%; margin-top: 2px; color: var(--theme-muted); font-size: 12.5px; line-height: 1.4; white-space: normal; }
+[data-product="academy"] .el-dd-menu[role="listbox"] .el-dd-item { flex-wrap: wrap; }
+[data-product="academy"] .el-dd-menu[role="listbox"] { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+/* A value picker shows its value as text, not as a button label. */
+[data-product="academy"] .el-dd-trigger[aria-haspopup="listbox"] { font-weight: 400; }

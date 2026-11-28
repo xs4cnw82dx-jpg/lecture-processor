@@ -156,7 +156,8 @@ async function inspect(page, block) {
 }
 async function select(page, label, option) {
   await page.getByRole('button', {name:label, exact:true}).click();
-  await page.getByRole('menuitem', {name:option}).click();
+  // Editor fields are listboxes of options; the learner's language menu stays a menu.
+  await page.getByRole('option', {name:option}).or(page.getByRole('menuitem', {name:option})).click();
 }
 test('format selected words, three lines and a DOI in place and inspect learner typography', async ({ page }) => {
   const rich = make('richtext', {body:local('one two three')});
