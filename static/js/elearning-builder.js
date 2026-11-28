@@ -4890,6 +4890,32 @@
     });
   }
 
+  var previewAppearanceButtons = document.querySelectorAll('[data-academy-preview-appearance]');
+  if (previewAppearanceButtons.length) {
+    var preferenceKey = 'xped-preview-appearance';
+    var previewAppearance = 'light';
+    try { previewAppearance = sessionStorage.getItem(preferenceKey) || 'light'; } catch (_) { /* Session storage is optional. */ }
+    function setPreviewAppearance(value) {
+      var appearance = value === 'dark' ? 'dark' : 'light';
+      document.querySelectorAll('.xped-surface-scope[data-xped-theme]').forEach(function (canvas) {
+        canvas.dataset.learnerAppearance = appearance;
+      });
+      previewAppearanceButtons.forEach(function (button) {
+        var selected = button.dataset.academyPreviewAppearance === appearance;
+        button.classList.toggle('is-active', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+    }
+    previewAppearanceButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        var appearance = button.dataset.academyPreviewAppearance;
+        setPreviewAppearance(appearance);
+        try { sessionStorage.setItem(preferenceKey, appearance); } catch (_) { /* Session storage is optional. */ }
+      });
+    });
+    setPreviewAppearance(previewAppearance);
+  }
+
   var pvDesk = document.getElementById('el-pv-desktop');
   var pvMob = document.getElementById('el-pv-mobile');
   if (pvDesk && pvMob) {

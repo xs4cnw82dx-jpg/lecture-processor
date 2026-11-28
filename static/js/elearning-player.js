@@ -6,6 +6,15 @@
   var Blocks = window.XpedElearningBlocks;
   var RouteMap = window.XpedElearningRouteMap;
 
+  if (document.body.dataset.siteTitle === 'xPED Academy') {
+    var learnerScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    var updateLearnerScheme = function () {
+      document.body.dataset.learnerAppearance = learnerScheme.matches ? 'dark' : 'light';
+    };
+    updateLearnerScheme();
+    learnerScheme.addEventListener('change', updateLearnerScheme);
+  }
+
   var shareToken = document.body.dataset.shareToken || '';
   var params = new URLSearchParams(window.location.search);
   var cohort = (params.get('cohort') || '').trim() || 'default';

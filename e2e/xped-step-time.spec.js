@@ -34,9 +34,10 @@ async function openCourse(page, url, token) {
   return bodies;
 }
 
-async function consentToShare(page) {
+async function consentToShare(page, timed) {
   await page.getByRole('button', { name: 'Start de xPEDitie' }).click();
   await page.getByRole('radio', { name: new RegExp(Model.ui('nl', 'consentShare')) }).check();
+  await expect(page.getByText(Model.ui('nl', timed ? 'authorAccessWithTime' : 'authorAccess'))).toBeVisible();
   await page.getByRole('button', { name: Model.ui('nl', 'next'), exact: true }).click();
 }
 
@@ -50,8 +51,15 @@ async function hidePage(page) {
 test('a sharing learner reports active time per step, without idle or hidden time', async ({ academyPage: page, academyOrigin, request }) => {
   const { token, id } = await publishAcademyCourse(request, academyOrigin);
   const bodies = await openCourse(page, academyOrigin + '/start/' + token, token);
+  const canvas = page.locator('body');
+  await page.emulateMedia({colorScheme:'dark'});
+  await expect(canvas).toHaveAttribute('data-learner-appearance','dark');
+  const night = await canvas.evaluate(node => getComputedStyle(node).getPropertyValue('--xped-canvas'));
+  await page.emulateMedia({colorScheme:'light'});
+  await expect(canvas).toHaveAttribute('data-learner-appearance','light');
+  expect(await canvas.evaluate(node => getComputedStyle(node).getPropertyValue('--xped-canvas'))).not.toBe(night);
   const first = 'first', second = 'second';
-  await consentToShare(page);
+  await consentToShare(page, true);
 
   await page.clock.runFor(30_000);
   await page.getByRole('button', { name: Model.ui('nl', 'next'), exact: true }).click();
@@ -111,7 +119,7 @@ test('a new Lecture Processor sharing choice sends progress without measuring ti
   await page.route(endpoint, route => route.fulfill({json:{expedition:course}}));
   await page.route(endpoint + '/responses', route => route.fulfill({json:{saved:true}}));
   const bodies = await openCourse(page, '/elearning/p/' + token, token);
-  await consentToShare(page);
+  await consentToShare(page, false);
   await page.clock.runFor(30_000);
   await page.getByRole('button', {name:Model.ui('nl','next'),exact:true}).click();
   await page.clock.runFor(1_000);

@@ -124,3 +124,84 @@ html[lang="de"] .academy-error-brand img { width: 2.5rem; padding: .1rem; backgr
 .academy-learner-error { min-height: 74vh; color: var(--xped-navy-deep); }
 .academy-learner-error .academy-error-art { background-color: var(--xped-mint-soft); }
 .academy-learner-error-footer { margin-inline: auto; padding: 1.25rem; text-align: center; }
+
+/* Course colours belong to the learner. The Studio preview chooses the same
+   palette independently of both the author's workspace and the device. */
+.xped-surface-scope[data-xped-theme][data-learner-appearance="dark"] {
+  color-scheme: dark;
+  --xped-canvas: #0a161e;
+  --xped-surface: #132630;
+  --xped-surface-soft: #1d333e;
+  --xped-border: #496270;
+  --xped-border-strong: #748f9c;
+  --xped-navy: #dfedf2;
+  --xped-ink: #eff5f5;
+  --xped-ink-muted: #b1c7cf;
+  --xped-blue: #72c5f6;
+  --xped-blue-hover: #a9e2ff;
+  --xped-blue-soft: #193b50;
+  --xped-yellow-soft: #443c20;
+  --xped-mint: #66d8aa;
+  --xped-mint-soft: #173d36;
+  --xped-coral: #ffa89d;
+  --xped-coral-soft: #492e30;
+  --learner-on-bright: #0b2330;
+  --journey-ink: var(--xped-ink);
+  --journey-meadow: #214638;
+  --journey-dim: var(--xped-surface-soft);
+  --journey-leaf: var(--xped-mint);
+  --journey-water: var(--xped-blue);
+  --journey-outline: var(--xped-border-strong);
+  --journey-edge: var(--xped-border);
+  --journey-danger: var(--xped-coral);
+  --xped-paper: var(--xped-surface);
+  color: var(--xped-ink);
+}
+.xped-surface-scope[data-xped-theme="xped-clean"][data-learner-appearance="dark"] {
+  --xped-canvas: #0b1827;
+  --xped-surface: #142a3b;
+}
+.xped-surface-scope[data-xped-theme="high-contrast"][data-learner-appearance="dark"] {
+  --xped-canvas: #000;
+  --xped-surface: #090b0c;
+  --xped-surface-soft: #151a1d;
+  --xped-border: #d5e2e9;
+  --xped-border-strong: #fff;
+  --xped-ink: #fff;
+  --xped-ink-muted: #e4ebed;
+}
+[data-learner-appearance="dark"] :is(.xped-btn-primary, .xped-btn-sun, .xped-plan-chip.is-selected,
+  .xped-journey-stop.is-active .xped-journey-node, .xped-option-btn.is-selected,
+  .xped-option-btn.is-correct .xped-option-state, .xped-bps-tab.is-active,
+  .el-text-scale-group button.is-active, .el-theme-toggle-group button.is-active,
+  .el-ms-dot.is-done, .el-ms-dot.is-next, .el-rating-btn.is-selected) { color: var(--learner-on-bright); }
+[data-learner-appearance="dark"] :is(.el-review-panel, .el-pilot-card, .el-rating-btn,
+  .el-theme-toggle-group, .el-text-scale-group, .xped-sources-box, .xped-sources-body) { background: var(--xped-surface); }
+[data-learner-appearance="dark"] .el-rating-btn.is-selected { background: var(--xped-yellow); }
+[data-learner-appearance="dark"] .xped-sources-body { color: var(--xped-ink); }
+[data-learner-appearance="dark"] .xped-sources-shell { background: var(--xped-mint-soft); }
+[data-learner-appearance="dark"] .xped-source-link { color: var(--xped-blue); }
+[data-learner-appearance="dark"] .xped-option-btn.is-correct { color: var(--xped-ink); }
+
+
+/* The journey cover and its typography match in the player and author canvas. */
+.xped-surface-scope[data-learner-appearance] .xped-hero-band {
+  --learner-cover-ink: var(--journey-ink, #062940);
+  --learner-cover-surface: var(--journey-meadow, #d9efdf);
+  background: var(--learner-cover-surface);
+  color: var(--learner-cover-ink);
+}
+.xped-surface-scope[data-learner-appearance] .xped-hero-band :is(.xped-hero-kicker, .xped-hero-title, .xped-hero-subtitle) {
+  color: var(--learner-cover-ink);
+}
+.xped-surface-scope[data-learner-appearance] .xped-hero-art::before { background: none; }
+[data-learner-appearance="dark"].xped-surface-scope .el-player-brand img { filter: brightness(0) invert(1); }
+[data-learner-appearance="dark"].xped-surface-scope .el-milestone-card { background: var(--xped-navy-deep); }
+[data-learner-appearance="dark"].xped-surface-scope :is(.el-text-scale-group, .el-theme-toggle-group) button[aria-checked="true"] {
+  background: var(--xped-surface);
+  color: var(--xped-ink);
+}
+[data-learner-appearance="dark"][data-xped-theme="high-contrast"].xped-surface-scope .xped-hero-band {
+  background: var(--xped-canvas);
+  border: 2px solid var(--xped-border-strong);
+}
