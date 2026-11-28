@@ -3,7 +3,8 @@
 
   const de = document.documentElement.lang === 'de';
   const copy = (nl, german) => de ? german : nl;
-  const num = value => new Intl.NumberFormat(de ? 'de-DE' : 'nl-NL').format(value);
+  // A missing count shows as a dash, never as NaN.
+  const num = value => value === null || value === undefined || Number.isNaN(Number(value)) ? '—' : new Intl.NumberFormat(de ? 'de-DE' : 'nl-NL').format(value);
   const pct = (n, d) => d ? new Intl.NumberFormat(de ? 'de-DE' : 'nl-NL', { style: 'percent', maximumFractionDigits: 1 }).format(n / d) : '—';
   const duration = s => typeof s === 'number' ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : '—';
   const el = (tag, text) => {
@@ -230,7 +231,7 @@
     funnel.append(reachTable);
     for (const card of document.querySelectorAll('#el-resp-blocks > [data-step]')) {
       const rows = Array.from(card.querySelectorAll('.el-chart-row'), r => [r.querySelector('.el-chart-label')?.textContent || '',r.querySelector('.el-chart-value')?.textContent || '']);
-      if (rows.length) card.append(tableToggle(card.querySelector('h3')?.textContent || '',[copy('Antwoord','Antwort'),copy('Aantal en aandeel','Anzahl und Anteil')],rows));
+      if (rows.length) card.append(tableToggle(card.querySelector('h2, h3')?.textContent || '',[copy('Antwoord','Antwort'),copy('Aantal en aandeel','Anzahl und Anteil')],rows));
       card.append(button(copy('Stap bekijken', 'Schritt ansehen'), () => openStep(card.dataset.step)));
     }
   }
