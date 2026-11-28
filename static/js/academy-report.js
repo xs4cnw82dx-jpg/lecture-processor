@@ -62,14 +62,14 @@
 
   function activityName(type, lang) {
     var names = {
-      mcq: [uiText('Meerkeuzevraag'), uiText('Multiple choice'), uiText('Multiple-Choice-Frage')],
-      myth_fact: [uiText('Feit of fabel'), uiText('Myth or fact'), uiText('Mythos oder Fakt')],
-      scale: [uiText('Schaalvraag'), uiText('Rating scale'), uiText('Skalenfrage')],
-      wordcloud: [uiText('Woordwolk'), uiText('Word cloud'), uiText('Wortwolke')],
-      ranking: [uiText('Rangschikking'), uiText('Ranking'), uiText('Rangfolge')],
-      reflection: [uiText('Reflectie'), uiText('Reflection'), uiText('Reflexion')],
-      balance_scale: [uiText('Draagkracht en draaglast'), uiText('Balance scale'), uiText('Belastung und Ressourcen')],
-      mini_plan: [uiText('Persoonlijk miniplan'), uiText('Personal mini-plan'), 'Persönlicher Mini-Plan'],
+      mcq: ['Meerkeuzevraag', 'Multiple choice', 'Multiple-Choice-Frage'],
+      myth_fact: ['Feit of fabel', 'Myth or fact', 'Mythos oder Fakt'],
+      scale: ['Schaalvraag', 'Rating scale', 'Skalenfrage'],
+      wordcloud: ['Woordwolk', 'Word cloud', 'Wortwolke'],
+      ranking: ['Rangschikking', 'Ranking', 'Rangfolge'],
+      reflection: ['Reflectie', 'Reflection', 'Reflexion'],
+      balance_scale: ['Draagkracht en draaglast', 'Balance scale', 'Belastung und Ressourcen'],
+      mini_plan: ['Persoonlijk miniplan', 'Personal mini-plan', 'Persönlicher Mini-Plan'],
     };
     return names[type] ? names[type][lang === 'nl' ? 0 : lang === 'de' ? 2 : 1] : Model.getBlockMeta(type).label;
   }

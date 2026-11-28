@@ -5,6 +5,14 @@
 :is(.academy-report-scroll,.academy-chart-table) :is(th,td) { padding: .6rem .7rem; border-block-end: 1px solid var(--theme-line); text-align: start; }
 :is(.academy-report-scroll,.academy-chart-table) caption { text-align: start; color: var(--theme-muted); padding-block: .5rem; }
 .academy-report-scroll th button,.academy-report-scroll td button,.academy-report-step { border: 0; padding: .2rem 0; background: transparent; color: var(--theme-accent-ink); text-align: start; font: inherit; }
+.academy-report-scroll table { min-width: 59rem; }
+.academy-report-scroll :is(th,td) { overflow-wrap: normal; word-break: normal; }
+.academy-report-scroll :is(th,td):first-child { position: sticky; inset-inline-start: 0; width: 10rem; max-width: 13rem; background: var(--theme-surface); }
+.academy-report-scroll :is(th,td):first-child button { max-width: 100%; overflow-wrap: anywhere; }
+.academy-report-scroll .academy-step-line td:first-child { background: var(--theme-surface-soft); }
+.academy-report-scroll td:not(:first-child) { white-space: nowrap; }
+.academy-chart-table table { width: max-content; min-width: 100%; }
+.academy-chart-table :is(th,td) { max-width: 28rem; overflow-wrap: normal; word-break: normal; }
 .academy-report-scroll th button { font-weight: 600; }
 .academy-report-scroll [aria-expanded]::before { content: '▸ '; }
 .academy-report-scroll [aria-expanded=true]::before { content: '▾ '; }
