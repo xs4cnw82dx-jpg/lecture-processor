@@ -287,7 +287,7 @@
     return authFetch(path, options).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
         if (!isCurrent()) throw new Error('Your account changed. Please try again.');
-        if (!response.ok) throw authUtils.verificationError(response, payload) || new Error(payload.error || 'Request failed');
+        if (!response.ok) throw authUtils.verificationError?.(response, payload) || new Error(payload.error || 'Request failed');
         return payload;
       });
     });
@@ -838,7 +838,7 @@
       return response.json().catch(function () { return {}; }).then(function (payload) {
         if (!isCurrent()) throw new Error('Your account changed. Sign in again to retry.');
         if (!response.ok) {
-          var message = authUtils.verificationError(response, payload)?.message || creditUtils.formatInsufficient(payload) || payload.error || 'Could not transcribe voice note';
+          var message = authUtils.verificationError?.(response, payload)?.message || creditUtils.formatInsufficient(payload) || payload.error || 'Could not transcribe voice note';
           if (response.status === 402 && voiceCreditSnapshot()?.scheme === 2) {
             void refreshVoiceCredits(true).catch(function () {});
             throw creditPause(message);

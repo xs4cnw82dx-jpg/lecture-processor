@@ -231,7 +231,7 @@
         return;
       }
       if (!response.ok || !payload.checkout_url) {
-        throw new Error(authUtils.verificationError(response, payload)?.message || payload.error || 'Could not start checkout');
+        throw new Error(authUtils.verificationError?.(response, payload)?.message || payload.error || 'Could not start checkout');
       }
       window.location.href = payload.checkout_url;
       return;
@@ -325,7 +325,7 @@
       var payload = await response.json().catch(function () { return {}; });
       if (!isCurrent()) return;
       if (!response.ok) {
-        setHistoryEmpty(authUtils.verificationError(response, payload)?.message || 'Could not load purchase history right now.');
+        setHistoryEmpty(authUtils.verificationError?.(response, payload)?.message || 'Could not load purchase history right now.');
         return;
       }
       renderPurchaseHistory(payload.purchases || []);
@@ -364,7 +364,7 @@
       var response = await authFetch('/api/confirm-checkout-session?session_id=' + encodeURIComponent(sessionId));
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) {
-        var verification = authUtils.verificationError(response, payload)?.message;
+        var verification = authUtils.verificationError?.(response, payload)?.message;
         if (verification) return { ok: false, status: 'email_not_verified', error: verification };
         return {
           ok: false,

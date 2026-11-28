@@ -159,7 +159,11 @@
       return send(false)
         .then(async function (response) {
           session.assertCurrent();
-          if (!allowRefresh) return response;
+          // A streamed upload, including a consumed Request passed as the URL,
+          // cannot be sent a second time. Let the caller handle the denial.
+          var body = requestOptions.body;
+          var singleUseBody = body ? typeof body.getReader === 'function' : url && url.bodyUsed;
+          if (!allowRefresh || singleUseBody) return response;
           if (response.status === 401) return send(true);
           if (response.status === 403 && typeof response.clone === 'function') {
             // Only an explicit rejection of an out-of-date verification claim is retryable.

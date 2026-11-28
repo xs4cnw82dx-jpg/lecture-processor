@@ -160,6 +160,41 @@ test('a stale verification claim refreshes once for its original user', async ()
   assert.equal(h.requests.length, 2);
 });
 
+for (const status of [401, 403]) {
+  for (const input of ['stream', 'request']) {
+    test(`a ${status} with a consumed ${input} returns the original denial`, async () => {
+      const body = new Blob(['fixture']).stream();
+      const options = { method: 'POST', body, duplex: 'half' };
+      const url = 'https://example.test/upload';
+      const denial = { error_code: 'email_not_verified' };
+      const h = harness(async (resource, init) => {
+        assert.equal(await new Request(resource, init).text(), 'fixture');
+        return Response.json(denial, { status });
+      });
+      const response = input === 'stream'
+        ? await h.client.authFetch(url, options)
+        : await h.client.authFetch(new Request(url, options));
+      assert.equal(response.status, status);
+      assert.deepEqual(await response.json(), denial);
+      assert.equal(h.requests.length, 1);
+    });
+  }
+}
+
+test('a verified retry can resend a form upload with the same fields', async () => {
+  const form = new FormData();
+  form.set('title', 'fixture');
+  const h = harness(async (resource, init) => {
+    assert.equal((await new Request(resource, init).formData()).get('title'), 'fixture');
+    return h.requests.length === 1
+      ? Response.json({ error_code: 'email_not_verified' }, { status: 403 })
+      : Response.json({ ok: true });
+  });
+  const response = await h.client.authFetch('https://example.test/upload', { method: 'POST', body: form });
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.equal(h.requests.length, 2);
+});
+
 test('a persistent verification failure retains its body and never retries twice', async () => {
   const failure = { error_code: 'email_not_verified', error: 'Email not verified' };
   const h = harness(() => Response.json(failure, { status: 403 }));

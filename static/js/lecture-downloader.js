@@ -116,7 +116,7 @@
 
   async function responseError(response, attempt) {
     var payload = await response.json().catch(function () { return {}; });
-    var verification = authUtils.verificationError(response, payload);
+    var verification = authUtils.verificationError?.(response, payload);
     if (verification) return verification;
     if (attemptIsCurrent(attempt) && response.status >= 400 && response.status < 500 && response.status !== 429) {
       pendingJob = null;

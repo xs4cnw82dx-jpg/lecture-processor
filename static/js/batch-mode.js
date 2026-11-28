@@ -850,7 +850,7 @@
       }).then(function (result) {
         if (!isCurrent()) throw new Error('Your account changed. Please import the audio again.');
         if (!result.response.ok) {
-          throw authUtils.verificationError(result.response, result.payload) || new Error(String(result.payload.error || 'Could not read audio import status.'));
+          throw authUtils.verificationError?.(result.response, result.payload) || new Error(String(result.payload.error || 'Could not read audio import status.'));
         }
         var status = String(result.payload.status || '').trim().toLowerCase();
         if (status === 'complete' && result.payload.audio_import_token) {
@@ -930,7 +930,7 @@
     }).then(function (result) {
       if (!isCurrent()) return { ok: false, reason: 'account-changed' };
         if (!result.response.ok) {
-          setRowAudioImportStatus(rowNode, authUtils.verificationError(result.response, result.payload)?.message || 'Import failed: ' + String(result.payload.error || 'Could not import audio from URL.'), 'error');
+          setRowAudioImportStatus(rowNode, authUtils.verificationError?.(result.response, result.payload)?.message || 'Import failed: ' + String(result.payload.error || 'Could not import audio from URL.'), 'error');
           return { ok: false, reason: 'import-failed' };
         }
       var readyPayload = result.payload.audio_import_token
