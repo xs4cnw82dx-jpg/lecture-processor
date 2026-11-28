@@ -588,12 +588,13 @@ def test_stripe_webhook_refunds_payment_instead_of_recreating_deleted_account(cl
     event = {"type": "checkout.session.completed", "data": {"object": session}}
     refunds = []
     purchase_updates = []
+    monkeypatch.setattr(core.stripe.Refund, "list", lambda **_kwargs: SimpleNamespace(auto_paging_iter=lambda: iter(())))
     monkeypatch.setattr(core.stripe.Webhook, "construct_event", lambda *_args, **_kwargs: event)
     monkeypatch.setattr(core.stripe.checkout.Session, "retrieve", lambda _session_id, **_kwargs: session)
     monkeypatch.setattr(
         core.stripe.Refund,
         "create",
-        lambda **kwargs: refunds.append(dict(kwargs)) or {"id": "re_deleted"},
+        lambda **kwargs: refunds.append(dict(kwargs)) or {"id": "re_deleted", "status": "succeeded"},
     )
     monkeypatch.setattr(
         core.purchases_repo,
@@ -2202,3 +2203,89 @@ def test_safe_query_docs_in_window_skips_streaming_fallback(monkeypatch):
 
     assert docs == []
     assert stream_called["value"] is False
+
+
+@pytest.mark.parametrize(('method', 'url', 'target'), [
+    ('POST', '/api/create-checkout-session', 'create'),
+    ('GET', '/api/confirm-checkout-session?session_id=cs_example', 'fulfill'),
+    ('GET', '/api/purchase-history', 'history'),
+])
+def test_unexpected_payment_errors_keep_json_contract_and_hide_internal_details(
+        allow_account_writes, client, monkeypatch, method, url, target):
+    monkeypatch.setitem(client.application.config, 'PROPAGATE_EXCEPTIONS', False)
+    monkeypatch.setattr(core, 'verify_firebase_token', lambda _req: {'uid': 'u2', 'email': 'test@example.com'})
+    monkeypatch.setattr(rate_limiter, 'check_rate_limit', lambda **_kwargs: (True, 0))
+    monkeypatch.setattr(core, 'PUBLIC_BASE_URL', 'https://checkout.example.test')
+
+    def unexpected(*_args, **_kwargs):
+        raise KeyError('internal-debug-only')
+
+    if target == 'history':
+        monkeypatch.setattr(core.purchases_repo, 'list_by_uid_recent', unexpected)
+    elif target == 'fulfill':
+        monkeypatch.setattr(core.stripe.checkout.Session, 'retrieve', lambda *_a, **_k: {'metadata': {'uid': 'u2'}})
+        monkeypatch.setattr(billing_purchases, 'process_checkout_session_credits', unexpected)
+    else:
+        monkeypatch.setattr(core.stripe.checkout.Session, 'create', unexpected)
+    result = client.open(url, method=method, json={'bundle_id': 'lecture_5'})
+    assert result.status_code == 500
+    assert result.is_json and isinstance(result.json.get('error'), str)
+    assert 'internal-debug-only' not in result.text
+
+
+def test_deleted_checkout_retry_after_provider_forgets_idempotency_key(client, monkeypatch):
+    from google.api_core.exceptions import ServiceUnavailable
+
+    session = {'id': 'cs_late', 'payment_intent': 'pi_late'}
+    event = {'type': 'checkout.session.completed', 'data': {'object': session}}
+    monkeypatch.setattr(core, 'STRIPE_WEBHOOK_SECRET', 'synthetic-secret')
+    monkeypatch.setattr(core.stripe.Webhook, 'construct_event', lambda *_a, **_kw: event)
+    monkeypatch.setattr(core.stripe.checkout.Session, 'retrieve', lambda *_a, **_kw: session)
+    monkeypatch.setattr(billing_purchases, 'process_checkout_session_credits', lambda *_a, **_kw: (False, 'account_deleted'))
+    refunds, saved, creations = [], [], []
+
+    def list_refunds(*, payment_intent, **_opts):
+        assert payment_intent == 'pi_late'
+        return SimpleNamespace(auto_paging_iter=lambda: iter(refunds))
+
+    def create(*, payment_intent, metadata, idempotency_key):
+        creations.append(idempotency_key)
+        if len(creations) > 1:
+            raise core.stripe.error.StripeError('Idempotency entry expired. Charge already refunded.')
+        refund = {'id': 're_late', 'status': 'succeeded', 'payment_intent': payment_intent, 'metadata': metadata}
+        refunds.append(refund)
+        return refund
+
+    def persist(_db, _sid, payload, merge=False):
+        saved.append(dict(payload))
+        if len(saved) == 1:
+            raise ServiceUnavailable('Synthetic database outage')
+
+    monkeypatch.setattr(core.stripe.Refund, 'list', list_refunds)
+    monkeypatch.setattr(core.stripe.Refund, 'create', create)
+    monkeypatch.setattr(core.purchases_repo, 'set_doc', persist)
+    assert client.post('/api/stripe-webhook', data=b'{}').status_code == 500
+    # A separate refund for the same payment is newest. Only our matching session can settle this purchase.
+    refunds.insert(0, {'id': 're_other', 'status': 'succeeded', 'payment_intent': 'pi_late', 'metadata': {
+        'reason': 'account_deleted', 'checkout_session_id': 'cs_unrelated'}})
+    assert client.post('/api/stripe-webhook', data=b'{}').status_code == 200
+    assert creations == ['deleted-account-checkout-cs_late']
+    assert saved[-1]['stripe_refund_id'] == 're_late'
+    assert saved[-1]['payment_status'] == 'refunded_deleted_account'
+    assert saved[-1]['uid'] == ''
+
+
+@pytest.mark.parametrize('status', ['pending', 'requires_action', 'failed', 'canceled'])
+def test_unsettled_deleted_checkout_refund_never_creates_another_or_records_success(client, monkeypatch, status):
+    session = {'id': 'cs_review', 'payment_intent': 'pi_review'}
+    metadata = {'reason': 'account_deleted', 'checkout_session_id': 'cs_review'}
+    refund = {'id': 're_review', 'metadata': metadata, 'status': status, 'payment_intent': 'pi_review'}
+    monkeypatch.setattr(core, 'STRIPE_WEBHOOK_SECRET', 'synthetic-secret')
+    monkeypatch.setattr(core.stripe.Webhook, 'construct_event', lambda *_a: {
+        'type': 'checkout.session.completed', 'data': {'object': session}})
+    monkeypatch.setattr(core.stripe.checkout.Session, 'retrieve', lambda *_a, **_k: session)
+    monkeypatch.setattr(billing_purchases, 'process_checkout_session_credits', lambda *_a, **_k: (False, 'account_deleted'))
+    monkeypatch.setattr(core.stripe.Refund, 'list', lambda **_kw: SimpleNamespace(auto_paging_iter=lambda: iter([refund])))
+    monkeypatch.setattr(core.stripe.Refund, 'create', lambda **_kw: pytest.fail('duplicate refund'))
+    monkeypatch.setattr(core.purchases_repo, 'set_doc', lambda *_a, **_k: pytest.fail('unsettled refund persisted as success'))
+    assert client.post('/api/stripe-webhook', data=b'{}').status_code == 500

@@ -1,5 +1,5 @@
 from lecture_processor.runtime.container import resolve_runtime as _resolve_runtime
-from lecture_processor.domains.billing import job_charges
+from lecture_processor.domains.billing import job_charges, ledger
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.runtime_jobs import execution
 from lecture_processor.domains.runtime_jobs import store as runtime_jobs_store
@@ -49,18 +49,30 @@ def _pending_refund_components(job):
     """Only explicit failed settlements on terminal jobs are retryable."""
     if job.get('status') not in {'error', 'complete', 'completed'}:
         return set()
-    receipt = job.get('billing_receipt') or {}
-    components = receipt.get('components') or {}
-    charged = receipt.get('charged') or {}
-    journaled = bool(job.get('charge_ref') or receipt.get('charge_ref'))
+    receipt = job.get('billing_receipt')
+    receipt = receipt if isinstance(receipt, dict) else {}
     pending = set()
     if job.get('status') == 'error' and job.get('credit_refund_pending'):
-        if ('primary' in components if journaled else charged.get(job.get('credit_deducted'), 0)):
-            pending.add('primary')
+        pending.add('primary')
     if int(job.get('extra_slides_refund_pending', 0) or 0) > 0:
-        if ('extras' in components if journaled else charged.get('slides_credits', 0)):
-            pending.add('extras')
+        pending.add('extras')
+    charge_ref = job.get('charge_ref') or receipt.get('charge_ref')
+    if charge_ref:
+        # Keep explicit targets discoverable until the claim can restore a missing receipt.
+        if job.get('job_scope') != 'interview-coding' and not job_charges.has_runtime_receipt(job, charge_ref):
+            return pending
+        return pending.intersection(receipt.get('components') or {})
+    charged = receipt.get('charged') or {}
+    if not charged.get(job.get('credit_deducted'), 0):
+        pending.discard('primary')
+    if not charged.get('slides_credits', 0):
+        pending.discard('extras')
     return pending
+
+
+def _is_interrupted_refund(job):
+    return (job.get('status') == 'error' and job.get('step_description') == 'Interrupted by server restart'
+            and job.get('credit_refund_error') == 'runtime_recovery_refund_failed')
 
 
 def _runtime_job_recovery_holder_id(runtime=None):
@@ -110,18 +122,26 @@ def _claim_stale_runtime_job(doc, *, now_ts, runtime=None):
             claimed_at = 0.0
         if claimed_at > 0 and (float(now_ts) - claimed_at) < float(_runtime_job_recovery_stale_seconds(runtime=resolved_runtime)):
             return None
-        txn.set(
-            job_ref,
-            {
-                'recovery_claimed_at': float(now_ts),
-                'recovery_claimed_by': holder_id,
-                'updated_at': float(now_ts),
-            },
-            merge=True,
-        )
-        job_data['recovery_claimed_at'] = float(now_ts)
-        job_data['recovery_claimed_by'] = holder_id
-        return job_data
+        updates = {
+            'recovery_claimed_at': float(now_ts), 'recovery_claimed_by': holder_id, 'updated_at': float(now_ts),
+        }
+        charge_ref = job_data.get('charge_ref')
+        if charge_ref and job_data.get('job_scope') != 'interview-coding':
+            if charge_ref != f'runtime-job:{job_id}':
+                raise ledger.LedgerConflict('Runtime job does not match its original charge.')
+            if not job_charges.has_runtime_receipt(job_data, charge_ref):
+                receipt = ledger.read_runtime_job_receipt(txn, job_data['user_id'], job_id, runtime=resolved_runtime)
+                updates['billing_receipt'] = receipt
+                # Older restart recovery marked the primary pending but could
+                # not count the interrupted job's extras without its receipt.
+                if (_is_interrupted_refund(job_data) and job_data.get('credit_refund_pending')
+                        and not job_data.get('extra_slides_refund_pending')):
+                    extras = receipt['components'].get('extras') or {}
+                    updates['extra_slides_refund_pending'] = max(
+                        0, extras.get('units', 0) - int(job_data.get('extra_slides_refunded') or 0),
+                    )
+        txn.set(job_ref, updates, merge=True)
+        return {**job_data, **updates}
 
     try:
         claimed = _txn(transaction)
@@ -296,6 +316,8 @@ def _retry_pending_refunds(doc, *, now_ts, runtime):
             job['extra_slides_refunded'] = units
         job['credit_refunded'] = billing_receipts.job_has_refunds(job, runtime=runtime)
     if not job.get('credit_refund_pending') and not job.get('extra_slides_refund_pending'):
+        if _is_interrupted_refund(job) and job.get('credit_refunded'):
+            job['error'] = 'Processing was interrupted by a server restart. Your credit has been refunded.'
         job['credit_refund_error'] = ''
     runtime_jobs_store.set_job(doc.id, job, runtime=runtime)
     runtime.save_job_log(doc.id, job, job.get('finished_at') or now_ts, record_metrics=False)
