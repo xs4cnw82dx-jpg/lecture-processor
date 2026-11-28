@@ -43,6 +43,7 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
   test('Academy reports, filters and step details are usable at ' + size.width, async ({academyPage: page, academyOrigin}, testInfo) => {
     await page.setViewportSize(size);
     const data = reportData();
+    data.cohorts=['default','coaches','group-b'];
     data.funnel.forEach((step,index) => Object.assign(step,{continued:[28,22,18][index],lostFromPrevious:[null,12,6][index],
       previousReached:[null,40,28][index],gradedAnswers:10,correctAnswers:3,comments:index}));
     data.stations.forEach((station,index) => Object.assign(station,{reached:index?22:40,continued:index?18:22,lost:index?4:18,
@@ -50,6 +51,8 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     Object.assign(data.blockStats.easy,{correctAnswers:8,gradedAnswers:10});
     Object.assign(data.blockStats.hard,{correctAnswers:3,gradedAnswers:10});
     data.weekly[1].revision={revision:4,at:1794182400};
+    data.stations[0].activeSecondsTotal=180;
+    data.stations[1].activeSecondsTotal=120;
     const requests=[];
     await page.route('**/api/elearning/expeditions/visual/responses*', route=>{
       requests.push(new URL(route.request().url()).search);
@@ -84,7 +87,38 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     await page.locator('#el-resp-period').selectOption('7',{force:true});
     await expect(page).toHaveURL(/days=7/);
     expect(requests.some(query=>query.includes('days=7'))).toBe(true);
+    await page.goto(academyOrigin + '/expedities/visual/resultaten?cohort=coaches&cohort=group-b&from=2026-10-01&to=2026-10-31');
+    await expect(page.locator('#academy-filter-chips')).toContainText('coaches');
+    await expect(page.locator('#academy-filter-chips')).toContainText('group-b');
+    await page.locator('#academy-filter-chips').getByRole('button', {name:/coaches/}).click();
+    await expect(page).not.toHaveURL(/cohort=coaches/);
+    await expect(page).toHaveURL(/cohort=group-b/);
+    await expect(page).toHaveURL(/from=2026-10-01/);
+    await page.locator('#academy-station-report').scrollIntoViewIfNeeded();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await testInfo.attach('academy-report-'+size.width,{body:await page.screenshot(),contentType:'image/png'});
   });
 }
+
+test('an Academy author can enable real outline results and retains the preference on reload', async ({academyPage: page, academyOrigin}) => {
+  const { editorFixture } = require('./helpers/xped-editor');
+  const { exp } = await editorFixture(page);
+  const first = exp.modules[0].steps[0];
+  let reads = 0;
+  await page.route('**/api/elearning/expeditions/visual/outline-results', route => {
+    reads++;
+    return route.fulfill({json:{totalSessions:10, steps:{[first.id]:{reached:8,time:{median:100,p25:60,p75:120,count:6}}}}});
+  });
+  await page.goto(academyOrigin + '/expedities/visual/bewerken');
+  const control = page.locator('#academy-outline-toggle input');
+  await expect(control).toBeVisible();
+  expect(reads).toBe(0);
+  await control.check();
+  const result = page.locator('.academy-builder-metric').first();
+  await expect(result).toHaveText('1:40 · 80% bereikt');
+  await page.reload();
+  await expect(control).toBeChecked();
+  await expect(result).toHaveText('1:40 · 80% bereikt');
+  await control.uncheck();
+  await expect(result).toHaveCount(0);
+});

@@ -3,7 +3,9 @@ import time
 
 from tests.test_elearning_api import _post_pilot_response, auth_headers
 
-from tests.support.academy_analytics import academy_studio as setup
+from tests.support.academy_analytics import academy_studio as academy_studio_fixture
+
+setup = academy_studio_fixture
 WEEK = 7 * 86400
 
 
@@ -157,3 +159,20 @@ def test_publication_records_only_real_revision_and_date_in_its_week(setup):
     marker = _report(client,cid)['weekly'][-1]['revision']
     assert marker == course['publicRevisionWeeks'][0] and set(marker) == {'revision','week','at'}
     assert marker['revision'] == course['revision']
+
+
+def test_absolute_utc_dates_and_multiple_groups_scope_the_summary_and_export(setup):
+    import csv
+    import io
+    from datetime import datetime, timezone
+
+    client, store = setup
+    cid, url = _course(client)
+    for sid, day, cohort in [('include-one', 3, 'a'), ('include-two', 4, 'b'), ('ignore-old', 2, 'a'), ('ignore-group', 4, 'c')]:
+        assert _post_pilot_response(client, url, json={'sessionId': sid, 'cohort': cohort}).status_code == 200
+        row = store.data['elearning_responses/' + cid + '__' + sid]
+        row['started_at'] = datetime(2025, 10, day, 23, 59, tzinfo=timezone.utc).timestamp()
+    scope = '?from=2025-10-03&to=2025-10-04&cohort=a&cohort=b'
+    assert _report(client, cid, scope)['summary']['totalSessions'] == 2
+    result = client.get(f'/api/elearning/expeditions/{cid}/responses/export.csv' + scope, headers=auth_headers('owner'))
+    assert {r['session_id'] for r in csv.DictReader(io.StringIO(result.data.decode('utf-8-sig')), delimiter=';')} == {'include-one', 'include-two'}

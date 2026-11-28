@@ -24,9 +24,13 @@
           <p class="page-lead" id="el-resp-expedition" translate="no"></p>
         </div>
         <div class="el-dash-actions" id="el-response-actions" hidden>
+          {% if academy_mode %}
+          <details class="academy-filter-menu"><summary>{{ 'Gruppen' if academy_locale == 'de' else 'Groepen' }}</summary><fieldset id="academy-report-groups"><legend>{{ 'Gruppen auswählen' if academy_locale == 'de' else 'Groepen kiezen' }}</legend></fieldset></details>
+          {% else %}
           <select data-app-select id="el-resp-cohort" aria-label="{{ tr("Filter by cohort") }}">
             <option value="">{{ tr("All cohorts") }}</option>
           </select>
+          {% endif %}
           <select data-app-select id="el-resp-lang" aria-label="{{ tr("Filter by language") }}">
             <option value="">{{ tr("All languages") }}</option>
             <option value="nl">Nederlands (NL)</option>
@@ -36,14 +40,19 @@
           {% if academy_mode %}
           {# Option labels and the accessible name are set by the page script in the interface language. #}
           <select data-app-select id="el-resp-period" translate="no">
-            <option value="">Alle tijd</option>
-            <option value="7">Laatste 7 dagen</option>
-            <option value="30">Laatste 30 dagen</option>
-            <option value="90">Laatste 90 dagen</option>
+            <option value="">{{ 'Gesamter Zeitraum' if academy_locale == 'de' else 'Alle tijd' }}</option>
+            <option value="7">{{ 'Letzte 7 Tage' if academy_locale == 'de' else 'Laatste 7 dagen' }}</option>
+            <option value="30">{{ 'Letzte 30 Tage' if academy_locale == 'de' else 'Laatste 30 dagen' }}</option>
+            <option value="90">{{ 'Letzte 90 Tage' if academy_locale == 'de' else 'Laatste 90 dagen' }}</option>
           </select>
+          <details class="academy-filter-menu"><summary>{{ 'Datumsbereich' if academy_locale == 'de' else 'Datumbereik' }}</summary>
+            <form id="academy-date-filter"><label>{{ 'Von' if academy_locale == 'de' else 'Van' }} <input name="from" type="date"></label>
+              <label>{{ 'Bis' if academy_locale == 'de' else 'Tot en met' }} <input name="to" type="date"></label>
+              <button class="btn" type="submit">{{ 'Übernehmen' if academy_locale == 'de' else 'Toepassen' }}</button></form>
+          </details>
           <details class="academy-report-exports"><summary>{{ 'Exportieren' if academy_locale == 'de' else 'Exporteren' }}</summary>
-            <button type="button" class="btn" id="el-resp-export-csv">CSV</button>
-            <button type="button" class="btn" id="el-resp-export-xlsx">Excel (.xlsx)</button>
+            <button type="button" class="btn" id="el-resp-export-csv">{{ 'CSV herunterladen' if academy_locale == 'de' else 'CSV downloaden' }}</button>
+            <button type="button" class="btn" id="el-resp-export-xlsx">{{ 'Excel-Datei (.xlsx)' if academy_locale == 'de' else 'Excel-bestand (.xlsx)' }}</button>
           </details>
           {% else %}
           <button type="button" class="btn primary" id="el-resp-export-csv">{{ tr("Export CSV") }}</button>
@@ -52,6 +61,7 @@
         </div>
       </header>
 
+      {% if academy_mode %}<div class="academy-filter-chips" id="academy-filter-chips" hidden></div>{% endif %}
       <div id="el-resp-status" role="status">{{ tr("Loading responses…") }}</div>
       <button class="btn small" id="el-resp-retry" type="button" hidden>{{ tr("Try again") }}</button>
       <a class="btn" id="el-signin" href="{{ url_for('academy.signin', next=request.full_path.rstrip('?')) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
