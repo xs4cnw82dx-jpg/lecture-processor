@@ -10,6 +10,10 @@
 
   var cohortSelect = document.getElementById('el-resp-cohort');
   var langSelect = document.getElementById('el-resp-lang');
+  var periodSelect = document.getElementById('el-resp-period');
+  var timeEl = document.getElementById('el-resp-time');
+  var trendEl = document.getElementById('el-resp-trend');
+  var orderEl = document.getElementById('el-resp-order');
   var status = document.getElementById('el-resp-status');
   var report = document.getElementById('el-response-report');
   var actions = document.getElementById('el-response-actions');
@@ -28,6 +32,7 @@
   var client = window.LectureProcessorAuth.createAuthClient(auth);
   cohortSelect.addEventListener('change', loadResponses);
   langSelect.addEventListener('change', loadResponses);
+  periodSelect.addEventListener('change', loadResponses);
   retry.addEventListener('click', loadResponses);
 
   function activityName(type, lang) {
@@ -54,12 +59,78 @@
     }
   }
 
-  // Chart cards: interface labels follow the interface language; numbers use its locale.
-  var NOT_COMPLETED = { nl: 'Niet voltooid', de: 'Nicht abgeschlossen', en: 'Not completed' };
+  // Report copy, keyed per interface language (Dutch first). Numbers use the same locale.
+  var COPY = {
+    nl: {
+      notCompleted: 'Niet voltooid', medianActive: 'Mediane actieve tijd', middleHalf: 'Middelste helft',
+      timedSessions: 'Sessies met gemeten tijd', timeTitle: 'Tijdsbesteding', estimated: 'geschat {n} min',
+      longer: 'langer dan geschat', sessionsShort: 'n {n}', hourShort: 'u',
+      noTime: 'Nog geen gemeten tijd. Tijd wordt alleen gemeten bij deelnemers die hebben gekozen om te delen.',
+      timeNote: 'n = {n} sessies met gemeten tijd. Actieve tijd telt alleen als de pagina open is en de deelnemer bezig is, maximaal 15 minuten per bezoek. Open een station voor de tijd per stap.',
+      dropTitle: 'Uitval ten opzichte van de vorige stap',
+      dropNote: 'Na het streepje: deelnemers die de vorige stap bereikten maar deze niet.',
+      trendTitle: 'Verloop per week', started: 'Gestart', completed: 'Voltooid', weekOf: 'Week van',
+      trendSummary: '{weeks} weken: {started} sessies gestart, {completed} voltooid.',
+      trendNote: 'Sessies per week waarin ze startten (maandag tot en met zondag).',
+      period: 'Periode', allTime: 'Alle tijd', lastDays: 'Laatste {n} dagen',
+      order: 'Volgorde van de vragen', courseOrder: 'Cursusvolgorde', hardestFirst: 'Minst vaak goed eerst',
+      correctShare: '{pct} goed beantwoord',
+    },
+    de: {
+      notCompleted: 'Nicht abgeschlossen', medianActive: 'Mediane aktive Zeit', middleHalf: 'Mittlere Hälfte',
+      timedSessions: 'Sitzungen mit gemessener Zeit', timeTitle: 'Zeitaufwand', estimated: 'geschätzt {n} Min.',
+      longer: 'länger als geschätzt', sessionsShort: 'n {n}', hourShort: 'Std.',
+      noTime: 'Noch keine gemessene Zeit. Zeit wird nur bei Teilnehmenden gemessen, die dem Teilen zugestimmt haben.',
+      timeNote: 'n = {n} Sitzungen mit gemessener Zeit. Aktive Zeit zählt nur, solange die Seite geöffnet ist und die Person aktiv ist, höchstens 15 Minuten pro Besuch. Öffnen Sie eine Station für die Zeit pro Schritt.',
+      dropTitle: 'Abbruch gegenüber dem vorherigen Schritt',
+      dropNote: 'Nach dem Strich: Teilnehmende, die den vorherigen Schritt erreicht haben, diesen aber nicht.',
+      trendTitle: 'Verlauf pro Woche', started: 'Gestartet', completed: 'Abgeschlossen', weekOf: 'Woche ab',
+      trendSummary: '{weeks} Wochen: {started} Sitzungen gestartet, {completed} abgeschlossen.',
+      trendNote: 'Sitzungen nach der Woche, in der sie begonnen haben (Montag bis Sonntag).',
+      period: 'Zeitraum', allTime: 'Gesamter Zeitraum', lastDays: 'Letzte {n} Tage',
+      order: 'Reihenfolge der Fragen', courseOrder: 'Kursreihenfolge', hardestFirst: 'Am seltensten richtig zuerst',
+      correctShare: '{pct} richtig beantwortet',
+    },
+    en: {
+      notCompleted: 'Not completed', medianActive: 'Median active time', middleHalf: 'Middle half',
+      timedSessions: 'Sessions with measured time', timeTitle: 'Time spent', estimated: 'estimated {n} min',
+      longer: 'longer than estimated', sessionsShort: 'n {n}', hourShort: 'h',
+      noTime: 'No measured time yet. Time is only measured for learners who chose to share.',
+      timeNote: 'n = {n} sessions with measured time. Active time counts only while the page is open and the learner is using it, up to 15 minutes per visit. Open a station for the time per step.',
+      dropTitle: 'Drop-off from the previous step',
+      dropNote: 'After the dash: learners who reached the previous step but not this one.',
+      trendTitle: 'Weekly activity', started: 'Started', completed: 'Completed', weekOf: 'Week of',
+      trendSummary: '{weeks} weeks: {started} sessions started, {completed} completed.',
+      trendNote: 'Sessions by the week they started (Monday to Sunday).',
+      period: 'Period', allTime: 'All time', lastDays: 'Last {n} days',
+      order: 'Question order', courseOrder: 'Course order', hardestFirst: 'Least often correct first',
+      correctShare: '{pct} answered correctly',
+    },
+  };
   function uiLanguage() {
     var i18n = window.LectureI18n;
-    var lang = (i18n && i18n.getLanguage && i18n.getLanguage()) || document.documentElement.lang || 'en';
-    return NOT_COMPLETED[lang] ? lang : 'en';
+    var lang = (i18n && i18n.getLanguage && i18n.getLanguage()) || document.documentElement.lang || 'nl';
+    return COPY[lang] ? lang : 'nl';
+  }
+  function copy(key, params) {
+    var text = COPY[uiLanguage()][key] || COPY.nl[key] || key;
+    Object.keys(params || {}).forEach(function (name) { text = text.split('{' + name + '}').join(String(params[name])); });
+    return text;
+  }
+  // Under a minute: seconds. Under ten minutes: m:ss. Then whole minutes, then hours.
+  function formatDuration(seconds) {
+    var total = Math.max(0, Math.round(Number(seconds) || 0));
+    if (total < 60) return total + ' s';
+    if (total < 600) return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0') + ' min';
+    var minutes = Math.round(total / 60);
+    if (minutes < 60) return minutes + ' min';
+    return Math.floor(minutes / 60) + ' ' + copy('hourShort') + ' ' + String(minutes % 60).padStart(2, '0') + ' min';
+  }
+  function formatDurationRange(low, high) {
+    var a = Math.round(Number(low) || 0);
+    var b = Math.round(Number(high) || 0);
+    if (a >= 600 && b < 3600) return Math.round(a / 60) + '–' + Math.round(b / 60) + ' min';
+    return formatDuration(a) + ' – ' + formatDuration(b);
   }
   function uiLocale() {
     return { nl: 'nl-NL', de: 'de-DE', en: 'en-GB' }[uiLanguage()];
@@ -96,6 +167,40 @@
     return row;
   }
 
+  // Filters live in the address, so a report view can be shared or reloaded.
+  function filterQuery() {
+    var qs = new URLSearchParams();
+    if (cohortSelect.value) qs.set('cohort', cohortSelect.value);
+    if (langSelect.value) qs.set('language', langSelect.value);
+    if (periodSelect.value) qs.set('days', periodSelect.value);
+    return qs;
+  }
+  function syncAddress() {
+    var qs = filterQuery();
+    window.history.replaceState(window.history.state, '', window.location.pathname + (qs.size ? '?' + qs : '') + window.location.hash);
+  }
+  // Options are rebuilt rather than relabelled, so the enhanced select picks up the new text.
+  function labelPeriods() {
+    var value = periodSelect.value;
+    periodSelect.setAttribute('aria-label', copy('period'));
+    periodSelect.replaceChildren.apply(periodSelect, ['', '7', '30', '90'].map(function (days) {
+      return new Option(days ? copy('lastDays', { n: days }) : copy('allTime'), days);
+    }));
+    periodSelect.value = value;
+  }
+  (function restoreFilters() {
+    var params = new URLSearchParams(window.location.search);
+    labelPeriods();
+    if (/^(7|30|90)$/.test(params.get('days') || '')) periodSelect.value = params.get('days');
+    var lang = params.get('language') || '';
+    if (Array.from(langSelect.options).some(function (option) { return option.value === lang; })) langSelect.value = lang;
+    var cohort = params.get('cohort') || '';
+    if (/^[a-zA-Z0-9_.-]{1,48}$/.test(cohort)) {
+      cohortSelect.add(new Option(cohort, cohort));
+      cohortSelect.value = cohort;
+    }
+  })();
+
   // Bars are <progress> elements: the page policy forbids inline styles.
   function chartBar(value, className, max) {
     var bar = document.createElement('progress');
@@ -104,6 +209,29 @@
     bar.value = Math.max(0, Math.min(bar.max, Number(value) || 0));
     bar.setAttribute('aria-hidden', 'true');
     return bar;
+  }
+
+  // A labelled bar for any measure: the label left, the value and detail right.
+  function barRow(name, amountText, detailText, value, max, className) {
+    var row = document.createElement('div');
+    row.className = 'el-chart-row' + (className ? ' ' + className : '');
+    var label = document.createElement('span');
+    label.className = 'el-chart-label';
+    label.setAttribute('translate', 'no');
+    label.textContent = name;
+    var amount = document.createElement('span');
+    amount.className = 'el-chart-value';
+    amount.setAttribute('translate', 'no');
+    var strong = document.createElement('strong');
+    strong.textContent = amountText;
+    amount.appendChild(strong);
+    if (detailText) {
+      var detail = document.createElement('span');
+      detail.textContent = detailText;
+      amount.append(' ', detail);
+    }
+    row.append(label, amount, chartBar(value, '', max || 100));
+    return row;
   }
 
   function chartNote(text) {
@@ -125,8 +253,199 @@
     return item;
   }
 
+  // Time spent: course figures, then one bar per station that opens into its steps.
+  function renderTime(data, reportLang, courseLang) {
+    var summary = data.summary || {};
+    var active = summary.activeSeconds;
+    var title = document.createElement('h2');
+    title.id = 'el-resp-time-title';
+    title.setAttribute('translate', 'no');
+    title.textContent = copy('timeTitle');
+    timeEl.hidden = !(data.funnel || []).length;
+    if (!active) {
+      timeEl.replaceChildren(title, chartNote(copy('noTime')));
+      return;
+    }
+    var figures = document.createElement('dl');
+    figures.className = 'el-split-stats el-time-figures';
+    figures.append(
+      splitFigure(copy('medianActive'), formatDuration(active.median), false, true),
+      splitFigure(copy('middleHalf'), formatDurationRange(active.p25, active.p75), false, true),
+      splitFigure(copy('timedSessions'), String(summary.timedSessions || active.count), false, true)
+    );
+    var stations = (data.stations || []).filter(function (station) { return station.time; });
+    var slowestStation = Math.max.apply(null, stations.map(function (station) { return station.time.median; }).concat(1));
+    var list = document.createElement('div');
+    list.className = 'el-time-stations';
+    stations.forEach(function (station) {
+      var estimate = Number(station.estimatedMinutes) || 0;
+      var over = estimate > 0 && station.time.median > estimate * 60 * 1.5;
+      var detail = 'P75 ' + formatDuration(station.time.p75) + (estimate ? ' · ' + copy('estimated', { n: estimate }) : '');
+      var row = barRow(Model.getLocalized(station.moduleTitle, reportLang, courseLang), formatDuration(station.time.median),
+        detail, station.time.median, slowestStation, over ? 'is-over' : '');
+      if (over) {
+        var flag = document.createElement('span');
+        flag.className = 'el-chart-flag';
+        flag.textContent = copy('longer');
+        row.querySelector('.el-chart-value').append(' ', flag);
+      }
+      var item = document.createElement('details');
+      item.className = 'el-time-station';
+      // Opt out of the shared disclosure enhancer, which would restyle this chart row as a panel.
+      item._appDisclosure = true;
+      var head = document.createElement('summary');
+      head.appendChild(row);
+      var steps = document.createElement('div');
+      steps.className = 'el-chart-rows el-time-steps';
+      var stationSteps = (data.funnel || []).filter(function (step) { return step.moduleId === station.moduleId && step.time; });
+      var slowestStep = Math.max.apply(null, stationSteps.map(function (step) { return step.time.median; }).concat(1));
+      stationSteps.forEach(function (step) {
+        steps.appendChild(barRow(Model.getLocalized(step.stepTitle, reportLang, courseLang), formatDuration(step.time.median),
+          'P75 ' + formatDuration(step.time.p75) + ' · ' + copy('sessionsShort', { n: step.time.count }), step.time.median, slowestStep));
+      });
+      item.append(head, steps);
+      list.appendChild(item);
+    });
+    timeEl.replaceChildren(title, figures, list, chartNote(copy('timeNote', { n: summary.timedSessions || active.count })));
+  }
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgNode(name, attributes) {
+    var node = document.createElementNS(SVG_NS, name);
+    Object.keys(attributes || {}).forEach(function (key) { node.setAttribute(key, attributes[key]); });
+    return node;
+  }
+  function weekLabel(isoDate) {
+    return new Intl.DateTimeFormat(uiLocale(), { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(isoDate + 'T00:00:00Z'));
+  }
+
+  // Weekly starts (neutral) with completions (mint) drawn over them, plus a table for screen readers.
+  function renderTrend(weekly) {
+    var weeks = Array.isArray(weekly) ? weekly : [];
+    trendEl.hidden = weeks.length < 2;
+    if (trendEl.hidden) {
+      trendEl.replaceChildren();
+      return;
+    }
+    var title = document.createElement('h2');
+    title.id = 'el-resp-trend-title';
+    title.setAttribute('translate', 'no');
+    title.textContent = copy('trendTitle');
+    var legend = document.createElement('div');
+    legend.className = 'el-trend-legend';
+    legend.setAttribute('aria-hidden', 'true');
+    [['is-started', copy('started')], ['is-completed', copy('completed')]].forEach(function (entry) {
+      var key = document.createElement('span');
+      key.className = 'el-trend-key ' + entry[0];
+      key.textContent = entry[1];
+      legend.appendChild(key);
+    });
+    var started = weeks.reduce(function (sum, week) { return sum + week.started; }, 0);
+    var completed = weeks.reduce(function (sum, week) { return sum + week.completed; }, 0);
+    // Drawn at the card's real width so labels keep their size; redrawn on resize.
+    var width = Math.max(260, Math.round(trendEl.clientWidth - 40));
+    trendWidth = width;
+    var plot = 132;
+    var slot = width / weeks.length;
+    var barWidth = Math.max(4, Math.min(28, slot * 0.58));
+    var most = Math.max.apply(null, weeks.map(function (week) { return week.started; }).concat(1));
+    var chart = svgNode('svg', { viewBox: '0 0 ' + width + ' 160', width: width, height: 160, class: 'el-trend-chart', role: 'img',
+      'aria-label': copy('trendSummary', { weeks: weeks.length, started: started, completed: completed }) });
+    chart.appendChild(svgNode('line', { x1: 0, x2: width, y1: plot + 0.5, y2: plot + 0.5, class: 'el-trend-axis' }));
+    var every = Math.ceil(weeks.length / Math.max(2, Math.floor(width / 84)));
+    weeks.forEach(function (week, index) {
+      var x = index * slot + (slot - barWidth) / 2;
+      var group = svgNode('g');
+      var hint = svgNode('title');
+      hint.textContent = copy('weekOf') + ' ' + weekLabel(week.week) + ': ' + week.started + ' · ' + week.completed;
+      group.appendChild(hint);
+      var startHeight = plot * week.started / most;
+      var doneHeight = plot * week.completed / most;
+      group.appendChild(svgNode('rect', { x: x, y: plot - startHeight, width: barWidth, height: startHeight, rx: 3, class: 'el-trend-started' }));
+      group.appendChild(svgNode('rect', { x: x, y: plot - doneHeight, width: barWidth, height: doneHeight, rx: 3, class: 'el-trend-completed' }));
+      chart.appendChild(group);
+      if (index % every === 0 || index === weeks.length - 1) {
+        var tick = svgNode('text', { x: x + barWidth / 2, y: 154, 'text-anchor': 'middle', class: 'el-trend-label' });
+        tick.textContent = weekLabel(week.week);
+        chart.appendChild(tick);
+      }
+    });
+    var table = document.createElement('table');
+    table.className = 'sr-only';
+    var caption = document.createElement('caption');
+    caption.textContent = copy('trendTitle');
+    var headRow = table.createTHead().insertRow();
+    [copy('weekOf'), copy('started'), copy('completed')].forEach(function (text) {
+      var cell = document.createElement('th');
+      cell.scope = 'col';
+      cell.textContent = text;
+      headRow.appendChild(cell);
+    });
+    var body = table.createTBody();
+    weeks.forEach(function (week) {
+      var row = body.insertRow();
+      [weekLabel(week.week), week.started, week.completed].forEach(function (value) { row.insertCell().textContent = String(value); });
+    });
+    table.prepend(caption);
+    trendEl.replaceChildren(title, legend, chart, table, chartNote(copy('trendNote')));
+  }
+
+  var trendWidth = 0;
+  if (window.ResizeObserver) {
+    new window.ResizeObserver(function () {
+      if (!lastAnalytics || trendEl.hidden) return;
+      if (Math.abs(Math.round(trendEl.clientWidth - 40) - trendWidth) > 8) renderTrend(lastAnalytics.data.weekly);
+    }).observe(trendEl);
+  }
+
+  // Graded questions can be listed with the least often correctly answered first.
+  var questionOrder = 'course';
+  function applyQuestionOrder() {
+    var cards = Array.from(blocksEl.children);
+    cards.sort(function (a, b) {
+      if (questionOrder === 'hardest') {
+        var left = a.dataset.correct;
+        var right = b.dataset.correct;
+        if (left !== undefined && right !== undefined && Number(left) !== Number(right)) return Number(left) - Number(right);
+        if (left !== undefined && right === undefined) return -1;
+        if (left === undefined && right !== undefined) return 1;
+      }
+      return Number(a.dataset.order) - Number(b.dataset.order);
+    });
+    blocksEl.append.apply(blocksEl, cards);
+  }
+  function renderOrderControl() {
+    orderEl.replaceChildren();
+    orderEl.hidden = blocksEl.querySelectorAll('[data-correct]').length < 2;
+    if (orderEl.hidden) return;
+    var name = document.createElement('span');
+    name.id = 'el-resp-order-label';
+    name.className = 'el-resp-order-label';
+    name.textContent = copy('order');
+    var group = document.createElement('div');
+    group.className = 'el-seg';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-labelledby', name.id);
+    [['course', copy('courseOrder')], ['hardest', copy('hardestFirst')]].forEach(function (choice) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = choice[1];
+      button.setAttribute('aria-pressed', String(questionOrder === choice[0]));
+      button.addEventListener('click', function () {
+        questionOrder = choice[0];
+        renderOrderControl();
+        applyQuestionOrder();
+        orderEl.querySelector('[aria-pressed="true"]').focus();
+      });
+      group.appendChild(button);
+    });
+    orderEl.setAttribute('translate', 'no');
+    orderEl.append(name, group);
+  }
+
   // Completion as two shares of one bar, with the supporting figures beneath.
   var lastSummary = null;
+  var lastAnalytics = null;
   function renderSummary(summary) {
     lastSummary = summary;
     var total = Number(summary.totalSessions) || 0;
@@ -140,7 +459,7 @@
     shares.className = 'el-split-figures';
     shares.append(
       splitFigure('Completed', total ? formatPercent(rate) : '—', true),
-      splitFigure(NOT_COMPLETED[uiLanguage()], total ? formatPercent(100 - rate) : '—', false, true)
+      splitFigure(copy('notCompleted'), total ? formatPercent(100 - rate) : '—', false, true)
     );
     var bar = chartBar(total ? rate : 0, 'el-split-bar' + (total ? '' : ' is-empty'));
     var counts = document.createElement('div');
@@ -153,10 +472,11 @@
     counts.hidden = !total;
     var figures = document.createElement('dl');
     figures.className = 'el-split-stats';
-    var seconds = Number(summary.medianSeconds) || 0;
+    // Wall-clock duration is not shown: only measured active time is reported.
+    var active = summary.activeSeconds;
     figures.append(
       splitFigure('Testers', String(total)),
-      splitFigure('Median Time', seconds && seconds < 60 ? '<1 min' : Math.round(seconds / 60) + ' min')
+      splitFigure(copy('medianActive'), active ? formatDuration(active.median) : '—', false, true)
     );
     if (summary.avgClarity !== null && summary.avgClarity !== undefined || summary.avgEngagement !== null && summary.avgEngagement !== undefined) {
       figures.append(splitFigure('Clarity / Engagement', formatScore(summary.avgClarity) + ' / ' + formatScore(summary.avgEngagement)));
@@ -180,10 +500,9 @@
       report.hidden = true;
     }
     try {
-      var qs = new URLSearchParams();
+      var qs = filterQuery();
       var cohort = cohortSelect.value;
-      if (cohort) qs.set('cohort', cohort);
-      if (langSelect.value) qs.set('language', langSelect.value);
+      syncAddress();
       var base = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses';
       var resp = await client.authFetch(base + (qs.size ? '?' + qs : ''));
       var data = await resp.json();
@@ -199,6 +518,8 @@
       }
       cohortSelect.value = cohort;
       syncExportButtons();
+      // The page script runs before the deferred i18n script, so label the period choices once data arrives.
+      labelPeriods();
       status.textContent = cohort || langSelect.value
         ? 'Showing responses for ' + [cohort, langSelect.value.toUpperCase()].filter(Boolean).join(' · ')
         : 'Showing all responses';
@@ -209,13 +530,20 @@
 
       var s = data.summary || {};
       renderSummary(s);
+      lastAnalytics = { data: data, reportLang: reportLang, courseLang: courseLang };
+      renderTime(data, reportLang, courseLang);
+      renderTrend(data.weekly);
 
       // Reach per step, grouped by station
       funnelEl.textContent = '';
       var maxReached = Math.max(1, s.totalSessions || 1);
       var stationGroup = null;
       var stationId = null;
-      (data.funnel || []).forEach(function (row) {
+      var drops = (data.funnel || []).map(function (row, index, all) {
+        return index ? Math.max(0, all[index - 1].reached - row.reached) : 0;
+      });
+      var largestDrop = Math.max.apply(null, drops.concat(0));
+      (data.funnel || []).forEach(function (row, index) {
         if (!stationGroup || row.moduleId !== stationId) {
           stationId = row.moduleId;
           stationGroup = document.createElement('div');
@@ -228,15 +556,27 @@
           funnelEl.appendChild(stationGroup);
         }
         var pct = Math.round((row.reached / maxReached) * 100);
-        stationGroup.appendChild(chartRow(Model.getLocalized(row.stepTitle, reportLang, courseLang), row.reached, pct));
+        var reachRow = chartRow(Model.getLocalized(row.stepTitle, reportLang, courseLang), row.reached, pct);
+        if (drops[index]) {
+          var previous = data.funnel[index - 1].reached;
+          var drop = document.createElement('span');
+          drop.className = 'el-chart-drop' + (drops[index] === largestDrop ? ' is-largest' : '');
+          drop.title = copy('dropTitle');
+          drop.textContent = '−' + drops[index] + ' (−' + formatPercent(Math.round(100 * drops[index] / Math.max(1, previous))) + ')';
+          reachRow.querySelector('.el-chart-value').append(' ', drop);
+        }
+        stationGroup.appendChild(reachRow);
       });
-      if (funnelEl.childElementCount) funnelEl.appendChild(chartNote('n = ' + (s.totalSessions || 0)));
+      if (funnelEl.childElementCount) {
+        funnelEl.appendChild(chartNote('n = ' + (s.totalSessions || 0) + (largestDrop ? ' · ' + copy('dropNote') : '')));
+      }
 
       document.getElementById('el-resp-funnel-card').hidden = !funnelEl.childElementCount;
 
       // Question charts (UX-116, UX-117, UX-120)
       blocksEl.textContent = '';
       var statsMap = data.blockStats || {};
+      var cardOrder = 0;
       (data.expedition.modules || []).forEach(function (mod, mIdx) {
         (mod.steps || []).forEach(function (step, sIdx) {
           (step.blocks || []).forEach(function (blk) {
@@ -246,6 +586,7 @@
             var position = 'Station ' + (mIdx + 1) + ' · ' + (reportLang === 'de' ? 'Schritt' : reportLang === 'nl' ? 'Stap' : 'Step') + ' ' + (sIdx + 1);
             var card = document.createElement('article');
             card.className = 'el-exp-card';
+            card.dataset.order = String(cardOrder++);
             var h = document.createElement('h2');
             h.setAttribute('translate', 'no');
             var authoredTitle = Model.getLocalized(blk.data.question || blk.data.statement || blk.data.prompt || blk.data.title, reportLang, courseLang);
@@ -290,12 +631,18 @@
               var keys = Array.from(new Set(choices.concat(Object.keys(agg.counts))));
               var rows = document.createElement('div');
               rows.className = 'el-chart-rows';
+              var correctAnswers = 0;
+              var graded = false;
               keys.forEach(function (k) {
                 var cnt = agg.counts[k] || 0;
                 var pct = Math.min(100, Math.round((cnt / denom) * 100));
                 var opt = (blk.data.options || []).find(function (o) { return o.id === k; });
                 var isRight = (blk.type === 'myth_fact' && k === (blk.data.correctAnswer || 'myth')) || !!(opt && opt.isCorrect && blk.data.graded !== false);
                 var name = opt ? Model.getLocalized(opt.label, reportLang, courseLang) : (k === 'myth' || k === 'fact' ? Model.ui(reportLang, k) : k);
+                if (isRight) {
+                  graded = true;
+                  correctAnswers += cnt;
+                }
                 var row = chartRow(name, cnt, pct, isRight);
                 if (isRight && window.XpedElearningIcons) {
                   var chkIco = window.XpedElearningIcons.icon('check', 14);
@@ -306,6 +653,7 @@
                 rows.appendChild(row);
               });
               card.appendChild(rows);
+              if (graded) card.dataset.correct = String(correctAnswers / denom);
             }
             if (Array.isArray(agg.words) && agg.words.length) {
               var tags = document.createElement('div');
@@ -361,6 +709,8 @@
           });
         });
       });
+      renderOrderControl();
+      applyQuestionOrder();
 
       // Slide-by-Slide Reviewer Comments with deep links to Builder (UX-118)
       var commentsCard = document.getElementById('el-resp-comments-card');
@@ -446,8 +796,14 @@
   // The Dutch catalog can arrive after the first render: reformat numbers and
   // the labels this script localizes itself, without fetching again.
   window.addEventListener('lp:language-changed', function () {
+    labelPeriods();
     if (!lastSummary || report.hidden) return;
     renderSummary(lastSummary);
+    if (lastAnalytics) {
+      renderTime(lastAnalytics.data, lastAnalytics.reportLang, lastAnalytics.courseLang);
+      renderTrend(lastAnalytics.data.weekly);
+      renderOrderControl();
+    }
     report.querySelectorAll('.el-chart-share[data-percent]').forEach(function (share) {
       share.textContent = formatPercent(share.dataset.percent);
     });
@@ -467,7 +823,9 @@
     document.getElementById('el-signin').hidden = !!user;
     label.textContent = '';
     lastSummary = null;
-    [kpisEl, funnelEl, blocksEl, feedbackEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
+    lastAnalytics = null;
+    [kpisEl, funnelEl, blocksEl, feedbackEl, timeEl, trendEl, orderEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
+    timeEl.hidden = trendEl.hidden = orderEl.hidden = true;
     cohortSelect.replaceChildren(new Option('All cohorts', ''));
     langSelect.value = '';
     syncExportButtons();

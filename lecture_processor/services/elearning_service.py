@@ -14,6 +14,7 @@ from itertools import chain
 from statistics import median
 from threading import Lock
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 
 from flask import current_app, g, jsonify, request, send_file
 from google.cloud.firestore_v1.field_path import FieldPath
@@ -1304,17 +1305,71 @@ def public_get_aggregates(runtime, share_token: str, block_id: str):
     return jsonify(aggregate=aggregate)
 
 
+def _quartiles(values) -> dict | None:
+    """Median and quartiles (linear interpolation) of positive whole seconds."""
+    ordered = sorted(v for v in values if v > 0)
+    if not ordered:
+        return None
+
+    def at(share):
+        position = (len(ordered) - 1) * share
+        low, high = math.floor(position), math.ceil(position)
+        return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
+
+    return {'median': round(at(.5)), 'p25': round(at(.25)), 'p75': round(at(.75)), 'count': len(ordered)}
+
+
+def _step_seconds(row, step_id) -> int:
+    value = (row.get('stepSeconds') or {}).get(step_id)
+    return value if type(value) is int and value > 0 else 0
+
+
+def _session_start(row) -> float:
+    value = row.get('started_at') or row.get('updated_at') or 0
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _weekly_activity(rows, weeks=26) -> list:
+    """Sessions started and completed per ISO week (Monday, UTC), zero weeks included."""
+    started, completed = Counter(), Counter()
+    for row in rows:
+        start = _session_start(row)
+        if not start:
+            continue
+        day = datetime.fromtimestamp(start, tz=timezone.utc).date()
+        monday = day - timedelta(days=day.weekday())
+        started[monday] += 1
+        if row.get('completed'):
+            completed[monday] += 1
+    if not started:
+        return []
+    last = max(started)
+    first = max(min(started), last - timedelta(weeks=weeks - 1))
+    out = []
+    week = first
+    while week <= last:
+        out.append({'week': week.isoformat(), 'started': started[week], 'completed': completed[week]})
+        week += timedelta(weeks=1)
+    return out
+
+
 def get_responses(runtime, expedition_id: str):
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     cohort_filter = str(request.args.get('cohort') or '').strip()
     lang_filter = str(request.args.get('language') or '').strip().lower()
+    days_arg = str(request.args.get('days') or '').strip()
+    days = int(days_arg) if days_arg.isdigit() and 1 <= int(days_arg) <= 3650 else None
+    since = now() - days * 86400 if days else None
     all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
     cohorts = sorted({str(r.get('cohort') or 'default') for r in all_rows})
     rows = [
         r for r in all_rows
         if (not cohort_filter or r.get('cohort') == cohort_filter)
         and (not lang_filter or r.get('language') == lang_filter)
+        and (since is None or _session_start(r) >= since)
     ]
+    # Active time exists only for sessions whose consent included it (WP-X8a).
+    timed = [r for r in rows if any(_step_seconds(r, sid) for sid in (r.get('stepSeconds') or {}))]
 
     completed_count = sum(1 for r in rows if r.get('completed'))
     durations = [
@@ -1335,6 +1390,7 @@ def get_responses(runtime, expedition_id: str):
                 'stepId': step['id'],
                 'stepTitle': step.get('title', {}),
                 'reached': reached,
+                'time': _quartiles(_step_seconds(r, step['id']) for r in timed),
             })
             for blk in step.get('blocks', []):
                 if blk['type'] in ('mcq', 'myth_fact', 'scale', 'wordcloud', 'ranking', 'reflection', 'balance_scale', 'mini_plan'):
@@ -1385,7 +1441,16 @@ def get_responses(runtime, expedition_id: str):
             'medianSeconds': median_sec,
             'avgClarity': round(sum(clarity_scores) / len(clarity_scores), 2) if clarity_scores else None,
             'avgEngagement': round(sum(engagement_scores) / len(engagement_scores), 2) if engagement_scores else None,
+            'timedSessions': len(timed),
+            'activeSeconds': _quartiles(sum(_step_seconds(r, sid) for sid in r['stepSeconds']) for r in timed),
         },
+        stations=[{
+            'moduleId': mod['id'],
+            'moduleTitle': mod.get('title', {}),
+            'estimatedMinutes': mod.get('estimatedMinutes'),
+            'time': _quartiles(sum(_step_seconds(r, step['id']) for step in mod.get('steps', [])) for r in timed),
+        } for mod in exp.get('modules', [])],
+        weekly=_weekly_activity(rows),
         cohorts=cohorts,
         funnel=funnel,
         blockStats=block_stats,
