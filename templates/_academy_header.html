@@ -31,7 +31,7 @@
 <header class="ac-bar{% if public %} ac-bar-public{% endif %}" data-ac-header>
   <div class="ac-bar-inner">
     {% if public %}{{ brand() }}{% else %}
-      <button type="button" class="ac-icon ac-nav-toggle" id="ac-nav-toggle" aria-label="{{ say('Navigatie openen','Navigation öffnen') }}" aria-controls="ac-rail" aria-expanded="false">{{ icon('menu') }}</button>
+      <button type="button" class="ac-icon ac-nav-toggle" id="ac-nav-toggle" disabled aria-label="{{ say('Navigatie openen','Navigation öffnen') }}" aria-controls="ac-rail" aria-expanded="false">{{ icon('menu') }}</button>
       <a class="ac-mobile-brand" href="/" aria-label="{{ say('Naar het overzicht','Zur Übersicht') }}"><img src="{{ url_for('static',filename='images/xped/academy-mark.webp') }}" alt="xPED"></a>
       <nav class="ac-crumbs" aria-label="{{ say('Kruimelpad','Brotkrumennavigation') }}"><a href="/">{{ product_name }}</a>{{ icon('chevron',13) }}
         {% if courses %}<a href="/expedities">{{ labels['/expedities'] }}</a>{{ icon('chevron',13) }}<span aria-current="page">{{ say('Resultaten','Ergebnisse') if path.endswith(('/resultaten','/responses')) else say('Bewerken','Bearbeiten') if path.endswith(('/edit','/bewerken')) else say('Expeditie','Expedition') }}</span>
@@ -39,8 +39,8 @@
       </nav>
     {% endif %}
     <div class="ac-bar-actions">
-      {% if not public %}<button type="button" class="ac-search-trigger" id="ac-search-trigger" aria-haspopup="dialog" aria-controls="ac-search" aria-label="{{ say('Zoek een pagina','Seite suchen') }}">{{ icon('search',16) }}<span>{{ say('Ga naar…','Gehe zu…') }}</span><kbd>⌘ K</kbd></button>{% endif %}
-      <button type="button" class="ac-settings-trigger" id="ac-settings-toggle" aria-controls="ac-settings-popover" aria-expanded="false">{{ icon('settings',17) }}<span>{{ say('Instellingen','Einstellungen') }}</span>{{ icon('down',13) }}</button>
+      {% if not public %}<button type="button" class="ac-search-trigger" id="ac-search-trigger" disabled aria-haspopup="dialog" aria-controls="ac-search" aria-label="{{ say('Zoek een pagina','Seite suchen') }}">{{ icon('search',16) }}<span>{{ say('Ga naar…','Gehe zu…') }}</span><kbd>⌘ K</kbd></button>{% endif %}
+      <button type="button" class="ac-settings-trigger" id="ac-settings-toggle" disabled aria-controls="ac-settings-popover" aria-expanded="false">{{ icon('settings',17) }}<span>{{ say('Instellingen','Einstellungen') }}</span>{{ icon('down',13) }}</button>
       <div class="ac-popover" id="ac-settings-popover" hidden aria-labelledby="ac-settings-toggle">
         <div class="ac-pop-group"><span class="ac-pop-label" id="ac-pop-language">{{ say('Taal','Sprache') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-pop-language"><button type="button" data-academy-language="nl" lang="nl" aria-pressed="{{ 'false' if academy_locale|default('nl') == 'de' else 'true' }}">Nederlands</button><button type="button" data-academy-language="de" lang="de" aria-pressed="{{ 'true' if academy_locale|default('nl') == 'de' else 'false' }}">Deutsch</button></div></div>
         <div class="ac-pop-group"><span class="ac-pop-label" id="ac-pop-theme">{{ say('Weergave','Darstellung') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-pop-theme"><button type="button" data-academy-theme="light">{{ icon('sun',15) }}{{ say('Licht','Hell') }}</button><button type="button" data-academy-theme="dark">{{ icon('moon',15) }}{{ say('Donker','Dunkel') }}</button><button type="button" data-academy-theme="system">{{ say('Systeem','System') }}</button></div></div>

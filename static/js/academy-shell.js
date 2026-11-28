@@ -23,6 +23,7 @@
   }
 
   if (settings && panel) {
+    settings.disabled = false;
     settings.addEventListener('click', function () {
       if (!panel.hidden) { closeSettings(false); return; }
       panel.hidden = false;
@@ -80,6 +81,7 @@
   }
 
   if (rail && menu) {
+    menu.disabled = false;
     menu.addEventListener('click', function () { setDrawer(true, false); });
     document.querySelectorAll('[data-ac-close-nav]').forEach(function (button) {
       button.addEventListener('click', function () { setDrawer(false, true); });
@@ -125,6 +127,7 @@
   }
   if (search) {
     if (searchTrigger) {
+      searchTrigger.disabled = false;
       searchTrigger.addEventListener('click', showSearch);
       if (!/Mac|iPhone|iPad/i.test(navigator.platform)) searchTrigger.querySelector('kbd').textContent = 'Ctrl K';
     }
