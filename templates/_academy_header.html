@@ -1,5 +1,6 @@
 {% from 'academy/_shell_icons.html' import icon %}
 {% macro say(nl, de) -%}{{ xped_copy(nl, de) if xped_copy is defined else nl }}{%- endmacro %}
+{% set product_name = 'Academy' %}
 {% set public = not academy_show_account|default(true) or request.path == '/privacy' %}
 {% set path = request.path.rstrip('/') or '/' %}
 {% set courses = path.startswith('/expedities/') or (path.startswith('/physio/elearning/') and expedition_id is defined) %}
@@ -11,7 +12,7 @@
   ('/team', 'team', 'Team', 'Team')] %}
 {% set current = '/expedities' if courses or path == '/physio/elearning' else '/instellingen' if path in ['/account','/instellingen'] else path %}
 {% set labels = {'/':say('Overzicht','Übersicht'),'/expedities':say('Expedities','Expeditionen'),'/resultaten':say('Resultaten','Ergebnisse'),'/vertalingen':say('Vertalingen','Übersetzungen'),'/team':'Team','/instellingen':say('Instellingen','Einstellungen')} %}
-{% macro brand() %}<a class="ac-brand" href="/" aria-label="{{ say('xPED Academy, naar overzicht','xPED Academy, zur Übersicht') }}"><img class="ac-brand-wordmark" src="{{ url_for('static', filename='images/xped/academy-mark.webp' if academy_locale|default('nl') == 'de' else 'images/xped/logo_nl.svg') }}" alt="{{ say('xPEDitie Pijn','xPED') }}"><img class="ac-brand-short" src="{{ url_for('static', filename='images/xped/academy-mark.webp') }}" alt=""><span class="ac-brand-product">Academy</span></a>{% endmacro %}
+{% macro brand() %}<a class="ac-brand" href="/" aria-label="{{ say('xPED Academy, naar overzicht','xPED Academy, zur Übersicht') }}"><img class="ac-brand-wordmark" src="{{ url_for('static', filename='images/xped/academy-mark.webp' if academy_locale|default('nl') == 'de' else 'images/xped/logo_nl.svg') }}" alt="{{ say('xPEDitie Pijn','xPED') }}"><img class="ac-brand-short" src="{{ url_for('static', filename='images/xped/academy-mark.webp') }}" alt=""><span class="ac-brand-product">{{ product_name }}</span></a>{% endmacro %}
 <a class="skip-link" href="#{{ 'el-mode-edit' if academy_editor_focus|default(false) else 'main-content' }}">{{ say('Naar de inhoud','Zum Inhalt') }}</a>
 {% if not public %}
 <aside class="ac-rail" id="ac-rail" aria-label="{{ say('Werkruimte','Arbeitsbereich') }}">
@@ -32,7 +33,7 @@
     {% if public %}{{ brand() }}{% else %}
       <button type="button" class="ac-icon ac-nav-toggle" id="ac-nav-toggle" aria-label="{{ say('Navigatie openen','Navigation öffnen') }}" aria-controls="ac-rail" aria-expanded="false">{{ icon('menu') }}</button>
       <a class="ac-mobile-brand" href="/" aria-label="{{ say('Naar het overzicht','Zur Übersicht') }}"><img src="{{ url_for('static',filename='images/xped/academy-mark.webp') }}" alt="xPED"></a>
-      <nav class="ac-crumbs" aria-label="{{ say('Kruimelpad','Brotkrumennavigation') }}"><a href="/">Academy</a>{{ icon('chevron',13) }}
+      <nav class="ac-crumbs" aria-label="{{ say('Kruimelpad','Brotkrumennavigation') }}"><a href="/">{{ product_name }}</a>{{ icon('chevron',13) }}
         {% if courses %}<a href="/expedities">{{ labels['/expedities'] }}</a>{{ icon('chevron',13) }}<span aria-current="page">{{ say('Resultaten','Ergebnisse') if path.endswith(('/resultaten','/responses')) else say('Bewerken','Bearbeiten') if path.endswith(('/edit','/bewerken')) else say('Expeditie','Expedition') }}</span>
         {% else %}<span aria-current="page">{{ labels.get(current, 'Academy') }}</span>{% endif %}
       </nav>

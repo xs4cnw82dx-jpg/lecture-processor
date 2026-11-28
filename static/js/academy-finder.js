@@ -11,6 +11,7 @@
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   let cached, fetchedAs, loading, lastUid, account;
   let recent = [];
+  let watchingIdentity = false;
   const roleNav = (canCreate, admin, roles) => {
     const allowed = { '/team':admin, '/resultaten':canCreate || roles.some(r => r === 'owner' || r === 'edit'), '/vertalingen':canCreate || roles.length>0 };
     document.querySelectorAll('#ac-rail .ac-route, #ac-search [data-ac-pages] a').forEach(a => {
@@ -96,6 +97,12 @@
     if (!dialog.open) return;
     try {
       account=window.Xped.bootstrap.getAuth();
+      if (!watchingIdentity) {
+        watchingIdentity=true;
+        account.onAuthStateChanged(next => {
+          if (lastUid && lastUid!==next?.uid) { clearSession(); lastUid=null; render(); }
+        });
+      }
       const identity=account.currentUser;
       if (!identity) { clearSession(); render(); return; }
       if (lastUid!==identity.uid) { clearSession(); lastUid=identity.uid; }
