@@ -287,3 +287,75 @@ test('Dutch privacy details include a working contact link on a small screen', a
   await expect(page.getByRole('link', { name: 'contact@example.test' })).toHaveAttribute('href', 'mailto:contact@example.test');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test('a Studio user can download personal data and resume a confirmed deletion', async ({ page }) => {
+  await signInToLibrary(page);
+  await page.getByText('Settings', { exact: true }).click();
+  await page.getByRole('link', { name: 'Studio account' }).click();
+  await expect(page.getByRole('heading', { name: 'Studio account', exact: true })).toBeVisible();
+  await page.route('**/api/academy/account/export', route => route.fulfill({
+    json: { account: { email: 'studio@example.test' } },
+    headers: { 'Content-Disposition': 'attachment; filename="xped-academy-account.json"' }
+  }));
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download account data' }).click();
+  expect((await download).suggestedFilename()).toBe('xped-academy-account.json');
+  const requestTimes = [];
+  await page.route('**/api/academy/account/delete', route => {
+    requestTimes.push(Date.now());
+    const attempts = requestTimes.length;
+    expect(route.request().postDataJSON()).toEqual({ confirmUid: 'studio-owner' });
+    expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
+    return route.fulfill({ status: attempts === 1 ? 202 : 200, headers: { 'Retry-After': '2' }, json: { complete: attempts > 1 } });
+  });
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  expect(requestTimes).toHaveLength(0);
+  await expect(page.getByRole('checkbox')).toHaveAccessibleDescription(/If you leave this page, return here and confirm again/);
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  await expect(page.getByRole('status')).toHaveText('Your Studio account has been deleted.');
+  expect(requestTimes).toHaveLength(2);
+  expect(requestTimes[1] - requestTimes[0]).toBeGreaterThanOrEqual(1900);
+  await expect(page.getByRole('button', { name: 'Download account data' })).toBeHidden();
+});
+
+test('a stale sign-in can return to the account page for another confirmation', async ({ page }) => {
+  await signInToLibrary(page);
+  await page.goto(academy + '/account');
+  await page.route('**/api/academy/account/delete', route => route.fulfill({
+    status: 403, json: { error: 'Sign in again to finish deleting your account.' }
+  }));
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  await page.getByRole('button', { name: 'Sign in again' }).click();
+  await expect(page).toHaveURL(academy + '/signin?next=/account');
+  await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(academy + '/account');
+  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+});
+
+test('switching identity invalidates an open deletion confirmation', async ({ page }) => {
+  await signInToLibrary(page);
+  await page.goto(academy + '/account');
+  let attempts = 0;
+  await page.route('**/api/academy/account/delete', route => {
+    attempts += 1;
+    return route.fulfill({ json: { complete: true } });
+  });
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await page.getByRole('checkbox').check();
+  await page.evaluate(() => {
+    const auth = window.firebase.auth();
+    auth.currentUser = { ...auth.currentUser, uid: 'different-user', email: 'different@example.test' };
+  });
+  await page.getByRole('button', { name: 'Permanently delete account' }).click();
+  await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
+  expect(attempts).toBe(0);
+});

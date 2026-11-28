@@ -132,3 +132,9 @@
 .academy-folder-bar[hidden] { display: none; }
 .academy-folder-bar label { font-weight: 650; }
 .academy-folder-bar select { width: min(100%, 18rem); min-width: 0; }
+.academy-preferences-panel a { color: var(--theme-accent-ink); }
+.academy-account-page h1 { margin-top: .6em; }
+.academy-account-page form { margin-block: 1em; padding: 1em; border: 1px solid var(--theme-danger-line); border-radius: .6em; }
+.academy-account-page .acct-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 1em; }
+#acct-identity { overflow-wrap: anywhere; }
+#acct-status:empty { display: none; }

@@ -2,6 +2,8 @@
 from contextlib import contextmanager
 import os
 from unittest.mock import Mock, patch
+from types import SimpleNamespace
+import time
 
 
 @contextmanager
@@ -32,14 +34,21 @@ def academy_preview(credential_path):
     database.document.return_value.get.return_value.exists = False
     firebase_app = object()
 
+    profile = SimpleNamespace(uid='studio-owner', email='studio@example.test', email_verified=True, disabled=False,
+                              user_metadata=SimpleNamespace(creation_timestamp=1, last_sign_in_timestamp=1), provider_data=[])
+    database.collection.return_value.select.return_value.stream.return_value = ()
+    database.collection.return_value.where.return_value.select.return_value.stream.return_value = ()
+
     def verify_token(token, *, app, **_options):
         if app is not firebase_app or token != 'academy-preview-token':
             raise ValueError('Unknown preview identity')
-        return {'uid': 'studio-owner', 'email': 'studio@example.test', 'email_verified': True}
+        return {'uid': 'studio-owner', 'email': 'studio@example.test', 'email_verified': True, 'auth_time': time.time()}
 
     with patch.dict(os.environ, environment), \
          patch.object(academy, '_firebase_clients', return_value=(database, firebase_app)), \
+         patch('firebase_admin.auth.get_user', return_value=profile), \
          patch('firebase_admin.auth.verify_id_token', side_effect=verify_token), \
+         patch('lecture_processor.services.academy_accounts._delete_signin', side_effect=RuntimeError('Preview identity removal is offline')), \
          patch('lecture_processor.services.book_storage.request', side_effect=RuntimeError('Preview media is offline')):
         app = academy.create_app()
         app.config['TESTING'] = True
