@@ -526,7 +526,7 @@
     if (!input || input._appDateInstance) return input && input._appDateInstance;
     options = options || {};
     var labels = options.labels || {};
-    var formatDate = options.date || function (value, fields) { return formatDate(value, fields); };
+    var formatCalendarDate = options.date || function (value, fields) { return value.toLocaleDateString(getLocale(), fields); };
     var host = document.createElement('div');
     host.className = 'app-date';
     var trigger = document.createElement('button');
@@ -559,7 +559,7 @@
     }
     function sync() {
       var value = parse(input.value);
-      trigger.textContent = value ? formatDate(value, { day: 'numeric', month: 'short', year: 'numeric' }) : labels.choose || 'Choose a date';
+      trigger.textContent = value ? formatCalendarDate(value, { day: 'numeric', month: 'short', year: 'numeric' }) : labels.choose || 'Choose a date';
       var fieldLabel = input.labels ? Array.from(input.labels).map(function (label) {
         return Array.from(label.childNodes).filter(function (node) { return node !== host && node !== input; }).map(function (node) { return node.textContent; }).join(' ').trim();
       }).join(' ') : '';
@@ -601,7 +601,7 @@
       var head = document.createElement('div');
       head.className = 'app-date-heading';
       var title = document.createElement('strong');
-      title.textContent = formatDate(cursor, { month: 'long', year: 'numeric' });
+      title.textContent = formatCalendarDate(cursor, { month: 'long', year: 'numeric' });
       title.setAttribute('aria-live', 'polite');
       function moveMonth(amount) {
         cursor = new Date(cursor.getFullYear(), cursor.getMonth() + amount, 1, 12);
@@ -624,7 +624,7 @@
       for (var number = 1; number <= count; number += 1) {
         (function (day) {
           var date = new Date(cursor.getFullYear(), cursor.getMonth(), day, 12);
-          var cell = button(String(day), formatDate(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), function () { choose(date); });
+          var cell = button(String(day), formatCalendarDate(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), function () { choose(date); });
           cell.dataset.date = iso(date);
           cell.disabled = !allowed(date);
           cell.tabIndex = day === cursor.getDate() ? 0 : -1;
