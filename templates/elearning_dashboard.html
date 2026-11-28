@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-admin.css') }}">
+  {% include '_academy_foundation.html' %}
 {% endblock %}
 {% block body %}
   {% set shell_title = 'xPEDitie Pijn Studio' %}
@@ -29,6 +30,15 @@
         </div>
       </header>
 
+      {% if academy_mode %}
+      <div class="academy-folder-bar" id="academy-folder-bar" hidden>
+        <label for="academy-folder-filter">Folder</label>
+        <select id="academy-folder-filter" class="xped-input"><option value="*">All expeditions</option></select>
+        <button type="button" class="btn small" id="academy-folder-create">New folder</button>
+        <button type="button" class="btn small" id="academy-folder-rename" hidden>Rename folder</button>
+        <button type="button" class="btn small" id="academy-folder-delete" hidden>Delete folder</button>
+      </div>
+      {% endif %}
       <div class="el-dash-search-row">
         <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">Loading your expeditions…</div>
         <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="Search expeditions…" aria-label="Search expeditions" hidden>
@@ -45,6 +55,7 @@
       </div>
     {% endif %}
 
+  {% if academy_mode %}{% include '_academy_folders.html' %}{% endif %}
   {% include '_elearning_admin.html' %}
   <dialog class="el-dialog" id="el-create-dialog" closedby="any" aria-labelledby="el-create-dialog-title">
     <div class="el-dialog-header">
@@ -127,5 +138,6 @@
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>
+  {% if academy_mode %}<script src="{{ url_for('static', filename='js/academy-folders.js') }}"></script>{% endif %}
   <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
 {% endblock %}

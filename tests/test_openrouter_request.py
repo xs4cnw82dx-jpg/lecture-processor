@@ -91,3 +91,17 @@ def test_file_permission_error_does_not_escape_in_exception_context(tmp_path, mo
         prepare([PdfPart(path)])
     assert caught.value.__context__ is None
     assert caught.value.__cause__ is None
+
+def test_pdf_request_limits_all_attachments_before_network(tmp_path):
+    pdf = tmp_path / 'synthetic.pdf'
+    image = tmp_path / 'synthetic.png'
+    with pdf.open('wb') as stream:
+        stream.truncate(10 * 1024 * 1024)
+    image.write_bytes(b'x')
+    assert prepare([PdfPart(pdf)])['messages'][0]['content'][0]['type'] == 'file'
+    with pytest.raises(ValueError):
+        prepare([ImagePart(image, 'image/png'), PdfPart(pdf)])
+    with pdf.open('ab') as stream:
+        stream.write(b'x')
+    with pytest.raises(ValueError):
+        prepare([PdfPart(pdf)])

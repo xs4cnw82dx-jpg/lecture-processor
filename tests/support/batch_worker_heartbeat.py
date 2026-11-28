@@ -70,7 +70,7 @@ class BatchHarness:
         self.writes.clear()
         self.batch_writes.clear()
 
-    def upload(self, row, runtime=None):
+    def upload(self, row, runtime=None, *, upload_slides=True):
         self.uploads.append(row['row_id'])
         self.upload_hook(row)
         row['audio_file_uri'] = f'fake://{row["row_id"]}'

@@ -114,12 +114,12 @@ def test_admin_unlimited_update_sets_category_flags_and_ledger(client, monkeypat
 
 def test_configured_admin_user_is_effectively_unlimited(client, monkeypatch):
     store = _store()
-    store['users']['u1']['email'] = 'ijacco2004@gmail.com'
-    store['users']['u1']['email_normalized'] = 'ijacco2004@gmail.com'
-    monkeypatch.setattr(core, 'ADMIN_EMAILS', {'ijacco2004@gmail.com'})
+    store['users']['u1']['email'] = 'owner@example.test'
+    store['users']['u1']['email_normalized'] = 'owner@example.test'
+    monkeypatch.setattr(core, 'ADMIN_EMAILS', {'owner@example.test'})
     _patch_admin_credit_runtime(monkeypatch, store)
 
-    response = client.get('/api/admin/users/search?email=ijacco2004@gmail.com')
+    response = client.get('/api/admin/users/search?email=owner@example.test')
 
     assert response.status_code == 200
     body = response.get_json()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from urllib.parse import urlparse
 
 from lecture_processor.domains.analytics import events as analytics_events
@@ -377,6 +378,7 @@ def _set_tools_job_progress(app_ctx, job_id: str, *, step: int, description: str
 
 def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_input: _StagedToolInput, deducted_credit: str, user_text_credits_before: int):
     retry_tracker = {}
+    discarded = ai_provider.TokenAccumulator(runtime=app_ctx)
     provider_session = None
     local_paths = list(staged_input.staged_paths or [])
     refunded_credit = False
@@ -481,6 +483,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
                 operation_name=operation_name,
+                record_discarded=discarded.record_result,
             )
         else:
             if source_type == 'image':
@@ -505,6 +508,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                     max_output_tokens=32768,
                     retry_tracker=retry_tracker,
                     operation_name='tools_extract_image',
+                    record_discarded=partial(discarded.record_result, input_modality='image'),
                 )
             else:
                 _set_tools_job_progress(app_ctx, job_id, step=2, description='Uploading document…')
@@ -525,6 +529,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                     max_output_tokens=32768,
                     retry_tracker=retry_tracker,
                     operation_name=f'tools_extract_{source_type}',
+                    record_discarded=discarded.record_result,
                 )
 
         extracted_markdown = str(getattr(response, 'text', '') or '').strip()
@@ -667,11 +672,8 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
                 'failed_stage': 'tools_extract',
                 'provider_error_code': provider_error_code,
                 'retry_attempts': retry_attempts_total,
-                'token_usage_by_stage': {},
+                **discarded.as_dict(),
                 'billing_mode': 'standard',
-                'token_input_total': 0,
-                'token_output_total': 0,
-                'token_total': 0,
                 'file_size_mb': source_size_mb,
                 'prompt_template_key': staged_input.prompt_template_key,
                 'prompt_source': staged_input.prompt_source,
@@ -696,6 +698,7 @@ def _run_tools_extract_job(app_ctx, job_id: str, uid: str, email: str, staged_in
             failed_stage='tools_extract',
             provider_error_code=provider_error_code,
             retry_attempts=retry_attempts_total,
+            **(discarded.as_dict() if discarded.stages else {}),
             credit_refunded=bool(refunded_credit),
             credit_refund_pending=bool(deducted_credit and not refund_settled),
             credit_refund_error='credit_refund_failed' if deducted_credit and not refund_settled else '',

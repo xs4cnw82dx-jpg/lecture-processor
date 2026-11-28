@@ -258,3 +258,18 @@ def test_denied_extraction_admission_cleans_local_input_without_opening_session(
     assert [event[0] for event in state.events] == ['admit', 'cleanup', 'local_delete']
     assert not state.logs and not state.refunds and not state.calls
     assert not Path(paths[0]).exists()
+
+
+@pytest.mark.parametrize('kind', ['url', 'docx', 'pdf', 'images'])
+def test_failed_extraction_records_paid_incomplete_response_on_job_and_log(core, monkeypatch, workflow, kind):
+    from tests.support.truncated_provider import scripted_session
+    state = workflow
+    session = scripted_session(core, ['tools_extraction'], [(None, 'length')])
+    monkeypatch.setattr(factory, 'open_provider_session', lambda _runtime: session)
+    run_worker(state, kind)
+    assert state.job['status'] == 'error' and len(state.refunds) == 1
+    for fields in (state.job, state.logs[-1]):
+        assert fields['token_total'] == 31 and len(fields['token_usage_by_stage']) == 1
+        usage = next(iter(fields['token_usage_by_stage'].values()))
+        assert (usage['cost_usd'], usage['thinking_tokens']) == (0.004, 2)
+        assert usage['input_modality'] == ('image' if kind == 'images' else 'text')

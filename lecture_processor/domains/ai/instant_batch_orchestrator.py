@@ -11,7 +11,7 @@ from lecture_processor.domains.ai import batch_orchestrator
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.ai.providers import factory as provider_factory
-from lecture_processor.domains.ai.providers.contracts import PreparedFilePart, TextPart
+from lecture_processor.domains.ai.providers.contracts import PdfPart, PreparedFilePart, TextPart
 from lecture_processor.domains.billing import job_charges
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.study import audio as study_audio
@@ -236,18 +236,25 @@ def _finalize_row(batch_id, batch, row, tokens, retry_tracker, runtime=None):
     )
 
 
-def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runtime, *, provider_session=None):
+def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runtime, *, local_pdf=False,
+                          provider_session=None):
     _upsert_row_progress(batch_id, row, 'slide_extraction', 'extracting slide text', runtime=runtime)
     throttler.wait()
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     with _row_session(runtime, provider_session) as session:
+        if local_pdf:
+            if not row.get('slides_local_path'):
+                raise ValueError('The staged PDF is unavailable for slide extraction.')
+            slide_part = PdfPart(row['slides_local_path'])
+        else:
+            slide_part = PreparedFilePart(row.get('slides_file_uri', ''), 'application/pdf')
         response = session.generate(
             'slides_extraction',
-            [PreparedFilePart(row.get('slides_file_uri', ''), 'application/pdf'),
-             TextPart(runtime.PROMPT_SLIDE_EXTRACTION)],
+            [slide_part, TextPart(runtime.PROMPT_SLIDE_EXTRACTION)],
             max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='instant_slide_extraction',
+            record_discarded=partial(tokens.record_result, billing_mode='instant_batch'),
         )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record_result('slide_extraction', response, billing_mode='instant_batch', input_modality='text')
@@ -329,6 +336,8 @@ def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *
             max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='instant_notes_merge',
+            source_slide_text=str(row.get('slide_text') or ''),
+            record_discarded=partial(tokens.record_result, billing_mode='instant_batch'),
         )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record_result('notes_merge', response, billing_mode='instant_batch', input_modality='text')
@@ -498,7 +507,9 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
             throttler.wait()
             batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
             batch_orchestrator._heartbeat_batch(batch_id, runtime=resolved_runtime)
-            batch_orchestrator._upload_row_files(row, runtime=resolved_runtime)
+            local_pdf = (mode in {'lecture-notes', 'slides-only'}
+                         and resolved_runtime.AI_ROUTING_SNAPSHOT.routes['slides_extraction'].provider == 'openrouter')
+            batch_orchestrator._upload_row_files(row, runtime=resolved_runtime, upload_slides=not local_pdf)
             batch_orchestrator._require_active_batch(batch_id, runtime=resolved_runtime)
             batch_orchestrator._heartbeat_batch(batch_id, runtime=resolved_runtime)
             batch_orchestrator._upsert_row(
@@ -519,7 +530,8 @@ def _process_row(batch_id, batch, row, throttler, runtime=None):
             )
 
         if mode in {'lecture-notes', 'slides-only'}:
-            _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime, **stage_options)
+            _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, resolved_runtime,
+                                  local_pdf=local_pdf, **stage_options)
 
         if mode == 'lecture-notes':
             _run_audio_transcription(

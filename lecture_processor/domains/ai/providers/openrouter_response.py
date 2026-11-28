@@ -26,11 +26,15 @@ def parse_response(payload, *, model, schema=None):
         code = error.get('code') if isinstance(error, dict) else None
         raise ProviderRequestError('finish_error', http_status=200, provider_code=code)
     message = choice.get('message')
-    if (choice.get('finish_reason') not in {'stop', 'length'}
-            or not isinstance(message, dict) or message.get('refusal')
-            or not isinstance(message.get('content'), str) or not message['content'].strip()):
+    reason = choice.get('finish_reason')
+    if reason not in {'stop', 'length'} or not isinstance(message, dict) or message.get('refusal'):
         raise ProviderRequestError('invalid_response', http_status=200)
-    text = message['content']
+    text = message.get('content')
+    # A small cap can be exhausted entirely by reasoning. Keep its usage for the retry.
+    if text is None and reason == 'length':
+        text = ''
+    if not isinstance(text, str) or (reason == 'stop' and not text.strip()):
+        raise ProviderRequestError('invalid_response', http_status=200)
     parsed = None
     if schema is not None:
         try:
@@ -50,4 +54,4 @@ def parse_response(payload, *, model, schema=None):
         cost_usd=finite_cost_usd(usage.get('cost')),
     )
     return GenerationResult(text=text, parsed=parsed, usage=normalized,
-                            provider='openrouter', model=model)
+                            provider='openrouter', model=model, finish_reason=reason)

@@ -498,6 +498,7 @@ def _run_ai_coding_job(job_id, transcript, runtime):
     run = coding_runs.run_ref(app_ctx, job_id).get().to_dict() or {}
     uid, pack_id = run.get('uid', ''), run.get('pack_id', '')
     retry_tracker = {}
+    tokens = ai_provider.TokenAccumulator(runtime=app_ctx)
     provider_session = None
     try:
         if not coding_runs.start_processing(app_ctx, job_id):
@@ -509,7 +510,6 @@ def _run_ai_coding_job(job_id, transcript, runtime):
         existing_code_ids = {code.get('code_id') for code in existing_codes}
         proposed_codes = []
         proposed_quotations = []
-        usage_by_stage = {}
         for index, chunk in enumerate(chunks):
             if index and not coding_runs.can_continue(app_ctx, job_id):
                 return
@@ -525,9 +525,11 @@ def _run_ai_coding_job(job_id, transcript, runtime):
                 max_output_tokens=32768,
                 retry_tracker=retry_tracker,
                 operation_name=operation,
+                record_discarded=lambda _stage, partial_result, key=operation: tokens.record_result(
+                    key + '_incomplete', partial_result,
+                ),
             )
-            tokens = ai_provider.TokenAccumulator(runtime=app_ctx)
-            usage_by_stage[operation] = tokens.record_result(operation, response)
+            tokens.record_result(operation, response)
             parsed = interview_coding.sanitize_ai_coding_payload(
                 getattr(response, 'text', '') or '',
                 transcript,
@@ -557,12 +559,14 @@ def _run_ai_coding_job(job_id, transcript, runtime):
         coding_runs.complete_run(app_ctx, job_id, {
             'proposed_codes': proposed_codes,
             'proposed_quotations': deduped_quotes,
-            'token_usage_by_stage': usage_by_stage,
+            'token_usage_by_stage': tokens.stages,
         }, transcript=transcript, existing_codes=existing_codes)
     except Exception:
         app_ctx.logger.exception('AI interview coding failed for pack %s', pack_id)
         try:
-            coding_runs.fail_run(app_ctx, job_id)
+            has_provider_usage = any(entry.get('provider') == 'openrouter' for entry in tokens.stages.values())
+            usage = tokens.as_dict() if has_provider_usage else None
+            coding_runs.fail_run(app_ctx, job_id, provider_usage=usage)
         except Exception:
             app_ctx.logger.exception('Could not finalize interview coding run %s', job_id)
     finally:

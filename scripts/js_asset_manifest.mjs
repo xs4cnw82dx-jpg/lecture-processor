@@ -48,6 +48,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/i18n-dynamic.js',
   'static/js/i18n-dynamic-learning.js',
   'static/js/i18n-dynamic-tools.js',
+  'static/js/i18n-academy.js',
 
   'static/js/book-zip.min.js',
   'static/js/vendor/dompurify-3.3.2/purify.min.js',
@@ -63,6 +64,8 @@ export const intentionallyUnminifiedScripts = [
   'static/js/tools-hub.js',
   'static/js/auth-utils.js',
   'static/js/academy-account.js',
+  'static/js/academy-folders.js',
+  'static/js/academy-account-data.js',
   'static/js/academy-signin.js',
   'static/js/display-format-utils.js',
   'static/js/credit-utils.js',

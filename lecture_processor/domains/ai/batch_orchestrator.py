@@ -13,9 +13,11 @@ from functools import wraps
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from lecture_processor.domains.ai import overnight_provider
 from lecture_processor.domains.ai import provider as ai_provider
 from lecture_processor.domains.ai import study_generation
 from lecture_processor.domains.ai import pipelines as ai_pipelines
+from lecture_processor.domains.ai.providers.contracts import PdfPart, TextPart
 from lecture_processor.domains.billing import job_charges, ledger
 from lecture_processor.domains.billing import receipts as billing_receipts
 from lecture_processor.domains.notifications import send_batch_completion_email
@@ -114,7 +116,7 @@ def _claim_batch_activity(batch_id, *, worker=False):
 
 def _batch_worker_may_continue(batch_id, runtime=None):
     batch = _get_batch(batch_id, runtime=runtime)
-    return bool(batch) and not _is_terminal_status(batch.get('status', ''))
+    return bool(batch) and not batch.get('overnight_recovery_started_at') and not _is_terminal_status(batch.get('status', ''))
 
 
 def _require_active_batch(batch_id, runtime=None):
@@ -610,13 +612,14 @@ def _upsert_batch(batch_id, payload, runtime=None, merge=True):
         else:
             resolved_runtime.batch_repo.set_batch_job(db, batch_id, safe_payload, merge=False)
         return
-    batch_jobs, _rows = _memory_store(resolved_runtime)
-    existing = dict(batch_jobs.get(batch_id, {}))
-    if merge:
-        existing.update(safe_payload)
-        batch_jobs[batch_id] = existing
-    else:
-        batch_jobs[batch_id] = dict(safe_payload)
+    with _BATCH_ACTIVITY_LOCK:
+        batch_jobs, _rows = _memory_store(resolved_runtime)
+        existing = dict(batch_jobs.get(batch_id, {}))
+        if merge:
+            existing.update(safe_payload)
+            batch_jobs[batch_id] = existing
+        else:
+            batch_jobs[batch_id] = dict(safe_payload)
 
 
 def _get_batch(batch_id, runtime=None):
@@ -684,14 +687,15 @@ def _upsert_row(batch_id, row_id, payload, runtime=None, merge=True):
     if db is not None:
         resolved_runtime.batch_repo.set_batch_row(db, batch_id, row_id, safe_payload, merge=merge)
         return
-    _jobs, rows_store = _memory_store(resolved_runtime)
-    rows_store.setdefault(batch_id, {})
-    existing = dict(rows_store[batch_id].get(row_id, {}))
-    if merge:
-        existing.update(safe_payload)
-        rows_store[batch_id][row_id] = existing
-    else:
-        rows_store[batch_id][row_id] = dict(safe_payload)
+    with _BATCH_ACTIVITY_LOCK:
+        _jobs, rows_store = _memory_store(resolved_runtime)
+        rows_store.setdefault(batch_id, {})
+        existing = dict(rows_store[batch_id].get(row_id, {}))
+        if merge:
+            existing.update(safe_payload)
+            rows_store[batch_id][row_id] = existing
+        else:
+            rows_store[batch_id][row_id] = dict(safe_payload)
 
 
 def _get_row(batch_id, row_id, runtime=None):
@@ -1240,6 +1244,10 @@ def _record_stage_tokens(row, stage_name, usage, runtime=None):
         'billing_mode': 'batch',
         'input_modality': 'audio' if stage_name in {'audio_transcription', 'interview_transcription'} else 'text',
     }
+    _update_stage_usage_totals(row, stage_usage)
+
+
+def _update_stage_usage_totals(row, stage_usage):
     row['token_usage_by_stage'] = stage_usage
     row['token_input_total'] = sum(int(((entry or {}).get('input_tokens', 0) or 0)) for entry in stage_usage.values())
     row['token_output_total'] = sum(int(((entry or {}).get('output_tokens', 0) or 0)) for entry in stage_usage.values())
@@ -1258,9 +1266,12 @@ def _build_stage_requests(rows, builder):
     return requests, request_rows
 
 
-def _run_stage_with_builder(batch_id, rows, stage_name, builder, handler, runtime=None):
+def _run_stage_with_builder(batch_id, rows, stage_name, builder, handler, runtime=None, *, route_stage=None):
     resolved_runtime = _resolve_runtime(runtime)
     _require_active_batch(batch_id, runtime=resolved_runtime)
+    route_stage = route_stage or overnight_provider.STAGE_ROUTES.get(stage_name)
+    if rows and overnight_provider.enabled(resolved_runtime, route_stage):
+        return overnight_provider.run_stage(batch_id, rows, stage_name, route_stage, builder, handler, resolved_runtime)
     now_ts = resolved_runtime.time.time()
     _upsert_batch(
         batch_id,
@@ -1578,7 +1589,7 @@ def _prepare_row_slides_source(row, runtime=None):
         lease.release()
 
 
-def _upload_row_files(row, runtime=None):
+def _upload_row_files(row, runtime=None, *, upload_slides=True):
     resolved_runtime = _resolve_runtime(runtime)
     local_paths = row.setdefault('_local_paths', [])
     gemini_files = row.setdefault('_gemini_files', [])
@@ -1587,7 +1598,7 @@ def _upload_row_files(row, runtime=None):
     _prepare_row_audio_source(row, local_paths, runtime=resolved_runtime)
 
     slides_path = str(row.get('slides_local_path', '') or '').strip()
-    if slides_path and not row.get('slides_file_uri'):
+    if upload_slides and slides_path and not row.get('slides_file_uri'):
         if str(row.get('slides_source_path', '') or '').lower().endswith('.pptx'):
             _require_active_batch(row.get('batch_id', ''), runtime=resolved_runtime)
         pdf_file = ai_provider.run_with_provider_retry(
@@ -2092,6 +2103,13 @@ def _repair_inactive_batch_state(batch_id, batch=None, rows=None, runtime=None):
     current_status = str(current_batch.get('status', '') or '').strip().lower()
 
     if _batch_is_stale(current_batch, runtime=resolved_runtime, now_ts=now_ts):
+        private_work = (current_batch.get('credit_admission_state') != 'pending'
+                        and overnight_provider.uses_private_stages(resolved_runtime, current_batch.get('mode')))
+        if current_batch.get('overnight_worker_id') or private_work:
+            current_batch = overnight_provider.fence_stale_worker(safe_batch_id, resolved_runtime)
+            if current_batch is None:
+                return _get_batch(safe_batch_id, runtime=resolved_runtime), rows
+            rows = None
         if current_batch.get('credit_admission_state') == 'pending':
             closed = job_charges.close_batch_admission(
                 safe_batch_id, stale_before=now_ts - _batch_recovery_stale_seconds(runtime=resolved_runtime), runtime=resolved_runtime,
@@ -2371,7 +2389,10 @@ def _upload_batch_files(batch_id, batch, rows, settled_conversion_rows, runtime)
             merge=True,
         )
         try:
-            _upload_row_files(row, runtime=runtime)
+            if batch.get('mode') in {'lecture-notes', 'slides-only'} and overnight_provider.enabled(runtime, 'slides_extraction'):
+                _upload_row_files(row, runtime=runtime, upload_slides=False)
+            else:
+                _upload_row_files(row, runtime=runtime)
         except _BatchSlideConversionError as error:
             _require_active_batch(batch_id, runtime=runtime)
             row.update(status='error', error=str(error), failed_stage='slide_conversion',
@@ -2414,7 +2435,12 @@ def _batch_text_prompt(prompt):
 
 def _extract_batch_slides(batch_id, rows, runtime):
     def _slide_builder(row):
-        if row.get('status') == 'error' or not row.get('slides_file_uri'):
+        if row.get('status') == 'error':
+            return None
+        if overnight_provider.enabled(runtime, 'slides_extraction'):
+            # Local file preparation and bounded reading belong to the provider session.
+            return [PdfPart(row.get('slides_local_path') or ''), TextPart(runtime.PROMPT_SLIDE_EXTRACTION)]
+        if not row.get('slides_file_uri'):
             return None
         return _batch_file_prompt(row.get('slides_file_uri', ''), 'application/pdf', runtime.PROMPT_SLIDE_EXTRACTION)
 
@@ -2580,7 +2606,7 @@ def _combine_batch_text(batch_id, rows, runtime):
         'notes_merge',
         _text_combine_builder,
         _text_combine_handler,
-        runtime=runtime,
+        runtime=runtime, route_stage='text_combine',
     )
 
 
@@ -2698,10 +2724,14 @@ def _settle_batch_rows(batch_id, batch, rows, settled_conversion_rows, runtime):
 
 
 def _run_batch_mode_stages(batch_id, rows, mode, runtime):
+    private_slides = mode == 'lecture-notes' and overnight_provider.enabled(runtime, 'slides_extraction')
+    if private_slides:
+        _transcribe_batch_lecture_audio(batch_id, rows, runtime)
     if mode in {'lecture-notes', 'slides-only'}:
         _extract_batch_slides(batch_id, rows, runtime)
     if mode == 'lecture-notes':
-        _transcribe_batch_lecture_audio(batch_id, rows, runtime)
+        if not private_slides:
+            _transcribe_batch_lecture_audio(batch_id, rows, runtime)
         _merge_batch_notes(batch_id, rows, runtime)
         _generate_batch_study_materials(batch_id, rows, runtime, source_field='merged_notes')
     elif mode == 'slides-only':
@@ -2726,7 +2756,17 @@ def process_batch_job(batch_id, runtime=None):
         return
     if _is_terminal_status(batch.get('status', '')):
         return
+    if batch.get('overnight_worker_id'):
+        return
+    worker_id = None
+    if overnight_provider.uses_private_stages(resolved_runtime, batch.get('mode')):
+        worker_id = str(resolved_runtime.uuid.uuid4())
+        if not overnight_provider.claim_worker(batch_id, worker_id, resolved_runtime):
+            return
     rows = _list_rows(batch_id, runtime=resolved_runtime)
+    if worker_id:
+        for row in rows:
+            row['_overnight_worker_id'] = worker_id
     if not rows:
         batch = {
             **batch,
