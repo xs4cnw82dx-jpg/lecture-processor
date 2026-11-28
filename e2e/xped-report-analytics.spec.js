@@ -132,6 +132,18 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
     await expect(page).toHaveURL(/cohort=group-b/);
     await expect(page).toHaveURL(/from=2026-10-01/);
     await page.locator('#academy-station-report').scrollIntoViewIfNeeded();
+    if (size.width < 600) {
+      const scroller = page.getByRole('region', {name:'Vergelijk de stations'});
+      expect(await scroller.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
+      const firstCell = scroller.getByRole('columnheader').first();
+      const position = (await firstCell.boundingBox()).x;
+      await scroller.focus();
+      await page.keyboard.press('ArrowRight');
+      await expect.poll(() => scroller.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+      expect(Math.abs((await firstCell.boundingBox()).x - position)).toBeLessThan(2);
+      await scroller.evaluate(node => { node.scrollLeft = 0; });
+    }
+
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await testInfo.attach('academy-report-'+size.width,{body:await page.screenshot(),contentType:'image/png'});
   });
