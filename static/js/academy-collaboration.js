@@ -297,6 +297,29 @@
     $('translation-heading').textContent = say('Vertaling naar ', 'Übersetzung nach ') + workspace.target.toUpperCase();
     const coverage = workspace.coverage[workspace.target] || { translated: 0, total: workspace.translations.length };
     $('coverage').textContent = number(coverage.translated) + ' / ' + number(coverage.total) + ' ' + say('teksten vertaald', 'Texte übersetzt');
+    const deadline = $('deadline');
+    if (deadline) {
+      deadline.value = workspace.dueDate || '';
+      $('deadline-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const button = event.currentTarget.querySelector('button');
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          const result = await api('/api/academy/courses/' + encodeURIComponent(courseId) + '/translation-date',
+            {language: workspace.target, date: deadline.value || null});
+          workspace.dueDate = result.dueDate;
+          notice(say('Streefdatum opgeslagen.', 'Zieldatum gespeichert.'));
+        } catch (error) { notice(error.message, null, 'error'); }
+        finally { button.disabled = false; }
+      });
+    } else if (workspace.dueDate) {
+      const note = $('deadline-label');
+      const time = node('time', window.Xped.i18n.date(new Date(workspace.dueDate + 'T12:00:00'), {dateStyle:'long'}));
+      time.dateTime = workspace.dueDate;
+      note.append(say('Streefdatum vertaling · ', 'Zieldatum der Übersetzung · '), time);
+      note.hidden = false;
+    }
     $('review-only').addEventListener('change', showTranslations);
     showTranslations();
     if ($('pause')) $('pause').addEventListener('submit', async event => {

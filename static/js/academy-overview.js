@@ -237,7 +237,10 @@
     const htmlHead = el('table-head'), tbody=el('rows');
     coverObserver.disconnect(); tbody.replaceChildren();
     const editorial = data.studioAdmin || data.canCreate || data.courses.some(c => c.role !== 'translate');
-    const columns = editorial ? headings : headings.filter(([k]) => ['title','languages','updatedAt'].includes(k));
+    const columns = editorial ? headings : [
+      ...headings.filter(([k]) => ['title','languages'].includes(k)),
+      ['dueDate','Streefdatum','Zieldatum'], headings.find(([k]) => k === 'updatedAt'),
+    ];
     let rows = [...data.courses];
     if (metricFilter) rows = rows.filter(c => metricFilter === 'medianSeconds' ? c.metrics?.measured > 0 : metricFilter === 'completion' ? c.metrics?.completed > 0 : c.metrics?.sessions > 0);
     rows.sort((a,b) => {
@@ -265,6 +268,14 @@
         row.append(node('td',state, c.shareEnabled ? 'ao-published' : ''));
       }
       row.append(translationCell(c));
+      if (!editorial) {
+        const due = node('td');
+        if (c.dueDate) {
+          const time = node('time', date(new Date(c.dueDate + 'T12:00:00'),{dateStyle:'medium'}));
+          time.dateTime = c.dueDate; due.append(time);
+        } else due.textContent = '—';
+        row.append(due);
+      }
       if (editorial) row.append(node('td',c.metrics ? number(c.metrics.sessions) : '—'),node('td',percent(c.metrics?.completion)),
         node('td',duration(c.metrics?.medianSeconds) + ' / ' + number(c.estimate || 0) + ' min'),
         node('td',c.drop ? lang(c.drop.title) + ' · ' + percent(c.drop.percent) : '—'));

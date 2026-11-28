@@ -165,3 +165,21 @@ def test_undo_is_scoped_to_the_member_and_retries_do_not_extend_its_deadline(stu
     assert change('remove_member', first).json['undo'] == first_undo
     timestamp += 5
     assert change('restore_member', first, undo=first_undo).status_code == 409
+
+
+def test_optional_translation_date_is_shared_with_the_assigned_translator(studio):
+    client, course = studio
+    eid = course['id']
+    path = f'/api/academy/courses/{eid}'
+    client.post('/api/academy/team/invitations', headers=ADMIN,
+                json={'role': 'translate', 'email': 'translator@example.test', 'courses': [eid]})
+    def set_date(value, headers=ADMIN, language='de'):
+        return client.post(path + '/translation-date', headers=headers, json={'language': language, 'date': value})
+    assert set_date('2026-11-35').status_code == 400
+    assert set_date('2026-12-02', language='nl').status_code == 400
+    assert set_date('2026-12-02', TRANSLATOR).status_code == 403
+    assert set_date('2026-12-02').get_json() == {'dueDate': '2026-12-02'}
+    assert client.get(path + '/workspace', headers=TRANSLATOR).json['dueDate'] == '2026-12-02'
+    assert client.get('/api/academy/overview', headers=TRANSLATOR).json['courses'][0]['dueDate'] == '2026-12-02'
+    assert set_date(None).json == {'dueDate': None}
+    assert client.get(path + '/workspace', headers=ADMIN).json['dueDate'] is None

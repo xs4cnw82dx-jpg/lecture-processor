@@ -1,4 +1,6 @@
 """Authenticated course and team views for the Academy."""
+from datetime import date
+
 from flask import Blueprint, jsonify, render_template, request
 from google.api_core.exceptions import GoogleAPICallError
 
@@ -41,11 +43,41 @@ def workspace(expedition_id):
                      'status': row['status']} for row in rows]
     return jsonify(
         course=overview, coverage=model.compute_language_coverage(course, canonical_source=True), cover=model.course_cover(course),
-        target=language, translations=translations,
+        target=language, dueDate=(course.get('_translationDates') or {}).get(language), translations=translations,
         canCreate=bool(user and studio._can_author(runtime, user)),
         studioAdmin=bool(user and studio._is_studio_admin(runtime, user)),
         html=render_template('academy/course_controls.html', role=role, expedition_id=expedition_id),
     )
+
+
+@collaboration.post('/courses/<expedition_id>/translation-date')
+def set_translation_date(expedition_id):
+    runtime = get_runtime()
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        raise model.ElearningError('Ongeldige datum.', 400)
+    value, language = body.get('date'), body.get('language')
+    if value is not None:
+        try:
+            if date.fromisoformat(value).isoformat() != value:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise model.ElearningError('Kies een geldige datum.', 400) from None
+
+    def save(unit):
+        _, course, _, _, _ = studio.access(runtime, expedition_id, required='owner', unit=unit,
+                                            course_fields={'_translationDates', 'defaultLanguage'})
+        if language != ('nl' if course.get('defaultLanguage') == 'de' else 'de'):
+            raise model.ElearningError('Kies de doeltaal van de vertaling.', 400)
+        dates = dict(course.get('_translationDates') or {})
+        if value is None:
+            dates.pop(language, None)
+        else:
+            dates[language] = value
+        unit.update_fields(studio._exp_path(expedition_id), {'_translationDates': dates})
+
+    studio._store(runtime).atomic(save)
+    return jsonify(dueDate=value)
 
 
 @collaboration.get('/team')
