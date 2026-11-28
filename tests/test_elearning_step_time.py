@@ -64,6 +64,23 @@ def test_time_is_never_stored_without_the_learners_permission(setup):
     assert 'lrn_private' not in _export(client, course['id'])
 
 
+def test_academy_discards_device_information_even_when_the_learner_shares_results(setup):
+    client, store = setup
+    course = _create_sample(client)
+    public_url = '/api/elearning/public/' + course['share']['token']
+    version = client.get(public_url).json['expedition']['shareOptions']['collectionVersion']
+    response = client.post(public_url + '/responses', headers={'User-Agent': 'Example Tablet Browser'}, json={
+        'sessionId': 'shared-results', 'consent': True, 'collectionVersion': version,
+        'deviceType': 'tablet', 'answers': {'blk_mf': 'myth'},
+    })
+    assert response.status_code == 200
+    stored = next(row for path, row in store.data.items() if path.startswith('elearning_responses/'))
+    assert stored['answers']['blk_mf'] == 'myth'
+    for row in (stored, _export(client, course['id'])['shared-results']):
+        assert {'device', 'deviceType', 'device_type', 'userAgent', 'user_agent'}.isdisjoint(row)
+        assert 'tablet' not in row.values() and 'Example Tablet Browser' not in row.values()
+
+
 def test_old_consent_cannot_start_measuring_in_the_same_session(setup):
     client, _ = setup
     course = _create_sample(client)
