@@ -15,7 +15,7 @@ Schrijf een foutmelding bij de invoer en vertel wat de gebruiker kan doen. Gebru
 
 ## Illustraties
 
-De zijwand bij het inloggen toont twee wandelaars. Het eerste lege overzicht toont samen leren aan tafel. Het bericht bij een onbereikbare pagina gebruikt de postbode. Het moment waarop een deelnemer kiest over delen en de afronding van een expeditie hebben ieder een eigen scène. Geef decoratieve illustraties een leeg tekstalternatief.
+De zijwand bij het inloggen toont wandelaars met een kind op de schouders. Het eerste lege overzicht toont samen leren aan tafel. Het bericht bij een onbereikbare pagina gebruikt de postbode. Het moment waarop een deelnemer kiest over delen en de afronding van een expeditie hebben ieder een eigen scène. Geef decoratieve illustraties een leeg tekstalternatief.
 
 Een cursus behoudt de gekozen omslag, ook wanneer de taal wisselt. De auteur kan een eigen afbeelding gebruiken of kiezen uit de officiële xPED-illustraties. Beschrijf bij inhoudelijke afbeeldingen de zichtbare handeling. Voor mediabestanden bij een cursus is de door de auteur ingevulde beschrijving leidend. In tabellen en overzichten toont de stippenroute stations en stappen uit de betreffende cursus.
 

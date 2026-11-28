@@ -540,7 +540,7 @@
       id: 'samen-op-route', academyOnly: true,
       label: 'Samen op pad', labels: { nl: 'Samen op pad', de: 'Gemeinsam unterwegs', en: 'Travelling together' },
       path: '/static/images/xped/academy-together.webp',
-      alt: { nl: 'Twee wandelaars volgen een gestippelde route.', de: 'Zwei Wandernde folgen einem gepunkteten Weg.', en: 'Two walkers follow a dotted trail.' },
+      alt: { nl: 'Drie mensen verkennen samen een blauwe route. Eén van hen kijkt vanuit een rolstoel door een verrekijker.', de: 'Drei Menschen erkunden gemeinsam einen blauen Weg. Eine Person schaut vom Rollstuhl aus durch ein Fernglas.', en: 'Three people explore a blue trail together. One looks through binoculars from a wheelchair.' },
     },
     {
       id: 'rustmoment', academyOnly: true,
