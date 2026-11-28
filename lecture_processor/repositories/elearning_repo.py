@@ -68,9 +68,9 @@ class ElearningStore:
     def ref(self, path: str):
         return self.db.document(path)
 
-    def get(self, path: str):
+    def get(self, path: str, *, fields=None):
         record('reads')
-        snap = self.ref(path).get()
+        snap = self.ref(path).get(field_paths=fields)
         return decode(snap.to_dict()) if snap.exists else None
 
     def put(self, path: str, value: dict) -> None:
@@ -126,14 +126,21 @@ class ElearningStore:
         transaction = self.db.transaction()
 
         class Unit:
-            def get(_, path: str):
+            def get(_, path: str, *, fields=None):
                 record('reads')
-                snap = self.ref(path).get(transaction=transaction)
+                snap = self.ref(path).get(transaction=transaction, field_paths=fields)
                 return decode(snap.to_dict()) if snap.exists else None
 
             def put(_, path: str, value: dict) -> None:
                 record('writes')
                 transaction.set(self.ref(path), document_fields(value))
+
+            def update_fields(_, path: str, values: dict, *, remove=()) -> None:
+                """Replace the given top-level fields of an existing document."""
+                record('writes')
+                changes = document_fields(values)
+                changes.update(dict.fromkeys(remove, firestore.DELETE_FIELD))
+                transaction.update(self.ref(path), changes)
 
             def delete(_, path: str) -> None:
                 record('writes')

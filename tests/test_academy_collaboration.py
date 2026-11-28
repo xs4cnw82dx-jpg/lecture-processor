@@ -1,7 +1,16 @@
 """Course sharing and team grants use the Academy's actual authorization boundaries."""
+from unittest.mock import Mock
+
+from google.auth.credentials import AnonymousCredentials
+from google.cloud import firestore
+from google.cloud.firestore_v1 import _helpers
+from google.cloud.firestore_v1.types import (
+    BatchGetDocumentsResponse, BeginTransactionResponse, CommitRequest, CommitResponse, Document,
+)
 from lxml import html
 import pytest
 
+from lecture_processor.repositories.elearning_repo import ElearningStore
 from lecture_processor.services import elearning_service as service
 from scripts.academy_preview import academy_preview
 
@@ -50,6 +59,50 @@ def test_team_invitations_are_atomic_across_selected_courses(studio):
     assert client.post('/api/academy/team/invitations', headers=ADMIN, json=invite).status_code == 404
     assert client.get('/api/elearning/expeditions', headers=EDITOR).json['canCreate'] is False
     assert client.get('/api/academy/courses/' + course['id'] + '/workspace', headers=EDITOR).status_code == 403
+
+
+def test_team_invitation_commits_only_membership_fields_for_100_large_courses(studio, monkeypatch):
+    client, _ = studio
+    email = 'editor@example.test'
+    course_ids = [f'course-{index}' for index in range(100)]
+    course = {'owner_uid': 'studio-owner', 'members': {'other@example.test': 'translate'},
+              '_memberUndo': {service._digest(email): {'nonce': 'old', 'until': service.now() + 12, 'role': 'edit'}},
+              'modules': [{'authorContent': 'x' * 150_000}]}
+    # Use the actual SDK to encode the complete commit, with an in-process Firestore transport.
+    db = firestore.Client(project='demo-academy', credentials=AnonymousCredentials())
+    transport = Mock()
+    monkeypatch.setattr(db, '_firestore_api_internal', transport)
+    transport.begin_transaction.return_value = BeginTransactionResponse(transaction=b'invite')
+    transport.commit.return_value = CommitResponse()
+
+    def read_document(request, **_options):
+        name, = request['documents']
+        if name.rsplit('/', 2)[-2] != 'elearning_expeditions':
+            return iter([BatchGetDocumentsResponse(missing=name)])
+        fields = request['mask'].field_paths if request['mask'] is not None else course.keys()
+        assert 'modules' not in fields
+        snapshot = Document(name=name, fields=_helpers.encode_dict({k: course[k] for k in fields if k in course}))
+        return iter([BatchGetDocumentsResponse(found=snapshot)])
+
+    transport.batch_get_documents.side_effect = read_document
+    monkeypatch.setattr(service, '_store', lambda _runtime: ElearningStore(db))
+    response = client.post('/api/academy/team/invitations', headers=ADMIN, json={
+        'role': 'author', 'email': email, 'courses': course_ids,
+    })
+    assert response.status_code == 201, response.json
+    transport.commit.assert_called_once()
+    commit = CommitRequest(**transport.commit.call_args.kwargs['request'])
+    assert len(CommitRequest.serialize(commit)) < 100_000
+    course_writes = [write for write in commit.writes if '/elearning_expeditions/' in write.update.name]
+    assert {write.update.name.rsplit('/', 1)[-1] for write in course_writes} == set(course_ids)
+    assert len(commit.writes) == len(course_ids) + 1  # The same commit grants author status.
+    for write in course_writes:
+        assert set(write.update_mask.field_paths) == {'members', 'member_emails', 'updated_at', '_memberUndo'}
+        assert '_memberUndo' not in write.update.fields  # Deleted by its field mask.
+        members = write.update.fields['members'].map_value.fields
+        assert {key: value.string_value for key, value in members.items()} == {
+            email: 'edit', 'other@example.test': 'translate',
+        }
 
 
 def test_revoke_and_restore_recheck_access_and_expiry_and_rotation_checks_current_title(studio, monkeypatch):
