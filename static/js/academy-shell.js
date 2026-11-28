@@ -14,6 +14,12 @@
   var inEditor = !!document.querySelector('.ac-editor-menu');
   var inerted = [];
   var previousFocus;
+  var courseCrumb = document.querySelector('[data-ac-course-name]');
+  if (courseCrumb) {
+    document.addEventListener('academy:course-title', function (event) {
+      courseCrumb.textContent = event.detail || courseCrumb.dataset.default;
+    });
+  }
 
   function closeSettings(focusButton) {
     if (!panel || panel.hidden) return;

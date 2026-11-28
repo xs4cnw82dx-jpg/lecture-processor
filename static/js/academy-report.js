@@ -600,6 +600,7 @@
       var courseLang = data.expedition.defaultLanguage || 'nl';
       var reportLang = langSelect.value || document.documentElement.lang || courseLang;
       label.textContent = data.expedition.title || '';
+      document.dispatchEvent(new CustomEvent('academy:course-title',{detail:label.textContent}));
       renderFilterControls(data.cohorts || []);
       labelPeriods();
       status.textContent = uiLanguage() === 'de' ? 'Ergebnisse für die gewählten Filter.' : 'Resultaten voor de gekozen filters.';
@@ -884,6 +885,7 @@
     retry.hidden = true;
     document.getElementById('el-signin').hidden = !!user;
     label.textContent = '';
+    document.dispatchEvent(new CustomEvent('academy:course-title',{detail:''}));
     lastAnalytics = null;
     window.Xped.reportDetails.reset();
     [kpisEl, funnelEl, blocksEl, feedbackEl, timeEl, trendEl, orderEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });

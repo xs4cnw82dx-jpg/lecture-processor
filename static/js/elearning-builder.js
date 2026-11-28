@@ -5210,6 +5210,12 @@
       }
       var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId));
       state.exp = res.expedition;
+      if (academyUi && !grantToken && state.exp.title) {
+        var backLink = document.getElementById('el-back-link');
+        backLink.querySelector('span').textContent = state.exp.title;
+        backLink.title = window.Xped.i18n.copy('Terug naar ','Zurück zu ') + state.exp.title;
+        backLink.setAttribute('aria-label', backLink.title);
+      }
       acceptedCourse = clone(state.exp);
       state.role = res.expedition.role || '';
       state.editLang = courseLanguages.includes(state.exp.defaultLanguage) ? state.exp.defaultLanguage : 'nl';

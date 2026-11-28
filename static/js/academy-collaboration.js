@@ -254,6 +254,7 @@
     const c = workspace.course, role = c.role;
     const title = c.title || say('Expeditie', 'Expedition');
     $('title').textContent = title;
+    doc.dispatchEvent(new CustomEvent('academy:course-title',{detail:title}));
     void showCover(workspace.cover).catch(() => { /* The course remains usable when its optional image is offline. */ });
     doc.title = title + ' · xPED Academy';
     const status = $('state-mark');
@@ -518,6 +519,7 @@
     if (coverURL) { URL.revokeObjectURL(coverURL); coverURL = ''; }
     clearTimeout(undoTimer); identity = user; task = workspace = sharing = loading = null;
     content.replaceChildren();
+    doc.dispatchEvent(new CustomEvent('academy:course-title',{detail:''}));
     if (!user || !user.emailVerified) {
       window.dispatchEvent(new CustomEvent('academy:workspace-access', { detail: { canCreate: false, studioAdmin: false, courses: [] } }));
       state(user ? say('Bevestig je e-mailadres om deze pagina te openen.', 'Bestätigen Sie Ihre E-Mail-Adresse, um diese Seite zu öffnen.') : say('Log in om deze pagina te openen.', 'Melden Sie sich an, um diese Seite zu öffnen.'), { signin:true });

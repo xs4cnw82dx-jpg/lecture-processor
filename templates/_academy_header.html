@@ -34,7 +34,11 @@
       <button type="button" class="ac-icon ac-nav-toggle" id="ac-nav-toggle" aria-label="{{ say('Navigatie openen','Navigation öffnen') }}" aria-controls="ac-rail" aria-expanded="false">{{ icon('menu') }}</button>
       <a class="ac-mobile-brand" href="/" aria-label="{{ say('Naar het overzicht','Zur Übersicht') }}"><img src="{{ url_for('static',filename='images/xped/academy-mark.webp') }}" alt="xPED"></a>
       <nav class="ac-crumbs" aria-label="{{ say('Kruimelpad','Brotkrumennavigation') }}"><a href="/">{{ product_name }}</a>{{ icon('chevron',13) }}
-        {% if courses %}<a href="/expedities">{{ labels['/expedities'] }}</a>{{ icon('chevron',13) }}<span aria-current="page">{{ say('Resultaten','Ergebnisse') if path.endswith(('/resultaten','/responses')) else say('Bewerken','Bearbeiten') if path.endswith(('/edit','/bewerken')) else say('Expeditie','Expedition') }}</span>
+        {% if courses %}<a href="/expedities">{{ labels['/expedities'] }}</a>{{ icon('chevron',13) }}
+          {% if path.endswith(('/resultaten','/responses','/bewerken','/edit')) %}
+            <a data-ac-course-name data-default="{{ say('Expeditie','Expedition') }}" href="{{ url_for('academy.course',expedition_id=expedition_id) }}">{{ say('Expeditie','Expedition') }}</a>{{ icon('chevron',13) }}
+            <span aria-current="page">{{ say('Resultaten','Ergebnisse') if path.endswith(('/resultaten','/responses')) else say('Bewerken','Bearbeiten') }}</span>
+          {% else %}<span data-ac-course-name data-default="{{ say('Expeditie','Expedition') }}" aria-current="page">{{ say('Expeditie','Expedition') }}</span>{% endif %}
         {% else %}<span aria-current="page">{{ labels.get(current, 'Academy') }}</span>{% endif %}
       </nav>
     {% endif %}
