@@ -148,6 +148,7 @@
   function showAnchoredPanel(panel, anchor) {
     if (typeof panel.showPopover !== 'function') return;
     if (panel._closeTimer) global.clearTimeout(panel._closeTimer);
+    panel._closeTimer = null;
     panel.setAttribute('popover', 'manual');
     panel.showPopover();
     anchoredPanels.set(panel, anchor);
@@ -155,8 +156,14 @@
   }
   function hideAnchoredPanel(panel) {
     anchoredPanels.delete(panel);
-    if (typeof panel.hidePopover !== 'function' || !panel.hasAttribute('popover')) return;
-    panel._closeTimer = global.setTimeout(function () { if (panel.isConnected) panel.hidePopover(); clearLayoutStyles(panel); }, 200);
+    if (typeof panel.hidePopover !== 'function' || !panel.matches(':popover-open') || panel._closeTimer) return;
+    panel._closeTimer = global.setTimeout(function () {
+      panel._closeTimer = null;
+      if (panel.isConnected && !anchoredPanels.has(panel)) {
+        panel.hidePopover();
+        clearLayoutStyles(panel);
+      }
+    }, 200);
   }
   function repositionPanels() { anchoredPanels.forEach(function (anchor, panel) { positionAnchoredPanel(panel, anchor); }); }
   global.addEventListener('resize', repositionPanels);
