@@ -1,4 +1,5 @@
 """Include authored expeditions in account exports and deletion."""
+from lecture_processor.domains.elearning import reporting
 from lecture_processor.repositories.elearning_repo import ElearningStore
 from lecture_processor.services import elearning_storage
 
@@ -10,13 +11,13 @@ def collect(runtime, uid):
         if doc.get('deleted'):
             continue
         eid = doc['id']
-        course = {k: v for k, v in doc.items() if k not in ('_id', 'lease', 'member_emails', 'asset_bytes', 'share')}
+        course = {k: v for k, v in doc.items() if k not in ('_id', 'lease', 'member_emails', 'asset_bytes', 'share', '_statisticsReset')}
         course['share'] = {k: v for k, v in doc.get('share', {}).items() if k != 'token'}
         course['assets'] = [{k: asset[k] for k in ('id', 'kind', 'size', 'content_type') if k in asset}
                             for asset in db.list('elearning_assets', 'expedition_id', eid, limit=None)
                             if asset.get('ready', True)]
-        course['responses'] = [{k: v for k, v in row.items() if k not in ('_id', 'share_token')}
-                               for row in db.list('elearning_responses', 'expedition_id', eid, limit=None)]
+        course['responses'] = [{k: v for k, v in row.items() if k not in ('_id', 'share_token', 'statisticsScope')}
+                               for row in db.list('elearning_responses', *reporting.response_scope(doc), limit=None)]
         courses.append(course)
     return courses
 

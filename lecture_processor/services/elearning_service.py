@@ -32,6 +32,7 @@ _peer_cache = OrderedDict()
 _peer_lock = Lock()
 _peer_read_locks = [Lock() for _ in range(8)]
 PEER_RESULT_SECONDS = 20
+RESPONSE_RESET_PAGE = 50
 LEASE_SECONDS = 60
 MAX_AUDIO_BYTES = 15 * 1024 * 1024
 ALLOWED_AUDIO_MIMES = {
@@ -670,13 +671,14 @@ def studio_statistics(runtime):
     user = _require_studio_admin(runtime)
     db = _store(runtime)
     courses = db.list('elearning_expeditions', 'owner_uid', user['uid'], limit=None,
-                      fields=['title', 'deleted', 'copying'])
+                      fields=['id', 'title', 'deleted', 'copying', '_statisticsReset'])
     rows = []
     for course in courses:
         if course.get('deleted') or course.get('copying'):
             continue
         eid = course['_id']
-        course_filter = [('expedition_id', '==', eid)]
+        field, value = reporting.response_scope({**course, 'id': eid})
+        course_filter = [(field, '==', value)]
         completed = db.count('elearning_responses', [*course_filter, ('completed', '==', True)])
         sessions = db.count('elearning_responses', course_filter)
         rows.append({'id': eid, 'title': course.get('title') or 'Untitled Expedition',
@@ -1284,7 +1286,8 @@ def public_submit_response(runtime, share_token: str):
         lang = model.normalize_lang(body.get('language'), course['defaultLanguage'])
         steps = {step['id']: (module, step) for module in course['modules'] for step in module['steps']}
         blocks = {blk['id']: blk for _, step in steps.values() for blk in step['blocks']}
-        doc_id = f"{exp['id']}__{session_id}"
+        field, scope = reporting.response_scope(exp)
+        doc_id = f"{scope}__{session_id}"
         path = 'elearning_responses/' + doc_id
         old = tx.get(path) or {}
         if old and (old.get('cohort') or 'default') != cohort:
@@ -1348,7 +1351,7 @@ def public_submit_response(runtime, share_token: str):
                                  'reviewer': model.safe_text(item.get('reviewer'), 80),
                                  'moduleTitle': module['title'].get(lang, ''), 'stepTitle': step['title'].get(lang, ''),
                                  'createdAt': item['createdAt'] if type(item.get('createdAt')) is int else int(ts)})
-        tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], 'session_id': session_id,
+        tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], field: scope, 'session_id': session_id,
                       'cohort': cohort, 'language': lang, 'answers': answers, 'peerAnswers': peer_answers,
                       'consentVersion': options['collectionVersion'], 'consented_at': old.get('consented_at', ts),
                       'visitedStepIds': list(dict.fromkeys(visited)), **timing,
@@ -1436,14 +1439,15 @@ def public_get_aggregates(runtime, share_token: str, block_id: str):
     if not target_block or not (target_block.get('settings') or {}).get('showPeerResults'):
         raise model.ElearningError('Peer results are not enabled for this question.', 403)
     kind = target_block['type']
-    key = (share_token, exp.get('revision'), bid, kind)
+    scope = reporting.response_scope(exp)
+    key = (share_token, exp.get('revision'), scope, bid, kind)
     with _peer_read_locks[hash(key) % len(_peer_read_locks)]:
         with _peer_lock:
             entry = _peer_cache.get(key)
             if entry and entry[0] > time.monotonic():
                 _peer_cache.move_to_end(key)
                 return jsonify(aggregate=entry[1])
-        rows = db.list('elearning_responses', 'expedition_id', exp['id'], limit=None,
+        rows = db.list('elearning_responses', *scope, limit=None,
                        fields=[FieldPath('peerAnswers', bid, kind).to_api_repr()])
         values = [r['peerAnswers'][bid][kind] for r in rows if kind in r.get('peerAnswers', {}).get(bid, {})]
         aggregate = _aggregate_block(target_block, values)
@@ -1455,11 +1459,55 @@ def public_get_aggregates(runtime, share_token: str, block_id: str):
     return jsonify(aggregate=aggregate)
 
 
+def reset_statistics(runtime, expedition_id: str):
+    body = payload()
+    expected = body.get('version')
+    if not isinstance(expected, str) or not expected or not isinstance(body.get('confirmTitle'), str):
+        raise model.ElearningError('Confirm the expedition title and the statistics version.', 400)
+
+    def clear_page(tx):
+        _, course, _, _, _ = access(runtime, expedition_id, required='owner', unit=tx,
+                                     course_fields=('id', 'title', 'share', '_statisticsReset'))
+        if course.get('title') != body['confirmTitle']:
+            raise model.ElearningError('The expedition title has changed.', 409)
+        reset = course.get('_statisticsReset') or {}
+        changes = {}
+        if reset.get('previous') == expected:
+            # A lost success response must never reset sessions collected afterwards.
+            if not reset['pending']:
+                return False
+        elif not reset.get('pending') and reporting.response_scope(course)[1] == expected:
+            reset = {'version': expedition_id + ':' + secrets.token_urlsafe(12), 'previous': expected}
+            changes['share'] = {**course.get('share', {}), 'collectionVersion': secrets.token_urlsafe(12)}
+        else:
+            raise model.ElearningError('The statistics have changed. Open the report again.', 409)
+
+        # Legacy sessions have no generation field. Their course index also includes
+        # new sessions; read only identifiers and protect the new generation here.
+        old_scope = ('expedition_id' if expected == expedition_id else 'statisticsScope', expected)
+        page = tx.response_page(old_scope, reset.get('after', ''), RESPONSE_RESET_PAGE + 1)
+        pending = len(page) > RESPONSE_RESET_PAGE
+        for row in page[:RESPONSE_RESET_PAGE]:
+            if row.get('expedition_id') == expedition_id and row.get('statisticsScope') != reset['version']:
+                tx.delete('elearning_responses/' + row['_id'])
+        reset['pending'] = pending
+        if pending:
+            reset['after'] = page[RESPONSE_RESET_PAGE - 1]['_id']
+        else:
+            reset.pop('after', None)
+        changes['_statisticsReset'] = reset
+        tx.update_fields(_exp_path(expedition_id), changes)
+        return pending
+
+    pending = _store(runtime).atomic(clear_page)
+    return jsonify(reset=True, pending=pending), 202 if pending else 200
+
+
 def get_responses(runtime, expedition_id: str):
-    db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
+    db, exp, role, _, _ = access(runtime, expedition_id, required='edit')
     cohort_filter = str(request.args.get('cohort') or '').strip()
     lang_filter = str(request.args.get('language') or '').strip().lower()
-    all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
+    all_rows = db.list('elearning_responses', *reporting.response_scope(exp), limit=None)
     cohorts = sorted({str(r.get('cohort') or 'default') for r in all_rows})
     rows = [
         r for r in all_rows
@@ -1537,6 +1585,12 @@ def get_responses(runtime, expedition_id: str):
         summary_metrics, stations = reporting.course_metrics(exp, rows, funnel, block_stats)
         extra = {'stations': stations, 'weekly': reporting.weekly_activity(
             rows, exp.get('publicRevisionWeeks', []), stamp, *reporting.period_bounds(request.args, stamp))}
+        if role == 'owner':
+            reset = exp.get('_statisticsReset') or {}
+            extra['statisticsReset'] = {
+                'version': reset['previous'] if reset.get('pending') else reporting.response_scope(exp)[1],
+                'pending': bool(reset.get('pending')), 'totalSessions': len(all_rows),
+            }
     return jsonify(
         expedition={'id': exp['id'], 'title': exp.get('title', ''), 'defaultLanguage': exp.get('defaultLanguage', 'nl'), 'modules': exp.get('modules', [])},
         summary={
@@ -1561,7 +1615,7 @@ def export_responses_csv(runtime, expedition_id: str, extension='csv'):
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     cohort_filter = str(request.args.get('cohort') or '').strip()
     lang_filter = str(request.args.get('language') or '').strip().lower()
-    all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
+    all_rows = db.list('elearning_responses', *reporting.response_scope(exp), limit=None)
     if current_app.config.get('XPED_ACADEMY'):
         stamp = now()
         scoped = reporting.filter_responses(all_rows, request.args, stamp)
@@ -1619,7 +1673,7 @@ def export_responses_csv(runtime, expedition_id: str, extension='csv'):
 def outline_results(runtime, expedition_id):
     store, course, _, _, _ = access(runtime, expedition_id, required='edit')
     ids = [step['id'] for module in course.get('modules', []) for step in module.get('steps', [])]
-    rows = store.list('elearning_responses', 'expedition_id', expedition_id, limit=None,
+    rows = store.list('elearning_responses', *reporting.response_scope(course), limit=None,
                       fields=('visitedStepIds', 'activeTimeDisclosure', 'stepSeconds'))
     visits = Counter()
     samples = {sid: [] for sid in ids}

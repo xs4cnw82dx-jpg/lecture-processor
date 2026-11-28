@@ -49,14 +49,19 @@ class MemoryStore:
 
     stream = list
 
-    def dashboard_sessions(self, expedition_id, start, end, fields):
+    def dashboard_sessions(self, scope, start, end, fields):
+        field, value = scope
         return [{k: r[k] for k in fields if k in r}
-                for r in self.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
+                for r in self.list('elearning_responses', field, value, limit=None)
                 if start <= (r.get('started_at') or 0) < end]
 
     def count(self, collection, filters):
         return sum(all(row.get(field) == value for field, _, value in filters)
                    for row in self.list(collection, limit=None))
+
+    def response_page(self, scope, after, limit):
+        rows = sorted(self.list('elearning_responses', *scope, limit=None), key=lambda row: row['_id'])
+        return [row for row in rows if row['_id'] > after][:limit]
 
     def atomic(self, operation):
         with self.lock:
