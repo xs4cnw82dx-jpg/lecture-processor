@@ -694,7 +694,7 @@
       var courseLang = data.expedition.defaultLanguage || 'nl';
       var reportLang = langSelect.value || document.documentElement.lang || courseLang;
       label.textContent = data.expedition.title || '';
-      document.title = label.textContent ? label.textContent + ' · ' + pageTitle : pageTitle;
+      document.title = label.textContent ? window.Xped.i18n.copy('Resultaten','Ergebnisse') + ' · ' + label.textContent + ' · xPED Academy' : pageTitle;
       document.dispatchEvent(new CustomEvent('academy:course-title',{detail:label.textContent}));
       renderFilterControls(data.cohorts || []);
       labelPeriods();
@@ -717,6 +717,16 @@
       var stationId = null;
       var drops = (data.funnel || []).map(function (row) { return row.lostFromPrevious || 0; });
       var largestDrop = Math.max.apply(null, drops.concat(0));
+      const measuredStations = (data.stations || []).filter(station => Number.isFinite(station.reached));
+      if (measuredStations.length > 1 && s.totalSessions > 0) {
+        const route = measuredStations.map(station => ({
+          title:Model.getLocalized(station.moduleTitle,reportLang,courseLang),
+          reached:station.reached / s.totalSessions,
+        }));
+        const label = window.Xped.i18n.copy('Bereik per station','Reichweite je Station') + ' · ' +
+          route.map(station => station.title + ' ' + formatPercent(100 * station.reached)).join(', ');
+        funnelEl.appendChild(window.XpedAcademyControls.routeStrip(route,{size:'regular',label}));
+      }
       (data.funnel || []).forEach(function (row, index) {
         if (!stationGroup || row.moduleId !== stationId) {
           stationId = row.moduleId;
@@ -764,7 +774,13 @@
         stationGroup.appendChild(reachRow);
       });
       if (funnelEl.childElementCount) {
-        funnelEl.appendChild(chartNote('n = ' + (s.totalSessions || 0) + (largestDrop ? ' · ' + copy('dropNote') : '')));
+        let caption = 'n = ' + (s.totalSessions || 0);
+        if (largestDrop) {
+          const steps = data.funnel.filter((row, i) => drops[i] === largestDrop)
+            .map(row => Model.getLocalized(row.stepTitle,reportLang,courseLang));
+          caption += ' · ' + window.Xped.i18n.copy('Grootste uitval bij ','Größter Rückgang bei ') + steps.join(', ') + ' (−' + largestDrop + ')';
+        }
+        funnelEl.appendChild(chartNote(caption));
       }
 
       document.getElementById('el-resp-funnel-card').hidden = !funnelEl.childElementCount;
@@ -939,6 +955,7 @@
             jump.className = 'el-action-link';
             var qJump = new URLSearchParams({ step: item.stepId, from: 'responses' });
             qJump.set('module', station.id);
+            if (qs.size) qJump.set('filters', qs.toString());
             jump.href = Model.coursePaths(expeditionId).edit + '?' + qJump.toString();
             jump.textContent = uiText('Open in builder →');
             c.appendChild(jump);
