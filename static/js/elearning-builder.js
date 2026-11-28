@@ -1136,7 +1136,7 @@
     var lang = state.editLang;
     if (field === 'addOption') {
       mutate(function () {
-        blk.data.options.push({ id: Model.uid('opt'), label: Model.loc(uiText('Nieuwe optie'), uiText('New option'), ''), isCorrect: false, feedback: Model.loc('', '', '') });
+        blk.data.options.push({ id: Model.uid('opt'), label: Model.loc('Nieuwe optie', 'New option', 'Neue Option'), isCorrect: false, feedback: Model.loc('', '', '') });
       }, { label: uiText('add option') });
       return;
     }
@@ -1147,7 +1147,7 @@
       mutate(function () {
         blk.data.pins.push({
           id: newPinId,
-          label: Model.loc('Punt ' + (blk.data.pins.length + 1), uiText('Point ') + (blk.data.pins.length + 1), ''),
+          label: Model.loc('Punt ' + (blk.data.pins.length + 1), 'Point ' + (blk.data.pins.length + 1), 'Punkt ' + (blk.data.pins.length + 1)),
           detail: Model.loc('', '', ''),
           x: val.x,
           y: val.y,
@@ -4064,8 +4064,8 @@
       };
     }
     if (blockType === 'richtext') {
-      sample.data.heading = Model.loc(uiText('Wat gebeurt er in het zenuwstelsel?'), uiText('What happens in the nervous system?'), '');
-      sample.data.body = Model.loc(uiText('Pijn is een **beschermingssignaal** dat je lichaam waarschuwt.'), uiText('Pain is a **protective signal** from your nervous system.'), '');
+      sample.data.heading = Model.loc('Wat gebeurt er in het zenuwstelsel?', 'What happens in the nervous system?', "Was passiert im Nervensystem?");
+      sample.data.body = Model.loc('Pijn is een **beschermingssignaal** dat je lichaam waarschuwt.', 'Pain is a **protective signal** from your nervous system.', "Schmerz ist ein **Schutzsignal**, mit dem Ihr Körper Sie warnt.");
     } else if (blockType === 'video' || blockType === 'audio') {
       var vBox = document.createElement('div');
       vBox.className = 'xped-picker-media-mock';
@@ -4081,30 +4081,30 @@
       return;
     } else if (blockType === 'image') {
       sample.data.media = { kind: 'xped', assetId: '', staticPath: '/static/images/xped/xped-wandelaar-met-kaart.png' };
-      sample.data.caption = Model.loc(uiText('Stap voor stap op ontdekkingstocht'), uiText('Step by step on your journey'), '');
+      sample.data.caption = Model.loc('Stap voor stap op ontdekkingstocht', 'Step by step on your journey', "Schritt für Schritt auf Entdeckungstour");
     } else if (blockType === 'callout') {
-      sample.data.title = Model.loc(uiText('Goed om te onthouden'), uiText('Key takeaway'), '');
-      sample.data.body = Model.loc(uiText('Pijn is altijd echt — ook als weefsel al hersteld is.'), uiText('Pain is always real — even after tissue has healed.'), '');
+      sample.data.title = Model.loc('Goed om te onthouden', 'Key takeaway', "Gut zu wissen");
+      sample.data.body = Model.loc('Pijn is altijd echt — ook als weefsel al hersteld is.', 'Pain is always real — even after tissue has healed.', "Schmerz ist immer real, auch wenn das Gewebe bereits verheilt ist.");
     } else if (blockType === 'story') {
       sample.data.speakerName = 'Inge';
-      sample.data.quote = Model.loc(uiText('Toen ik begreep hoe het alarmsysteem werkt, durfde ik weer rustig te wandelen.'), uiText('Once I understood the alarm system, I felt safe walking gently again.'), '');
+      sample.data.quote = Model.loc('Toen ik begreep hoe het alarmsysteem werkt, durfde ik weer rustig te wandelen.', 'Once I understood the alarm system, I felt safe walking gently again.', "Als ich das Alarmsystem verstanden hatte, traute ich mich wieder, in Ruhe spazieren zu gehen.");
     } else if (blockType === 'myth_fact') {
-      sample.data.statement = Model.loc(uiText('Aanhoudende pijn betekent altijd nieuwe weefselschade.'), uiText('Persistent pain always means new tissue damage.'), '');
+      sample.data.statement = Model.loc('Aanhoudende pijn betekent altijd nieuwe weefselschade.', 'Persistent pain always means new tissue damage.', "Anhaltender Schmerz bedeutet immer, dass Gewebe erneut geschädigt wurde.");
     } else if (blockType === 'mcq') {
-      sample.data.question = Model.loc(uiText('Wat helpt jou op een moeilijke dag?'), uiText('What helps you most on a tough day?'), '');
+      sample.data.question = Model.loc('Wat helpt jou op een moeilijke dag?', 'What helps you most on a tough day?', "Was hilft Ihnen an einem schwierigen Tag?");
     } else if (blockType === 'scale') {
-      sample.data.question = Model.loc(uiText('Hoeveel vertrouwen heb je om rustig te bewegen?'), uiText('How confident do you feel moving gently?'), '');
+      sample.data.question = Model.loc('Hoeveel vertrouwen heb je om rustig te bewegen?', 'How confident do you feel moving gently?', "Wie zuversichtlich sind Sie, sich behutsam zu bewegen?");
     } else if (blockType === 'reflection') {
-      sample.data.prompt = Model.loc(uiText('Welke gedachte neem je mee uit dit station?'), uiText('What thought will you take away from this station?'), '');
+      sample.data.prompt = Model.loc('Welke gedachte neem je mee uit dit station?', 'What thought will you take away from this station?', "Welchen Gedanken nehmen Sie aus dieser Station mit?");
     } else if (blockType === 'wordcloud') {
-      sample.data.question = Model.loc(uiText('Welke woorden passen bij pijn voor jou?'), uiText('Which words come to mind about pain?'), '');
+      sample.data.question = Model.loc('Welke woorden passen bij pijn voor jou?', 'Which words come to mind about pain?', "Welche Wörter verbinden Sie mit Schmerz?");
     } else if (blockType === 'ranking') {
-      sample.data.question = Model.loc(uiText('Zet op volgorde wat jou het meest helpt'), uiText('Order what helps you most'), '');
+      sample.data.question = Model.loc('Zet op volgorde wat jou het meest helpt', 'Order what helps you most', "Ordnen Sie danach, was Ihnen am meisten hilft.");
     } else if (blockType === 'hotspot') {
-      sample.data.question = Model.loc(uiText('Tik op een punt op de afbeelding'), uiText('Tap a point on the diagram'), '');
+      sample.data.question = Model.loc('Tik op een punt op de afbeelding', 'Tap a point on the diagram', "Tippen Sie auf einen Punkt im Bild.");
       sample.data.media = { kind: 'xped', assetId: '', staticPath: '/static/images/xped/xped-brein-mascotte-met-gloeilamp.png' };
     } else if (blockType === 'sources') {
-      sample.data.items = [{ id: 'src_prev', citation: Model.loc(uiText('Moseley GL & Butler DS. Explain Pain Supercharged (2017).'), uiText('Moseley GL & Butler DS. Explain Pain Supercharged (2017).'), ''), url: '10.1016/j.jpain.2015.05.005' }];
+      sample.data.items = [{ id: 'src_prev', citation: Model.loc('Moseley GL & Butler DS. Explain Pain Supercharged (2017).', 'Moseley GL & Butler DS. Explain Pain Supercharged (2017).', "Moseley GL & Butler DS. Explain Pain Supercharged (2017)."), url: '10.1016/j.jpain.2015.05.005' }];
     }
     var rendered = Blocks.renderBlock(sample, {
       lang: state.editLang,
