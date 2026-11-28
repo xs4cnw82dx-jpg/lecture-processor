@@ -1181,6 +1181,7 @@
     "calendar.next": "Nächster Monat",
     "calendar.previous": "Vorheriger Monat",
     "calendar.today": "Heute",
+    "controls.workingAction": "Wird ausgeführt: {action}",
     "count.courses": "{count, plural, one {# Expedition} other {# Expeditionen}}",
     "count.needsReview": "{count, plural, one {# Text zu prüfen} other {# Texte zu prüfen}}",
     "count.stations": "{count, plural, one {# Station} other {# Stationen}}",

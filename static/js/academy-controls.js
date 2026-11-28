@@ -187,7 +187,7 @@
     });
   }
 
-  // Item 39: one busy state for long-running actions. The button keeps its width,
+  // One busy state for long-running actions. The button keeps its width,
   // shows the shared spinner, ignores further clicks and the start is announced once.
   let busyRegion;
   function busy(button, on, label) {
@@ -203,10 +203,14 @@
       busyRegion.setAttribute('aria-live', 'polite');
       doc.body.append(busyRegion);
     }
-    const german = doc.documentElement.lang === 'de';
+    const uiText = root.Xped.i18n.t;
     const action = (label || button.getAttribute('aria-label') || button.textContent || '').trim();
     busyRegion.textContent = '';
-    root.setTimeout(() => { busyRegion.textContent = (german ? 'Wird ausgeführt: ' : 'Bezig: ') + action; }, 50);
+    root.setTimeout(() => {
+      if (button.isConnected && button.getAttribute('aria-busy') === 'true') {
+        busyRegion.textContent = uiText('controls.workingAction', { action });
+      }
+    }, 50);
   }
 
   // A station per node; real step counts and measured reach are optional.

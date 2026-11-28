@@ -1181,6 +1181,7 @@
     "calendar.next": "Volgende maand",
     "calendar.previous": "Vorige maand",
     "calendar.today": "Vandaag",
+    "controls.workingAction": "Bezig: {action}",
     "count.courses": "{count, plural, one {# expeditie} other {# expedities}}",
     "count.needsReview": "{count, plural, one {# tekst te controleren} other {# teksten te controleren}}",
     "count.stations": "{count, plural, one {# station} other {# stations}}",
