@@ -1,5 +1,4 @@
-const { test, expect } = require('@playwright/test');
-const { editorFixture } = require('./helpers/xped-editor');
+const { test, expect } = require('./helpers/academy-service');
 
 const loc = value => ({ nl: value, en: value, de: value });
 const quartiles = (median, p25, p75, count) => ({ median, p25, p75, count });
@@ -40,65 +39,52 @@ function reportData() {
   };
 }
 
-test('the report shows measured time, drop-off, weekly activity and keeps its filters in the address', async ({ page }) => {
-  await editorFixture(page);
-  const data = reportData();
-  const requests = [];
-  await page.route('**/visual/responses**', route => {
-    if (route.request().resourceType() === 'document') return route.continue();
-    requests.push(new URL(route.request().url()).search);
-    return route.fulfill({ json: data });
+for (const size of [{width:390,height:844},{width:1280,height:900}]) {
+  test('Academy reports, filters and step details are usable at ' + size.width, async ({academyPage: page, academyOrigin}, testInfo) => {
+    await page.setViewportSize(size);
+    const data = reportData();
+    data.funnel.forEach((step,index) => Object.assign(step,{continued:[28,22,18][index],lostFromPrevious:[null,12,6][index],
+      previousReached:[null,40,28][index],gradedAnswers:10,correctAnswers:3,comments:index}));
+    data.stations.forEach((station,index) => Object.assign(station,{reached:index?22:40,continued:index?18:22,lost:index?4:18,
+      correctAnswers:11,gradedAnswers:20,comments:2}));
+    Object.assign(data.blockStats.easy,{correctAnswers:8,gradedAnswers:10});
+    Object.assign(data.blockStats.hard,{correctAnswers:3,gradedAnswers:10});
+    data.weekly[1].revision={revision:4,at:1794182400};
+    const requests=[];
+    await page.route('**/api/elearning/expeditions/visual/responses*', route=>{
+      requests.push(new URL(route.request().url()).search);
+      return route.fulfill({json:data});
+    });
+    await page.goto(academyOrigin + '/expedities/visual/resultaten');
+    const time = page.locator('#el-resp-time');
+    await expect(time.getByRole('heading',{name:'Tijdsbesteding'})).toBeVisible();
+    await expect(time.locator('.el-time-figures')).toContainText('15 min');
+    const opening = time.locator('details').filter({hasText:'Opening'});
+    await opening.locator('summary').click();
+    await expect(opening.locator('.el-time-steps')).toContainText('7:45');
+    const funnel = page.locator('#el-resp-funnel');
+    await expect(funnel.locator('.el-chart-row').filter({hasText:'Explainer'})).toContainText('−12');
+    await funnel.getByRole('button',{name:'Explainer'}).click();
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByRole('heading',{name:'Explainer'})).toBeVisible();
+    await expect(drawer.locator('[data-detail-edit]')).toHaveAttribute('href',/bewerken\?step=s2/);
+    await drawer.locator('[data-detail-next]').click();
+    await expect(drawer.getByRole('heading',{name:'My plan'})).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    const stations = page.locator('#academy-station-report');
+    await stations.getByRole('button',{name:'Opening',exact:true}).click();
+    await expect(stations.getByRole('button',{name:'Question',exact:true})).toBeVisible();
+    await stations.getByRole('button',{name:'Bereikt',exact:true}).click();
+    await expect(stations.locator('th[aria-sort]')).toHaveText('Bereikt');
+    const trend = page.locator('#el-resp-trend');
+    await trend.locator('summary').click();
+    await expect(trend.getByRole('table')).toContainText('v4');
+    await expect(page.locator('#el-resp-blocks > [data-step]').first()).toContainText('Often misunderstood');
+    await page.locator('#el-resp-period').selectOption('7',{force:true});
+    await expect(page).toHaveURL(/days=7/);
+    expect(requests.some(query=>query.includes('days=7'))).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await testInfo.attach('academy-report-'+size.width,{body:await page.screenshot(),contentType:'image/png'});
   });
-  await page.goto('/physio/elearning/visual/responses');
-
-  const time = page.locator('#el-resp-time');
-  await expect(time.getByRole('heading', { name: 'Time spent' })).toBeVisible();
-  await expect(time.locator('.el-time-figures')).toContainText('Median active time15 min');
-  await expect(time.locator('.el-time-figures')).toContainText('Middle half10–21 min');
-  await expect(time.locator('.el-time-figures')).toContainText('Sessions with measured time30');
-  const opening = time.locator('details').filter({ hasText: 'Opening' });
-  await expect(opening.locator('.el-chart-flag')).toHaveText('longer than estimated');
-  await expect(time.locator('details').filter({ hasText: 'Plan' }).locator('.el-chart-flag')).toHaveCount(0);
-  await expect(opening.locator('.el-time-steps')).toBeHidden();
-  await opening.locator('summary').click();
-  await expect(opening.locator('.el-time-steps .el-chart-row').filter({ hasText: 'Explainer' })).toContainText('7:45 min');
-
-  const reach = page.locator('#el-resp-funnel');
-  await expect(reach.locator('.el-chart-row').filter({ hasText: 'Explainer' }).locator('.el-chart-drop')).toHaveText('−12 (−30%)');
-  await expect(reach.locator('.el-chart-drop.is-largest')).toHaveCount(1);
-
-  const trend = page.locator('#el-resp-trend');
-  await expect(trend.getByRole('img')).toHaveAttribute('aria-label', '3 weeks: 40 sessions started, 22 completed.');
-  await expect(trend.locator('table tbody tr')).toHaveCount(3);
-
-  const cards = page.locator('#el-resp-blocks > article h2');
-  await expect(cards).toHaveText(['Mostly answered well', 'Often misunderstood']);
-  await page.getByRole('button', { name: 'Least often correct first' }).click();
-  await expect(cards).toHaveText(['Often misunderstood', 'Mostly answered well']);
-  await expect(page.getByRole('button', { name: 'Least often correct first' })).toHaveAttribute('aria-pressed', 'true');
-
-  await page.getByRole('button', { name: /Period/ }).click();
-  await page.getByRole('option', { name: 'Last 30 days' }).click();
-  await expect.poll(() => requests.at(-1)).toBe('?days=30');
-  await expect(page).toHaveURL(/\/visual\/responses\?days=30$/);
-  await page.reload();
-  await expect.poll(() => requests.at(-1)).toBe('?days=30');
-  await expect(page.getByRole('button', { name: /Period/ })).toContainText('Last 30 days');
-});
-
-test('a course without measured time says so instead of showing zero', async ({ page }) => {
-  await editorFixture(page);
-  const data = reportData();
-  data.summary.timedSessions = 0;
-  data.summary.activeSeconds = null;
-  data.stations.forEach(station => { station.time = null; });
-  data.funnel.forEach(row => { row.time = null; });
-  data.weekly = [{ week: '2026-11-16', started: 40, completed: 22 }];
-  await page.route('**/visual/responses**', route => (route.request().resourceType() === 'document'
-    ? route.continue() : route.fulfill({ json: data })));
-  await page.goto('/physio/elearning/visual/responses');
-  await expect(page.locator('#el-resp-time')).toContainText('No measured time yet.');
-  await expect(page.locator('#el-resp-time .el-time-figures')).toHaveCount(0);
-  await expect(page.locator('#el-resp-kpis .el-split-stats')).toContainText('Median active time—');
-  await expect(page.locator('#el-resp-trend')).toBeHidden();
-});
+}

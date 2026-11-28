@@ -57,7 +57,7 @@
   };
 
   // Active time per step. It is kept only for sessions whose consent included it.
-  var stepTimer = window.XpedStepTimer ? window.XpedStepTimer.createStepTimer() : null;
+  var stepTimer = document.body.dataset.siteTitle === 'xPED Academy' && window.XpedStepTimer ? window.XpedStepTimer.createStepTimer() : null;
   function measuringTime() {
     return !!(stepTimer && isSharing() && state.consent.measuresTime === true);
   }
@@ -184,7 +184,8 @@
   function setConsent(choice) {
     resetSharing();
     // measuresTime marks consent given with the disclosure that includes active time per step.
-    if (choice) state.consent = { choice: choice, cohort: cohort, version: state.exp.shareOptions.collectionVersion, sessionId: state.sessionId, measuresTime: true };
+    if (choice) state.consent = { choice: choice, cohort: cohort, version: state.exp.shareOptions.collectionVersion, sessionId: state.sessionId };
+    if (stepTimer && choice === 'share') state.consent.measuresTime = true;
     try {
       if (state.consent) localStorage.setItem(consentKey, JSON.stringify(state.consent));
       else localStorage.removeItem(consentKey);
@@ -215,6 +216,7 @@
       completed: completed || state.view === 'summary',
       pilotFeedback: pilotFeedback,
       stepComments: state.stepComments.length ? state.stepComments : undefined,
+      activeTimeDisclosure: measuringTime() ? 1 : undefined,
       stepSeconds: measuringTime() ? stepTimer.seconds() : undefined,
     });
     var request = state.responseQueue.then(async function () {
@@ -369,7 +371,7 @@
     heading.textContent = Model.ui(state.lang, 'answerPrivacy');
     var body = document.createElement('p');
     var messages = [state.canSaveLocally ? 'deviceResume' : 'storageUnavailable'];
-    if (isSharing()) messages.unshift('authorAccess');
+    if (isSharing()) messages.unshift(measuringTime() ? 'authorAccessWithTime' : 'authorAccess');
     var shared = blocks.filter(sharesAnswer);
     if (shared.some(function (block) { return block.type !== 'wordcloud'; })) messages.push('sharedResults');
     if (shared.some(function (block) { return block.type === 'wordcloud'; })) messages.push('sharedWords');
@@ -394,7 +396,7 @@
   function renderConsent() {
     mainEl.classList.add('is-step-view');
     document.body.removeAttribute('data-active-domain');
-    RouteMap.renderConsent(mainEl, state.lang, state.exp.modules, { ...state.exp.shareOptions, cohort: cohort, changing: isSharing() }, function (choice) {
+    RouteMap.renderConsent(mainEl, state.lang, state.exp.modules, { ...state.exp.shareOptions, cohort: cohort, changing: isSharing(), activeTimeDisclosure: !!stepTimer }, function (choice) {
       if (!state.consent || state.consent.choice !== choice) setConsent(choice);
       state.view = 'step';
       showCurrentView();
@@ -458,7 +460,7 @@
     if (state.visitedStepIds.indexOf(step.id) < 0) {
       state.visitedStepIds.push(step.id);
     }
-    if (stepTimer) stepTimer.enter(step.id);
+    if (measuringTime()) stepTimer.enter(step.id);
     if (isSharing() && !state.sharedVisits.includes(step.id)) {
       state.sharedVisits.push(step.id);
       scheduleSync(false);

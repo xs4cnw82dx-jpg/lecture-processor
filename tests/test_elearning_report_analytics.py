@@ -1,9 +1,9 @@
 """Report analytics: active-time quartiles, station totals, weekly activity and period filter."""
 import time
 
-from tests.test_elearning_api import _post_pilot_response, auth_headers, setup as studio_fixture
+from tests.test_elearning_api import _post_pilot_response, auth_headers
 
-setup = studio_fixture
+from tests.support.academy_analytics import academy_studio as setup
 WEEK = 7 * 86400
 
 
@@ -39,7 +39,7 @@ def _sessions(client, url):
     ):
         body = {'sessionId': session, 'visitedStepIds': visited, 'completed': completed}
         if seconds:
-            body['stepSeconds'] = seconds
+            body.update(activeTimeDisclosure=1, stepSeconds=seconds)
         assert _post_pilot_response(client, url, json=body).status_code == 200
 
 
@@ -91,3 +91,69 @@ def test_weekly_activity_fills_quiet_weeks_and_the_period_filter_drops_older_ses
     assert recent['summary']['totalSessions'] == 3 and recent['summary']['timedSessions'] == 2
     for ignored in ('?days=0', '?days=abc', '?days=99999'):
         assert _report(client, course_id, ignored)['summary']['totalSessions'] == 4
+
+
+def test_filtered_excel_csv_and_report_use_the_same_population_and_times(setup):
+    import csv
+    import io
+    from openpyxl import load_workbook
+
+    client, db = setup
+    cid, url = _course(client)
+    _sessions(client, url)
+    # Include a note beginning with punctuation; XLSX treats learner text as plain text.
+    for path, row in db.data.items():
+        if path.endswith('__lrn_timed_1'):
+            row['pilotFeedback'] = {'comment': '=now()'}
+        if path.endswith('__lrn_timed_3'):
+            row['started_at'] = time.time() - 12 * 86400
+    query = '?days=7&cohort=patients-pilot'
+    # Empty filtered populations produce a header-only workbook.
+    endpoint = f'/api/elearning/expeditions/{cid}/responses'
+    empty = client.get(endpoint + '/export.xlsx' + query, headers=auth_headers('owner'))
+    assert empty.status_code == 200
+    assert len(list(load_workbook(io.BytesIO(empty.data), read_only=True).active.values)) == 1
+    scope = '?days=7'
+    report = _report(client, cid, scope)
+    csv_file = client.get(endpoint + '/export.csv' + scope, headers=auth_headers('owner'))
+    assert csv_file.data.startswith(b'\xef\xbb\xbf') and 'pijn-begrijpen_resultaten_' in csv_file.headers['Content-Disposition']
+    records = list(csv.DictReader(io.StringIO(csv_file.data.decode('utf-8-sig')), delimiter=';'))
+    assert len(records) == report['summary']['totalSessions'] == 3
+    timed = next(row for row in records if row['session_id'] == 'lrn_timed_1')
+    assert [timed[key] for key in ('active_seconds','station_seconds_mod_a','seconds_s2')] == ['210','180','120']
+    assert timed['pilot_comment'] == "'=now()"
+    xlsx = client.get(endpoint + '/export.xlsx' + scope, headers=auth_headers('owner'))
+    book = load_workbook(io.BytesIO(xlsx.data), read_only=True)
+    xrows = list(book.active.rows)
+    assert len(xrows) == len(records) + 1
+    columns = [cell.value for cell in xrows[0]]
+    saved = next(row for row in xrows[1:] if row[0].value == 'lrn_timed_1')
+    assert saved[columns.index('active_seconds')].value == 210
+    note = saved[columns.index('pilot_comment')]
+    assert note.data_type == 's' and note.value == '=now()'
+    assert client.get(endpoint + '/export.xlsx').status_code == 403
+
+
+def test_skipping_a_step_uses_actual_overlap_for_dropoff_and_outline_exposes_only_counts(setup):
+    client, _ = setup
+    cid, url = _course(client)
+    for sid, visits in [('only-one-a',['s1']),('only-two-b',['s2']),('both-one-two',['s1','s2'])]:
+        assert _post_pilot_response(client,url,json={'sessionId':sid,'visitedStepIds':visits}).status_code == 200
+    report = _report(client,cid)
+    assert report['funnel'][1]['lostFromPrevious'] == 1
+    assert report['funnel'][0]['continued'] == 1
+    outline = client.get(f'/api/elearning/expeditions/{cid}/outline-results', headers=auth_headers('owner'))
+    assert outline.json == {'totalSessions':3,'steps':{'s1':{'reached':2,'time':None},
+                                                        's2':{'reached':2,'time':None},'s3':{'reached':0,'time':None}}}
+    assert client.get(f'/api/elearning/expeditions/{cid}/outline-results').status_code == 403
+
+
+def test_publication_records_only_real_revision_and_date_in_its_week(setup):
+    client, db = setup
+    cid,url = _course(client)
+    assert _post_pilot_response(client,url,json={'sessionId':'test-session','visitedStepIds':['s1']}).status_code == 200
+    course = db.get('elearning_expeditions/'+cid)
+    assert len(course['publicRevisionWeeks']) == 1
+    marker = _report(client,cid)['weekly'][-1]['revision']
+    assert marker == course['publicRevisionWeeks'][0] and set(marker) == {'revision','week','at'}
+    assert marker['revision'] == course['revision']

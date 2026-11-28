@@ -151,12 +151,13 @@ def translator_page(grant_token: str, template='elearning_builder.html'):
 @elearning_bp.route('/physio/elearning/<expedition_id>/responses')
 def studio_responses_page(expedition_id: str, template='elearning_responses.html'):
     runtime = get_runtime()
+    report_js = 'js/academy-report.js' if current_app.config.get('XPED_ACADEMY') else 'js/elearning-responses.js'
     return render_template(
         template,
         expedition_id=expedition_id,
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
-        elearning_responses_js=runtime.resolve_js_asset('js/elearning-responses.js'),
+        elearning_responses_js=runtime.resolve_js_asset(report_js),
         **_studio_context(runtime),
     )
 
