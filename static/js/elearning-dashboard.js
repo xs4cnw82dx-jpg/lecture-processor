@@ -428,7 +428,7 @@
 
   function lockDialog(dialog, saving) {
     dialog.setAttribute('closedby', saving ? 'none' : 'any');
-    dialog.querySelector('button[aria-label="Close"]').disabled = saving;
+    dialog.querySelector('form[method="dialog"] button.el-icon-btn').disabled = saving;
     dialog.querySelector('[id$="-cancel"]').disabled = saving;
     dialog.toggleAttribute('data-saving', saving);
   }

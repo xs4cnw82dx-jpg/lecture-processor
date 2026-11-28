@@ -5128,11 +5128,6 @@
       editLangDD.setItems(LANG_OPTIONS, state.editLang);
       previewLangDD.setItems(LANG_OPTIONS, state.previewLang);
       if (state.role === 'translate') state.mode = 'translate';
-      var targetLanguage = urlParams.get('taal');
-      if (window.Xped && !grantToken && state.mode === 'translate' && ['de', 'nl'].includes(targetLanguage)) {
-        state.trTarget = targetLanguage;
-        state.trSource = targetLanguage === 'de' ? 'nl' : 'de';
-      }
 
       // UX-118: Support deep linking from Responses reviewer comments with archived-step fallback
       if (openedFromResponses) {
