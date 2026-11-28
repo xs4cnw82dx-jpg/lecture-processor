@@ -285,7 +285,7 @@ def _assert_lease(exp: dict, who: dict, body: dict) -> None:
         raise model.ElearningError('A newer version was saved by a collaborator. Reload before saving.', 409)
 
 
-def list_expeditions(runtime):
+def accessible_expeditions(runtime):
     user = identity(runtime, required=True)
     db = _store(runtime)
     email = _verified_member_email(user)
@@ -295,20 +295,33 @@ def list_expeditions(runtime):
     limit = None if academy else 200
     owned = db.stream('elearning_expeditions', 'owner_uid', user['uid'], limit=limit) if can_create else ()
     shared = db.stream('elearning_expeditions', 'member_emails', email, 'array_contains', limit=limit) if email else ()
-    combined = {}
-    for exp in chain(owned, shared):
-        if exp.get('copying') or (exp.get('deleted') and exp.get('owner_uid') != user['uid']):
-            continue
-        eid = exp.get('id') or exp.get('_id')
-        if not eid:
-            continue
-        role = 'owner' if exp.get('owner_uid') == user['uid'] else str((exp.get('members') or {}).get(email, ''))
-        if not role or (role == 'owner' and not can_create):
-            continue
-        combined[eid] = _summary_card(exp, role)
+    def permitted():
+        seen = set()
+        for exp in chain(owned, shared):
+            if exp.get('copying') or (exp.get('deleted') and exp.get('owner_uid') != user['uid']):
+                continue
+            eid = exp.get('id') or exp.get('_id')
+            if not eid or eid in seen:
+                continue
+            role = 'owner' if exp.get('owner_uid') == user['uid'] else (exp.get('members') or {}).get(email)
+            if role not in ('owner', 'edit', 'translate') or (role == 'owner' and not can_create):
+                continue
+            seen.add(eid)
+            yield eid, exp, role
+
+    return user, db, can_create, permitted()
+
+
+def list_expeditions(runtime):
+    academy = current_app.config.get('XPED_ACADEMY')
+    user, db, can_create, courses = accessible_expeditions(runtime)
+    items = []
+    for _, exp, role in courses:
+        card = _summary_card(exp, role)
         if role == 'owner' and academy:
-            combined[eid]['folderId'] = exp.get('folder_id', '')
-    items = sorted(combined.values(), key=lambda x: x.get('updatedAt', 0), reverse=True)
+            card['folderId'] = exp.get('folder_id', '')
+        items.append(card)
+    items.sort(key=lambda x: x.get('updatedAt', 0), reverse=True)
     capabilities = {'canCreate': can_create} if academy else {}
     if academy and can_create:
         folders = db.list(f"academy_users/{user['uid']}/folders", limit=None)
