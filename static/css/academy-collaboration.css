@@ -82,7 +82,7 @@
 .xc-team-table :is(td,th) { text-align: start; border-bottom: 1px solid var(--xc-line); padding: 10px 8px; vertical-align: middle; }
 .xc-identity { display: flex; align-items: center; gap: 10px; }
 .xc-avatar { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--xc-mint); color: var(--xc-forest); font-weight: 600; font-size: 12px; }
-.xc-dialog { width: min(480px, calc(100vw - 24px)); max-height: 85dvh; padding: 22px; margin: min(12vh,90px) auto 0; background: var(--xc-surface); color: var(--xc-ink); border: 1px solid var(--xc-line); border-radius: 12px; box-shadow: var(--ac-shadow-dialog); }
+.xc-dialog { width: min(480px, calc(100vw - 24px)); max-height: 85dvh; padding: var(--ac-space-5); margin: min(12vh,90px) auto 0; background: var(--xc-surface); color: var(--xc-ink); border: 1px solid var(--xc-line); border-radius: var(--ac-radius-surface); box-shadow: var(--ac-shadow-dialog); }
 .xc-dialog::backdrop { background: var(--ac-scrim); }
 .xc-dialog.is-sheet { margin: 0 0 0 auto; min-height: 100dvh; max-height: 100dvh; border-radius: var(--ac-radius-surface) 0 0 var(--ac-radius-surface); }
 .xc-dialog :is(header,footer) { display: flex; align-items: center; gap: 8px; }
