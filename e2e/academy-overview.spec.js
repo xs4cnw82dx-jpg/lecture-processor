@@ -6,7 +6,7 @@ const course = (id,title,role='owner') => ({id,title,role,enabledLanguages:['nl'
   stations:[{title:{nl:'Start'},steps:3}],estimate:12,updatedAt:1787350000,metrics:totals,owner:'studio@example.test',shareEnabled:true});
 function overview(courses, extras={}) {
   return {canCreate:true,studioAdmin:true,period:{from:'2026-11-01',to:'2026-11-28'},courses,
-    cohorts:['default','onderzoek'],current:totals,previous:{...totals,sessions:8},trend:[totals,totals,totals],
+    cohorts:['default','onderzoek'],current:totals,previous:{...totals,sessions:8},
     feedback:[{id:'pijn',title:'Pijn begrijpen',comment:'De tekeningen maakten het duidelijk.',at:1787350000}],...extras};
 }
 test.beforeEach(async ({page,academyOrigin}) => {
@@ -39,6 +39,10 @@ test('dashboard filters, statistics and keyboard course links use one overview r
   });
   await page.goto(academyOrigin);
   await expect(page.locator('.ao-metric-big')).toHaveText('58,3%');
+  const cards = page.locator('#ao-kpis');
+  await expect(cards.getByRole('button')).toHaveCount(4);
+  await expect(cards.getByRole('button', {name:/Gestarte sessies/})).toContainText('+4 t.o.v. vorige periode');
+  await expect(cards.locator('svg,canvas,img,[role="img"]')).toHaveCount(0);
   await expect(page.getByText('De tekeningen maakten het duidelijk.')).toBeVisible();
   await page.getByRole('button',{name:'7 dagen',exact:true}).click();
   await expect(page).toHaveURL(/days=7/);

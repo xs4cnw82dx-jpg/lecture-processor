@@ -62,8 +62,7 @@
 .ao-kpis button:last-child { border:0; }
 .ao-kpis button[aria-pressed=true] { background:var(--ac-selected); }
 .ao-kpis strong { font:600 22px/1.25 var(--ac-font); font-variant-numeric:tabular-nums; }
-.ao-kpis small { color:var(--theme-muted-strong); line-height:1.35; }
-.ao-spark { height:23px; width:80px; color:var(--ac-pine); }
+.ao-kpis small { margin-top:3px; color:var(--theme-muted-strong); line-height:1.35; }
 .ao-courses,#ao-feedback { margin-top:20px; }
 .ao-courses .ao-section-head h2 { margin:0; }
 .ao-table-wrap { overflow-x:auto; margin-top:14px; padding-bottom:6px; scrollbar-width:thin; }
@@ -104,3 +103,6 @@
   .ao-template-foot { grid-column:1/-1; }
   .ao-card h2 { font-size:18px; }
 }
+
+#ao-distribution .ao-track::-webkit-progress-value { background:var(--theme-accent-ink); }
+#ao-distribution .ao-track::-moz-progress-bar { background:var(--theme-accent-ink); }
