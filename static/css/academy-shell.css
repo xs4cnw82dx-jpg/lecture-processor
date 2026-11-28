@@ -237,3 +237,10 @@ html[data-ac-drawer="open"] .ac-nav-backdrop { display: block; position: fixed; 
   .ac-mobile-brand { display:grid; place-items:center; width:34px; height:30px; flex:none; border-radius:5px; background:var(--ac-rail-bg); }
   .ac-mobile-brand img { width:25px; max-height:24px; object-fit:contain; }
 }
+
+.ac-search-results { max-height:min(60dvh,440px); overflow:auto; }
+.ac-finder-group { border-top:1px solid var(--ac-coast); padding:4px 0; }
+.ac-finder-group p { color:var(--theme-muted-strong); font:500 12px/1.3 var(--ac-font); margin:9px 12px 4px; }
+.ac-finder-group .ac-finder-item { display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:0; border-radius:6px; background:none; color:inherit; text-align:start; text-decoration:none; cursor:pointer; }
+.ac-finder-item small { margin-inline-start:auto; color:var(--theme-muted-strong); }
+.ac-finder-item:is(:hover,:focus-visible) { background:var(--ac-selected); }
