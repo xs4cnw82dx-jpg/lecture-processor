@@ -254,10 +254,13 @@ html[data-ac-drawer="open"] .ac-nav-backdrop { display: block; position: fixed; 
 .ac-finder-item:is(:hover,:focus-visible) { background:var(--ac-selected); }
 
 @media (max-width: 440px) {
-  .ac-bar-public .ac-brand { gap: 7px; }
+  .ac-bar-public .ac-brand { min-width: 0; gap: 7px; }
   .ac-bar-public .ac-brand-product { padding-inline-start: 7px; }
+  .ac-brand-signature { width: 129px; }
+  .ac-brand-full { width: 100%; }
+  /* Keep the Dutch artboard's empty right edge outside its flexible frame. */
+  html[lang="nl"] .ac-brand-full { width: calc(100% * 129 / 108); }
 }
 @media (max-width: 370px) {
-  .ac-brand-full { width: 102px; }
-  html[lang="nl"] .ac-brand-signature { width: 86px; }
+  .ac-bar-public .ac-settings-trigger svg:last-child { display: none; }
 }
