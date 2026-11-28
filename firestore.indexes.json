@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "elearning_responses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "expedition_id", "order": "ASCENDING"},
+        {"fieldPath": "started_at", "order": "ASCENDING"}
+      ]
+    },
+    {
       "collectionGroup": "purchases",
       "queryScope": "COLLECTION",
       "fields": [

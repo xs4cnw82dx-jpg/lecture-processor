@@ -108,7 +108,7 @@
   function filterDestinations() {
     var query = matchedLetters(input.value);
     destinations.forEach(function (link) {
-      link.hidden = !matchedLetters(link.textContent).includes(query);
+      link.hidden = link.hasAttribute('data-ac-unavailable') || !matchedLetters(link.textContent).includes(query);
     });
     search.querySelector('[data-ac-no-results]').hidden = destinations.some(function (link) { return !link.hidden; });
   }
@@ -134,7 +134,7 @@
     });
     input.addEventListener('input', filterDestinations);
     search.addEventListener('keydown', function (event) {
-      var matches = destinations.filter(function (link) { return !link.hidden; });
+      var matches = Array.from(search.querySelectorAll('nav a, nav button')).filter(function (link) { return !link.hidden; });
       if (!matches.length) return;
       if (event.key === 'Enter' && document.activeElement === input) {
         event.preventDefault();

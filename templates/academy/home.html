@@ -1,0 +1,62 @@
+{% extends 'academy/base.html' %}
+{% from 'academy/_shell_icons.html' import icon %}
+{% set tr = xped_copy %}
+{% block title %}{{ tr('Overzicht','Übersicht') }} · xPED Academy{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+{% include '_academy_foundation.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/academy-overview.css') }}">
+{% endblock %}
+{% block body_attrs %} class="academy-body"{% endblock %}
+{% block body %}
+{% include '_academy_header.html' %}
+<main class="ao" id="main-content" tabindex="-1">
+  <div class="ao-title"><h1 id="ao-title">{{ tr('Overzicht','Übersicht') }}</h1>
+    <a id="ao-library" class="ao-text-link" href="/expedities" hidden>{{ tr('Alle expedities','Alle Expeditionen') }} {{ icon('arrow',16) }}</a></div>
+  <p id="ao-status" role="status">{{ tr('Je werkruimte wordt opgehaald…','Ihr Arbeitsbereich wird geladen…') }}</p>
+  <div id="ao-loading" aria-hidden="true"><i></i><i></i><i></i></div>
+  <button id="ao-retry" type="button" class="btn" hidden>{{ tr('Opnieuw proberen','Erneut versuchen') }}</button>
+  <section class="ao-welcome" id="ao-welcome" hidden aria-labelledby="ao-welcome-title">
+    <div class="ao-welcome-copy"><h2 id="ao-welcome-title">{{ tr('Nog geen expedities','Noch keine Expeditionen') }}</h2>
+      <p id="ao-welcome-body">{{ tr('Geef je eerste expeditie vorm. Kies hieronder een opzet en voeg je eigen stations en stappen toe.','Gestalten Sie Ihre erste Expedition. Wählen Sie unten eine Vorlage und ergänzen Sie Ihre Stationen und Schritte.') }}</p>
+      <a class="ao-primary" id="ao-signin" href="/inloggen?next=/" hidden>{{ tr('Inloggen','Anmelden') }} {{ icon('arrow',16) }}</a>
+      {% if legal_contact_email %}<a class="ao-text-link" id="ao-contact" href="mailto:{{ legal_contact_email }}" hidden>{{ tr('Contact met de beheerder','Kontakt zur Administration') }} {{ icon('arrow',16) }}</a>{% endif %}
+    </div><div class="ao-welcome-art"><img alt="" src="{{ url_for('static',filename='images/xped/academy-together.webp') }}"></div>
+  </section>
+  <section class="ao-start" id="ao-start" hidden>
+    <h2>{{ tr('Kies een startpunt','Wählen Sie einen Einstieg') }}</h2>
+    <div class="ao-templates">{% for key,nl,de,desc,de_desc,mins,steps in [
+      ('blank','Lege expeditie','Leere Expedition','Begin met één leeg station.','Beginnen Sie mit einer leeren Station.',5,[1]),
+      ('bps-skeleton','Drie stations','Drei Stationen','Werk vanuit het biopsychosociaal model.','Nutzen Sie das biopsychosoziale Modell.',15,[3,2,2]),
+      ('showcase','Interactief voorbeeld','Interaktives Beispiel','Bewerk een route met vragen en opdrachten.','Bearbeiten Sie eine Route mit Fragen und Aufgaben.',10,[3,2])
+    ] %}<button class="ao-template" type="button" data-preset="{{ key }}" data-steps="{{ steps|join(',') }}">
+      <span class="ao-template-route"></span><strong>{{ tr(nl,de) }}</strong>
+      <span class="ao-template-desc">{{ tr(desc,de_desc) }}</span>
+      <span class="ao-template-foot"><span>{{ mins }} min</span>{{ icon('arrow',18) }}</span>
+    </button>{% endfor %}</div>
+    <a class="ao-text-link ao-import" href="/expedities?actie=importeren">{{ tr('Een expeditie uit JSON importeren','Eine Expedition aus JSON importieren') }} {{ icon('arrow',15) }}</a>
+  </section>
+  <section id="ao-stats" hidden aria-label="{{ tr('Deelname en voortgang','Teilnahme und Fortschritt') }}">
+    <form id="ao-filters" class="ao-filters">
+      <fieldset><legend>{{ tr('Periode','Zeitraum') }}</legend><div class="ao-pills">{% for n in [7,30,90] %}<button type="button" data-days="{{ n }}" aria-pressed="{{ 'true' if n == 30 else 'false' }}">{{ n }} {{ tr('dagen','Tage') }}</button>{% endfor %}<button type="button" id="ao-custom" aria-expanded="false">{{ tr('Aangepast','Individuell') }}</button></div></fieldset>
+      <label>{{ tr('Testgroep','Testgruppe') }}<select id="ao-cohort" data-app-select><option value="">{{ tr('Alle groepen','Alle Gruppen') }}</option></select></label>
+      <div id="ao-dates" class="ao-dates" hidden><label>{{ tr('Van','Von') }}<input type="date" id="ao-from"></label><label>{{ tr('Tot en met','Bis einschließlich') }}<input type="date" id="ao-to"></label><button class="btn" type="submit">{{ tr('Toepassen','Anwenden') }}</button></div>
+    </form>
+    <div class="ao-charts"><section class="ao-card ao-completion"><h2>{{ tr('Voltooiing','Abschlussquote') }}</h2>
+      <div id="ao-completion"></div></section>
+      <section class="ao-card"><h2>{{ tr('Deelname per expeditie','Teilnahme pro Expedition') }}</h2><div id="ao-distribution"></div></section></div>
+    <div id="ao-kpis" class="ao-kpis"></div>
+  </section>
+  <section class="ao-card ao-courses" id="ao-courses" hidden>
+    <div class="ao-section-head"><h2 id="ao-courses-title">{{ tr('Expedities','Expeditionen') }}</h2>
+      <button type="button" id="ao-route-toggle" class="ao-text-link" aria-pressed="false">{{ tr('Routes tonen','Routen zeigen') }}</button></div>
+    <div class="ao-table-wrap" tabindex="0" role="region" aria-labelledby="ao-courses-title"><table><thead id="ao-table-head"></thead><tbody id="ao-rows"></tbody></table></div>
+    <p id="ao-table-empty" hidden>{{ tr('Geen expedities in deze selectie.','Keine Expeditionen in dieser Auswahl.') }}</p>
+  </section>
+  <section id="ao-feedback" class="ao-card" hidden><h2>{{ tr('Recente feedback','Aktuelle Rückmeldungen') }}</h2><ul id="ao-feedback-list"></ul><p id="ao-feedback-empty">{{ tr('Er is in deze periode nog geen feedback gedeeld.','In diesem Zeitraum wurden noch keine Rückmeldungen geteilt.') }}</p></section>
+</main>
+{% include '_academy_footer.html' %}
+{% include 'academy/runtime.html' %}
+<script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+<script src="{{ url_for('static', filename='js/academy-overview.js') }}"></script>
+{% endblock %}
