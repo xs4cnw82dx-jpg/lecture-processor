@@ -86,7 +86,9 @@
     });
     compact.addEventListener('change', function () { setDrawer(false, false); closeSettings(false); });
     setDrawer(false, false);
-    window.addEventListener('pageshow', function () { setDrawer(false, false); closeSettings(false); });
+    window.addEventListener('pageshow', function (event) {
+      if (event.persisted) { setDrawer(false, false); closeSettings(false); }
+    });
   }
   if (fold) {
     try { setFolded(localStorage.getItem('xped.sidebar.compact') === '1'); }
