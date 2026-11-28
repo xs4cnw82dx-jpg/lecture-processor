@@ -102,7 +102,7 @@
     templatePreviewEl.textContent = '';
     if (!tpl) return;
     var top = document.createElement('strong');
-    top.textContent = tpl.stations + (tpl.stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' + tpl.steps + (tpl.steps === 1 ? uiText(' step') : uiText(' steps')) + ' · ~' + tpl.minutes + ' min';
+    top.textContent = tpl.stations + (tpl.stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' + tpl.steps + (tpl.steps === 1 ? uiText(' step') : uiText(' steps')) + ' · ~' + tpl.minutes + uiText(' min');
     var sum = document.createElement('p');
     sum.className = 'el-exp-meta';
     sum.textContent = tpl.summary;
@@ -303,7 +303,7 @@
             var open = pill.getAttribute('aria-expanded') !== 'true';
             covRow.querySelectorAll('button').forEach(function (other) { other.setAttribute('aria-expanded', 'false'); });
             pill.setAttribute('aria-expanded', String(open));
-            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + ' of ' + stat.total + ' fields translated' + (stat.needsReview ? ' · ' + stat.needsReview + ' need review' : '');
+            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + uiText(' of ') + stat.total + uiText(' fields translated') + (stat.needsReview ? ' · ' + stat.needsReview + uiText(' need review') : '');
             coverageDetail.hidden = !open;
           });
           pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
@@ -471,10 +471,10 @@
     var preset = document.getElementById('el-new-template').value;
     var origText = confirm.textContent;
     var progress = document.getElementById('el-create-progress');
-    progress.textContent = 'Creating expedition…';
+    progress.textContent = uiText('Creating expedition…');
     confirm.disabled = true;
     lockDialog(createDialog, true);
-    confirm.textContent = 'Creating expedition…';
+    confirm.textContent = uiText('Creating expedition…');
     var payload = Model.createExpeditionPreset(preset, titleInput.value, lang, { academy: academy });
     if (academy) payload.enabledLanguages = ['nl', 'de'];
     try {
@@ -505,7 +505,7 @@
       if (btn.disabled) return;
       btn.disabled = true;
       lockDialog(importDialog, true);
-      btn.textContent = 'Importing…';
+      btn.textContent = uiText('Importing…');
       try {
         var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(pendingImportPayload) });
         pendingImportPayload = null;
@@ -517,7 +517,7 @@
         lockDialog(importDialog, false);
         dialogError('import', err);
         btn.disabled = false;
-        btn.textContent = 'Import & Open Builder';
+        btn.textContent = uiText('Import & Open Builder');
       }
     });
     importDialog.addEventListener('close', function () {
@@ -535,8 +535,8 @@
     var confirm = document.getElementById('el-import-confirm');
     pendingImportPayload = null;
     confirm.disabled = true;
-    confirm.textContent = 'Import & Open Builder';
-    summary.textContent = 'Checking expedition…';
+    confirm.textContent = uiText('Import & Open Builder');
+    summary.textContent = uiText('Checking expedition…');
     document.getElementById('el-import-error').hidden = true;
     importDialog.showModal();
     try {
@@ -552,9 +552,9 @@
       title.setAttribute('translate', 'no');
       var info = document.createElement('p');
       info.className = 'el-exp-meta';
-      info.textContent = checked.stationCount + (checked.stationCount === 1 ? ' station' : ' stations') + ' · ' +
-        checked.stepCount + (checked.stepCount === 1 ? ' step' : ' steps') + ' · ' +
-        checked.enabledLanguages.join(', ').toUpperCase() + ' · Private draft';
+      info.textContent = checked.stationCount + (checked.stationCount === 1 ? uiText(' station') : uiText(' stations')) + ' · ' +
+        checked.stepCount + (checked.stepCount === 1 ? uiText(' step') : uiText(' steps')) + ' · ' +
+        checked.enabledLanguages.join(', ').toUpperCase() + uiText(' · Private draft');
       summary.replaceChildren(title, info);
       confirm.disabled = false;
     } catch (err) {

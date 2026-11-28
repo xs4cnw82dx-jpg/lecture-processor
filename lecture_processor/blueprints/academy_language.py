@@ -98,7 +98,7 @@ def learner_language(available):
     browser = request.headers.get('Accept-Language', '').split(',', 1)[0].split(';', 1)[0].strip().lower()
     first = 'de' if browser.split('-')[0] == 'de' else 'nl'
     requested = request.args.get('lang')
-    for option in (requested, first, 'nl', 'de'):
+    for option in (requested, request.cookies.get('xped-course-language'), first, 'nl', 'de'):
         if option in available:
             return option
     return first

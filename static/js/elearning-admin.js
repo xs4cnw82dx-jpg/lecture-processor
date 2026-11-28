@@ -3,7 +3,7 @@
   var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
   function create(api, refreshLibrary) {
     function el(id) { return document.getElementById('el-admin-' + id); }
-    function t(key, params) { return root.LectureI18n ? root.LectureI18n.t(key, params) : key.replace(/\{(\w+)\}/g, (_, k) => params[k]); }
+    function t(key, params) { return root.Xped?.i18n ? root.Xped.i18n.t(key, params) : root.LectureI18n ? root.LectureI18n.t(key, params) : key.replace(/\{(\w+)\}/g, (_, k) => params[k]); }
     var dialog = el('dialog');
     var course = el('course');
     var controls = el('controls');

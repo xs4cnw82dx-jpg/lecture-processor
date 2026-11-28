@@ -3,6 +3,7 @@
 
   const locale = window.Xped.i18n;
   let preferenceVersion = 0;
+  let writing = Promise.resolve();
   let interacted = false;
   document.addEventListener('input', () => { interacted = true; }, { once: true });
   const languageControls = document.querySelectorAll('#academy-language, [data-academy-language]');
@@ -16,7 +17,7 @@
     });
   }
   checkControls(languageControls, 'academyLanguage', locale.language);
-  checkControls(themeControls, 'academyTheme', document.documentElement.dataset.theme);
+  checkControls(themeControls, 'academyTheme', locale.theme());
   themeControls.forEach(control => {
     control.addEventListener(control.tagName === 'SELECT' || control.type === 'radio' ? 'change' : 'click', () => {
       const next = control.dataset.academyTheme || control.value;
@@ -32,10 +33,16 @@
       try {
         const token = await user.getIdToken();
         if (auth.currentUser !== user || requestVersion !== preferenceVersion) return;
-        const response = await fetch('/api/academy/preferences', {
+        // Queue writes from this tab. Older selections must not arrive after a newer one.
+        writing = writing.catch(() => {}).then(() => {
+          if (requestVersion !== preferenceVersion || auth.currentUser !== user) return undefined;
+          return fetch('/api/academy/preferences', {
           method: 'PUT', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ language: next })
+            body: JSON.stringify({ language: next })
+          });
         });
+        const response = await writing;
+        if (!response) return;
         if (!response.ok) throw new Error('preference_unavailable');
       } catch (_) {
         if (requestVersion === preferenceVersion) {

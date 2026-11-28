@@ -1,3 +1,3 @@
-{% set academy_messages_section = 'builder' if elearning_builder_js is defined else 'library' if elearning_dashboard_js is defined else 'report' if elearning_responses_js is defined else 'player' if elearning_player_js is defined else 'signin' if request.path == '/signin' else 'account' %}
+{% set academy_messages_section = 'builder' if elearning_builder_js is defined else 'library' if elearning_dashboard_js is defined else 'report' if elearning_responses_js is defined else 'player' if elearning_player_js is defined else 'signin' if academy_view|default('') == 'signin' else 'account' %}
 <script src="{{ url_for('academy_language.messages', language_code=academy_locale, section=academy_messages_section) }}"></script>
 <script src="{{ url_for('static', filename='js/academy-locale.js') }}"></script>

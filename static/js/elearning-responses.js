@@ -289,7 +289,7 @@
               if (isMulti) {
                 var mNote = document.createElement('p');
                 mNote.className = 'el-exp-meta';
-                mNote.textContent = uiText('Share of ') + agg.count + (agg.count === 1 ? ' respondent.' : ' respondents.') + uiText(' Each could choose more than one option, so the total can exceed 100%.');
+                mNote.textContent = uiText('Share of ') + agg.count + (agg.count === 1 ? uiText(' respondent.') : uiText(' respondents.')) + uiText(' Each could choose more than one option, so the total can exceed 100%.');
                 card.appendChild(mNote);
               }
               var choices = (blk.data.options || []).map(function (option) { return option.id; });
@@ -336,7 +336,7 @@
                 var cntMeta = document.createElement('p');
                 cntMeta.className = 'el-exp-meta';
                 var total = agg.sampleTotal === undefined ? agg.samples.length : agg.sampleTotal;
-                cntMeta.textContent = uiText('Showing ') + shown.length + uiText(' of ') + total + ' reflection excerpts';
+                cntMeta.textContent = uiText('Showing ') + shown.length + uiText(' of ') + total + uiText(' reflection excerpts');
                 if (total > agg.samples.length) cntMeta.textContent += '. Export the CSV for all responses.';
                 samplesWrap.appendChild(cntMeta);
                 shown.forEach(function (txt) {
@@ -350,7 +350,7 @@
                   var moreBtn = document.createElement('button');
                   moreBtn.type = 'button';
                   moreBtn.className = 'btn small';
-                  moreBtn.textContent = showingAll ? uiText('Show fewer') : (uiText('Show ') + agg.samples.length + ' excerpts');
+                  moreBtn.textContent = showingAll ? uiText('Show fewer') : (uiText('Show ') + agg.samples.length + uiText(' excerpts'));
                   moreBtn.addEventListener('click', function () {
                     showingAll = !showingAll;
                     drawSamples();
@@ -417,7 +417,7 @@
           var row = document.createElement('div');
           row.className = 'el-member-row';
           var left = document.createElement('div');
-          left.textContent = '[' + item.cohort + ' · ' + String(item.language || 'nl').toUpperCase() + '] Clarity: ' + (item.clarity || '—') + '/5 · Engagement: ' + (item.engagement || '—') + '/5 — ' + (item.comment || uiText('(no comment)'));
+          left.textContent = '[' + item.cohort + ' · ' + String(item.language || 'nl').toUpperCase() + uiText('] Clarity: ') + (item.clarity || '—') + '/5 · Engagement: ' + (item.engagement || '—') + '/5 — ' + (item.comment || uiText('(no comment)'));
           row.appendChild(left);
           feedbackEl.appendChild(row);
         });
