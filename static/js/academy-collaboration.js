@@ -15,7 +15,7 @@
   const path = '/expedities/' + encodeURIComponent(courseId);
   let focusPerson = new URLSearchParams(location.search).get('persoon')?.trim().toLowerCase();
   const shareEndpoint = '/api/elearning/expeditions/' + encodeURIComponent(courseId) + '/sharing';
-  let auth, client, workspace, sharing, identity, epoch = 0, task, loading, undoTimer, coverURL;
+  let auth, client, workspace, sharing, identity, epoch = 0, task, loading, coverURL;
   const content = $('content');
 
   function node(tag, value, className) {
@@ -69,22 +69,19 @@
     content.setAttribute('aria-busy', String(!!options.busy));
   }
   function notice(message, undo, type = 'success') {
-    const host = $('feedback');
-    if (!host) return;
-    clearTimeout(undoTimer);
-    const text = node('span');
-    host.replaceChildren(text);
-    window.Xped.ux.toast(message, { element: host, textElement: text, type, duration: undo ? 8000 : 5000, hide: () => host.replaceChildren() });
-    if (undo) {
-      const button = action(uiText('workspace.undo'), async () => {
-        clearTimeout(undoTimer);
-        button.disabled = true;
-        try { await undo(); notice(uiText('workspace.accessRestored')); }
-        catch (error) { notice(error.message, null, 'error'); }
-      }, 'xc-text-action');
-      host.append(button);
-      undoTimer = setTimeout(() => { if (host.contains(button)) button.remove(); }, 8000);
-    }
+    const version = epoch;
+    window.Xped.ux.toast(message, { type, scope: 'collaboration', action: undo ? {
+      label: uiText('workspace.undo'),
+      onClick: async () => {
+        if (!isCurrent(version)) return;
+        try {
+          await undo();
+          if (isCurrent(version)) notice(uiText('workspace.accessRestored'));
+        } catch (error) {
+          if (isCurrent(version)) notice(error.message, null, 'error');
+        }
+      },
+    } : null });
   }
   function detail(dl, title, value) { dl.append(node('dt', title), node('dd', value)); }
   function field(label, name, type, values) {
@@ -379,9 +376,9 @@
         showSharing();
       } catch (error) {
         if (isCurrent(version)) {
-          notice(error.message, null, 'error');
-          const retry = action(uiText('workspace.retry'), () => loadSharing(true));
-          $('feedback').append(retry);
+          window.Xped.ux.toast(error.message, { type: 'error', scope: 'collaboration',
+            action: { label: uiText('workspace.retry'), onClick: () => { if (isCurrent(version)) loadSharing(true); } },
+          });
         }
       } finally { if (isCurrent(version)) loading = null; }
     })();
@@ -570,7 +567,8 @@
     const version = ++epoch;
     if ($('dialog')?.open) $('dialog').close();
     if (coverURL) { URL.revokeObjectURL(coverURL); coverURL = ''; }
-    clearTimeout(undoTimer); identity = user; task = workspace = sharing = loading = null;
+    window.Xped.ux.clearToasts('collaboration');
+    identity = user; task = workspace = sharing = loading = null;
     content.replaceChildren();
     doc.dispatchEvent(new CustomEvent('academy:course-title',{detail:''}));
     if (!user || !user.emailVerified) {

@@ -232,3 +232,59 @@ button:disabled { cursor: default; }
 .app-date-grid button[aria-current] { box-shadow: inset 0 0 0 1px var(--theme-accent-ink); }
 .app-date-grid button[aria-pressed="true"] { color: var(--btn-primary-ink); background: var(--btn-primary-start); }
 .app-date-footer { margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--theme-line); }
+
+.ac-toast-stack {
+  position: fixed;
+  z-index: var(--z-toast);
+  inset-inline-end: max(24px,env(safe-area-inset-right));
+  inset-block-end: max(24px,env(safe-area-inset-bottom));
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  max-width: min(28rem,calc(100% - 32px));
+  pointer-events: none;
+}
+.ac-toast-stack:empty { display: none; }
+.ac-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-line);
+  border-radius: var(--ac-radius-surface);
+  background: var(--theme-surface);
+  color: var(--theme-ink);
+  box-shadow: var(--ac-shadow-popover);
+  font: 500 13px/1.45 var(--ac-font);
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+}
+.ac-toast-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--theme-accent-ink);
+  font-size: 12px;
+  line-height: 1;
+}
+.ac-toast[data-type="success"] .ac-toast-icon { color: var(--theme-success-ink); background: var(--theme-success-soft); }
+.ac-toast[data-type="error"] .ac-toast-icon { color: var(--theme-danger-ink); background: var(--theme-danger-soft); }
+.ac-toast[data-type="warning"] .ac-toast-icon { color: var(--theme-warning-ink); background: var(--theme-warning-soft); }
+.ac-toast-action {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--theme-control-border);
+  border-radius: var(--ac-radius-control);
+  background: var(--theme-surface);
+  color: var(--theme-ink);
+  text-decoration: none;
+  font: inherit;
+}
+.ac-toast-action:hover { background: var(--theme-surface-soft); }
+@media (max-width: 600px) {
+  .ac-toast-stack { inset-inline: 16px; justify-items: center; max-width: none; }
+}

@@ -275,6 +275,16 @@
   document.getElementById('el-preview-lang-host').appendChild(previewLangDD.el);
 
   function showToast(msg, undoCb) {
+    if (academyUi) {
+      var modeAtChange = state.mode;
+      ux.toast(msg, {
+        type: undoCb === 'error' ? 'error' : 'info', scope: 'editor',
+        action: typeof undoCb === 'function' ? { label: 'Undo', onClick: function () {
+          if (state.mode === modeAtChange) undoCb();
+        } } : null,
+      });
+      return;
+    }
     ux.toast(msg, {
       element: toastEl,
       type: undoCb === 'error' ? 'error' : 'info',
@@ -699,7 +709,10 @@
 
   function setMode(nextMode) {
     if (!canEditStructure() && nextMode === 'edit') nextMode = 'translate';
-    if (state.mode !== nextMode) toastEl.hidden = true;
+    if (state.mode !== nextMode) {
+      if (academyUi) ux.clearToasts('editor');
+      else toastEl.hidden = true;
+    }
     state.mode = nextMode;
     updateEditorHeading();
     if (academyUi && nextMode === 'edit') refreshEditLanguages();
@@ -4524,7 +4537,8 @@
     });
     updateUndoButtons();
     // Deletion toasts can retain a separate one-click undo snapshot.
-    toastEl.querySelector('button')?.remove();
+    if (academyUi) ux.clearToasts('editor');
+    else toastEl.querySelector('button')?.remove();
     var url = assetUrl(assetId);
     var cached = privateMedia.get(url);
     if (cached) {

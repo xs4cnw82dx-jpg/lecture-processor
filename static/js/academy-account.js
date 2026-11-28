@@ -70,7 +70,12 @@
 
   var verify = document.getElementById('academy-verify-email');
   if (verify) verify.href = '/inloggen?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+  const uiText = locale.t;
+  var actor;
   bootstrap.onAuthStateReady(auth, async function (user) {
+    const nextActor = user?.uid || null;
+    if (actor !== undefined && actor !== nextActor) window.Xped.ux.clearToasts();
+    actor = nextActor;
     const requestVersion = ++preferenceVersion;
     if (button) button.hidden = !user;
     if (verify) verify.hidden = !user || user.emailVerified !== false;
@@ -92,8 +97,7 @@
       window.location.replace('/');
     } catch (_) {
       button.disabled = false;
-      (window.Xped.ux).toast(locale.copy('Uitloggen is niet gelukt. Probeer het opnieuw.',
-        'Sie konnten nicht abgemeldet werden. Bitte versuchen Sie es erneut.'), { type: 'error' });
+      window.Xped.ux.toast(uiText('Could not sign out. Please try again.'), { type: 'error' });
     }
   });
 })();

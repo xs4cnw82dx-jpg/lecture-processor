@@ -1185,7 +1185,7 @@
       if (element._uxToastHide) element._uxToastHide(element);
     }, delay);
   }
-  function bindToastPause(element) {
+  function bindToastPause(element, minimumResume) {
     if (element._uxToastPauseBound) return;
     element._uxToastPauseBound = true;
     element.setAttribute('data-ux-toast', '');
@@ -1198,15 +1198,101 @@
     }
     function resume() {
       if (!element._uxToastPaused || element.matches(':hover, :focus-within')) return;
-      scheduleToastHide(element, Math.max(element._uxToastRemaining || 0, 1500));
+      scheduleToastHide(element, Math.max(element._uxToastRemaining || 0, minimumResume));
     }
     element.addEventListener('mouseenter', pause);
     element.addEventListener('focusin', pause);
     element.addEventListener('mouseleave', resume);
     element.addEventListener('focusout', function () { global.setTimeout(resume, 0); });
   }
+  var academyToastStack = null;
+
+  function removeAcademyToast(entry) {
+    global.clearTimeout(entry._uxToastTimer);
+    entry._uxToastTimer = null;
+    entry._uxToastPaused = false;
+    entry.remove();
+  }
+
+  function clearAcademyToasts(scope) {
+    if (!academyToastStack) return;
+    Array.from(academyToastStack.children).forEach(function (entry) {
+      if (!scope || entry.dataset.scope === scope) removeAcademyToast(entry);
+    });
+  }
+
+  function placeAcademyToasts() {
+    // A native modal makes the rest of the document inert, including actions.
+    var dialogs = document.querySelectorAll('dialog:modal');
+    var host = dialogs[dialogs.length - 1] || document.body;
+    if (academyToastStack.parentElement !== host) host.appendChild(academyToastStack);
+  }
+
+  function academyToast(message, opts) {
+    if (!document.body || message == null || String(message) === '') return null;
+    if (!academyToastStack) {
+      academyToastStack = document.createElement('div');
+      academyToastStack.className = 'ac-toast-stack';
+      document.addEventListener('close', placeAcademyToasts, true);
+      document.addEventListener('toggle', function (event) {
+        if (event.target.matches('dialog')) placeAcademyToasts();
+      }, true);
+    }
+    placeAcademyToasts();
+    if (academyToastStack.children.length === 3) {
+      var oldest = Array.from(academyToastStack.children).find(function (entry) {
+        return !entry.matches(':focus-within, :hover');
+      });
+      removeAcademyToast(oldest || academyToastStack.firstElementChild);
+    }
+
+    var labels = productI18n();
+    var entry = document.createElement('div');
+    var type = ['error', 'success', 'warning'].includes(opts.type) ? opts.type : 'info';
+    entry.className = 'ac-toast';
+    entry.dataset.type = type;
+    if (opts.scope) entry.dataset.scope = opts.scope;
+    entry.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    entry.setAttribute('aria-atomic', 'true');
+    // Insert the live region before its message so updates are announced.
+    academyToastStack.appendChild(entry);
+    var icon = document.createElement('span');
+    icon.className = 'ac-toast-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = { error: '!', success: '✓', warning: '!', info: 'i' }[type];
+    var text = document.createElement('span');
+    text.textContent = labels.t(String(message));
+    entry.append(icon, text);
+
+    var action = opts.action;
+    if (action && (action.href || typeof action.onClick === 'function')) {
+      var control = document.createElement(action.href ? 'a' : 'button');
+      control.className = 'ac-toast-action';
+      control.textContent = labels.t(action.label);
+      if (action.href) control.href = action.href;
+      else {
+        control.type = 'button';
+        var trigger = document.activeElement;
+        control.addEventListener('click', function () {
+          var restore = entry.contains(document.activeElement);
+          removeAcademyToast(entry);
+          if (restore && trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
+          action.onClick();
+        }, { once: true });
+      }
+      entry.appendChild(control);
+    } else {
+      entry.tabIndex = 0;
+    }
+    entry._uxToastHide = removeAcademyToast;
+    bindToastPause(entry, 0);
+    scheduleToastHide(entry, 5000);
+    return entry;
+  }
+
   function toast(message, options) {
     var opts = options || {};
+    if (academyBuild && document.documentElement.dataset.product === 'academy') return academyToast(message, opts);
     var element = opts.element || ensureToastRegion();
     if (!element || message === undefined || message === null || String(message) === '') return null;
     var type = opts.type || 'info';
@@ -1221,7 +1307,7 @@
     (typeof opts.show === 'function' ? opts.show : defaultToastShow)(element, type);
     var duration = Number(opts.duration) > 0 ? Number(opts.duration) : TOAST_DEFAULT_MS;
     if (isError) duration = Math.max(duration, TOAST_ERROR_MIN_MS);
-    bindToastPause(element);
+    bindToastPause(element, 1500);
     scheduleToastHide(element, duration);
     return element;
   }
@@ -1424,6 +1510,7 @@
     formatTime: formatTime,
   };
   if (academyBuild) {
+    ux.clearToasts = clearAcademyToasts;
     global.Xped.ux = ux;
   } else {
     global.LectureProcessorUx = ux;
