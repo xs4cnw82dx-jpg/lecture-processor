@@ -922,13 +922,6 @@ button.el-dropzone {
 }
 
 /* Responses KPI Cards */
-.el-kpi-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
-  gap: 1px; overflow: hidden; border: 1px solid var(--theme-line); border-radius: 16px; background: var(--theme-line);
-}
-.el-kpi-card { padding: 16px 18px; background: var(--theme-surface); }
-.el-kpi-card span { color: var(--theme-muted); font-size: .8rem; }
-.el-kpi-card strong { display: block; margin-top: 4px; color: var(--theme-ink); font-size: 1.5rem; font-variant-numeric: tabular-nums; }
 
 /* Studio Buttons */
 .el-btn {
@@ -1184,19 +1177,7 @@ button.el-dropzone {
 .el-dash-empty { padding: clamp(18px,2.5vw,28px); }
 .el-exp-list .el-dash-empty h2 { color: var(--theme-ink); font-size: 1.13rem; }
 .el-dash-empty p { margin: .45em 0 0; color: var(--theme-muted); max-width: 60ch; line-height: 1.55; }
-/* Responses Visual Charts & Slide Comments */
-.el-resp-bar-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-.el-response-bar { appearance: none; display: block; width: 100%; height: 7px; border: 0; border-radius: 7px; overflow: hidden; background: var(--theme-line); color: var(--theme-accent-ink); }
-.el-response-bar::-webkit-progress-bar { background: var(--theme-line); }
-.el-response-bar::-webkit-progress-value { background: currentColor; }
-.el-response-bar::-moz-progress-bar { background: currentColor; }
-.el-response-bar.is-correct { color: var(--theme-success-ink); }
+/* Response comments */
 .el-resp-comment-card {
   padding: 14px 16px;
   border-radius: 12px;
@@ -1266,11 +1247,6 @@ button.el-dropzone {
   display: inline-flex;
   align-items: center;
   color: var(--xped-ink-muted);
-}
-.el-resp-bar-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
 }
 .el-resp-check-ico { color: var(--xped-mint); }
 
@@ -1762,3 +1738,43 @@ dialog.el-dialog-sm { max-width: min(440px, calc(100vw - 32px)); }
   padding-inline-start: .9rem;
   border-inline-start: 2px solid var(--xped-border);
 }
+
+/* Chart cards: labelled bars and the completion split. Colours come from
+   --chart-* tokens, which a product theme may set. */
+.el-chart-rows { display: grid; gap: 14px; }
+.el-chart-group { display: grid; gap: 14px; }
+.el-chart-group + .el-chart-group { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--theme-line-soft); }
+.el-chart-group-title { margin: 0; color: var(--theme-muted); font-size: .8rem; font-weight: 600; line-height: 1.4; }
+.el-chart-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 7px 16px; }
+.el-chart-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--theme-ink); font-size: .94rem; line-height: 1.4; overflow-wrap: anywhere; }
+.el-chart-value { color: var(--theme-muted); font-size: .85rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.el-chart-value strong { margin-right: 4px; color: var(--theme-ink); font-size: 1rem; font-weight: 600; }
+.el-chart-bar { appearance: none; -webkit-appearance: none; grid-column: 1 / -1; display: block; width: 100%; height: 10px; border: 0; border-radius: 999px; overflow: hidden; background: var(--chart-track, var(--theme-surface-soft)); color: var(--chart-fill, var(--theme-accent-ink)); }
+.el-chart-bar::-webkit-progress-bar { background: var(--chart-track, var(--theme-surface-soft)); border-radius: 999px; }
+.el-chart-bar::-webkit-progress-value { background: currentColor; border-radius: 999px; transition: inline-size .5s cubic-bezier(.2, .8, .2, 1); }
+.el-chart-bar::-moz-progress-bar { background: currentColor; border-radius: 999px; }
+.el-chart-bar.is-good { color: var(--chart-good, var(--theme-success-ink)); }
+.el-chart-bar.is-rest { color: var(--chart-rest, var(--theme-control-border)); }
+.el-chart-stack { grid-column: 1 / -1; display: grid; }
+.el-chart-stack > .el-chart-bar { grid-area: 1 / 1; }
+.el-chart-stack > .el-chart-bar.is-overlay { background: transparent; }
+.el-chart-stack > .el-chart-bar.is-overlay::-webkit-progress-bar { background: transparent; }
+.el-chart-note { margin: 18px 0 0; color: var(--theme-muted); font-size: .82rem; line-height: 1.5; }
+.el-split-card h2 { margin: 0 0 18px; }
+.el-split-figures, .el-split-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 16px 32px; margin: 0; }
+.el-split-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.el-split-figure { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 6px; min-width: 0; }
+.el-split-figure dt { color: var(--theme-muted-strong); font-size: .88rem; line-height: 1.4; }
+.el-split-figure dd { margin: 0; color: var(--theme-ink); font-size: 1.55rem; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.el-split-figures .el-split-figure dd { font-size: clamp(1.6rem, 5vw, 2.1rem); }
+.el-split-figures .el-split-figure:last-child { text-align: end; }
+.el-split-figure.is-good dd { color: var(--theme-success-ink); }
+/* One bar, two shares: completed in mint, the rest in a neutral tone. */
+.el-split-bar { appearance: none; -webkit-appearance: none; display: block; width: 100%; height: 14px; margin: 18px 0 10px; border: 0; border-radius: 999px; overflow: hidden; background: var(--chart-rest, var(--theme-control-border)); color: var(--chart-good, var(--theme-success-ink)); }
+.el-split-bar::-webkit-progress-bar { background: var(--chart-rest, var(--theme-control-border)); border-radius: 999px; }
+.el-split-bar::-webkit-progress-value { background: currentColor; border-radius: 999px 0 0 999px; box-shadow: 2px 0 0 var(--theme-surface); }
+.el-split-bar::-moz-progress-bar { background: currentColor; border-radius: 999px 0 0 999px; box-shadow: 2px 0 0 var(--theme-surface); }
+.el-split-bar.is-empty, .el-split-bar.is-empty::-webkit-progress-bar { background: var(--chart-track, var(--theme-surface-soft)); }
+.el-split-counts { display: flex; justify-content: space-between; gap: 16px; color: var(--theme-muted-strong); font-size: .88rem; font-variant-numeric: tabular-nums; }
+.el-split-stats { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--theme-line); }
+@media (prefers-reduced-motion: reduce) { .el-chart-bar::-webkit-progress-value { transition: none; } }

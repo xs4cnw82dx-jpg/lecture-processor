@@ -45,10 +45,12 @@ def _security_policy_sources(*, sentry_frontend_dsn, script_nonce, extra_frame_s
         'style-src': [
             "'self'",
             'https://fonts.googleapis.com',
+            'https://api.fontshare.com',
         ],
         'font-src': [
             "'self'",
             'https://fonts.gstatic.com',
+            'https://cdn.fontshare.com',
             'data:',
         ],
         'img-src': [

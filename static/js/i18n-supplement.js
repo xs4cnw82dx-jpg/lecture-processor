@@ -550,6 +550,8 @@
   "Shared Study Content · Lecture Processor": "Gedeeld studiemateriaal · Lecture Processor",
   "Your account": "Je account",
   "Your purchases, your data and your sign-in.": "Je aankopen, je gegevens en je aanmelding.",
-  "Checkout is limited for a moment. Try again in {seconds} seconds.": "Afrekenen is even beperkt. Probeer het over {seconds} seconden opnieuw."
+  "Checkout is limited for a moment. Try again in {seconds} seconds.": "Afrekenen is even beperkt. Probeer het over {seconds} seconden opnieuw.",
+  "Fonts in the Studio": "Lettertypen in de Studio",
+  "Studio pages for authors load two weights of the General Sans typeface from Fontshare, a service of the Indian Type Foundry. Opening these pages sends your IP address and browser details to Fontshare's servers. Learner pages do not load these fonts.": "Studiopagina's voor cursusmakers laden twee gewichten van het lettertype General Sans via Fontshare, een dienst van de Indian Type Foundry. Als je deze pagina's opent, worden je IP-adres en browsergegevens naar de servers van Fontshare gestuurd. Pagina's voor deelnemers laden deze lettertypen niet."
 });
 })(typeof window !== 'undefined' ? window : globalThis);
