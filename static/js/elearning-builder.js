@@ -158,6 +158,7 @@
   ].filter(function (option) { return courseLanguages.includes(option.value); });
 
   var editLangDD = Icons.createDropdown({
+    select: !!academyUi,
     leadingIcon: 'globe',
     ariaLabel: uiText('Active editing language'),
     items: LANG_OPTIONS,
@@ -213,6 +214,7 @@
   document.getElementById('el-more-menu-host').appendChild(moreMenuDD.el);
 
   var trSourceDD = Icons.createDropdown({
+    select: !!academyUi,
     ariaLabel: uiText('Source language'),
     items: LANG_OPTIONS,
     value: state.trSource,
@@ -226,6 +228,7 @@
   document.getElementById('el-tr-source-host').appendChild(trSourceDD.el);
 
   var trTargetDD = Icons.createDropdown({
+    select: !!academyUi,
     ariaLabel: uiText('Target language'),
     items: LANG_OPTIONS,
     value: state.trTarget,
@@ -250,6 +253,7 @@
     { value: 'translated', label: uiText('Translated') },
   ];
   var trFilterDD = Icons.createDropdown({
+    select: !!academyUi,
     ariaLabel: uiText('Filter translation rows'),
     items: FILTER_OPTIONS,
     value: state.trFilter,
@@ -262,6 +266,7 @@
   document.getElementById('el-tr-filter-host').appendChild(trFilterDD.el);
 
   var previewLangDD = Icons.createDropdown({
+    select: !!academyUi,
     leadingIcon: 'globe',
     ariaLabel: uiText('Preview language'),
     items: LANG_OPTIONS,
@@ -1735,10 +1740,25 @@
     wrap.className = 'el-field';
     var lab = document.createElement('label');
     lab.textContent = label;
-    // A value picker: listbox semantics, the current value focused on open, optional descriptions (item 34).
+    if (academyUi && options.length >= 8) {
+      // Use the same searchable list as the library when a course has many destinations.
+      var select = document.createElement('select');
+      select.dataset.appSelect = '';
+      select.setAttribute('aria-label', label);
+      options.forEach(function (choice) {
+        var option = new Option(choice[1], choice[0]);
+        if (typeof choice[2] === 'string') option.dataset.description = choice[2];
+        select.add(option);
+      });
+      select.value = value;
+      select.addEventListener('change', function () { onChange(select.value); });
+      lab.appendChild(select);
+      wrap.appendChild(lab);
+      return wrap;
+    }
     var items = (options || []).map(function (opt) { return { value: opt[0], label: opt[1], description: typeof opt[2] === 'string' ? opt[2] : undefined }; });
     var dd = Icons.createDropdown({
-      select: document.documentElement.dataset.product === 'academy',
+      select: !!academyUi,
       className: 'is-full',
       triggerClass: 'el-dd-trigger is-full',
       ariaLabel: label,

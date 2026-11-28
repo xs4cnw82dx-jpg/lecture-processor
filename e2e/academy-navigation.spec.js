@@ -69,8 +69,8 @@ test('desktop navigation, collapsed rail and keyboard page search', async ({ pag
   await page.keyboard.press('Control+k');
   const finder = page.getByRole('dialog', { name: 'Zoek een pagina' });
   await expect(finder).toBeVisible();
-  await finder.getByRole('searchbox').fill('vertal');
-  await expect(finder.getByRole('link')).toHaveCount(1);
+  await finder.getByRole('combobox').fill('vertal');
+  await expect(finder.getByRole('option')).toHaveCount(1);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(academyOrigin + '/vertalingen');

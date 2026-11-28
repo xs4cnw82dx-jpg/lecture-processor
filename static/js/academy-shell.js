@@ -105,7 +105,7 @@
   }
 
   var input = document.getElementById('ac-jump');
-  var destinations = search ? Array.from(search.querySelectorAll('nav a')) : [];
+  var destinations = search ? Array.from(search.querySelectorAll('[data-ac-pages] > a')) : [];
   function matchedLetters(value) {
     return value.trim().toLocaleLowerCase(document.documentElement.lang || 'nl')
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -124,6 +124,7 @@
     input.value = '';
     filterDestinations();
     search.showModal();
+    input.setAttribute('aria-expanded', 'true');
     input.focus();
   }
   if (search) {
@@ -138,18 +139,30 @@
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) search.close();
     });
     input.addEventListener('input', filterDestinations);
-    search.addEventListener('keydown', function (event) {
-      var matches = Array.from(search.querySelectorAll('nav a, nav button')).filter(function (link) { return !link.hidden; });
+    search.addEventListener('close', function () {
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    });
+    input.addEventListener('keydown', function (event) {
+      if (event.isComposing || !['Enter', 'ArrowDown', 'ArrowUp'].includes(event.key)) return;
+      var matches = Array.from(search.querySelectorAll('[role="option"]')).filter(function (option) {
+        return !option.closest('[hidden]') && !option.hasAttribute('data-ac-unavailable');
+      });
       if (!matches.length) return;
-      if (event.key === 'Enter' && document.activeElement === input) {
-        event.preventDefault();
-        matches[0].click();
-      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        var from = matches.indexOf(document.activeElement);
-        var index = event.key === 'ArrowDown' ? (from + 1) % matches.length : (from < 0 ? matches.length - 1 : (from + matches.length - 1) % matches.length);
-        matches[index].focus();
+      event.preventDefault();
+      var current = document.getElementById(input.getAttribute('aria-activedescendant'));
+      var index = matches.indexOf(current);
+      if (event.key === 'Enter') {
+        matches[Math.max(0, index)].click();
+        return;
       }
+      if (current) current.setAttribute('aria-selected', 'false');
+      if (event.key === 'ArrowDown') index = (index + 1) % matches.length;
+      else index = index <= 0 ? matches.length - 1 : index - 1;
+      var next = matches[index];
+      next.setAttribute('aria-selected', 'true');
+      input.setAttribute('aria-activedescendant', next.id);
+      next.scrollIntoView({block:'nearest'});
     });
   }
   document.addEventListener('keydown', function (event) {

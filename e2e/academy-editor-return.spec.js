@@ -72,7 +72,7 @@ test('the content-language selector follows the saved fields of the active cours
   await expect(page.locator('#el-exp-title')).toBeEnabled();
   const lang = page.getByRole('button', {name:/^Inhoudstaal:/});
   await lang.click();
-  await page.getByRole('menuitem', {name:'Deutsch (DE) · '+before, exact:true}).click();
+  await page.getByRole('option', {name:'Deutsch (DE) · '+before, exact:true}).click();
   await expect(lang).toHaveText('Inhoudstaal: DE · '+before);
   const subtitle = page.locator('#el-canvas-card .xped-hero-subtitle');
   const previous = expedition.startPage.subtitle.de;
@@ -87,4 +87,62 @@ test('the content-language selector follows the saved fields of the active cours
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog',{name:'Werkruimte'})).toBeHidden();
   await expect(page.locator('#el-exp-title')).toBeVisible();
+});
+
+test('editor toolbar values open named selection lists in each work mode', async ({academyPage: page, academyOrigin, request}) => {
+  const created = await request.post(academyOrigin + '/api/elearning/expeditions', {
+    headers:{Authorization:'Bearer academy-preview-token'}, data:Model.createExpeditionPreset('blank','Keuzelijsten','nl')
+  });
+  expect(created.ok()).toBeTruthy();
+  const {expedition} = await created.json();
+  await page.goto(academyOrigin + '/expedities/' + expedition.id + '/bewerken');
+  await expect(page.locator('#el-exp-title')).toBeEnabled();
+  async function check(host) {
+    const picker = page.locator(host);
+    const trigger = picker.getByRole('button');
+    await expect(trigger).toHaveAttribute('aria-haspopup','listbox');
+    await trigger.press('Enter');
+    const list = picker.getByRole('listbox');
+    const chosen = list.getByRole('option',{selected:true});
+    await expect(chosen).toBeFocused();
+    await chosen.press('Escape');
+    await expect(trigger).toBeFocused();
+  }
+  await check('#el-edit-lang-host');
+  await page.locator('[data-mode=translate]').click();
+  for (const key of ['source','target','filter']) await check('#el-tr-' + key + '-host');
+  await page.locator('[data-mode=preview]').click();
+  await check('#el-preview-lang-host');
+});
+
+
+test('an editor can find a destination station by typing in a long course', async ({academyPage: page, academyOrigin, request}) => {
+  const course = Model.createExpeditionPreset('blank','Lange route','nl');
+  course.modules = Array.from({length:10}, (_, i) => {
+    const station = Model.createModule('blank', i);
+    station.title.nl = 'Bestemming ' + (i + 1);
+    return station;
+  });
+  course.modules[0].steps.push(Model.createStep('Tweede stap','Second step'));
+  const created = await request.post(academyOrigin + '/api/elearning/expeditions', {
+    headers:{Authorization:'Bearer academy-preview-token'}, data:course
+  });
+  expect(created.ok()).toBeTruthy();
+  const {expedition} = await created.json();
+  const step = expedition.modules[0].steps[0].id;
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(academyOrigin + '/expedities/' + expedition.id + '/bewerken?module=' + expedition.modules[0].id + '&step=' + step);
+  const picker = page.getByRole('button',{name:/Naar station verplaatsen|Verplaatsen naar station/});
+  await picker.click();
+  const search = page.getByRole('combobox',{name:'Opties doorzoeken'});
+  await expect(search).toBeFocused();
+  await search.fill('Bestemming 9');
+  const match = page.getByRole('option',{name:'Bestemming 9',exact:true});
+  await expect(match).toBeVisible();
+  await search.press('Enter');
+  await expect(page.locator('#el-save-state')).toHaveText('Opgeslagen');
+  await expect.poll(async () => {
+    const saved = await request.get(academyOrigin + '/api/elearning/expeditions/' + expedition.id, {headers:{Authorization:'Bearer academy-preview-token'}});
+    return (await saved.json()).expedition.modules[8].steps.some(row => row.id === step);
+  }).toBe(true);
 });

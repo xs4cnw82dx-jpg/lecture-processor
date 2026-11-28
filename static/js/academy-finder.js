@@ -12,6 +12,7 @@
   const normalize = value => String(value || '').trim().toLocaleLowerCase(language)
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const historyKey = 'xped.finder.history';
+  let optionSerial = 0;
   let account, uid, salt = '', history = [], entries = [], pending, ready = false;
 
   function writeHistory() {
@@ -66,6 +67,7 @@
     entries = [];
     ready = false;
     pending = null;
+    query.removeAttribute('aria-activedescendant');
     extra.replaceChildren();
     recentGroup.replaceChildren();
     recentGroup.hidden = true;
@@ -121,6 +123,10 @@
     const button = document.createElement(entry.href ? 'a' : 'button');
     if (entry.href) button.href = entry.href; else button.type = 'button';
     button.className = 'ac-finder-item';
+    button.id = 'ac-finder-choice-' + (++optionSerial);
+    button.setAttribute('role', 'option');
+    button.setAttribute('aria-selected', 'false');
+    button.tabIndex = -1;
     const title = document.createElement('span');
     title.textContent = entry.title;
     button.append(title);
@@ -139,6 +145,8 @@
   function group(label) {
     const block = document.createElement('div');
     block.className = 'ac-finder-group';
+    block.setAttribute('role', 'group');
+    block.setAttribute('aria-label', label);
     const caption = document.createElement('p');
     caption.textContent = label;
     block.append(caption);
@@ -162,6 +170,8 @@
   }
 
   function render() {
+    query.removeAttribute('aria-activedescendant');
+    pages.forEach(page => page.setAttribute('aria-selected', 'false'));
     extra.replaceChildren();
     recentGroup.replaceChildren();
     const term = normalize(query.value);

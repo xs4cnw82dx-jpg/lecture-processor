@@ -82,3 +82,35 @@ test('the owner sees the affected result count or an explicit unknown state befo
   await expect(dialog.locator('#el-delete-confirm')).toBeEnabled();
   expect(countRequests).toBe(2);
 });
+
+test('an author filters a long folder list with an editable keyboard combobox', async ({page, academyOrigin}) => {
+  await prepareAcademyPage(page, academyOrigin);
+  const folders = ['Rood','Oranje','Geel','Groen','Blauw licht','Blauw donker','Paars','Grijs'].map((name, i) => ({id:'map-' + i, name}));
+  const expeditions = items.map((course, i) => ({...course, role:'owner', folderId: folders[i + 3].id}));
+  await page.route('**/api/elearning/expeditions', route => route.fulfill({json:{expeditions, folders, canCreate:true, studioAdmin:false}}));
+  await page.goto(academyOrigin + '/expedities');
+  const trigger = page.locator('#academy-folder-filter-button');
+  await trigger.click();
+  const search = page.getByRole('combobox', {name:'Opties doorzoeken'});
+  await expect(search).toBeFocused();
+  await search.fill('niet gevonden');
+  await expect(page.getByRole('status').filter({hasText:'Geen opties gevonden'})).toBeVisible();
+  await expect(search).not.toHaveAttribute('aria-activedescendant', /./);
+  await search.fill('blauw');
+  const list = page.getByRole('listbox');
+  await expect(list.getByRole('option')).toHaveCount(2);
+  const dark = list.getByRole('option', {name:'Blauw donker'});
+  await search.press('ArrowDown');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveAttribute('aria-activedescendant', await dark.getAttribute('id'));
+  await search.press('Enter');
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText('Blauw donker');
+  await expect(page.getByRole('table', {name:'Expedities'}).getByRole('heading')).toHaveText(['Derde halte']);
+  await trigger.press('Enter');
+  await expect(search).toHaveValue('');
+  await search.fill('groen');
+  await search.press('Escape');
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText('Blauw donker');
+});

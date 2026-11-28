@@ -142,7 +142,8 @@
     var rect = anchor.getBoundingClientRect();
     var width = Math.min(panel.classList.contains('app-date-panel') ? 304 : Math.max(panel.classList.contains('app-menu-panel') ? 228 : 180, rect.width), global.innerWidth - 24);
     setLayoutStyles(panel, { width: width + 'px', left: Math.max(12, Math.min(rect.left, global.innerWidth - width - 12)) + 'px' });
-    var height = Math.min(panel.scrollHeight, 360, global.innerHeight - 24);
+    var maximum = academyBuild && panel.classList.contains('app-select-menu') ? 320 : 360;
+    var height = Math.min(panel.scrollHeight, maximum, global.innerHeight - 24);
     var below = global.innerHeight - rect.bottom - 12;
     var above = rect.top - 12;
     var useAbove = below < height && above > below;
@@ -330,6 +331,7 @@
       var shouldOpen = !!open && !button.disabled;
       var search = menu.querySelector('.app-select-search');
       // Restore the complete list before measuring its popover height.
+      if (search && academyBuild) search.setAttribute('aria-expanded', String(shouldOpen));
       if (shouldOpen && search) { search.value = ''; search.dispatchEvent(new Event('input')); }
       if (shouldOpen) { closeEnhancedSelectMenus(menu); showAnchoredPanel(menu, button); }
       else hideAnchoredPanel(menu);
@@ -338,7 +340,7 @@
       button.classList.toggle('open', shouldOpen);
       button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
       if (shouldOpen) {
-        if (search && !focusTarget) search.focus();
+        if (search && (academyBuild || !focusTarget)) search.focus();
         else focusItem(focusTarget || 'active');
       }
     }
@@ -353,7 +355,7 @@
         item.classList.toggle('active', isActive);
         item.setAttribute('aria-selected', isActive ? 'true' : 'false');
         item.tabIndex = -1;
-        if (isActive) activeText = item.textContent;
+        if (isActive) activeText = item.firstChild?.textContent || item.textContent;
       });
       label.textContent = activeText || (
         selectEl.options[selectEl.selectedIndex]
@@ -377,8 +379,9 @@
         var search = document.createElement('input');
         search.type = 'search';
         search.className = 'app-select-search';
-        search.placeholder = selectEl.getAttribute('data-app-select-search-placeholder') || 'Find an option…';
-        search.setAttribute('aria-label', selectEl.getAttribute('data-app-select-search-label') || 'Search options');
+        var labels = academyBuild && productI18n().selectLabels();
+        search.placeholder = selectEl.getAttribute('data-app-select-search-placeholder') || (labels ? labels.hint : 'Find an option…');
+        search.setAttribute('aria-label', selectEl.getAttribute('data-app-select-search-label') || (labels ? labels.search : 'Search options'));
         menu.appendChild(search);
         optionHost = document.createElement('div');
         optionHost.setAttribute('role', 'listbox');
@@ -389,7 +392,7 @@
         var emptyMessage = document.createElement('p');
         emptyMessage.className = 'app-select-empty';
         emptyMessage.setAttribute('role', 'status');
-        emptyMessage.textContent = 'No options found. Try another search.';
+        emptyMessage.textContent = labels ? labels.empty : 'No options found. Try another search.';
         emptyMessage.hidden = true;
         menu.appendChild(emptyMessage);
         search.addEventListener('input', function () {
@@ -399,17 +402,63 @@
           });
           emptyMessage.hidden = getItems().length > 0;
         });
+        if (academyBuild) {
+          search.setAttribute('role', 'combobox');
+          search.setAttribute('aria-autocomplete', 'list');
+          search.setAttribute('aria-expanded', String(menu.classList.contains('visible')));
+          var activeOption;
+          function highlight(option) {
+            if (activeOption) activeOption.classList.remove('is-highlighted');
+            activeOption = option;
+            if (option) {
+              option.classList.add('is-highlighted');
+              search.setAttribute('aria-activedescendant', option.id);
+            } else search.removeAttribute('aria-activedescendant');
+          }
+          search.addEventListener('input', function () {
+            var matches = getItems();
+            highlight(matches.find(function (item) { return item.classList.contains('active'); }) || matches[0]);
+          });
+          search.addEventListener('keydown', function (event) {
+            var matches = getItems();
+            if (event.key === 'Enter' && !event.isComposing) {
+              event.preventDefault();
+              event.stopPropagation();
+              if (activeOption) activeOption.click();
+            } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!matches.length) return;
+              var step = event.key === 'ArrowDown' ? 1 : -1;
+              var index = (matches.indexOf(activeOption) + step + matches.length) % matches.length;
+              highlight(matches[index]);
+              activeOption.scrollIntoView({block: 'nearest'});
+            }
+          });
+        }
       } else {
         menu.setAttribute('role', 'listbox');
         button.setAttribute('aria-haspopup', 'listbox');
       }
-      Array.prototype.slice.call(selectEl.options || []).forEach(function (option) {
+      Array.prototype.slice.call(selectEl.options || []).forEach(function (option, index) {
         var item = document.createElement('button');
         item.type = 'button';
         item.className = itemClass;
         item.dataset.value = String(option.value || '');
         if (isUserContent(option)) item.setAttribute('data-user-content', '');
         item.textContent = String(option.textContent || option.value || placeholder);
+        if (academyBuild) {
+          item.id = menu.id + '-option-' + index;
+          if (option.dataset.description) {
+            item.setAttribute('aria-label', item.textContent);
+            var description = document.createElement('small');
+            description.id = item.id + '-description';
+            description.className = 'el-dd-item-desc';
+            description.textContent = option.dataset.description;
+            item.append(description);
+            item.setAttribute('aria-describedby', description.id);
+          }
+        }
         item.setAttribute('role', 'option');
         item.disabled = !!option.disabled;
         item.addEventListener('click', function () {

@@ -141,6 +141,24 @@
 [data-academy-player] :is(.el-text-scale-group, .el-theme-toggle-group) button[aria-checked="true"] {
   background: white; color: var(--journey-ink); border-color: var(--journey-outline); box-shadow: 0 1px 2px rgb(6 41 64 / 8%);
 }
+/* The measured thumb follows the active control even when labels have unequal widths. */
+.academy-segment-track { position: relative; isolation: isolate; }
+.academy-segment-track > button { position: relative; z-index: 1; }
+.academy-segment-thumb {
+  position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; box-sizing: border-box; transition-property: none;
+  border: 1px solid var(--theme-line); border-radius: var(--ac-radius-control, 6px);
+  background: var(--theme-surface); box-shadow: 0 1px 2px rgb(6 41 64 / 8%);
+}
+[data-academy-player] .academy-segment-thumb { background: var(--journey-white); border-color: var(--journey-outline); }
+[data-academy-player] [data-learner-appearance="dark"] .academy-segment-thumb {
+  background: var(--xped-surface); border-color: var(--xped-border-strong);
+}
+:is([data-product="academy"], [data-academy-player]) .academy-segment-track[data-segment-ready] > button:is(.is-active, [aria-checked="true"]) {
+  border-color: transparent; background: transparent; box-shadow: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .academy-segment-thumb { transition: transform 150ms var(--ac-ease, ease), width 150ms var(--ac-ease, ease); }
+}
 :is([data-product="academy"], [data-academy-player]) :focus-visible { outline: var(--ac-focus-width) solid var(--focus-ring, var(--journey-water)); outline-offset: var(--ac-focus-offset); }
 .academy-control-tip {
   position: fixed; inset: auto auto 16px 50%; transform: translateX(-50%);

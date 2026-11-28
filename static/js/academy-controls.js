@@ -14,9 +14,6 @@
     if (scope.matches?.(optionSelector)) selects.push(scope);
     for (const select of selects) {
       select.dataset.appSelect = '';
-      const german = doc.documentElement.lang === 'de';
-      select.dataset.appSelectSearchPlaceholder = german ? 'Option suchen…' : 'Zoek een optie…';
-      select.dataset.appSelectSearchLabel = german ? 'Optionen durchsuchen' : 'Opties doorzoeken';
       ux.enhanceNativeSelect(select);
     }
   }
@@ -60,10 +57,43 @@
   }
 
   function initSegments() {
-    for (const group of doc.querySelectorAll(segmentSelector)) {
-      syncSegments(group);
-      const observer = new MutationObserver(() => syncSegments(group));
+    const sheet = doc.querySelector('link[data-elearning-styles]')?.sheet;
+    let thumbNumber = 0;
+    for (const group of doc.querySelectorAll(segmentSelector + ', .el-mode-tabs')) {
+      const isTabList = group.matches('.el-mode-tabs');
+      const thumb = doc.createElement('span');
+      thumb.className = 'academy-segment-thumb';
+      thumb.id = 'ac-segment-indicator-' + (++thumbNumber);
+      // Both the Studio and the learner serve this same-origin stylesheet under their CSP.
+      const geometry = sheet ? sheet.cssRules[sheet.insertRule('#' + thumb.id + ' {}', sheet.cssRules.length)].style : null;
+      thumb.setAttribute('aria-hidden', 'true');
+      thumb.hidden = true;
+      group.classList.add('academy-segment-track');
+      group.prepend(thumb);
+      // The selected label can change size after showing a panel, loading fonts or resizing.
+      function positionThumb() {
+        const active = group.querySelector('button.is-active');
+        const visible = Boolean(geometry && active?.offsetWidth);
+        group.toggleAttribute('data-segment-ready', visible);
+        thumb.hidden = !visible;
+        if (!visible) return;
+        geometry.width = active.offsetWidth + 'px';
+        geometry.height = active.offsetHeight + 'px';
+        geometry.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+      }
+      function update() {
+        if (!isTabList) syncSegments(group);
+        positionThumb();
+      }
+      update();
+      const observer = new MutationObserver(update);
       observer.observe(group, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-pressed'] });
+      if (root.ResizeObserver) {
+        const resize = new root.ResizeObserver(positionThumb);
+        resize.observe(group);
+        for (const button of group.querySelectorAll('button')) resize.observe(button);
+      }
+      if (isTabList) continue;
       group.addEventListener('keydown', function (event) {
         const keys = ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'Home', 'End'];
         if (!keys.includes(event.key)) return;

@@ -71,12 +71,12 @@
 {% endif %}
 {% if not public %}
 <dialog id="ac-search" class="ac-search-dialog" aria-labelledby="ac-search-label">
-  <div class="ac-search-input">{{ icon('search') }}<label class="sr-only" for="ac-jump" id="ac-search-label">{{ xped_t('shell.search') }}</label><input id="ac-jump" type="search" placeholder="{{ xped_t('shell.searchHint') }}" autocomplete="off"><button type="button" class="ac-icon" data-ac-close-search aria-label="{{ xped_t('shell.closeSearch') }}">{{ icon('close',18) }}</button></div>
-  <nav data-ac-pages class="ac-search-results" aria-label="{{ xped_t('shell.searchResults') }}">
+  <div class="ac-search-input">{{ icon('search') }}<label class="sr-only" for="ac-jump" id="ac-search-label">{{ xped_t('shell.search') }}</label><input id="ac-jump" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ac-finder-options" placeholder="{{ xped_t('shell.searchHint') }}" autocomplete="off"><button type="button" class="ac-icon" data-ac-close-search aria-label="{{ xped_t('shell.closeSearch') }}">{{ icon('close',18) }}</button></div>
+  <div id="ac-finder-options" role="listbox" data-ac-pages class="ac-search-results" aria-label="{{ xped_t('shell.searchResults') }}">
     <div data-ac-recent hidden></div>
-    {% for href, glyph, label in sections + [('/instellingen','settings',xped_t('shell.settings'))] %}<a href="{{ href }}">{{ icon(glyph,18) }}<span>{{ label }}</span>{{ icon('arrow',15) }}</a>{% endfor %}
+    {% for href, glyph, label in sections + [('/instellingen','settings',xped_t('shell.settings'))] %}<a role="option" id="ac-page-choice-{{ loop.index }}" aria-selected="false" tabindex="-1" href="{{ href }}">{{ icon(glyph,18) }}<span>{{ label }}</span>{{ icon('arrow',15) }}</a>{% endfor %}
     <div data-ac-matches></div>
-    <p hidden data-ac-no-results>{{ xped_t('shell.noPages') }}</p>
-  </nav>
+  </div>
+  <p hidden role="status" data-ac-no-results>{{ xped_t('shell.noPages') }}</p>
 </dialog>
 {% endif %}
