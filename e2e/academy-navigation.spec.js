@@ -41,6 +41,21 @@ for (const width of [1440,390]) {
   });
 }
 
+test('an open settings menu stays open while a first page load finishes', async ({ page, academyOrigin }) => {
+  // A deferred image keeps window.load/pageshow pending while the toolbar is interactive.
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  await page.route('**/static/images/xped/logo_nl.svg*', async route => { await pending; await route.continue(); });
+  try {
+    await page.goto(academyOrigin + '/expedities', {waitUntil:'domcontentloaded'});
+    await page.locator('#ac-settings-toggle').click();
+    await expect(page.locator('#ac-settings-popover')).toBeVisible();
+    release();
+    await page.waitForLoadState('load');
+    await expect(page.locator('#ac-settings-popover')).toBeVisible();
+  } finally { release(); }
+});
+
 test('desktop navigation, collapsed rail and keyboard page search', async ({ page, academyOrigin }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(academyOrigin + '/expedities');
