@@ -126,9 +126,18 @@ test('the public xPED wordmark follows the theme and fits beside the German sett
   await expect(mark).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(brand).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   const settings = header.getByRole('button',{name:'Einstellungen'});
-  const left = await brand.boundingBox(), right = await settings.boundingBox();
-  expect(left.x + left.width).toBeLessThanOrEqual(right.x);
-  expect(right.x + right.width).toBeLessThanOrEqual(390);
+  for (const width of [390, 375, 360, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const left = await brand.boundingBox();
+    const right = await settings.boundingBox();
+    expect(left.x + left.width).toBeLessThan(right.x);
+    expect(right.x + right.width).toBeLessThanOrEqual(width - left.x + 1);
+    await settings.click();
+    const menu = await header.locator('#ac-settings-popover').boundingBox();
+    expect(menu.x).toBeGreaterThanOrEqual(0);
+    expect(menu.x + menu.width).toBeLessThanOrEqual(width - left.x + 1);
+    await page.keyboard.press('Escape');
+  }
   const lightAsset = await mark.getAttribute('src');
   await page.emulateMedia({colorScheme:'dark'});
   await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
