@@ -58,7 +58,7 @@ def academy_preview(credential_path, *, memory=False):
         app.config['TESTING'] = True
         with ExitStack() as isolated:
             if memory:
-                from tests.support.elearning_store import MemoryStore
+                from scripts.elearning_preview_store import MemoryStore
                 repository = MemoryStore()
                 isolated.enter_context(patch('lecture_processor.services.elearning_service._store', return_value=repository))
             yield app

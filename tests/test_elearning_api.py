@@ -9,7 +9,7 @@ import pytest
 
 from lecture_processor.domains.elearning import model
 from lecture_processor.services import elearning_service as service
-from tests.support.elearning_store import MemoryStore
+from scripts.elearning_preview_store import MemoryStore
 
 
 
