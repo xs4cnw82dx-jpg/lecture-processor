@@ -120,9 +120,8 @@ test('the public xPED wordmark follows the theme and fits beside the German sett
   await page.goto(academyOrigin + '/privacy');
   const header = page.locator('header');
   const brand = header.getByRole('link', { name: 'xPED Academy, zur Übersicht' });
-  const name = brand.getByText('xPEDition Schmerz');
-  const mark = brand.locator('img');
-  await expect(name).toBeVisible();
+  const mark = brand.locator('img:visible');
+  await expect(mark).toHaveCount(1);
   await mark.evaluate(image => image.decode());
   await expect(mark).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(brand).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
@@ -130,9 +129,11 @@ test('the public xPED wordmark follows the theme and fits beside the German sett
   const left = await brand.boundingBox(), right = await settings.boundingBox();
   expect(left.x + left.width).toBeLessThanOrEqual(right.x);
   expect(right.x + right.width).toBeLessThanOrEqual(390);
-  const lightInk = await name.evaluate(el => getComputedStyle(el).color);
+  const lightAsset = await mark.getAttribute('src');
   await page.emulateMedia({colorScheme:'dark'});
   await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
-  await expect(name).not.toHaveCSS('color',lightInk);
+  await expect(mark).toHaveCount(1);
+  await expect(mark).not.toHaveAttribute('src',lightAsset);
+  await mark.evaluate(image => image.decode());
   await expect(brand).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
 });

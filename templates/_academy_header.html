@@ -15,13 +15,14 @@
 {% macro brand(on_header=false) %}
 <a class="ac-brand" href="/" aria-label="{{ say('xPED Academy, naar overzicht','xPED Academy, zur Übersicht') }}">
   {% if on_header %}
-    <span class="ac-brand-signature">
-      <img class="ac-brand-symbol" src="{{ url_for('static', filename='images/xped/xped-beeldmerk-kleur.png') }}" width="307" height="154" alt="">
-      <span class="ac-brand-name">{{ say('xPEDitie Pijn','xPEDition Schmerz') }}</span>
+    {% set logo = 'logo_de' if academy_locale|default('nl') == 'de' else 'logo_nl' %}
+    <span class="ac-brand-signature" aria-hidden="true">
+      <img class="ac-brand-full ac-brand-on-light" src="{{ url_for('static', filename='images/xped/' ~ logo ~ '_light.svg') }}" width="353" height="46" alt="">
+      <img class="ac-brand-full ac-brand-on-dark" src="{{ url_for('static', filename='images/xped/' ~ logo ~ '.svg') }}" width="353" height="46" alt="">
     </span>
   {% else %}
-    <img class="ac-brand-wordmark" src="{{ url_for('static', filename='images/xped/academy-mark.webp' if academy_locale|default('nl') == 'de' else 'images/xped/logo_nl.svg') }}" alt="{{ say('xPEDitie Pijn','xPED') }}">
-    <img class="ac-brand-short" src="{{ url_for('static', filename='images/xped/academy-mark.webp') }}" alt="">
+    <img class="ac-brand-wordmark" src="{{ url_for('static', filename='images/xped/logo_de.svg' if academy_locale|default('nl') == 'de' else 'images/xped/logo_nl.svg') }}" alt="{{ say('xPEDitie Pijn','xPED') }}">
+    <img class="ac-brand-short" src="{{ url_for('static', filename='images/xped/xped-beeldmerk-kleur.png') }}" alt="">
   {% endif %}
   <span class="ac-brand-product">{{ product_name }}</span>
 </a>

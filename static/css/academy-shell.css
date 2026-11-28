@@ -99,9 +99,12 @@ body:has(> .ac-rail) .el-dash {
 .ac-settings-trigger { background: var(--ac-paper-detail); border-color: var(--ac-coast); }
 .ac-icon:hover,.ac-search-trigger:hover,.ac-settings-trigger:hover,.ac-settings-trigger[aria-expanded="true"] { background: var(--ac-selected); color: var(--ac-selected-ink); }
 .ac-bar-public .ac-brand { flex-direction: row; align-items: center; gap: 12px; }
-.ac-brand-signature { display: inline-flex; align-items: center; gap: 5px; color: var(--theme-ink); }
-.ac-brand-symbol { display: block; width: 48px; height: auto; }
-.ac-brand-name { font: 500 14px/1.2 var(--ac-font); white-space: nowrap; }
+.ac-brand-signature { display: flex; align-items: center; overflow: hidden; }
+.ac-brand-full { display: block; width: 154px; height: auto; flex: none; }
+/* The Dutch asset retains the wider German artboard; trim its empty right edge. */
+html[lang="nl"] .ac-brand-signature { width: 129px; }
+.ac-brand-on-dark, :root[data-theme="dark"] .ac-brand-on-light { display: none; }
+:root[data-theme="dark"] .ac-brand-on-dark { display: block; }
 
 .ac-bar-public .ac-brand-product { padding-inline-start: 12px; border-inline-start: 1px solid var(--ac-coast); }
 .ac-bar-public .ac-bar-inner { max-width: 1280px; }
@@ -160,8 +163,8 @@ body:has(> .ac-rail) .el-dash {
   .ac-search-trigger :is(span,kbd) { display: none; }
   .ac-bar-actions { gap: 2px; }
   .ac-crumbs a:first-child,.ac-crumbs a:first-child + svg { display: none; }
-  .ac-brand-symbol { width: 40px; }
-  .ac-brand-name { font-size: 12px; }
+  .ac-brand-full { width: 129px; }
+  html[lang="nl"] .ac-brand-signature { width: 108px; }
   .ac-settings-trigger { padding-inline: 9px; }
   .ac-rail-nav { gap: 3px; }
   .ac-route { min-height: 44px; }
@@ -253,9 +256,8 @@ html[data-ac-drawer="open"] .ac-nav-backdrop { display: block; position: fixed; 
 @media (max-width: 440px) {
   .ac-bar-public .ac-brand { gap: 7px; }
   .ac-bar-public .ac-brand-product { padding-inline-start: 7px; }
-  .ac-brand-name { white-space: normal; }
-  .ac-brand-signature { gap: 3px; }
 }
 @media (max-width: 370px) {
-  .ac-bar-public .ac-brand-name { display: none; }
+  .ac-brand-full { width: 102px; }
+  html[lang="nl"] .ac-brand-signature { width: 86px; }
 }
