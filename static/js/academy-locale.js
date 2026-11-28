@@ -38,11 +38,19 @@
     const amount = Math.trunc(seconds / (days ? 86400 : hours ? 3600 : minutes ? 60 : 1));
     return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(amount, unit);
   }
-  function setTheme(theme) {
-    if (!['dark', 'light'].includes(theme)) return;
-    writePreference('theme', theme);
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
+  const systemAppearance = root.matchMedia ? root.matchMedia('(prefers-color-scheme: dark)') : null;
+  const themes = ['system', 'light', 'dark'];
+  let selectedTheme = readPreferences().theme;
+  if (!themes.includes(selectedTheme)) selectedTheme = 'system';
+  function applyAppearance() {
+    const appearance = selectedTheme === 'system' ? (systemAppearance?.matches ? 'dark' : 'light') : selectedTheme;
+    document.documentElement.dataset.theme = appearance;
+  }
+  function setTheme(next) {
+    if (!themes.includes(next)) return;
+    selectedTheme = next;
+    writePreference('theme', next);
+    applyAppearance();
   }
   function setLanguage(next) {
     if (!['nl', 'de'].includes(next)) return;
@@ -50,10 +58,8 @@
       (location.protocol === 'https:' ? '; Secure' : '');
     if (next !== language) location.reload();
   }
-  const preferences = readPreferences();
-  const theme = preferences.theme || (root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme;
+  applyAppearance();
+  systemAppearance?.addEventListener('change', applyAppearance);
   root.Xped = root.Xped || {};
-  root.Xped.i18n = Object.freeze({ language, locale, copy, t, number, date, relative, setLanguage, setTheme });
+  root.Xped.i18n = Object.freeze({ language, locale, copy, t, number, date, relative, theme: () => selectedTheme, setLanguage, setTheme });
 })(window);

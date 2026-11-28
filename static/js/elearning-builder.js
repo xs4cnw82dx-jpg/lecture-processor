@@ -541,10 +541,10 @@
         if (res.same_account) {
           leaseMsg.textContent = uiText('You already have this expedition open in another browser tab or window') + agoTxt + '. Taking over stops saves from that tab. Save pending edits there first.';
         } else {
-          leaseMsg.textContent = edName + ' is currently editing this expedition' + agoTxt + '. Preview is available. Taking over stops their unsaved changes from being saved.';
+          leaseMsg.textContent = edName + uiText(' is currently editing this expedition') + agoTxt + '. Preview is available. Taking over stops their unsaved changes from being saved.';
         }
         leaseBanner.hidden = false;
-        saveStateEl.textContent = res.same_account ? uiText('Open in another tab') : (edName + ' editing');
+        saveStateEl.textContent = res.same_account ? uiText('Open in another tab') : (edName + uiText(' editing'));
         saveStateEl.className = 'el-save-chip is-warn';
       }
     } catch (err) {
@@ -616,7 +616,7 @@
           target.data.media = { kind: 'asset', assetId: res.asset.id, staticPath: '' };
         }
       }, { label: uiText('upload media') });
-      showToast(uiText('Uploaded ') + (file.name || 'media'));
+      showToast(uiText('Uploaded ') + (file.name || uiText('media')));
     } catch (err) {
       if (state.blockUploads[upKey] !== operation || leavingAccount || !state.exp) return;
       state.blockUploads[upKey] = { status: 'error', fileName: file.name || uiText('media file'), error: err.message || uiText('Upload failed'), file: file };
@@ -846,8 +846,8 @@
         mUp.className = 'el-rail-move-btn';
         mUp.setAttribute('data-move-mod', mod.id);
         mUp.setAttribute('data-dir', 'up');
-        mUp.title = uiText('Move "') + modTitle + '" up';
-        mUp.setAttribute('aria-label', uiText('Move station ') + modTitle + ' up');
+        mUp.title = uiText('Move "') + modTitle + uiText('" up');
+        mUp.setAttribute('aria-label', uiText('Move station ') + modTitle + uiText(' up'));
         mUp.disabled = mIdx === 0;
         mUp.appendChild(Icons.icon('chevronUp', 12));
         mUp.addEventListener('click', function (e) {
@@ -866,8 +866,8 @@
         mDn.className = 'el-rail-move-btn';
         mDn.setAttribute('data-move-mod', mod.id);
         mDn.setAttribute('data-dir', 'down');
-        mDn.title = uiText('Move "') + modTitle + '" down';
-        mDn.setAttribute('aria-label', uiText('Move station ') + modTitle + ' down');
+        mDn.title = uiText('Move "') + modTitle + uiText('" down');
+        mDn.setAttribute('aria-label', uiText('Move station ') + modTitle + uiText(' down'));
         mDn.disabled = mIdx === state.exp.modules.length - 1;
         mDn.appendChild(Icons.icon('chevronDown', 12));
         mDn.addEventListener('click', function (e) {
@@ -933,7 +933,7 @@
             if (!srcMod) return;
             if (srcMod.id !== mod.id && srcMod.steps.length <= 1) {
               var srcTitle = Model.getLocalized(srcMod.title, state.editLang, state.exp.defaultLanguage) || 'that station';
-              showToast('Each station must keep at least one step. Add another step to "' + srcTitle + '" first.');
+              showToast(uiText('Each station must keep at least one step. Add another step to "') + srcTitle + uiText('" first.'));
               return;
             }
             var targetIdx = after ? sIdx + 1 : sIdx;
@@ -971,8 +971,8 @@
           sUp.className = 'el-rail-move-btn';
           sUp.setAttribute('data-move-step', step.id);
           sUp.setAttribute('data-dir', 'up');
-          sUp.title = uiText('Move "') + cleanStepTitle + '" up';
-          sUp.setAttribute('aria-label', uiText('Move step ') + cleanStepTitle + ' up');
+          sUp.title = uiText('Move "') + cleanStepTitle + uiText('" up');
+          sUp.setAttribute('aria-label', uiText('Move step ') + cleanStepTitle + uiText(' up'));
           sUp.disabled = sIdx === 0;
           sUp.appendChild(Icons.icon('chevronUp', 12));
           sUp.addEventListener('click', function (e) {
@@ -990,8 +990,8 @@
           sDn.className = 'el-rail-move-btn';
           sDn.setAttribute('data-move-step', step.id);
           sDn.setAttribute('data-dir', 'down');
-          sDn.title = uiText('Move "') + cleanStepTitle + '" down';
-          sDn.setAttribute('aria-label', uiText('Move step ') + cleanStepTitle + ' down');
+          sDn.title = uiText('Move "') + cleanStepTitle + uiText('" down');
+          sDn.setAttribute('aria-label', uiText('Move step ') + cleanStepTitle + uiText(' down'));
           sDn.disabled = sIdx === mod.steps.length - 1;
           sDn.appendChild(Icons.icon('chevronDown', 12));
           sDn.addEventListener('click', function (e) {
@@ -1987,7 +1987,7 @@
         var n = Number(minInp.value);
         if (!/^\d+$/.test(minInp.value) || !Number.isInteger(n) || n < 1 || n > 120) {
           minInp.setAttribute('aria-invalid', 'true');
-          minErr.textContent = 'Enter a whole number between 1 and 120 minutes.';
+          minErr.textContent = uiText('Enter a whole number between 1 and 120 minutes.');
           minErr.hidden = false;
         } else {
           minErr.hidden = true;
@@ -2159,7 +2159,7 @@
         var affected = mod.steps.filter(function (other) {
           return (other.branching || []).some(function (rule) { return rule.targetStepId === step.id; });
         }).map(function (other) { return Model.getLocalized(other.title, lang, defLang) || 'Untitled step'; });
-        showToast(affected.length ? 'Step deleted. Review the jump from ' + affected.join(', ') + '.' : 'Step deleted.', function () {
+        showToast(affected.length ? uiText('Step deleted. Review the jump from ') + affected.join(', ') + '.' : uiText('Step deleted.'), function () {
           var m = (state.exp.modules || []).find(function (x) { return x.id === targetModId; });
           if (!m || m.steps.some(function (s) { return s.id === removedStep.id; })) return;
           mutate(function () {
@@ -2180,7 +2180,7 @@
           state.exp.modules = state.exp.modules.filter(function (m) { return m.id !== mod.id; });
           state.selectedTarget = { type: 'startPage' };
         }, { label: 'delete station' });
-        showToast('Station deleted.', function () {
+        showToast(uiText('Station deleted.'), function () {
           if (state.exp.modules.some(function (m) { return m.id === removedMod.id; })) return;
           mutate(function () {
             state.exp.modules.splice(Math.min(removedModIdx, state.exp.modules.length), 0, removedMod);
@@ -2331,7 +2331,7 @@
         var p = Model.parseVideoUrl(v);
         var hadManualTrim = d.startSeconds != null || d.endSeconds != null;
         if (v && !p.embedUrl) {
-          trimPrompt.textContent = p.error || 'Use a YouTube or Vimeo link.';
+          trimPrompt.textContent = p.error || uiText('Use a YouTube or Vimeo link.');
           trimPrompt.hidden = false;
           return;
         }
@@ -2351,16 +2351,16 @@
         trimPrompt.replaceChildren();
         var promptCopy = document.createElement('p');
         var previousTrim = formatSecondsHuman(d.startSeconds || 0) + ' – ' + (d.endSeconds == null ? 'end' : formatSecondsHuman(d.endSeconds));
-        promptCopy.textContent = 'This video has a different start point. Choose which trim to use.';
+        promptCopy.textContent = uiText('This video has a different start point. Choose which trim to use.');
         var fromLink = document.createElement('button');
         fromLink.type = 'button';
         fromLink.className = 'el-btn el-btn-primary el-btn-sm';
-        fromLink.textContent = 'Use link time (' + formatSecondsHuman(p.startSeconds || 0) + ')';
+        fromLink.textContent = uiText('Use link time (') + formatSecondsHuman(p.startSeconds || 0) + ')';
         fromLink.onclick = function () { applyVideo(false); };
         var keep = document.createElement('button');
         keep.type = 'button';
         keep.className = 'el-btn el-btn-sm';
-        keep.textContent = 'Keep ' + previousTrim;
+        keep.textContent = uiText('Keep ') + previousTrim;
         keep.onclick = function () { applyVideo(true); };
         trimPrompt.append(promptCopy, fromLink, keep);
         trimPrompt.hidden = false;
@@ -2389,13 +2389,13 @@
           return false;
         }
         if (sSec !== null && eSec !== null && eSec <= sSec) {
-          timeErr.textContent = uiText('End time (') + formatSecondsHuman(eSec) + ') must be after Start time (' + formatSecondsHuman(sSec) + ').';
+          timeErr.textContent = uiText('End time (') + formatSecondsHuman(eSec) + uiText(') must be after Start time (') + formatSecondsHuman(sSec) + ').';
           timeErr.hidden = false;
           return false;
         }
         timeErr.hidden = true;
         if (sSec !== null || eSec !== null) {
-          segPreview.textContent = uiText('Effective clip: ') + (sSec !== null ? formatSecondsHuman(sSec) : '0:00') + ' – ' + (eSec !== null ? formatSecondsHuman(eSec) : 'end');
+          segPreview.textContent = uiText('Effective clip: ') + (sSec !== null ? formatSecondsHuman(sSec) : '0:00') + ' – ' + (eSec !== null ? formatSecondsHuman(eSec) : uiText('end'));
         } else {
           segPreview.textContent = uiText('Plays full video from start to finish.');
         }
@@ -2549,7 +2549,7 @@
         rmSrc.addEventListener('click', function () {
           var removed = clone(item);
           mutate(function () { d.items.splice(idx, 1); }, { label: 'remove reference' });
-          showToast('Reference removed.', function () {
+          showToast(uiText('Reference removed.'), function () {
             var entries = findLiveBlock(blk.id)?.data.items;
             if (entries && !entries.some(function (entry) { return entry.id === removed.id; })) {
               mutate(function () { entries.splice(Math.min(idx, entries.length), 0, removed); }, { label: 'restore reference' });
@@ -2773,7 +2773,7 @@
         pDel.addEventListener('click', function () {
           var removedPin = clone(pin);
           mutate(function () { d.pins.splice(idx, 1); }, { label: 'delete hotspot pin' });
-          showToast('Pin removed.', function () {
+          showToast(uiText('Pin removed.'), function () {
             var entries = findLiveBlock(blk.id)?.data.pins;
             if (entries && !entries.some(function (entry) { return entry.id === removedPin.id; })) {
               mutate(function () { entries.splice(Math.min(idx, entries.length), 0, removedPin); }, { label: 'restore pin' });
@@ -2801,7 +2801,7 @@
           swBtn.appendChild(Blocks.colorSwatch(col.hex));
           swBtn.title = col.label;
           swBtn.setAttribute('aria-pressed', String((pin.color || '#0072CE').toUpperCase() === col.hex));
-          swBtn.setAttribute('aria-label', uiText('Pin ') + (idx + 1) + ' color: ' + col.label);
+          swBtn.setAttribute('aria-label', uiText('Pin ') + (idx + 1) + uiText(' color: ') + col.label);
           swBtn.addEventListener('click', function () {
             mutate(function () { pin.color = col.hex; }, { label: 'change pin color' });
           });
@@ -2940,7 +2940,7 @@
             var done = document.createElement('button');
             done.type = 'button';
             done.className = 'el-btn';
-            done.textContent = 'Close';
+            done.textContent = uiText('Close');
             done.addEventListener('click', function () { dialog.close(); });
             dialog.append(art.cloneNode(true), done);
             document.body.appendChild(dialog);
@@ -2992,7 +2992,7 @@
             state.selectedTarget = { type: 'step', moduleId: targetMod.id, stepId: targetStep.id };
             state.selectedBlockId = blk.id;
           }, { label: uiText('move block to another step') });
-          showToast(uiText('Block moved to ') + (Model.getLocalized(targetStep.title, lang, defLang) || 'step'));
+          showToast(uiText('Block moved to ') + (Model.getLocalized(targetStep.title, lang, defLang) || uiText('step')));
         };
       }));
       var mvControls = document.createElement('div');
@@ -3014,10 +3014,11 @@
 
   /* ---- Split-Screen German Translation Studio with Live Slide Preview & Autosave ---- */
   function translationLocation(location) {
-    if (!window.LectureI18n) return location;
+    var i18n = academyUi || window.LectureI18n;
+    if (!i18n) return location;
     return location.split(' · ').map(function (part) {
       var number = part.match(/^(.*?) (#[0-9]+|[0-9]+)$/);
-      return number ? window.LectureI18n.t(number[1]) + ' ' + number[2] : window.LectureI18n.t(part);
+      return number ? i18n.t(number[1]) + ' ' + number[2] : i18n.t(part);
     }).join(' · ');
   }
 
@@ -3050,7 +3051,7 @@
       var pill = document.createElement('button');
       pill.type = 'button';
       pill.className = 'el-tr-fallback-pill';
-      pill.textContent = actualLang.toUpperCase() + ' fallback';
+      pill.textContent = actualLang.toUpperCase() + uiText(' fallback');
       pill.setAttribute('aria-label', uiText('Translate ') + translationLocation(row.location) + ' (' + actualLang.toUpperCase() + uiText(' fallback)'));
       pill.addEventListener('click', function () {
         var sheet = document.getElementById('el-tr-preview-dialog');
@@ -3227,7 +3228,7 @@
     var items = (state.exp && state.exp.glossary && state.exp.glossary.length)
       ? state.exp.glossary
       : (Model.DEFAULT_GLOSSARY || []);
-    if (sum) sum.textContent = items.length + ' shared pain-science terms';
+    if (sum) sum.textContent = items.length + uiText(' shared pain-science terms');
     body.textContent = '';
     items.forEach(function (term) {
       var chip = document.createElement('span');
@@ -3318,7 +3319,7 @@
 
   function updateTranslationProgress(rows) {
     var stats = Model.getTranslationStats(rows);
-    translateProgressEl.textContent = state.trTarget.toUpperCase() + ': ' + stats.translated + ' / ' + stats.total + ' translated' + (stats.review ? (' · ' + stats.review + ' to review') : '');
+    translateProgressEl.textContent = state.trTarget.toUpperCase() + ': ' + stats.translated + ' / ' + stats.total + uiText(' translated') + (stats.review ? (' · ' + stats.review + uiText(' to review')) : '');
   }
 
   function updateTranslationBadge(rowElement, badge, status) {
@@ -3338,7 +3339,7 @@
     translateRowsEl.querySelectorAll('.el-tr-group').forEach(function (group) {
       var count = group.querySelectorAll('.el-tr-row').length;
       if (!count) group.remove();
-      else group.querySelector('summary .xped-caption').textContent = count + (count === 1 ? ' field' : ' fields');
+      else group.querySelector('summary .xped-caption').textContent = count + (count === 1 ? uiText(' field') : uiText(' fields'));
     });
     if (!translateRowsEl.childElementCount) renderTranslateMode();
     else updateTranslationProgress(rows);
@@ -3368,7 +3369,7 @@
     if (altBtn && academyUi) altBtn.hidden = true;
     if (altBtn && !academyUi) {
       var altLanguage = Model.SUPPORTED_LANGS.find(function (l) { return l !== state.trSource && l !== state.trTarget; });
-      altBtn.textContent = altLanguage.toUpperCase() + ' reference';
+      altBtn.textContent = altLanguage.toUpperCase() + uiText(' reference');
       altBtn.setAttribute('aria-pressed', String(!!state.trShowAltLang));
     }
     document.getElementById('el-tr-toggle-preview').setAttribute('aria-pressed', String(state.trShowPreview));
@@ -3489,7 +3490,7 @@
         copySrc.type = 'button';
         copySrc.className = 'el-btn el-btn-sm';
         copySrc.disabled = !row.source.trim() || state.trSource === state.trTarget;
-        copySrc.title = uiText('Use ') + state.trSource.toUpperCase() + ' text in the ' + state.trTarget.toUpperCase() + ' translation';
+        copySrc.title = uiText('Use ') + state.trSource.toUpperCase() + uiText(' text in the ') + state.trTarget.toUpperCase() + uiText(' translation');
         copySrc.appendChild(Icons.icon('copy', 13));
         var sourceNames = { nl: 'Use Dutch text', de: 'Use German text', en: 'Use English text' };
         copySrc.appendChild(document.createTextNode(uiText(sourceNames[state.trSource])));
@@ -3505,7 +3506,7 @@
         srcBox.lang = state.trSource;
         srcBox.className = 'el-tr-source';
         var srcPrimary = document.createElement('div');
-        srcPrimary.textContent = row.source || '(empty)';
+        srcPrimary.textContent = row.source || uiText('(empty)');
         srcBox.appendChild(srcPrimary);
         // UX-064: Show 3rd-language reference only when enabled
         if (!academyUi && state.trShowAltLang && row.altSource) {
@@ -3597,7 +3598,7 @@
           focusContext();
           scheduleTranslateAutosave();
           if (prevVal.trim() && prevVal !== row.source) {
-            showToast('Replaced with ' + state.trSource.toUpperCase() + ' text.', function () {
+            showToast(uiText('Replaced with ') + state.trSource.toUpperCase() + uiText(' text.'), function () {
               if (state.trTarget !== targetLang || state.mode !== 'translate') return;
               updateLocalizedText(prevVal);
               renderTranslateMode();
@@ -4088,7 +4089,7 @@
     if (!anyRendered) {
       var empty = document.createElement('p');
       empty.className = 'xped-caption';
-      empty.textContent = uiText('No blocks match "') + q + '". Try keywords like YouTube, stelling, bronnen, waage, or slider.';
+      empty.textContent = uiText('No blocks match "') + q + uiText('". Try keywords like YouTube, stelling, bronnen, waage, or slider.');
       body.appendChild(empty);
     }
   }
@@ -4254,14 +4255,14 @@
       rm.textContent = uiText('Remove');
       rm.setAttribute('aria-label', uiText('Remove collaborator ') + m.email);
       rm.addEventListener('click', async function () {
-        var ok = await showConfirmDialog('Remove collaborator?', 'Remove ' + m.email + ' from this expedition?', 'Remove');
+        var ok = await showConfirmDialog(uiText('Remove collaborator?'), uiText('Remove ') + m.email + uiText(' from this expedition?'), uiText('Remove'));
         if (!ok) return;
         var res = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
           method: 'POST',
           body: JSON.stringify({ action: 'remove_member', email: m.email }),
         });
         renderMembersList(res.members || []);
-        showToast('Collaborator removed.');
+        showToast(uiText('Collaborator removed.'));
       });
       row.appendChild(lbl);
       row.appendChild(rm);
@@ -4317,9 +4318,9 @@
       rev.setAttribute('aria-label', uiText('Revoke translator link for ') + grantName);
       rev.addEventListener('click', async function () {
         var ok = await showConfirmDialog(
-          'Revoke translator link?',
-          'Revoke "' + grantName + '"? Anyone using that link will immediately lose access.',
-          'Revoke link'
+          uiText('Revoke translator link?'),
+          uiText('Revoke "') + grantName + uiText('"? Anyone using that link will immediately lose access.'),
+          uiText('Revoke link')
         );
         if (!ok) return;
         api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/sharing', {
@@ -4422,7 +4423,7 @@
     unusedDialog.querySelector('form button').disabled = true;
     document.getElementById('el-unused-cancel').disabled = true;
     unusedFiles.inert = true;
-    unusedStatus.textContent = 'Removing files…';
+    unusedStatus.textContent = uiText('Removing files…');
     try {
       for (var input of selected) {
         if (usesMedia(state.exp, input.value) || saveVersion !== savedVersion || state.exp.revision !== unusedRevision) {
@@ -4437,7 +4438,7 @@
         input.closest('label').remove();
       }
       unusedDialog.close();
-      showToast('Unused media removed.');
+      showToast(uiText('Unused media removed.'));
     } catch (error) {
       unusedStatus.textContent = error.message;
     } finally {
@@ -4480,7 +4481,7 @@
       }
       if (notices.length) {
         var title = result.excludedUploads ? uiText('Export without uploaded files?') : uiText('Export course content');
-        var message = notices.map(function (note) { return window.LectureI18n ? window.LectureI18n.t(note) : note; }).join(' ');
+        var message = notices.map(function (note) { return academyUi ? uiText(note) : window.LectureI18n ? window.LectureI18n.t(note) : note; }).join(' ');
         if (!(await showConfirmDialog(title, message, uiText('Export course content')))) return;
       }
       downloadCourseJson(result.course, '-content');
@@ -4712,14 +4713,14 @@
     var entry = state.undoStack.pop();
     state.redoStack.push(historyEntry(entry.label));
     restoreSnapshot(entry);
-    showToast(uiText('Undid ') + (entry.label || 'change'));
+    showToast(uiText('Undid ') + (entry.label || uiText('change')));
   }
   function performRedo() {
     if (state.mode !== 'edit' || !canEditStructure() || !state.leaseToken || !state.redoStack.length) return;
     var entry = state.redoStack.pop();
     state.undoStack.push(historyEntry(entry.label));
     restoreSnapshot(entry);
-    showToast(uiText('Redid ') + (entry.label || 'change'));
+    showToast(uiText('Redid ') + (entry.label || uiText('change')));
   }
   document.getElementById('el-undo-btn').addEventListener('click', performUndo);
   document.getElementById('el-redo-btn').addEventListener('click', performRedo);
@@ -4751,7 +4752,7 @@
   document.getElementById('el-conflict-download').addEventListener('click', downloadCurrentDraft);
   document.getElementById('el-takeover-btn').addEventListener('click', async function () {
     if (resolveConflict) {
-      var proceed = await showConfirmDialog('Open the saved version?', 'Unsaved edits in this tab will be discarded. You can cancel and download a copy first.', 'Open saved version');
+      var proceed = await showConfirmDialog(uiText('Open the saved version?'), uiText('Unsaved edits in this tab will be discarded. You can cancel and download a copy first.'), uiText('Open saved version'));
       if (!proceed) return;
     }
     var openSaved = resolveConflict;
@@ -4887,7 +4888,7 @@
     [[canvasFrameEl, state.viewport, 'Editing canvas'], [previewContainerEl, state.previewViewport, 'Learner preview']].forEach(function (entry) {
       var phone = !narrow && entry[1] === 'mobile';
       entry[0].classList.toggle('is-mobile', phone);
-      entry[0].setAttribute('aria-label', entry[2] + (phone ? ' at phone width' : ' at available width'));
+      entry[0].setAttribute('aria-label', entry[2] + (phone ? uiText(' at phone width') : uiText(' at available width')));
     });
   });
   var pvSamplePeers = document.getElementById('el-pv-sample-peers');
@@ -4920,9 +4921,9 @@
   }
   document.getElementById('el-share-rotate-btn').addEventListener('click', async function () {
     var ok = await showConfirmDialog(
-      'Reset public share URL?',
-      'Generate a brand-new share URL? The previous link and printed QR codes will stop working.',
-      'Reset link'
+      uiText('Reset public share URL?'),
+      uiText('Generate a brand-new share URL? The previous link and printed QR codes will stop working.'),
+      uiText('Reset link')
     );
     if (ok) savePublicShareSettings({ rotateToken: true });
   });
@@ -4948,7 +4949,7 @@
       });
       document.getElementById('el-member-email').value = '';
       renderMembersList(res.members || []);
-      showToast('Collaborator added!');
+      showToast(uiText('Collaborator added!'));
     } catch (err) { showToast(err.message, 'error'); }
   });
   document.getElementById('el-create-grant-btn').addEventListener('click', async function () {
@@ -4960,7 +4961,7 @@
         body: JSON.stringify({ action: 'create_grant', role: 'translate', targetLanguage: lang, label: label }),
       });
       document.getElementById('el-grant-label').value = '';
-      showToast('Translator link created!');
+      showToast(uiText('Translator link created!'));
       loadShareDialogData();
     } catch (err) { showToast(err.message, 'error'); }
   });
@@ -5029,7 +5030,7 @@
         state.redoStack = [];
       } else rebaseUndoStacksWithTranslations(state.exp, state.trTarget);
       updateUndoButtons();
-      showToast('Imported ' + (res.appliedCount || 0) + ' translated fields!');
+      showToast(uiText('Imported ') + (res.appliedCount || 0) + uiText(' translated fields!'));
       renderTranslateMode();
     } catch (err) {
       showToast(err.message, 'error');
@@ -5161,6 +5162,12 @@
       setSaveStatus(uiText('Saved'), true, false);
       if (canEditStructure()) await acquireLease(false);
       setMode(state.mode);
+      if (academyUi && state.mode === 'translate' && urlParams.has('veld')) {
+        var fieldKey = urlParams.get('veld');
+        if (Model.extractTranslationRows(state.exp, state.trSource, state.trTarget).some(row => row.key === fieldKey)) {
+          jumpToTranslationField(fieldKey);
+        }
+      }
       if (canEditStructure() && urlParams.get('panel') === 'sharing') openShareDialog();
     } catch (err) {
       showUnavailable(err.message);

@@ -819,9 +819,43 @@
     return out;
   }
 
+  // Academy uses formal German in learner-facing guidance, including the author preview.
+  var ACADEMY_LEARNER_DE = {
+    courseHighlights: 'Was Sie erwartet',
+    answerPrivacy: 'Über Ihre Antworten',
+    reflectionAccess: 'Das Kursteam kann Ihre Reflexion lesen.',
+    consentCohort: 'Ihre geteilten Antworten werden der Gruppe {group} zugeordnet.',
+    consentChangeNote: 'Ihre Wahl gilt ab jetzt. Bereits geteilte Antworten bleiben beim Kursteam.',
+    consentIntro: 'Sie können die gesamte Expedition unabhängig von Ihrer Wahl durchlaufen.',
+    consentQuestion: 'Möchten Sie Ihre Antworten mit dem Kursteam teilen?',
+    consentPrivateNote: 'Ihre neuen Antworten und Ihr weiterer Fortschritt bleiben auf diesem Gerät.',
+    consentFeedback: 'Das Kursteam kann auch die Rückmeldungen lesen, die Sie einsenden.',
+    authorAccess: 'Das Kursteam erhält Ihren Fortschritt und Ihre Antworten einschließlich eigener Texte unter einer Sitzungskennung.',
+    deviceResume: 'Ihre Antworten werden auf diesem Gerät gespeichert, damit Sie später fortfahren können.',
+    sharedWords: 'Wörter, die Sie zu einer geteilten Wortwolke hinzufügen, sind für andere Teilnehmende sichtbar.',
+    routeTitle: 'Ihre Expeditionsroute',
+    yourAnswer: 'Ihre Auswahl',
+    savedAutomatically: 'Ihr Fortschritt wird automatisch auf diesem Gerät gespeichert. Sie können jederzeit eine Pause machen.',
+    summaryTitle: 'Ihre Expedition im Überblick',
+    summarySubtitle: 'Hier sehen Sie, was Sie aus der Expedition mitnehmen.',
+    summaryEmpty: 'Sie haben diese Expedition abgeschlossen.',
+    summaryCopyManual: 'Markieren und kopieren Sie den folgenden Text.',
+    revealHint: 'Beantworten Sie zuerst die Frage oben, um die Erklärung zu sehen.',
+    pilotTitle: 'Wie war der Pilotkurs für Sie?',
+    pilotEngagement: 'Wie ansprechend fanden Sie die Gestaltung? (1–5)',
+    pilotComment: 'Was hat Ihnen gefallen? Was können wir verbessern?',
+    pilotThanks: 'Vielen Dank für Ihre Rückmeldung.',
+    hotspotListLabel: 'Wählen Sie einen Punkt.',
+    hotspotUnselected: 'Wählen Sie einen Punkt auf dem Bild, um die Erklärung zu lesen.',
+    partialCorrect: 'Ein Teil ist richtig. Lesen Sie die Erklärung unten.',
+    wordsLimitReached: 'Sie haben {max} Wörter hinzugefügt. Entfernen Sie zuerst ein Wort, um ein neues einzutragen.',
+    goalsLimitReached: 'Sie haben {max} Schritte ausgewählt. Wählen Sie zuerst einen ab, um einen weiteren hinzuzufügen.'
+  };
+
   function ui(lang, key, vars) {
     var dict = UI_STRINGS[lang] || UI_STRINGS.nl;
-    var text = dict[key] || UI_STRINGS.en[key] || key;
+    var formal = root.Xped?.i18n && lang === 'de' && ACADEMY_LEARNER_DE[key];
+    var text = formal || dict[key] || UI_STRINGS.en[key] || key;
     if (vars) {
       Object.keys(vars).forEach(function (k) {
         text = text.replace('{' + k + '}', String(vars[k]));

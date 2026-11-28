@@ -63,6 +63,10 @@
     items: [],
     onChange: function (val) {
       state.lang = val;
+      if (window.Xped && window.Xped.i18n) {
+        document.cookie = 'xped-course-language=' + val + '; Path=' + location.pathname + '; Max-Age=31536000; SameSite=Lax' +
+          (location.protocol === 'https:' ? '; Secure' : '');
+      }
       saveLocalProgress();
       updateLangDropdown();
       render();

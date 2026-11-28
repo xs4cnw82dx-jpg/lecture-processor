@@ -78,7 +78,8 @@ def test_player_status_and_private_pause_note_before_any_script_runs(academy):
     course = 'elearning_expeditions/exp-preview'
     store.put(index, {'expedition_id': 'exp-preview'})
     share = {'token': token, 'enabled': False}
-    exp = {'id': 'exp-preview', 'title': 'Preview course', 'share': share}
+    from lecture_processor.domains.elearning import model
+    exp = {**model.build_default_expedition('Preview course', 'nl'), 'id': 'exp-preview', 'share': share}
     store.put(course, exp)
     for note in ('', 'We oefenen dinsdag verder.'):
         share['pausedMessage'] = note

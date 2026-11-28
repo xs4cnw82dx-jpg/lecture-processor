@@ -377,7 +377,7 @@
         styleToolbar?.remove();
         styleToolbar = el('div', 'el-fmt-bar el-field-style');
         styleToolbar.setAttribute('role', 'group');
-        styleToolbar.setAttribute('aria-label', root.LectureI18n?.t('Text style') || 'Text style');
+        styleToolbar.setAttribute('aria-label', root.LectureI18n?.t('Text style') || uiText('Text style'));
         [['p', 'Paragraph'], ['h2', 'Heading 2'], ['h3', 'Heading 3']].forEach(function (option) {
           var button = el('button', 'el-fmt-btn', option[0].toUpperCase());
           button.type = 'button';
@@ -534,7 +534,7 @@
           ev.stopPropagation();
           var norm = Model.normalizeCitationLink(linkUrlInp.value);
           if (!norm.url) {
-            linkErr.textContent = 'Enter a valid https:// URL or DOI.';
+            linkErr.textContent = uiText('Enter a valid https:// URL or DOI.');
             linkUrlInp.focus();
             return;
           }
@@ -1650,7 +1650,7 @@
           en: loadT > resT ? uiText('Higher load') : (resT > loadT ? uiText('Strong resources') : uiText('In balance')),
           de: loadT > resT ? uiText('Höhere Belastung') : (resT > loadT ? uiText('Starke Ressourcen') : uiText('Im Gleichgewicht')),
         };
-        statusEl.textContent = (statusMap[lang] || statusMap.nl) + ' · ' + loadT + ' vs ' + resT;
+        statusEl.textContent = (statusMap[lang] || statusMap.nl) + ' · ' + loadT + uiText(' vs ') + resT;
         svgSlot.textContent = '';
         var svgNode = renderBalanceSvg(loadT, resT);
         if (interactive && !interacted) svgNode.classList.add('is-cue-sway');
@@ -1953,13 +1953,13 @@
             function showFallback() {
               cpBtn.removeAttribute('data-copied');
               cpBtn.setAttribute('data-failed', '');
-              cpStatus.textContent = 'Clipboard blocked — copy manually below';
+              cpStatus.textContent = uiText('Clipboard blocked — copy manually below');
               fallbackWrap.textContent = '';
               var fbTa = el('textarea', 'xped-textarea');
               fbTa.rows = 4;
               fbTa.readOnly = true;
               fbTa.value = promptText;
-              fbTa.setAttribute('aria-label', 'Agent brief text to copy');
+              fbTa.setAttribute('aria-label', uiText('Agent brief text to copy'));
               fbTa.addEventListener('click', function (ev) { ev.stopPropagation(); fbTa.select(); });
               var closeFb = el('button', 'el-btn el-btn-sm', 'Hide');
               closeFb.type = 'button';
@@ -1974,7 +1974,7 @@
                 fallbackWrap.hidden = true;
                 cpBtn.removeAttribute('data-failed');
                 cpBtn.setAttribute('data-copied', '');
-                cpStatus.textContent = 'Brief copied';
+                cpStatus.textContent = uiText('Brief copied');
                 setTimeout(function () {
                   cpBtn.removeAttribute('data-copied');
                   cpStatus.textContent = '';
