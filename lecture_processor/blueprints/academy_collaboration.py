@@ -55,20 +55,20 @@ def set_translation_date(expedition_id):
     runtime = get_runtime()
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
-        raise model.ElearningError('Ongeldige datum.', 400)
+        raise model.ElearningError('Choose a valid date.', 400)
     value, language = body.get('date'), body.get('language')
     if value is not None:
         try:
             if date.fromisoformat(value).isoformat() != value:
                 raise ValueError
         except (TypeError, ValueError):
-            raise model.ElearningError('Kies een geldige datum.', 400) from None
+            raise model.ElearningError('Choose a valid date.', 400) from None
 
     def save(unit):
         _, course, _, _, _ = studio.access(runtime, expedition_id, required='owner', unit=unit,
                                             course_fields={'_translationDates', 'defaultLanguage'})
         if language != ('nl' if course.get('defaultLanguage') == 'de' else 'de'):
-            raise model.ElearningError('Kies de doeltaal van de vertaling.', 400)
+            raise model.ElearningError('Invalid target language.', 400)
         dates = dict(course.get('_translationDates') or {})
         if value is None:
             dates.pop(language, None)
