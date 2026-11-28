@@ -892,15 +892,6 @@
 [data-product="academy"] .el-chart-row.is-good .el-resp-check-ico { color: var(--theme-success-ink); }
 
 /* 9. Sign-in and documents ------------------------------------------------------------ */
-[data-product="academy"] .academy-auth {
-  width: min(calc(100% - 32px), 400px);
-  margin-top: clamp(32px, 10vh, 96px);
-  padding: 32px;
-  border-color: var(--theme-line);
-  border-radius: var(--ac-radius-dialog);
-  box-shadow: var(--ac-shadow-popover);
-}
-[data-product="academy"] .academy-auth h1 { font-size: 28px; }
 [data-product="academy"] #academy-auth-intro { margin: 8px 0 24px; color: var(--theme-muted-strong); font-size: 14px; }
 [data-product="academy"] #academy-google { width: 100%; margin-bottom: 20px; }
 [data-product="academy"] #academy-auth-form { gap: 6px; }

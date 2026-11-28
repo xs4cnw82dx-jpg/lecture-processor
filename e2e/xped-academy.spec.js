@@ -97,6 +97,26 @@ test('a new Studio author signs into the empty library and signs out on the Acad
   expect(errors).toEqual([]);
 });
 
+for (const width of [390, 1440]) {
+  test('the Google mark and label fit inside the Academy sign-in button at ' + width, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(academy + '/inloggen');
+    const button = page.getByRole('button', { name: 'Doorgaan met Google', exact: true });
+    const mark = button.locator('img');
+    await expect(button).toBeVisible();
+    await mark.evaluate(image => image.decode());
+    const icon = await mark.boundingBox();
+    const label = await button.getByText('Doorgaan met Google', { exact: true }).boundingBox();
+    const bounds = await button.boundingBox();
+    expect(icon.width).toBeGreaterThan(0);
+    expect(icon.x).toBeGreaterThanOrEqual(bounds.x);
+    expect(icon.x + icon.width).toBeLessThan(label.x);
+    expect(label.x + label.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+    await page.getByRole('button', { name: 'Wachtwoord vergeten?' }).click();
+    await expect(button).toBeHidden();
+  });
+}
+
 test('the Academy sign-in returns home when given an unrelated destination', async ({ page }) => {
   await page.goto(academy + '/signin?next=' + encodeURIComponent('https://other.example.test/'));
   await page.getByLabel('E-mailadres', { exact: true }).fill('studio@example.test');
