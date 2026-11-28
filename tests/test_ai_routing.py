@@ -267,3 +267,20 @@ def test_audio_lock_precedes_model_options_and_entry_shape(stage, entry, payload
     snapshot = parse_routing(payload, defaults)
     assert snapshot.routes[stage] == Route('gemini', defaults[stage])
     assert snapshot.diagnostics == (Diagnostic(stage, 'audio_lock'),)
+
+
+@pytest.mark.parametrize(('stage', 'ceiling', 'valid'), [
+    ('notes_merge', 65536, True), ('notes_merge', 32768, False), ('notes_merge', 16000, False),
+    ('notes_merge', 128001, False), ('notes_merge', True, False), ('text_combine', 65536, False),
+])
+def test_only_notes_can_have_an_explicit_higher_retry_limit(payload, defaults, stage, ceiling, valid):
+    payload[stage] = {'provider': 'openrouter', 'model': 'anthropic/claude-sonnet-5.5',
+                      'options': {'reasoning_effort': 'medium', 'max_output_tokens': 32768,
+                                  'retry_max_output_tokens': ceiling}}
+    snapshot = parse_routing(payload, defaults)
+    if valid:
+        assert snapshot.routes[stage].options['retry_max_output_tokens'] == ceiling
+        assert not snapshot.diagnostics
+    else:
+        assert snapshot.routes[stage] == Route('gemini', defaults[stage])
+        assert snapshot.diagnostics == (Diagnostic(stage, 'unsupported_options'),)

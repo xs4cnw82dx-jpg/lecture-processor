@@ -56,3 +56,4 @@ class GenerationResult:
     model: str
     # Temporary compatibility for callers migrating from the native response.
     raw_response: Any = field(default=None, repr=False, compare=False)
+    finish_reason: str | None = None

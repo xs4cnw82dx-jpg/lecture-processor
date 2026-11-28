@@ -254,6 +254,7 @@ def _run_slide_extraction(batch_id, row, throttler, tokens, retry_tracker, runti
             max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='instant_slide_extraction',
+            record_discarded=partial(tokens.record_result, billing_mode='instant_batch'),
         )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record_result('slide_extraction', response, billing_mode='instant_batch', input_modality='text')
@@ -335,6 +336,8 @@ def _run_notes_merge(batch_id, row, throttler, tokens, retry_tracker, runtime, *
             max_output_tokens=65536,
             retry_tracker=retry_tracker,
             operation_name='instant_notes_merge',
+            source_slide_text=str(row.get('slide_text') or ''),
+            record_discarded=partial(tokens.record_result, billing_mode='instant_batch'),
         )
     batch_orchestrator._require_active_batch(batch_id, runtime=runtime)
     tokens.record_result('notes_merge', response, billing_mode='instant_batch', input_modality='text')
