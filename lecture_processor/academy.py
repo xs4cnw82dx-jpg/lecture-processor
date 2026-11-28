@@ -15,6 +15,7 @@ from flask import Flask, abort, g, jsonify, render_template, request
 from google.api_core.exceptions import GoogleAPICallError
 from werkzeug.exceptions import HTTPException
 
+from lecture_processor.blueprints.academy_collaboration import collaboration
 from lecture_processor.blueprints.academy_folders import academy_folders_bp
 from lecture_processor.blueprints.academy_language import academy_language_bp
 from lecture_processor.blueprints.academy_pages import academy_pages
@@ -116,6 +117,22 @@ class AcademyRuntime:
                 raise AcademyEmailUnverified
         return None
 
+    def academy_team_profiles(self, emails):
+        profiles = {}
+        for start in range(0, len(emails), 100):
+            identifiers = [auth.EmailIdentifier(email) for email in emails[start:start + 100]]
+            try:
+                batch = auth.get_users(identifiers, app=self.firebase_app)
+            except exceptions.FirebaseError:
+                return None
+            for user in batch.users:
+                if user.email and user.email_verified and not user.disabled:
+                    profiles[user.email.lower()] = {
+                        'active': True, 'name': user.display_name or '',
+                        'lastSignIn': (user.user_metadata.last_sign_in_timestamp or 0) / 1000,
+                    }
+        return profiles
+
     def academy_identity_removed(self, uid):
         try:
             auth.get_user(uid, app=self.firebase_app)
@@ -159,6 +176,7 @@ def create_app():
     app.register_blueprint(elearning_bp)
     app.register_blueprint(overview_bp)
     app.register_blueprint(academy_folders_bp)
+    app.register_blueprint(collaboration)
     app.register_blueprint(academy_account_bp)
     app.register_blueprint(academy_language_bp)
     app.register_blueprint(academy_pages)

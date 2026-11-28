@@ -10,7 +10,7 @@
   {% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-admin.css') }}">
+  {% if not academy_mode %}<link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-admin.css') }}">{% endif %}
   {% include '_academy_foundation.html' %}
 {% endblock %}
 {% block body %}
@@ -26,7 +26,7 @@
           <img src="{{ url_for('static', filename='images/xped/xped-jan.png') }}" width="175" height="112" alt="">
         </div>
         <div class="el-dash-actions" id="el-author-actions" hidden>
-          <button type="button" class="btn" id="el-admin-btn" hidden>{{ tr("Admin") }}</button>
+          {% if academy_mode %}<a class="btn" id="el-team-link" href="/team" hidden>{{ xped_copy('Team','Team') }}</a>{% else %}<button type="button" class="btn" id="el-admin-btn" hidden>{{ tr("Admin") }}</button>{% endif %}
           <button type="button" class="btn" id="el-import-json-btn">{{ tr("Import JSON") }}</button>
           <input type="file" id="el-import-json-input" accept="application/json" hidden>
           <button type="button" class="btn primary" id="el-new-expedition-btn">{{ tr("New expedition") }}</button>
@@ -62,7 +62,7 @@
     {% endif %}
 
   {% if academy_mode %}{% include '_academy_folders.html' %}{% endif %}
-  {% include '_elearning_admin.html' %}
+  {% if not academy_mode %}{% include '_elearning_admin.html' %}{% endif %}
   <dialog class="el-dialog" id="el-create-dialog" closedby="any" aria-labelledby="el-create-dialog-title">
     <div class="el-dialog-header">
       <h2 id="el-create-dialog-title">{{ tr("Create New Expedition") }}</h2>
@@ -145,7 +145,7 @@
   {% endblock %}
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
-  <script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>
+  {% if not academy_mode %}<script src="{{ url_for('static', filename=elearning_admin_js) }}"></script>{% endif %}
   {% if academy_mode %}<script src="{{ url_for('static', filename='js/academy-folders.js') }}"></script>{% endif %}
   <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
 {% endblock %}

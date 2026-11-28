@@ -1,0 +1,6 @@
+{% from 'academy/_collaboration_macros.html' import say with context %}
+<header class="xc-page-heading"><div><h1>Team</h1><p>{{ say('Auteurs in de Studio en teamleden van de expedities die je beheert.','Autor:innen im Studio und Teammitglieder der Expeditionen, die Sie verwalten.') }}</p></div>
+<button class="btn primary" data-xc-open="team" type="button">{{ say('Uitnodigen','Einladen') }}</button></header>
+<section class="xc-panel xc-team"><div class="xc-section-title"><h2 id="xc-team-count"></h2></div><div id="xc-team-list"></div></section>
+<div id="xc-feedback" class="xc-feedback" role="status" aria-live="polite"></div>
+{% include 'academy/collaboration_dialog.html' %}

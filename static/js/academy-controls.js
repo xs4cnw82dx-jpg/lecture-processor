@@ -7,7 +7,7 @@
   const optionSelector = 'select:not([multiple]):not([size]):not([data-app-select]):not([hidden])';
 
   function enhanceSelects(scope) {
-    const ux = root.Xped?.ux || root.LectureProcessorUx;
+    const ux = root.Xped?.ux;
     if (!studio || !ux?.enhanceNativeSelect) return;
     const selects = [...scope.querySelectorAll(optionSelector)];
     if (scope.matches?.(optionSelector)) selects.push(scope);
