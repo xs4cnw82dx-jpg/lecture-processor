@@ -297,3 +297,25 @@ for (const theme of ['light', 'dark']) {
     });
   }
 }
+
+test('Dutch polling shows verification guidance after a fresh token still needs verification', async ({ page }) => {
+  let verified = false;
+  const state = await fixture(page, { poll: route => verified ? route.fulfill({ json: completeJob }) : route.fulfill({
+    status: 403, json: { error: 'Email not verified', error_code: 'email_not_verified' }
+  }) });
+  await page.goto('/lecture-downloader');
+  await page.evaluate(() => window.LectureI18n.setLanguage('nl'));
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
+  await page.locator('#lecture-downloader-url').fill(sourceUrl);
+  await page.locator('#lecture-downloader-run-btn').click();
+  await expect(page.locator('#lecture-downloader-status')).toHaveText('Bevestig je e-mailadres voordat je verdergaat.');
+  expect(state.posts).toHaveLength(1);
+  expect(state.polls).toHaveLength(2);
+  expect(state.files).toHaveLength(0);
+  verified = true;
+  const download = page.waitForEvent('download');
+  await page.locator('#lecture-downloader-run-btn').click();
+  await download;
+  expect(state.posts).toHaveLength(1);
+  expect(state.polls).toHaveLength(3);
+});

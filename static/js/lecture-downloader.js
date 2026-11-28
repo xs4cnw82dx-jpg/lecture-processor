@@ -116,6 +116,8 @@
 
   async function responseError(response, attempt) {
     var payload = await response.json().catch(function () { return {}; });
+    var verification = authUtils.verificationError?.(response, payload);
+    if (verification) return verification;
     if (attemptIsCurrent(attempt) && response.status >= 400 && response.status < 500 && response.status !== 429) {
       pendingJob = null;
     }
@@ -236,7 +238,7 @@
       setStatus('Download started.', 'success');
     } catch (error) {
       if (!attemptIsCurrent(attempt)) return;
-      setStatus(pendingJob ? 'Could not finish the download. Choose Check download to try again.'
+      setStatus(pendingJob && error?.code !== 'email_not_verified' ? 'Could not finish the download. Choose Check download to try again.'
         : (error && error.message ? error.message : 'Could not download lecture media.'), 'error');
     } finally {
       if (attemptIsCurrent(attempt)) {

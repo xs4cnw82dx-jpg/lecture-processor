@@ -7,6 +7,17 @@ import pytest
     ('post', '/api/create-checkout-session'),
     ('get', '/api/confirm-checkout-session'),
     ('get', '/api/study-packs'),
+    ('get', '/status/synthetic-job'),
+    ('post', '/upload'),
+    ('post', '/api/import-audio-url'),
+    ('get', '/api/import-audio-url/synthetic-job'),
+    ('post', '/api/import-audio-url/download'),
+    ('post', '/api/import-audio-url/release'),
+    ('post', '/api/tools/lecture-download'),
+    ('get', '/api/tools/lecture-download/synthetic-job'),
+    ('get', '/api/tools/lecture-download/synthetic-job/file'),
+    ('get', '/api/voice-notes/jobs/synthetic-job'),
+    ('get', '/api/batch/jobs/synthetic-batch'),
 ])
 def test_unverified_identity_receives_verification_guidance(client, core, monkeypatch, method, path):
     def unverified(req):

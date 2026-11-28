@@ -35,7 +35,10 @@
   async function json(fetcher, path, options) {
     var response = await fetcher(path, options);
     var body = await response.json().catch(function () { return {}; });
-    if (!response.ok) throw new Error(body.error || 'This request could not be completed. Try again.');
+    if (!response.ok) {
+      throw root.LectureProcessorAuth?.verificationError(response, body) ||
+        new Error(body.error || 'This request could not be completed. Try again.');
+    }
     return body;
   }
   function visibility(fetcher, id, archived) {
@@ -166,7 +169,8 @@
         if (!valid(g)) return;
         var alert = element.querySelector('.bs-refresh-error');
         if (!alert) { element.innerHTML = '<p class="bs-refresh-error" role="status"></p>' + button('refresh', 'Retry'); alert = element.querySelector('.bs-refresh-error'); }
-        alert.hidden = false; alert.textContent = 'Couldn’t refresh. ' + e.message;
+        alert.hidden = false;
+        alert.textContent = e.code === 'email_not_verified' ? e.message : 'Couldn’t refresh. ' + e.message;
       }).finally(function () { if (valid(g)) { running = null; schedule(); } });
       return running;
     }

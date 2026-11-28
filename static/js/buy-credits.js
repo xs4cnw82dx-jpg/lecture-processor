@@ -231,7 +231,7 @@
         return;
       }
       if (!response.ok || !payload.checkout_url) {
-        throw new Error(payload.error || 'Could not start checkout');
+        throw new Error(authUtils.verificationError?.(response, payload)?.message || payload.error || 'Could not start checkout');
       }
       window.location.href = payload.checkout_url;
       return;
@@ -322,9 +322,12 @@
     var isCurrent = captureAccount();
     try {
       var response = await authFetch('/api/purchase-history');
-      if (!response.ok) throw new Error('Could not load purchase history');
       var payload = await response.json().catch(function () { return {}; });
       if (!isCurrent()) return;
+      if (!response.ok) {
+        setHistoryEmpty(authUtils.verificationError?.(response, payload)?.message || 'Could not load purchase history right now.');
+        return;
+      }
       renderPurchaseHistory(payload.purchases || []);
     } catch (_) {
       if (!isCurrent()) return;
@@ -361,6 +364,8 @@
       var response = await authFetch('/api/confirm-checkout-session?session_id=' + encodeURIComponent(sessionId));
       var payload = await response.json().catch(function () { return {}; });
       if (!response.ok) {
+        var verification = authUtils.verificationError?.(response, payload)?.message;
+        if (verification) return { ok: false, status: 'email_not_verified', error: verification };
         return {
           ok: false,
           status: String(payload.status || 'confirm_failed'),
@@ -412,6 +417,8 @@
         } else {
           showPaymentResult('Payment successful. Credits may take a few seconds to appear.');
         }
+      } else if (confirmation.status === 'email_not_verified') {
+        showPaymentResult(confirmation.error, 'error', true);
       } else if (confirmation.status === 'pending_payment') {
         showPaymentResult('Payment received. Confirmation is still pending.', 'pending', true);
       } else if (confirmation.status === 'account_deletion_in_progress') {

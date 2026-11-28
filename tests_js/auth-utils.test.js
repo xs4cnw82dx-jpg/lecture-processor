@@ -150,3 +150,83 @@ test('cloned responses keep their owner guard and genuine responses retain nativ
   h.switchTo(h.userB);
   await assert.rejects(clone.blob(), { code: 'auth/session-changed' });
 });
+
+test('a stale verification claim refreshes once for its original user', async () => {
+  const h = harness((_url, options) => options.headers.Authorization === 'Bearer fresh-a'
+    ? new Response('{"ok":true}') : Response.json({ error_code: 'email_not_verified' }, { status: 403 }));
+  h.userA.getIdToken = async force => force ? 'fresh-a' : 'stale-a';
+  const response = await h.client.authFetch('/status/owned');
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.equal(h.requests.length, 2);
+});
+
+for (const status of [401, 403]) {
+  for (const input of ['stream', 'request']) {
+    test(`a ${status} with a consumed ${input} returns the original denial`, async () => {
+      const body = new Blob(['fixture']).stream();
+      const options = { method: 'POST', body, duplex: 'half' };
+      const url = 'https://example.test/upload';
+      const denial = { error_code: 'email_not_verified' };
+      const h = harness(async (resource, init) => {
+        assert.equal(await new Request(resource, init).text(), 'fixture');
+        return Response.json(denial, { status });
+      });
+      const response = input === 'stream'
+        ? await h.client.authFetch(url, options)
+        : await h.client.authFetch(new Request(url, options));
+      assert.equal(response.status, status);
+      assert.deepEqual(await response.json(), denial);
+      assert.equal(h.requests.length, 1);
+    });
+  }
+}
+
+test('a verified retry can resend a form upload with the same fields', async () => {
+  const form = new FormData();
+  form.set('title', 'fixture');
+  const h = harness(async (resource, init) => {
+    assert.equal((await new Request(resource, init).formData()).get('title'), 'fixture');
+    return h.requests.length === 1
+      ? Response.json({ error_code: 'email_not_verified' }, { status: 403 })
+      : Response.json({ ok: true });
+  });
+  const response = await h.client.authFetch('https://example.test/upload', { method: 'POST', body: form });
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.equal(h.requests.length, 2);
+});
+
+test('a persistent verification failure retains its body and never retries twice', async () => {
+  const failure = { error_code: 'email_not_verified', error: 'Email not verified' };
+  const h = harness(() => Response.json(failure, { status: 403 }));
+  const response = await h.client.authFetch('/upload', { method: 'POST' });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), failure);
+  assert.equal(h.requests.length, 2);
+});
+
+test('other 403 payloads keep their original body without retry', async () => {
+  for (const body of ['{"error":"Forbidden"}', 'Forbidden']) {
+    const h = harness(() => new Response(body, { status: 403 }));
+    assert.equal(await (await h.client.authFetch('/history')).text(), body);
+    assert.equal(h.requests.length, 1);
+  }
+});
+
+test('verification refresh respects the caller’s no-retry setting', async () => {
+  const h = harness(() => Response.json({ error_code: 'email_not_verified' }, { status: 403 }));
+  const result = await h.client.authFetch('/status/owned', {}, { retryOn401: false });
+  assert.equal(result.status, 403);
+  assert.equal(h.requests.length, 1);
+});
+
+test('changing account while a typed denial is read prevents refreshing either user', async () => {
+  const checking = deferred();
+  const body = deferred();
+  const h = harness(() => ({ status: 403, clone() { checking.resolve(); return { json: () => body.promise }; } }));
+  const request = h.client.authFetch('/upload', { method: 'POST' });
+  await Promise.race([checking.promise, request.then(() => { throw new Error('The typed denial was not inspected'); })]);
+  h.switchTo(h.userB);
+  body.resolve({ error_code: 'email_not_verified' });
+  await assert.rejects(request, { code: 'auth/session-changed' });
+  assert.equal(h.requests.length, 1);
+});

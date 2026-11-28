@@ -31,3 +31,25 @@ test('Buy Credits still loads its bundles when auth-utils.js fails to load', asy
   await expect(page.locator('button', { hasText: 'Regular study' })).toBeEnabled();
   expect(fixture.browserErrors).toEqual([]);
 });
+
+test('a pending payment can be confirmed after the same user verifies their email', async ({ page }) => {
+  const fixture = await installAccountFixture(page);
+  let verified = false;
+  let confirmations = 0;
+  await page.route('**/api/confirm-checkout-session?*', route => {
+    confirmations++;
+    return verified ? route.fulfill({ json: { ok: true, status: 'already_processed' } })
+      : route.fulfill({ status: 403, json: { error_code: 'email_not_verified', error: 'Email not verified' } });
+  });
+  await page.route('**/api/purchase-history', route => verified ? route.fulfill({ json: { purchases: [] } })
+    : route.fulfill({ status: 403, json: { error_code: 'email_not_verified', error: 'Email not verified' } }));
+  await page.goto('/buy_credits?payment=success&session_id=synthetic');
+  await expect(page.locator('#payment-result-message')).toHaveText('Verify your email address before continuing.');
+  await expect(page.locator('#purchase-history-list')).toContainText('Verify your email address before continuing.');
+  expect(confirmations).toBe(2);
+  verified = true;
+  await page.locator('#payment-result-retry').click();
+  await expect(page.locator('#payment-result-message')).toContainText('Payment already confirmed');
+  expect(confirmations).toBe(3);
+  expect(fixture.browserErrors).toEqual([]);
+});
