@@ -155,6 +155,11 @@ def _role_rank(role: str) -> int:
     return {'owner': 3, 'edit': 2, 'translate': 1}.get(role, 0)
 
 
+def _check_translation_language(lang):
+    if current_app.config.get('XPED_ACADEMY') and lang == 'en':
+        raise model.ElearningError('English course text is archived. Choose Dutch or German to edit a translation.', 403)
+
+
 def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
     db = unit if unit is not None else _store(runtime)
     exp = db.get(_exp_path(expedition_id))
@@ -202,6 +207,7 @@ def access(runtime, expedition_id: str, required: str = 'translate', unit=None):
             if _role_rank(grant_role) > _role_rank(role):
                 role = grant_role
                 grant_lang = str(grant.get('target_language') or '')
+                _check_translation_language(grant_lang)
                 who['grant_id'] = grant['id']
             if not uid:
                 who['id'] = str(claims.get('guest') or grant['id'])
@@ -703,7 +709,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 'urlPath': _grant_path(g['token']) if not g.get('revoked') else '',
             }
             for g in db.list('elearning_grants', 'expedition_id', expedition_id)
-            if not g.get('revoked')
+            if not g.get('revoked') and not (current_app.config.get('XPED_ACADEMY') and g.get('target_language') == 'en')
         ]
         members = [{'email': em, 'role': r} for em, r in sorted((exp.get('members') or {}).items())]
         share = dict(exp.get('share') or {})
@@ -778,6 +784,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             if grant_role not in ('translate', 'edit'):
                 raise model.ElearningError('Grant role must be translate or edit.', 400)
             target_lang = model.normalize_lang(body.get('targetLanguage') or 'de')
+            _check_translation_language(target_lang)
             label = model.safe_text(body.get('label') or f'{target_lang.upper()} Editor', 80).strip()
             gid = model.new_id('grt')
             raw_token = secrets.token_urlsafe(24)
@@ -831,6 +838,7 @@ def exchange_grant(runtime):
     grant = db.get('elearning_grants/' + model.identifier(idx['grant_id'], 'grant'))
     if not grant or grant.get('revoked'):
         raise model.ElearningError('This translator link has been revoked.', 410)
+    _check_translation_language(grant.get('target_language'))
     guest_name = model.safe_text(body.get('name') or grant.get('label') or 'Translator', 60)
     signed = _grant_serializer().dumps({
         'grant': grant['id'],
@@ -851,6 +859,7 @@ def save_translations(runtime, expedition_id: str):
     target_lang = model.normalize_lang(body.get('targetLanguage') or grant_lang or 'de', '')
     if not target_lang:
         raise model.ElearningError('Choose a valid target language (nl, en, or de).', 400)
+    _check_translation_language(target_lang)
     if grant_lang and target_lang != grant_lang:
         raise model.ElearningError(f'This translator link is scoped to {grant_lang.upper()}.', 403)
     if body.get('modules') is not None or body.get('startPage') is not None:
@@ -889,6 +898,7 @@ def export_translations_csv(runtime, expedition_id: str):
 def import_translations_csv(runtime, expedition_id: str):
     db, _, role, _, grant_lang = access(runtime, expedition_id, required='translate')
     target_lang = model.normalize_lang(request.args.get('target') or (request.form.get('targetLanguage') if request.form else '') or grant_lang or 'de', '')
+    _check_translation_language(target_lang)
     if grant_lang and target_lang != grant_lang:
         raise model.ElearningError(f'This translator link is scoped to {grant_lang.upper()}.', 403)
     if 'file' in request.files:

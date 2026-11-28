@@ -796,6 +796,7 @@
     "Each imported step must contain a list of blocks.": "Jeder importierte Schritt braucht eine Liste von Blöcken.",
     "Each module must be an object.": "Jede Station muss ein JSON-Objekt sein.",
     "Each step must be an object.": "Jeder Schritt muss ein JSON-Objekt sein.",
+    "English course text is archived. Choose Dutch or German to edit a translation.": "Englische Kurstexte bleiben im Archiv erhalten. Wählen Sie Niederländisch oder Deutsch, um eine Übersetzung zu bearbeiten.",
     "Expected a JSON object body.": "Die Anfrage muss ein JSON-Objekt enthalten.",
     "Expedition payload must be a JSON object.": "Die Expedition muss als JSON-Objekt übermittelt werden.",
     "Grant role must be translate or edit.": "Wählen Sie eine Rolle für die Bearbeitung oder Übersetzung.",

@@ -133,3 +133,30 @@ def test_every_academy_catalog_key_is_used_and_preserves_its_placeholders():
         for key, value in actual.items():
             assert value.strip() and '▁' not in value and '�' not in value, (locale, key, value)
             assert sorted(re.findall(r'\{\w+\}', key)) == sorted(re.findall(r'\{\w+\}', value)), (locale, key, value)
+
+
+def test_legacy_english_grants_and_writes_cannot_open_an_english_editing_workspace(studio):
+    client, store = studio
+    auth = {'Authorization': 'Bearer academy-preview-token'}
+    created = client.post('/api/elearning/expeditions', json={'title': 'Expeditie'}, headers=auth)
+    assert created.status_code == 201
+    eid = created.json['expedition']['id']
+    course = f'/api/elearning/expeditions/{eid}'
+    invitation = {'action': 'create_grant', 'role': 'translate', 'targetLanguage': 'en', 'label': 'Archief'}
+    assert client.post(course + '/sharing', json=invitation, headers=auth).status_code == 403
+    original = store.get('elearning_expeditions/' + eid)
+    assert client.post(course + '/translations', json={'targetLanguage': 'en', 'textUpdates': {'startPage.title': 'Change'}}, headers=auth).status_code == 403
+    imported = client.post(course + '/translations/import?target=en', json={'csv': 'key,en\nstartPage.title,Change'}, headers=auth)
+    assert imported.status_code == 403
+    exported = client.get(course + '/translations/export.csv?target=en', headers=auth)
+    assert exported.status_code == 200 and exported.mimetype == 'text/csv'
+    assert store.get('elearning_expeditions/' + eid) == original
+    grant = client.post(course + '/sharing', json={**invitation, 'targetLanguage': 'de'}, headers=auth)
+    assert grant.status_code == 201
+    token = grant.json['grant']['urlPath'].rsplit('/', 1)[1]
+    path = 'elearning_grants/' + grant.json['grant']['id']
+    current = store.get(path)
+    store.put(path, {**current, 'target_language': 'en'})
+    assert client.post('/api/elearning/grant-session', json={'token': token}).status_code == 403
+    assert client.get(course + '/sharing', headers=auth).json['grants'] == []
+    assert store.get(path)['target_language'] == 'en'
