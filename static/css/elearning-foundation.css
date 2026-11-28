@@ -194,8 +194,7 @@
 }
 [data-product="academy"] :is(.xped-input, .el-field :is(input, select, textarea), .academy-auth input)::placeholder { color: var(--theme-muted); opacity: .8; }
 [data-product="academy"] :is(.xped-input, .el-field :is(input, select, textarea), .academy-auth input):hover { border-color: var(--btn-hover-border); }
-[data-product="academy"] :is(.xped-input, .el-field :is(input, select, textarea), .academy-auth input):focus,
-[data-product="academy"] :is(.xped-input, .el-field :is(input, select, textarea), .academy-auth input):focus-visible {
+[data-product="academy"] :is(.xped-input, .el-field :is(input, select, textarea), .academy-auth input):focus:not(:focus-visible) {
   outline: none;
   border-color: var(--focus-ring);
   box-shadow: var(--ac-ring);
@@ -747,15 +746,15 @@
 }
 [data-product="academy"] .el-save-chip.is-warn { padding: 2px 8px; border-radius: var(--ac-radius-control); background: var(--theme-warning-soft); color: var(--theme-warning-ink); }
 
-/* One segmented-control recipe for modes, devices and inspector panes. */
-[data-product="academy"] :is(.el-mode-tabs, .el-vp-switch, .el-insp-tabs) {
+/* Mode and viewport buttons use segmented controls. */
+[data-product="academy"] :is(.el-mode-tabs, .el-vp-switch) {
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--theme-line);
   border-radius: var(--ac-radius-control);
   background: var(--theme-surface-soft);
 }
-[data-product="academy"] :is(.el-mode-tab, .el-vp-btn, .el-insp-tab) {
+[data-product="academy"] :is(.el-mode-tab, .el-vp-btn) {
   min-height: 28px;
   padding: 0 12px;
   border: 1px solid transparent;
@@ -766,15 +765,43 @@
   white-space: nowrap;
   transition: background var(--ac-motion-fast) ease, color var(--ac-motion-fast) ease, box-shadow var(--ac-motion-fast) ease;
 }
-[data-product="academy"] :is(.el-mode-tab, .el-vp-btn, .el-insp-tab):hover { color: var(--theme-ink); }
-[data-product="academy"] :is(.el-mode-tab.is-active, .el-vp-btn.is-active, .el-insp-tab.is-active) {
+[data-product="academy"] :is(.el-mode-tab, .el-vp-btn):hover { color: var(--theme-ink); }
+[data-product="academy"] :is(.el-mode-tab.is-active, .el-vp-btn.is-active) {
   border-color: var(--theme-line);
   background: var(--theme-surface);
   color: var(--theme-ink);
   box-shadow: 0 1px 2px rgb(13 34 50 / 8%);
 }
-[data-product="academy"] .el-insp-tabs { display: flex; overflow-x: auto; scrollbar-width: none; }
-[data-product="academy"] .el-insp-tab { flex: 1 1 auto; min-width: 0; padding-inline: 6px; font-size: var(--ac-type-label); }
+[data-product="academy"] .el-insp-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0;
+  border-block-end: 1px solid var(--theme-line);
+  border-radius: 0;
+  background: transparent;
+}
+[data-product="academy"] .el-insp-tab {
+  flex: none;
+  min-height: 40px;
+  white-space: nowrap;
+  padding: 0 8px;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theme-muted-strong);
+  font-size: var(--ac-type-label);
+  font-weight: 500;
+  box-shadow: none;
+}
+[data-product="academy"] .el-insp-tab[aria-selected="true"] {
+  color: var(--theme-ink);
+  border-block-end-color: var(--ac-pine);
+}
+
 
 [data-product="academy"] :is(.el-outline-rail, .el-inspector) { background: var(--theme-surface); border-color: var(--theme-line); }
 [data-product="academy"] :is(.el-rail-head, .el-insp-section-title, .el-picker-cat h3) {
@@ -935,7 +962,7 @@
   [data-product="academy"] :is(.xped-input, .el-field :is(input, select), .academy-auth input, .app-select .app-select-button) { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-product="academy"] :is(.el-exp-row, .el-action-link, .app-select .app-select-menu, .el-mode-tab, .el-vp-btn, .el-insp-tab) { transition: none; }
+  [data-product="academy"] :is(.el-exp-row, .el-action-link, .app-select .app-select-menu, .el-mode-tab, .el-vp-btn) { transition: none; }
 }
 
 [data-product="academy"] .el-picker-preview-head { text-transform:none; letter-spacing:normal; font-size:var(--ac-type-label); }
@@ -1005,6 +1032,8 @@
   outline-offset: var(--ac-focus-offset);
 }
 [data-product="academy"] :is(.academy-header, .ac-rail, .el-player-header) :is(a, button, summary, [tabindex]):focus-visible { outline-color: var(--ac-sunflower); }
+/* Keep the full outline inside the horizontally scrolling tab rows. */
+[data-product="academy"] :is(.el-mode-tabs, .el-insp-tabs) > :focus-visible { outline-offset: calc(-1 * var(--ac-focus-width)); }
 
 /* Tab rows scroll instead of wrapping, with a fade on each edge that hides more tabs. */
 [data-product="academy"] .academy-tab-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; scroll-padding-inline: 24px; }
