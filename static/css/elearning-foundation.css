@@ -58,11 +58,11 @@
   --ac-scrim: rgb(6 41 64 / 38%);
   --ac-ring: 0 0 0 3px rgb(0 112 184 / 18%);
   --ac-ease: cubic-bezier(.2, .8, .2, 1);
-  /* Item 85: one set of durations for hover/press, popovers and dialogs. */
+  /* One set of durations for hover/press, popovers and dialogs. */
   --ac-motion-fast: 120ms;
   --ac-motion-medium: 180ms;
   --ac-motion-slow: 240ms;
-  /* Item 86: one focus ring for every interactive element. */
+  /* One focus ring for every interactive element. */
   --ac-focus-width: 2px;
   --ac-focus-offset: 2px;
 
@@ -1006,14 +1006,14 @@
   .ac-loading-tiles, .ac-loading-library .ac-loading-row { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 
-/* Item 86: one visible focus ring, in brand blue on light surfaces and mint on navy. */
+/* One visible focus ring, in brand blue on light surfaces and mint on navy. */
 [data-product="academy"] :is(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
   outline: var(--ac-focus-width) solid var(--focus-ring);
   outline-offset: var(--ac-focus-offset);
 }
 [data-product="academy"] :is(.academy-header, .ac-rail, .el-player-header) :is(a, button, summary, [tabindex]):focus-visible { outline-color: var(--ac-mint); }
 
-/* Item 36: tab rows scroll instead of wrapping, with a fade on each edge that hides more tabs. */
+/* Tab rows scroll instead of wrapping, with a fade on each edge that hides more tabs. */
 [data-product="academy"] .academy-tab-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; scroll-padding-inline: 24px; }
 [data-product="academy"] .academy-tab-row::-webkit-scrollbar { display: none; }
 [data-product="academy"] .academy-tab-row > * { flex: none; }

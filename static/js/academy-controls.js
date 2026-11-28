@@ -136,7 +136,7 @@
     root.addEventListener('resize', close);
   }
 
-  // Item 36: a scrolling tab row shows which edges hide more tabs, and keeps the current tab in view.
+  // A scrolling tab row shows which edges hide more tabs, and keeps the current tab in view.
   const tabRowSelector = 'nav.xc-tabs, [role="tablist"]';
   function syncTabEdges(row) {
     const max = row.scrollWidth - row.clientWidth;
@@ -161,7 +161,7 @@
     rows.forEach(watchTabRow);
   }
 
-  // Item 41: typing in an open action menu moves to the next item that starts with those letters.
+  // Typing in an open action menu moves to the next item that starts with those letters.
   function initMenuTypeahead() {
     let current;
     let letters = '';

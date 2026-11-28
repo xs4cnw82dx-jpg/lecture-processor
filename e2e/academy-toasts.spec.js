@@ -39,7 +39,7 @@ test('the stack protects a focused action, bounds its size and centers German me
   const link=page.getByRole('link',{name:'Öffnen',exact:true});
   await expect(link).toHaveAttribute('href','/expedities');
   await link.focus();
-  await page.evaluate(() => window.Xped.ux.toast('Could not sign out. Please try again.',{type:'error'}));
+  await page.evaluate(() => window.Xped.ux.toast('settings.signOutFailed',{type:'error'}));
   const stack=page.locator('.ac-toast-stack');
   await expect(stack.locator(':scope > *')).toHaveCount(3);
   await expect(stack).not.toContainText('Zweite Nachricht');
