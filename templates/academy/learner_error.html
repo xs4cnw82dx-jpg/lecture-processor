@@ -1,7 +1,7 @@
 <!doctype html>
-{% set de = academy_locale|default('nl') == 'de' %}
+{% set locale = academy_locale|default('nl') %}
 {% set status = academy_player_error.status %}
-<html lang="{{ 'de' if de else 'nl' }}">
+<html lang="{{ locale }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,17 +9,17 @@
 
   {% set paused = academy_player_error.code in ('link_paused', 'author_message') %}
   {% if status >= 500 %}
-    {% set title = 'Die Expedition kann gerade nicht geladen werden' if de else 'De expeditie kan nu niet laden' %}
-    {% set detail = 'Versuchen Sie es in ein paar Minuten erneut.' if de else 'Probeer over een paar minuten opnieuw.' %}
+    {% set title = xped_t('learnerError.loadingTitle') %}
+    {% set detail = xped_t('learnerError.loadingHelp') %}
   {% elif paused %}
-    {% set title = 'Diese Expedition ist pausiert' if de else 'Deze expeditie is gepauzeerd' %}
-    {% set detail = academy_player_error.message if academy_player_error.code == 'author_message' else ('Versuchen Sie es später erneut oder fragen Sie die Person, die Ihnen den Link geschickt hat.' if de else 'Probeer het later opnieuw of vraag het aan degene die je de link gaf.') %}
+    {% set title = xped_t('learnerError.pausedTitle') %}
+    {% set detail = academy_player_error.message if academy_player_error.code == 'author_message' else xped_t('learnerError.pausedHelp') %}
   {% elif status == 403 %}
-    {% set title = 'Zugriff auf diese Expedition fehlt' if de else 'Je hebt geen toegang tot deze expeditie' %}
-    {% set detail = 'Fragen Sie die Person, die Ihnen den Link geschickt hat.' if de else 'Vraag het aan degene die je de link gaf.' %}
+    {% set title = xped_t('learnerError.forbiddenTitle') %}
+    {% set detail = xped_t('learnerError.forbiddenHelp') %}
   {% else %}
-    {% set title = 'Dieser Teilnahmelink ist nicht aktiv' if de else 'Deze deelnemerslink is niet actief' %}
-    {% set detail = 'Bitten Sie die Person, die Sie eingeladen hat, um den aktuellen Link.' if de else 'Vraag degene die je heeft uitgenodigd om de actuele link.' %}
+    {% set title = xped_t('learnerError.inactiveTitle') %}
+    {% set detail = xped_t('learnerError.inactiveHelp') %}
   {% endif %}
   <title>{{ title }} · xPED Academy</title>
   <link rel="stylesheet" data-elearning-styles href="{{ academy_stylesheet('learner_error') }}">
@@ -30,11 +30,11 @@
       <span class="academy-error-brand">{% include 'academy/_error_wordmark.html' %}</span>
       <h1>{{ title }}</h1>
       <p>{{ detail }}</p>
-      {% if status in (404, 410) %}<a href="https://xped.net/{{ 'de' if de else 'nl' }}/" referrerpolicy="no-referrer">{{ 'Über xPEDition Schmerz' if de else 'Over xPEDitie Pijn' }}</a>{% endif %}
-      {% if status >= 500 %}<a href="" class="xped-btn xped-btn-primary">{{ 'Erneut versuchen' if de else 'Opnieuw proberen' }}</a>{% endif %}
+      {% if status in (404, 410) %}<a href="https://xped.net/{{ locale }}/" referrerpolicy="no-referrer">{{ xped_t('learnerError.about') }}</a>{% endif %}
+      {% if status >= 500 %}<a href="" class="xped-btn xped-btn-primary">{{ xped_t('learnerError.retry') }}</a>{% endif %}
     </div>
     <div class="academy-error-art" aria-hidden="true"></div>
   </main>
-  <footer class="academy-learner-error-footer"><a href="/privacy">{{ 'Datenschutz' if de else 'Privacy' }}</a></footer>
+  <footer class="academy-learner-error-footer"><a href="/privacy">{{ xped_t('shell.privacy') }}</a></footer>
 </body>
 </html>

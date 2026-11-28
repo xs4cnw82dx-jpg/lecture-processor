@@ -81,7 +81,7 @@ def test_player_status_and_private_pause_note_before_any_script_runs(academy):
     from lecture_processor.domains.elearning import model
     exp = {**model.build_default_expedition('Preview course', 'nl'), 'id': 'exp-preview', 'share': share}
     store.put(course, exp)
-    for note in ('', 'We oefenen dinsdag verder.'):
+    for note in ('', 'Dinsdag verder met {course} & <start>.'):
         share['pausedMessage'] = note
         store.put(course, exp)
         result = client.get('/start/' + token)
@@ -89,6 +89,9 @@ def test_player_status_and_private_pause_note_before_any_script_runs(academy):
         page = html.fromstring(result.data)
         assert 'gepauzeerd' in page.findtext('.//h1')
         assert (note or 'Probeer het later opnieuw') in page.text_content()
+        german = html.fromstring(client.get('/start/' + token + '?lang=de').data)
+        assert german.findtext('.//h1') == 'Diese Expedition ist pausiert'
+        assert german.findtext('.//main//p') == (note or 'Versuchen Sie es später erneut oder fragen Sie die Person, die Ihnen den Link geschickt hat.')
         assert not page.xpath('//script[@src]') and 'fontshare' not in result.text
     share.update(token='new-preview-token', enabled=True)
     store.put(course, exp)
