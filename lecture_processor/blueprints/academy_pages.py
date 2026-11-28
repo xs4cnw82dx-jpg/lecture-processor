@@ -32,7 +32,7 @@ def _redirect_page(destination, **route_args):
 
 @academy_pages.get('/')
 def home():
-    return elearning.studio_dashboard_page(['academy/home.html', 'academy/library.html'], academy_view='home')
+    return elearning.studio_dashboard_page('academy/home.html', academy_view='home')
 
 
 @academy_pages.get('/expedities')
@@ -43,7 +43,7 @@ def library():
 @academy_pages.get('/expedities/<expedition_id>')
 def course(expedition_id):
     return elearning.studio_dashboard_page(
-        ['academy/course.html', 'academy/library.html'], academy_view='course', expedition_id=expedition_id,
+        'academy/course.html', academy_view='course', expedition_id=expedition_id,
     )
 
 
@@ -72,12 +72,12 @@ def translations():
 
 @academy_pages.get('/team')
 def team():
-    return elearning.studio_dashboard_page(['academy/team.html', 'academy/library.html'], academy_view='team')
+    return elearning.studio_dashboard_page('academy/team.html', academy_view='team')
 
 
 @academy_pages.get('/instellingen')
 def settings():
-    return render_template('academy_account.html', academy_view='settings')
+    return render_template('academy/settings.html', academy_view='settings')
 
 
 @academy_pages.get('/start/<share_token>')
@@ -92,7 +92,7 @@ def translator(grant_token):
 
 @academy_pages.get('/inloggen')
 def signin():
-    return render_template('academy_signin.html', academy_view='signin')
+    return render_template('academy/signin.html', academy_view='signin')
 
 
 @academy_pages.get('/signin')

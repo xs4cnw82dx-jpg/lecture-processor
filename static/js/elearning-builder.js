@@ -37,6 +37,7 @@
   var renewBeforeSave = false;
   var writing = Promise.resolve();
 
+  var editorPageTitle = document.title;
   var urlParams = new URLSearchParams(window.location.search);
   var deepModuleId = urlParams.get('module') || '';
   var deepStepId = urlParams.get('step') || '';
@@ -5213,6 +5214,7 @@
       if (academyUi && !grantToken && state.exp.title) {
         var backLink = document.getElementById('el-back-link');
         backLink.querySelector('span').textContent = state.exp.title;
+        document.title = state.exp.title + ' · ' + editorPageTitle;
         backLink.title = window.Xped.i18n.copy('Terug naar ','Zurück zu ') + state.exp.title;
         backLink.setAttribute('aria-label', backLink.title);
       }

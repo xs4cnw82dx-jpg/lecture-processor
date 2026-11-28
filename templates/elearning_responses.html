@@ -1,128 +1,77 @@
-{% extends studio_layout|default('_base.html') %}
+{% extends '_base.html' %}
 {% from '_academy_copy.html' import tr with context %}
-{% block body_attrs %} class="el-library-body{% if academy_mode %} academy-body{% endif %}" data-expedition-id="{{ expedition_id }}"{% endblock %}
-{% block title %}{{ tr("Pilot responses") }} · {{ 'xPEDitie Pijn Studio' if academy_mode else 'Lecture Processor' }}{% endblock %}
+{% block body_attrs %} class="el-library-body" data-expedition-id="{{ expedition_id }}"{% endblock %}
+{% block title %}{{ tr("Pilot responses") }} · {{ 'Lecture Processor' }}{% endblock %}
 {% block head %}
-  {% block platform_styles %}
+
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  {% endblock %}
+
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
-  {% if academy_mode %}<link rel="stylesheet" href="{{ url_for('static', filename='css/academy-report.css') }}">{% endif %}
-  {% include '_academy_foundation.html' %}
+
 {% endblock %}
 {% block body %}
   {% set shell_title = 'Responses & Pilot Analytics' %}
-  {% include '_academy_header.html' if academy_mode else '_app_shell.html' %}
+  {% include '_app_shell.html' %}
     <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
-      <a href="{{ url_for('academy.builder' if academy_mode else 'elearning.studio_builder_page', expedition_id=expedition_id) }}" class="el-back-link">{{ tr("← Back to Builder") }}</a>
+      <a href="{{ url_for('elearning.studio_builder_page', expedition_id=expedition_id) }}" class="el-back-link">{{ tr("← Back to Builder") }}</a>
       <header class="el-dash-header">
         <div>
           <h1 id="el-resp-title" class="page-title">{{ tr("Pilot responses") }}</h1>
           <p class="page-lead" id="el-resp-expedition" translate="no"></p>
         </div>
         <div class="el-dash-actions" id="el-response-actions" hidden>
-          {% if academy_mode %}
-          <details class="academy-filter-menu"><summary>{{ 'Gruppen' if academy_locale == 'de' else 'Groepen' }}</summary><fieldset id="academy-report-groups"><legend>{{ 'Gruppen auswählen' if academy_locale == 'de' else 'Groepen kiezen' }}</legend></fieldset></details>
-          {% else %}
+
           <select data-app-select id="el-resp-cohort" aria-label="{{ tr("Filter by cohort") }}">
             <option value="">{{ tr("All cohorts") }}</option>
           </select>
-          {% endif %}
+
           <select data-app-select id="el-resp-lang" aria-label="{{ tr("Filter by language") }}">
             <option value="">{{ tr("All languages") }}</option>
             <option value="nl">Nederlands (NL)</option>
-            {% if not academy_mode %}<option value="en">English (EN)</option>{% endif %}
+            <option value="en">English (EN)</option>
             <option value="de">Deutsch (DE)</option>
           </select>
-          {% if academy_mode %}
-          {# Option labels and the accessible name are set by the page script in the interface language. #}
-          <select data-app-select id="el-resp-period" translate="no">
-            <option value="">{{ 'Gesamter Zeitraum' if academy_locale == 'de' else 'Alle tijd' }}</option>
-            <option value="7">{{ 'Letzte 7 Tage' if academy_locale == 'de' else 'Laatste 7 dagen' }}</option>
-            <option value="30">{{ 'Letzte 30 Tage' if academy_locale == 'de' else 'Laatste 30 dagen' }}</option>
-            <option value="90">{{ 'Letzte 90 Tage' if academy_locale == 'de' else 'Laatste 90 dagen' }}</option>
-          </select>
-          <details class="academy-filter-menu"><summary>{{ 'Datumsbereich' if academy_locale == 'de' else 'Datumbereik' }}</summary>
-            <form id="academy-date-filter"><label>{{ 'Von' if academy_locale == 'de' else 'Van' }} <input name="from" type="date"></label>
-              <label>{{ 'Bis' if academy_locale == 'de' else 'Tot en met' }} <input name="to" type="date"></label>
-              <button class="btn" type="submit">{{ 'Übernehmen' if academy_locale == 'de' else 'Toepassen' }}</button></form>
-          </details>
-          <details class="academy-report-exports"><summary>{{ 'Exportieren' if academy_locale == 'de' else 'Exporteren' }}</summary>
-            <button type="button" class="btn" id="el-resp-export-csv">{{ 'CSV herunterladen' if academy_locale == 'de' else 'CSV downloaden' }}</button>
-            <button type="button" class="btn" id="el-resp-export-xlsx">{{ 'Excel-Datei (.xlsx)' if academy_locale == 'de' else 'Excel-bestand (.xlsx)' }}</button>
-          </details>
-          {% else %}
+
           <button type="button" class="btn primary" id="el-resp-export-csv">{{ tr("Export CSV") }}</button>
           <button type="button" class="btn" id="el-resp-export-all-csv" hidden>{{ tr("Export all CSV") }}</button>
-          {% endif %}
+
         </div>
       </header>
 
-      {% if academy_mode %}<div class="academy-filter-chips" id="academy-filter-chips" hidden></div>{% endif %}
       <div id="el-resp-status" role="status">{{ tr("Loading responses…") }}</div>
       <button class="btn small" id="el-resp-retry" type="button" hidden>{{ tr("Try again") }}</button>
-      <a class="btn" id="el-signin" href="{{ url_for('academy.signin', next=request.full_path.rstrip('?')) if academy_mode else '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
+      <a class="btn" id="el-signin" href="{{ '/lecture-notes?auth=signin' }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
       <div id="el-response-report" hidden>
       <section class="el-exp-card el-split-card" id="el-resp-kpis" aria-labelledby="el-resp-kpis-title"></section>
-      {% if academy_mode %}
-      <section class="el-exp-card" id="el-resp-time" aria-labelledby="el-resp-time-title" hidden></section>
-      <section class="el-exp-card" id="academy-station-report" hidden></section>
-      {% endif %}
+
       <section class="el-exp-card" id="el-resp-funnel-card">
         <h2>{{ tr("Step Completion Funnel") }}</h2>
         <div id="el-resp-funnel"></div>
       </section>
-      {% if academy_mode %}
-      <section class="el-exp-card" id="el-resp-trend" aria-labelledby="el-resp-trend-title" hidden></section>
-      <div class="el-resp-order" id="el-resp-order" hidden></div>
-      {% endif %}
-      <section class="el-dash-grid" id="el-resp-blocks"></section>
-      <section class="el-exp-card" id="el-resp-comments-card" hidden>
-        <h2>{{ tr("Slide-by-Slide Reviewer Comments") }}</h2>
-        <div id="el-resp-comments"></div>
-      </section>
-      <section class="el-exp-card" id="el-resp-feedback-card">
-        <h2>{{ tr("Pilot Usability Feedback") }}</h2>
-        <div id="el-resp-feedback"></div>
-      </section>
+
+  {% include 'elearning/report_feedback.html' %}
       </div>
     </main>
-    {% if academy_mode %}
-      {% include '_academy_footer.html' %}
-    {% else %}
+
       {% include '_shell_footer.html' %}
       </div>
       </div>
-    {% endif %}
 
-  {% block platform_runtime %}
   {% include '_firebase_scripts.html' %}
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
-  {% if not academy_mode %}
+
   <script src="{{ url_for('static', filename='js/ui-cache.js') }}"></script>
   <script src="{{ url_for('static', filename='js/user-cache-utils.js') }}"></script>
-  {% endif %}
+
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/download-utils.js') }}"></script>
-  {% if not academy_mode %}<script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>{% endif %}
-  {% endblock %}
+  <script src="{{ url_for('static', filename='js/app-shell.js') }}"></script>
+
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
-  {% if academy_mode %}
-  <dialog class="academy-step-details" id="academy-step-details" aria-labelledby="academy-step-title">
-    <header><span data-detail-parent></span><form method="dialog"><button class="btn" value="close">{{ 'Schließen' if academy_locale == 'de' else 'Sluiten' }}</button></form></header>
-    <h2 id="academy-step-title" tabindex="-1"></h2>
-    <div data-detail-body></div>
-    <footer>
-      <button class="btn" type="button" data-detail-prev>{{ 'Zurück' if academy_locale == 'de' else 'Vorige' }}</button>
-      <button class="btn" type="button" data-detail-next>{{ 'Weiter' if academy_locale == 'de' else 'Volgende' }}</button>
-      <a class="btn" data-detail-edit>{{ 'Im Editor öffnen' if academy_locale == 'de' else 'Openen in de editor' }}</a>
-    </footer>
-  </dialog>
-  <script src="{{ url_for('static', filename='js/academy-report-details.js') }}"></script>
-  {% endif %}
+
   <script src="{{ url_for('static', filename=elearning_responses_js) }}"></script>
 {% endblock %}

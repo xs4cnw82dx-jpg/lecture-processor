@@ -220,7 +220,7 @@ def create_app():
 
     @app.get('/privacy')
     def privacy():
-        return render_template('academy_privacy.html')
+        return render_template('academy/privacy.html')
 
     @app.before_request
     def prepare_request():

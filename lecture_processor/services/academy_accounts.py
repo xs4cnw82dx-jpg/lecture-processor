@@ -52,7 +52,7 @@ def _identity(runtime):
 
 @academy_account_bp.get('/account')
 def account_page():
-    return render_template('academy_account.html')
+    return render_template('academy/settings.html')
 
 
 @academy_account_bp.get('/api/academy/account/export')

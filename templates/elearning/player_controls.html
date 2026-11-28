@@ -1,0 +1,43 @@
+<header class="el-player-header">
+    <div class="el-player-header-inner">
+      <button type="button" class="el-player-brand" id="el-player-home-btn" aria-label="{{ tr("Return to start page") }}">
+        <img src="{{ url_for('static', filename='images/xped/logo_nl.svg') }}" alt="xPEDitie Pijn">
+        <span id="el-player-course-label">xPEDitie Pijn</span>
+      </button>
+
+      <div class="el-player-controls">
+        <button type="button" class="xped-btn xped-btn-ghost" id="el-player-map-btn" hidden>{{ tr("Route") }}</button>
+        <div class="el-dd el-comfort-dd" id="el-comfort-dd">
+          <button type="button" class="el-dd-trigger el-comfort-trigger" id="el-comfort-trigger" aria-controls="el-comfort-menu" aria-expanded="false" aria-label="{{ tr("Leescomfort") }}">
+            <span>Aa</span>
+          </button>
+          <div class="el-dd-menu is-right el-comfort-menu" id="el-comfort-menu">
+            <div class="el-comfort-section">
+              <span class="el-comfort-label" id="el-comfort-size-lbl">{{ tr("Text size") }}</span>
+              <div class="el-text-scale-group" role="group" aria-labelledby="el-comfort-size-lbl">
+                <button type="button" data-scale="sm" aria-label="{{ tr("Smaller text") }}">A-</button>
+                <button type="button" data-scale="md" class="is-active" aria-label="{{ tr("Default text") }}">A</button>
+                <button type="button" data-scale="lg" aria-label="{{ tr("Larger text") }}">A+</button>
+              </div>
+            </div>
+            <div class="el-comfort-section">
+              <span class="el-comfort-label" id="el-comfort-theme-lbl">{{ tr("Appearance") }}</span>
+              <div class="el-theme-toggle-group" role="group" aria-labelledby="el-comfort-theme-lbl">
+                <button type="button" data-theme-pref="default" class="is-active" id="el-theme-warm-btn">{{ tr("Warm") }}</button>
+                <button type="button" data-theme-pref="high-contrast" id="el-theme-contrast-btn">{{ tr("Contrast") }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="el-player-lang-host"></div>
+      </div>
+    </div>
+    <progress class="el-player-progress-bar" id="el-player-progress-fill" max="100" value="0" aria-label="{{ tr("Voortgang") }}"></progress>
+  </header>
+
+  <main class="el-player-main" id="el-player-main" tabindex="-1">
+    <div class="xped-card el-player-state" id="el-player-loading" role="status">
+      <h1>xPEDitie Pijn</h1>
+      <p>{{ tr("Even laden…") }}</p>
+    </div>
+  </main>
