@@ -20,7 +20,8 @@
     form.className = 'xped-card el-consent-card';
     var title = document.createElement('h1');
     title.className = 'xped-step-title';
-    title.textContent = Model.ui(lang, 'consentTitle');
+    var academy = document.documentElement.hasAttribute('data-academy-player') || document.documentElement.dataset.product === 'academy';
+    title.textContent = Model.ui(lang, academy ? 'consentHeading' : 'consentTitle');
     var intro = document.createElement('p');
     intro.textContent = Model.ui(lang, 'consentIntro');
     if (options.cohort && options.cohort !== 'default') intro.textContent += ' ' + Model.ui(lang, 'consentCohort', { group: options.cohort });
@@ -33,7 +34,15 @@
     next.type = 'submit';
     next.className = 'xped-btn xped-btn-sun';
     next.textContent = Model.ui(lang, 'next');
-    next.disabled = true;
+    var error = document.createElement('p');
+    error.className = 'el-consent-error';
+    if (academy) {
+      form.noValidate = true;
+      error.id = Model.uid('sharing-choice');
+      error.setAttribute('role', 'alert');
+    } else {
+      next.disabled = true;
+    }
     var details = [];
     var description = Model.ui(lang, 'authorAccess');
     if (options.showPeerResults) {
@@ -59,15 +68,29 @@
       words.append(heading, detail);
       label.append(input, words);
       choices.appendChild(label);
-      input.addEventListener('change', function () { next.disabled = false; });
+      input.addEventListener('change', function () {
+        next.disabled = false;
+        error.textContent = '';
+        choices.removeAttribute('aria-describedby');
+        choices.querySelectorAll('[aria-invalid]').forEach(function (radio) { radio.removeAttribute('aria-invalid'); });
+      });
     });
     form.addEventListener('submit', function (event) {
       event.preventDefault();
       var choice = new FormData(form).get('sharing');
-      if (choice !== 'private' && choice !== 'share') return;
+      if (choice !== 'private' && choice !== 'share') {
+        if (academy) {
+          error.textContent = Model.ui(lang, 'consentChoiceRequired');
+          choices.setAttribute('aria-describedby', error.id);
+          choices.querySelectorAll('input').forEach(function (radio) { radio.setAttribute('aria-invalid', 'true'); });
+          choices.querySelector('input').focus();
+        }
+        return;
+      }
       onChoose(choice);
     });
     form.append(title, intro, choices);
+    if (academy) form.appendChild(error);
     if (details.length) {
       var disclosure = document.createElement('details');
       var summary = document.createElement('summary');
@@ -113,7 +136,9 @@
     col.className = 'xped-hero-copy';
 
     var eyText = Model.getLocalized(sp.eyebrow, lang, defLang);
-    if (eyText || editable) {
+    var isAcademy = document.documentElement.hasAttribute('data-academy-player') || document.documentElement.dataset.product === 'academy';
+    var genericEyebrow = /^(?:xpeditie pijn|xpedition pain|xpedition schmerz)$/i.test(eyText.trim());
+    if ((eyText || editable) && (!isAcademy || (eyText && !genericEyebrow))) {
       var kicker = document.createElement('div');
       kicker.className = 'xped-hero-kicker';
       var eySpan = document.createElement('span');
@@ -410,6 +435,10 @@
     courseName.className = 'xped-print-course';
     courseName.textContent = Model.getLocalized(exp.localizedTitle, lang, defLang) || exp.title || '';
     card.append(courseName, h1, sub);
+    if (root.XpedAcademyControls) {
+      var visibleStations = (exp.modules || []).filter(function (station) { return station.visibleToLearners !== false; });
+      if (visibleStations.length > 1) card.appendChild(root.XpedAcademyControls.routeStrip(visibleStations, { size: 'large' }));
+    }
 
     var reflections = [];
     var plans = [];

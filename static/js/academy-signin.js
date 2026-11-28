@@ -78,11 +78,15 @@
     busy = true;
     status.textContent = '';
     const buttons = document.querySelectorAll('#main-content button');
+    const active = document.activeElement;
+    const trigger = active?.matches('#main-content button') ? active : byId('submit');
+    trigger.setAttribute('aria-busy', 'true');
     for (const button of buttons) button.disabled = true;
     try { await action(); } catch (error) {
       status.textContent = errors[error.code] || uiText('The request could not be completed. Please try again.');
     } finally {
       busy = false;
+      trigger.removeAttribute('aria-busy');
       for (const button of buttons) button.disabled = false;
     }
   }

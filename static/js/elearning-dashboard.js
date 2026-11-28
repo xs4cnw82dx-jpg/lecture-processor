@@ -462,7 +462,7 @@
     confirm.disabled = true;
     lockDialog(createDialog, true);
     confirm.textContent = 'Creating expedition…';
-    var payload = Model.createExpeditionPreset(preset, titleInput.value, lang);
+    var payload = Model.createExpeditionPreset(preset, titleInput.value, lang, { academy: academy });
     if (academy) payload.enabledLanguages = ['nl', 'de'];
     try {
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(payload) });

@@ -448,7 +448,7 @@ def test_public_media_and_results_only_use_visible_course_content(setup, monkeyp
     db.put('elearning_expeditions/' + eid, saved)
     for aid in ('visible_media', 'draft_media'):
         db.put('elearning_assets/' + aid, {'id': aid, 'expedition_id': eid, 'path': aid,
-                                          'size': 3, 'content_type': 'image/webp'})
+                                          'size': 3, 'content_type': 'image/webp', 'filename': 'mijn foto é.webp'})
     monkeypatch.setattr(service.book_storage, 'request', lambda *_args, **_kwargs: b'img')
     assert client.get(public + '/assets/visible_media').status_code == 200
     assert client.get(public + '/assets/draft_media').status_code == 404
@@ -456,7 +456,12 @@ def test_public_media_and_results_only_use_visible_course_content(setup, monkeyp
         pytest.fail('Metadata reads must not download or charge for course media')
 
     monkeypatch.setattr(service.elearning_storage, 'read_asset', unexpected_read)
-    assert client.head(public + '/assets/visible_media').content_length == 3
+    viewer = client.head(public + '/assets/visible_media')
+    assert viewer.content_length == 3
+    assert 'Content-Disposition' not in viewer.headers
+    editor = client.head(f'/api/elearning/expeditions/{eid}/assets/visible_media', headers=auth_headers())
+    assert editor.headers['Content-Disposition'] == "inline; filename*=UTF-8''mijn%20foto%20%C3%A9.webp"
+    assert editor.cache_control.no_store
     assert client.head(public + '/assets/draft_media').status_code == 404
     assert client.head(f'/api/elearning/expeditions/{eid}/assets/visible_media',
                        headers=auth_headers('stranger')).status_code == 403

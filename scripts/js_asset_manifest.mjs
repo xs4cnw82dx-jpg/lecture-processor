@@ -71,6 +71,7 @@ export const intentionallyUnminifiedScripts = [
   'static/js/academy-account.js',
   'static/js/academy-folders.js',
   'static/js/academy-account-data.js',
+  'static/js/academy-controls.js',
   'static/js/academy-signin.js',
   'static/js/display-format-utils.js',
   'static/js/credit-utils.js',

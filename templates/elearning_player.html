@@ -1,6 +1,6 @@
 {% from '_academy_copy.html' import tr with context %}
 <!DOCTYPE html>
-<html lang="{{ academy_locale if academy_mode else 'nl' }}">
+<html lang="{{ academy_locale if academy_mode else 'nl' }}"{% if academy_mode %} data-academy-player{% endif %}>
 <head>
   <meta charset="UTF-8">
   {% if academy_mode %}{% include '_academy_locale_head.html' %}{% endif %}
@@ -9,7 +9,11 @@
   <title>xPEDitie Pijn · {{ 'xPED Academy' if academy_mode else 'Lecture Processor' }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-player.css') }}">
-  {% if academy_mode %}<link rel="stylesheet" href="{{ url_for('static', filename='css/academy.css') }}">{% endif %}
+  {% if academy_mode %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-academy-experience.css') }}">
+  <script src="{{ url_for('static', filename='js/academy-controls.js') }}" defer></script>
+  {% endif %}
 </head>
 <body class="el-player-body xped-surface-scope" {% if academy_mode %}data-site-title="xPED Academy"{% endif %} data-share-token="{{ share_token }}" data-xped-theme="xped-warm-sand" data-text-scale="md">
   <header class="el-player-header">

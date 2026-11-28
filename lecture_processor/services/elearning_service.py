@@ -12,6 +12,7 @@ from collections import Counter, OrderedDict
 from itertools import chain
 from statistics import median
 from threading import Lock
+from urllib.parse import quote
 from copy import deepcopy
 
 from flask import current_app, g, jsonify, request, send_file, url_for
@@ -954,13 +955,16 @@ def upload_asset(runtime, expedition_id: str):
     }), 201
 
 
-def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str):
+def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str, *, author_metadata=False):
     aid = model.identifier(asset_id, 'asset id')
     meta = db.get('elearning_assets/' + aid)
     if not meta or meta.get('expedition_id') != expedition_id or not meta.get('ready', True):
         raise model.ElearningError('Asset not found.', 404)
     if request.method == 'HEAD':
         response = current_app.response_class(mimetype=meta.get('content_type', 'application/octet-stream'))
+        response.headers['Cache-Control'] = 'private, no-store'
+        if author_metadata and meta.get('filename'):
+            response.headers['Content-Disposition'] = "inline; filename*=UTF-8''" + quote(meta['filename'], safe='')
         if 'size' in meta:
             response.content_length = meta['size']
         return response
@@ -975,7 +979,7 @@ def _serve_asset(db: ElearningStore, expedition_id: str, asset_id: str):
 
 def get_asset(runtime, expedition_id: str, asset_id: str):
     db, _, _, _, _ = access(runtime, expedition_id, required='translate')
-    return _serve_asset(db, expedition_id, asset_id)
+    return _serve_asset(db, expedition_id, asset_id, author_metadata=True)
 
 
 def _media_session(who):

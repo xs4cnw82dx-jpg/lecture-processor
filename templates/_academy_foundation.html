@@ -4,7 +4,9 @@
    redistributing the files through this public repository. Learner pages do not
    include this partial. #}
 {% if academy_mode %}
+  <script src="{{ url_for('static', filename='js/academy-controls.js') }}" defer></script>
   <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
   <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@500,600&amp;display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-academy-experience.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-foundation.css') }}">
 {% endif %}
