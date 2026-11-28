@@ -2282,15 +2282,21 @@ def test_unsettled_deleted_checkout_refund_never_creates_another_or_records_succ
     fake, store = make_credit_runtime()
     monkeypatch.setattr(core, 'db', fake.db)
     monkeypatch.setattr(core, 'firestore', fake.firestore)
-    session = {'id': 'cs_review', 'payment_intent': 'pi_review'}
+    account_lifecycle.account_deletion_ref('deleted', runtime=core).set({'status': 'deleted'})
+    session = {
+        'id': 'cs_review', 'payment_intent': 'pi_review', 'mode': 'payment', 'status': 'complete',
+        'payment_status': 'paid', 'amount_total': 999, 'currency': 'eur',
+        'metadata': {'uid': 'deleted', 'bundle_id': 'lecture_5'},
+        'line_items': {'data': [{'quantity': 1, 'amount_total': 999, 'currency': 'eur'}]},
+    }
     metadata = {'reason': 'account_deleted', 'checkout_session_id': 'cs_review'}
     refund = {'id': 're_review', 'metadata': metadata, 'status': status, 'payment_intent': 'pi_review'}
     monkeypatch.setattr(core, 'STRIPE_WEBHOOK_SECRET', 'synthetic-secret')
     monkeypatch.setattr(core.stripe.Webhook, 'construct_event', lambda *_a: {
         'type': 'checkout.session.completed', 'data': {'object': session}})
     monkeypatch.setattr(core.stripe.checkout.Session, 'retrieve', lambda *_a, **_k: session)
-    monkeypatch.setattr(billing_purchases, 'process_checkout_session_credits', lambda *_a, **_k: (False, 'account_deleted'))
-    monkeypatch.setattr(core.stripe.Refund, 'list', lambda **_kw: SimpleNamespace(auto_paging_iter=lambda: iter([refund])))
+    refunds = [refund]
+    monkeypatch.setattr(core.stripe.Refund, 'list', lambda **_kw: SimpleNamespace(auto_paging_iter=lambda: iter(refunds)))
     monkeypatch.setattr(core.stripe.Refund, 'create', lambda **_kw: pytest.fail('duplicate refund'))
     assert client.post('/api/stripe-webhook', data=b'{}').status_code == 500
     reviews = core.purchases_repo.list_refunds_for_review(fake.db)
@@ -2300,13 +2306,25 @@ def test_unsettled_deleted_checkout_refund_never_creates_another_or_records_succ
     assert [(doc.id, doc.to_dict()['refund_status']) for doc in reviews] == [('cs_review', status)]
     assert set(reviews[0].to_dict()) == {'stripe_refund_id', 'refund_status'}
     assert not store.docs('users') and not store.docs('purchases')
-    refund['status'] = 'succeeded'
+    if status == 'requires_action':
+        refund['status'] = 'succeeded'
+        settled_id = refund['id']
+    else:
+        # A terminal failed/canceled refund stays in the provider's history.
+        # Human reconciliation created another successful refund for this checkout.
+        settled_id = 're_reconciled'
+        refunds.append({**refund, 'id': settled_id, 'status': 'succeeded'})
     store.fail_writes.add(reviews[0].reference.path)
     assert client.post('/api/stripe-webhook', data=b'{}').status_code == 500
     assert not store.docs('purchases') and core.purchases_repo.list_refunds_for_review(fake.db)
     store.fail_writes.clear()
     assert client.post('/api/stripe-webhook', data=b'{}').status_code == 200
-    assert store.docs('purchases')['cs_review']['payment_status'] == 'refunded_deleted_account'
+    receipt = store.docs('purchases')['cs_review']
+    assert receipt['payment_status'] == 'refunded_deleted_account'
+    assert receipt['stripe_refund_id'] == settled_id
+    monkeypatch.setattr(core.stripe.Refund, 'list', lambda **_kw: pytest.fail('settled checkout should use its receipt'))
+    assert client.post('/api/stripe-webhook', data=b'{}').status_code == 200
+    assert not store.docs('users')
     assert not core.purchases_repo.list_refunds_for_review(fake.db)
     # Replay an older failed observation after a later success committed.
     core.purchases_repo.mark_refund_for_review(fake.db, fake.firestore, 'cs_review', 're_review', status)
