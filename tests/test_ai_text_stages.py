@@ -411,3 +411,63 @@ def test_owned_helper_closes_once_without_swallowing_cancellation(monkeypatch):
         study_generation.generate_study_materials(SOURCE, '2', '5', runtime=runtime)
     assert caught.value is cancellation
     assert opened == [runtime] and len(session.calls) == 1 and session.closes == 1
+
+
+@pytest.mark.parametrize('stage', ['study_tools', 'regenerate_study_tools'])
+def test_truncated_study_materials_report_usage_without_publishing_partial_json(stage):
+    from tests.support.truncated_provider import scripted_session
+    runtime = runtime_for([])
+    with scripted_session(runtime, [stage], [('{"flashcards":', 'length')]) as session:
+        cards, questions, error, usage = study_generation.generate_study_materials(
+            SOURCE, '2', '5', runtime=runtime, include_usage=True, provider_session=session, stage=stage)
+    assert not cards and not questions and error
+    assert usage['token_total'] == 31
+    item = next(iter(usage['token_usage_by_stage'].values()))
+    assert (item['cost_usd'], item['thinking_tokens'], item['provider']) == (0.004, 2, 'openrouter')
+
+
+def test_partial_interview_features_keep_every_paid_attempt_and_the_completed_feature():
+    from tests.support.truncated_provider import scripted_session
+    runtime = runtime_for([])
+    with scripted_session(runtime, ['interview_summary', 'interview_sections'],
+                          [('cut', 'length'), ('cut again', 'length'), ('Complete sections', 'stop')]) as session:
+        result = study_generation.generate_interview_enhancements(
+            SOURCE, ['summary', 'summary', 'sections'], runtime=runtime, provider_session=session)
+    assert result['successful_features'] == ['sections'] and result['summary'] is None
+    assert result['token_total'] == 93 and len(result['token_usage_by_stage']) == 3
+    assert sum(entry['cost_usd'] for entry in result['token_usage_by_stage'].values()) == pytest.approx(0.012)
+
+
+def test_coding_failure_keeps_earlier_chunk_and_truncated_attempt_on_failed_run(coding, monkeypatch):
+    from tests.support.truncated_provider import scripted_session
+    session = scripted_session(coding.runtime, ['interview_coding'], [(CODING_TEXTS[0], 'stop'), (None, 'length')])
+    install_session(monkeypatch, session)
+    monkeypatch.setattr(service.interview_coding, 'split_segments_for_ai', lambda segments: [segments, segments])
+    run_id = start(coding)
+    coding.work()
+    run = coding.docs('interview_ai_coding_runs')[run_id]
+    assert run['status'] == 'failed' and run['credit_refunded'] is True
+    assert not run['proposed_codes'] and not run['proposed_quotations']
+    for record in (run, coding.docs('runtime_jobs')[run_id]):
+        assert record['token_total'] == 62
+        assert set(record['token_usage_by_stage']) == {'interview_ai_coding_1', 'interview_ai_coding_2_incomplete'}
+        assert sum(entry['cost_usd'] for entry in record['token_usage_by_stage'].values()) == pytest.approx(0.008)
+    assert service.coding_runs.fail_run(coding.runtime, run_id) is False
+    assert coding.docs('interview_ai_coding_runs')[run_id]['token_usage_by_stage'] == run['token_usage_by_stage']
+
+
+def test_regeneration_persists_truncated_usage_with_the_existing_refund(regeneration, monkeypatch):
+    from tests.support.truncated_provider import scripted_session
+    state, run = regeneration
+    generate_study = study_generation.generate_study_materials
+
+    def generate(*args, **kwargs):
+        with scripted_session(kwargs['runtime'], ['regenerate_study_tools'], [(None, 'length')]) as session:
+            return generate_study(*args, **kwargs, provider_session=session)
+
+    monkeypatch.setattr(study_generation, 'generate_study_materials', generate)
+    run('Unused synthetic fixture.', features='flashcards')
+    assert state['job']['status'] == 'error'
+    assert len(state['refunds']) == 1 and not state['updates']
+    assert state['job']['token_total'] == 31
+    assert state['job']['token_usage_by_stage']['regenerate_study_tools_incomplete']['cost_usd'] == 0.004

@@ -185,15 +185,10 @@ def generate_study_materials(
     stage='study_tools',
 ):
     resolved_runtime = _resolve_runtime(runtime)
-    empty_usage = {
-        'token_usage_by_stage': {},
-        'token_input_total': 0,
-        'token_output_total': 0,
-        'token_total': 0,
-    }
+    discarded = ai_provider.TokenAccumulator(runtime=resolved_runtime)
     if study_features == 'none':
         if include_usage:
-            return ([], [], None, empty_usage)
+            return ([], [], None, discarded.as_dict())
         return ([], [], None)
 
     flashcard_amount, question_amount = resolve_study_amounts(
@@ -227,6 +222,7 @@ def generate_study_materials(
             max_output_tokens=32768,
             retry_tracker=retry_tracker,
             operation_name='study_materials_generation',
+            record_discarded=discarded.record_result,
         )
         tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
         tokens.record_result('study_materials_generation', response)
@@ -263,7 +259,7 @@ def generate_study_materials(
         resolved_runtime.logger.exception('Study materials generation failed')
         error_message = 'Could not generate study materials. Please try again.'
         if include_usage:
-            return ([], [], error_message, empty_usage)
+            return ([], [], error_message, discarded.as_dict())
         return ([], [], error_message)
     finally:
         if provider_session is None and session is not None:
@@ -291,7 +287,8 @@ def generate_interview_enhancements(
     session = provider_session
 
     try:
-        for feature in selected_features:
+        for feature_index, feature in enumerate(selected_features, start=1):
+            tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
             try:
                 if feature == 'summary':
                     template = resolved_runtime.PROMPT_INTERVIEW_SUMMARY
@@ -313,14 +310,9 @@ def generate_interview_enhancements(
                     max_output_tokens=cap,
                     retry_tracker=retry_tracker,
                     operation_name=operation,
+                    record_discarded=tokens.record_result,
                 )
-                # Repeated features keep their last stage entry and count every result.
-                tokens = ai_provider.TokenAccumulator(runtime=resolved_runtime)
-                usage = tokens.record_result(operation, response)
-                usage_by_stage[operation] = usage
-                input_total += int(usage.get('input_tokens', 0) or 0)
-                output_total += int(usage.get('output_tokens', 0) or 0)
-                total_tokens += int(usage.get('total_tokens', 0) or 0)
+                tokens.record_result(operation, response)
                 if feature == 'summary':
                     summary_text = (getattr(response, 'text', '') or '').strip()
                     if not summary_text:
@@ -335,6 +327,15 @@ def generate_interview_enhancements(
                     errors.append('Could not generate the interview summary. Please try again.')
                 else:
                     errors.append('Could not generate the structured transcript. Please try again.')
+            finally:
+                # Retain the historical last-success key for repeated features.
+                # Incomplete attempts each need a distinct entry for their reported cost.
+                for name, usage in tokens.stages.items():
+                    key = name if name == operation else f'{name}_{feature_index}'
+                    usage_by_stage[key] = usage
+                input_total += tokens.input_total
+                output_total += tokens.output_total
+                total_tokens += tokens.total
     finally:
         if provider_session is None and session is not None:
             session.close()

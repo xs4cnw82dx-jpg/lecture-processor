@@ -281,7 +281,7 @@ def _require_deleted_pack(runtime, transaction, pack_id):
 
 
 def fail_run(runtime, run_id, *, orphan=False, now_ts=None, expected_uid=None, expected_pack_id=None,
-             require_deleted_pack=False):
+             require_deleted_pack=False, provider_usage=None):
     now = runtime.time.time() if now_ts is None else now_ts
     missing_run_recovered = object()
 
@@ -321,9 +321,13 @@ def fail_run(runtime, run_id, *, orphan=False, now_ts=None, expected_uid=None, e
                 'error': ERROR_MESSAGE, 'step_description': ERROR_MESSAGE,
             })
             return missing_run_recovered
-        transaction.update(ref, {'status': 'refund_pending', 'error': ERROR_MESSAGE, 'error_code': ERROR_CODE, 'updated_at': now})
+        usage = {key: provider_usage[key] for key in (
+            'token_usage_by_stage', 'token_input_total', 'token_output_total', 'token_total',
+        )} if provider_usage else {}
+        transaction.update(ref, {**usage, 'status': 'refund_pending', 'error': ERROR_MESSAGE,
+                                 'error_code': ERROR_CODE, 'updated_at': now})
         _write_job(runtime, transaction, job_ref, {
-            **job, 'status': 'processing', 'error': ERROR_MESSAGE,
+            **job, **usage, 'status': 'processing', 'error': ERROR_MESSAGE,
             'step_description': 'Finalizing coding run', 'recovery_claimed_at': now,
         })
         return run
