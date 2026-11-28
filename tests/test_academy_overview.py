@@ -22,9 +22,9 @@ def test_dashboard_uses_calendar_periods_comparison_and_allows_only_permitted_re
     def response(course, doc, days, **fields):
         store.put('elearning_responses/' + doc, dict(expedition_id=course['id'], started_at=ts - days * 86400,
                   updated_at=ts, consentVersion=1, **fields))
-    response(own, 'current-a', 1, completed=True, cohort='group-a', stepSeconds={'a': 90},
+    response(own, 'current-a', 1, completed=True, cohort='group-a', activeTimeDisclosure=1, stepSeconds={'a': 90},
              pilotFeedback={'comment':'Een helder voorbeeld.'})
-    response(own, 'current-b', 0, completed=False, cohort='group-b')
+    response(own, 'current-b', 0, completed=False, cohort='group-b', stepSeconds={'a': 300})
     response(own, 'previous', 8, completed=True, cohort='group-a')
     response(private, 'elsewhere', 0, completed=True, cohort='unrelated', pilotFeedback={'comment':'Private comment'})
 

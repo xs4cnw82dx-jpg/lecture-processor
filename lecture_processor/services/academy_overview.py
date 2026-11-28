@@ -5,12 +5,12 @@ from heapq import nlargest
 from statistics import median
 from zoneinfo import ZoneInfo
 
-from lecture_processor.domains.elearning import model
+from lecture_processor.domains.elearning import model, reporting
 from lecture_processor.services import elearning_service as studio
 
 ZONE = ZoneInfo('Europe/Amsterdam')
 FIELDS = ['started_at', 'updated_at', 'completed', 'cohort', 'visitedStepIds', 'stepSeconds',
-          'pilotFeedback', 'stepComments']
+          'activeTimeDisclosure', 'pilotFeedback', 'stepComments']
 
 
 def _midnight(day):
@@ -33,11 +33,6 @@ def _period(args, today):
     return start, end
 
 
-def _duration(row):
-    values = [v for v in (row.get('stepSeconds') or {}).values() if type(v) is int and 0 <= v <= 14400]
-    return sum(values) if values else None
-
-
 class PeriodStatistics:
     """Retain numeric observations needed for an exact median, without retaining learner records."""
     def __init__(self):
@@ -50,9 +45,9 @@ class PeriodStatistics:
         self.total += 1
         self.active.add(eid)
         self.completed += bool(row.get('completed'))
-        seconds = _duration(row)
-        if seconds is not None:
-            self.times.append(seconds)
+        measurements = reporting.measured_seconds(row)
+        if measurements:
+            self.times.append(sum(measurements.values()))
 
     def summary(self):
         return dict(sessions=self.total, completed=self.completed,
