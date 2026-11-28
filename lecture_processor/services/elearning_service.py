@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 import re
 import secrets
 import time
@@ -1100,6 +1101,25 @@ def _rating(value):
         return None
 
 
+# A learner's active time on one step, in whole seconds. The player sends cumulative
+# totals for its session, so the stored value only ever grows to the largest report.
+MAX_STEP_SECONDS = 4 * 60 * 60
+
+
+def _merge_step_seconds(stored, reported, steps) -> dict:
+    merged = {sid: int(value) for sid, value in (stored or {}).items()
+              if isinstance(sid, str) and type(value) is int and value > 0}
+    if not isinstance(reported, dict):
+        return merged
+    for sid, value in list(reported.items())[:500]:
+        if sid not in steps or isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if not math.isfinite(value) or value < 1:
+            continue
+        merged[sid] = max(merged.get(sid, 0), min(int(value), MAX_STEP_SECONDS))
+    return merged
+
+
 def public_submit_response(runtime, share_token: str):
     body = payload()
     session_id = str(body.get('sessionId') or '').strip()
@@ -1153,6 +1173,7 @@ def public_submit_response(runtime, share_token: str):
                 else:
                     peer_answers.pop(bid, None)
                 answers[bid] = answer
+        step_seconds = _merge_step_seconds(old.get('stepSeconds'), body.get('stepSeconds'), steps)
         visited = list(old.get('visitedStepIds') or [])
         if isinstance(body.get('visitedStepIds'), list):
             visited.extend(s for s in body['visitedStepIds'] if isinstance(s, str) and s in steps)
@@ -1179,7 +1200,8 @@ def public_submit_response(runtime, share_token: str):
         tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], 'session_id': session_id,
                       'cohort': cohort, 'language': lang, 'answers': answers, 'peerAnswers': peer_answers,
                       'consentVersion': options['collectionVersion'], 'consented_at': old.get('consented_at', ts),
-                      'visitedStepIds': list(dict.fromkeys(visited)), 'completed': bool(body.get('completed') or old.get('completed')),
+                      'visitedStepIds': list(dict.fromkeys(visited)), 'stepSeconds': step_seconds,
+                      'completed': bool(body.get('completed') or old.get('completed')),
                       'pilotFeedback': feedback, 'stepComments': comments, 'started_at': old.get('started_at', ts), 'updated_at': ts})
 
     _store(runtime).atomic(save)
@@ -1383,15 +1405,18 @@ def export_responses_csv(runtime, expedition_id: str):
         and (not lang_filter or r.get('language') == lang_filter)
     ]
     block_ids = []
+    step_ids = []
     for mod in exp.get('modules', []):
         for step in mod.get('steps', []):
+            step_ids.append(step['id'])
             for blk in step.get('blocks', []):
                 if blk['type'] in ('mcq', 'myth_fact', 'scale', 'reflection', 'wordcloud', 'ranking', 'balance_scale', 'mini_plan', 'hotspot'):
                     block_ids.append(blk['id'])
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(['session_id', 'cohort', 'language', 'completed', 'clarity', 'engagement', 'pilot_comment'] + block_ids)
+    writer.writerow(['session_id', 'cohort', 'language', 'completed', 'clarity', 'engagement', 'pilot_comment',
+                     'active_seconds'] + ['seconds_' + sid for sid in step_ids] + block_ids)
     for r in rows:
         pf = r.get('pilotFeedback') or {}
         ans = r.get('answers') or {}
@@ -1404,6 +1429,10 @@ def export_responses_csv(runtime, expedition_id: str):
             pf.get('engagement', ''),
             pf.get('comment', ''),
         ]
+        seconds = {sid: value for sid, value in (r.get('stepSeconds') or {}).items() if type(value) is int}
+        # Sessions without measured time (private or older consent) leave the time cells empty.
+        row_out.append(sum(seconds.get(sid, 0) for sid in step_ids) if seconds else '')
+        row_out.extend(seconds.get(sid, '') if seconds else '' for sid in step_ids)
         for bid in block_ids:
             val = ans.get(bid, '')
             if isinstance(val, (list, dict)):

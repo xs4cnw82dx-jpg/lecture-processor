@@ -56,6 +56,12 @@
     syncTimer: null,
   };
 
+  // Active time per step. It is kept only for sessions whose consent included it.
+  var stepTimer = window.XpedStepTimer ? window.XpedStepTimer.createStepTimer() : null;
+  function measuringTime() {
+    return !!(stepTimer && isSharing() && state.consent.measuresTime === true);
+  }
+
   var langDD = Icons.createDropdown({
     leadingIcon: 'globe',
     align: 'right',
@@ -107,6 +113,7 @@
         state.peerDisclosureTypes = Object.assign(Object.create(null), saved.peerDisclosureTypes);
         state.stepComments = Array.isArray(saved.stepComments) ? saved.stepComments : [];
         state.pilotSent = saved.pilotSent === true;
+        if (stepTimer && grant.measuresTime === true) stepTimer.load(saved.sharedStepMs);
       }
       if (saved.answers && typeof saved.answers === 'object') state.answers = Object.assign(Object.create(null), saved.answers);
       if (Array.isArray(saved.navHistory)) state.navHistory = saved.navHistory.filter(function (id) { return typeof id === 'string'; });
@@ -135,6 +142,7 @@
         visitedStepIds: state.visitedStepIds,
         completedModuleIds: state.completedModuleIds,
         stepComments: state.stepComments,
+        sharedStepMs: measuringTime() ? stepTimer.milliseconds() : undefined,
         lastModIdx: state.lastModIdx,
         lastStepIdx: state.lastStepIdx,
         lang: state.lang,
@@ -170,11 +178,13 @@
     state.peerDisclosureTypes = Object.create(null);
     state.stepComments = [];
     state.pilotSent = false;
+    if (stepTimer) stepTimer.reset();
   }
 
   function setConsent(choice) {
     resetSharing();
-    if (choice) state.consent = { choice: choice, cohort: cohort, version: state.exp.shareOptions.collectionVersion, sessionId: state.sessionId };
+    // measuresTime marks consent given with the disclosure that includes active time per step.
+    if (choice) state.consent = { choice: choice, cohort: cohort, version: state.exp.shareOptions.collectionVersion, sessionId: state.sessionId, measuresTime: true };
     try {
       if (state.consent) localStorage.setItem(consentKey, JSON.stringify(state.consent));
       else localStorage.removeItem(consentKey);
@@ -190,7 +200,7 @@
     catch (_err) { return false; }
   }
 
-  function sendResponse(completed, pilotFeedback) {
+  function sendResponse(completed, pilotFeedback, keepalive) {
     if (!isSharing()) return Promise.resolve({ ok: false });
     var grant = state.consent;
     var body = JSON.stringify({
@@ -205,6 +215,7 @@
       completed: completed || state.view === 'summary',
       pilotFeedback: pilotFeedback,
       stepComments: state.stepComments.length ? state.stepComments : undefined,
+      stepSeconds: measuringTime() ? stepTimer.seconds() : undefined,
     });
     var request = state.responseQueue.then(async function () {
       // Keep submitted answers or feedback queued until the learner leaves the
@@ -217,6 +228,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: body,
+        keepalive: !!keepalive,
       });
       if ((response.status === 403 || response.status === 409) && grantIsCurrent(grant)) {
         // A course owner changed the pilot settings while this learner had the course open.
@@ -446,10 +458,12 @@
     if (state.visitedStepIds.indexOf(step.id) < 0) {
       state.visitedStepIds.push(step.id);
     }
+    if (stepTimer) stepTimer.enter(step.id);
     if (isSharing() && !state.sharedVisits.includes(step.id)) {
       state.sharedVisits.push(step.id);
       scheduleSync(false);
-    } else saveLocalProgress();
+    } else if (measuringTime()) scheduleSync(false);
+    else saveLocalProgress();
 
     mainEl.textContent = '';
     var card = document.createElement('article');
@@ -907,6 +921,7 @@
     if (!state.exp) return;
     if (state.view !== 'start' && state.exp.shareOptions && state.exp.shareOptions.collectResponses && !state.consent) state.view = 'consent';
     if (state.view !== 'consent') resumeQueuedResponse();
+    if (stepTimer && state.view !== 'step') stepTimer.leave();
     document.documentElement.lang = state.lang;
     courseLabelEl.textContent = Model.getLocalized(state.exp.startPage && state.exp.startPage.title, state.lang, state.exp.defaultLanguage) || state.exp.title;
     mapBtn.textContent = '';
@@ -1094,6 +1109,27 @@
     }
     if (state.view !== 'start') showCurrentView();
   });
+
+  // Active time: input, scrolling and media playback count as activity. When the
+  // page is hidden the timer pauses and a consenting session sends its totals.
+  if (stepTimer) {
+    var markActive = function () { stepTimer.activity(); };
+    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(function (type) {
+      document.addEventListener(type, markActive, { capture: true, passive: true });
+    });
+    window.addEventListener('scroll', markActive, { passive: true });
+    document.addEventListener('timeupdate', markActive, true);
+    stepTimer.setVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', function () {
+      var visible = document.visibilityState !== 'hidden';
+      stepTimer.setVisible(visible);
+      if (!visible && measuringTime()) {
+        clearTimeout(state.syncTimer);
+        saveLocalProgress();
+        sendResponse(state.view === 'summary', undefined, true);
+      }
+    });
+  }
 
   init();
 })();
