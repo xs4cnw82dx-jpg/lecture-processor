@@ -1045,22 +1045,42 @@ def _resolve_public_expedition(runtime, share_token: str, unit=None):
     return db, exp
 
 
-def public_payload(runtime, share_token: str):
-    _, exp = _resolve_public_expedition(runtime, share_token)
+def _public_course(exp):
     public = model.sanitize_public_expedition(exp)
-    if current_app.config.get('XPED_ACADEMY'):
-        # Score only the material learners can actually see. Hidden draft stations
-        # do not disqualify an otherwise reviewed translation of the public course.
-        coverage = model.compute_language_coverage(public)
-        public['enabledLanguages'] = [
-            lang for lang in ('nl', 'de') if lang in coverage and coverage[lang]['total']
-            and coverage[lang]['translated'] == coverage[lang]['total'] and not coverage[lang]['needsReview']
-        ]
-        if not public['enabledLanguages']:
-            raise model.ElearningError('There is no reviewed course language available yet.', 410)
-        if public['defaultLanguage'] not in public['enabledLanguages']:
-            public['defaultLanguage'] = public['enabledLanguages'][0]
+    if not current_app.config.get('XPED_ACADEMY'):
+        return public
+
+    # Hidden stations do not disqualify a translation of what participants actually see.
+    coverage = model.compute_language_coverage(public)
+    available = [lang for lang in ('nl', 'de') if lang in coverage and coverage[lang]['total']
+                 and coverage[lang]['translated'] == coverage[lang]['total'] and not coverage[lang]['needsReview']]
+    if not available:
+        raise model.ElearningError('There is no reviewed course language available yet.', 410)
+    public['enabledLanguages'] = available
+    if public['defaultLanguage'] not in available:
+        public['defaultLanguage'] = available[0]
+
+    # The public copy also omits unoffered text and language-specific media.
+    # The stored expedition and its author export preserve the full historical document.
+    excluded = (set(model.SUPPORTED_LANGUAGES) - set(available)) | {'_review'}
+
+    def remove_unoffered(value):
+        if isinstance(value, list):
+            for item in value:
+                remove_unoffered(item)
+        elif isinstance(value, dict):
+            for key in excluded:
+                value.pop(key, None)
+            for field in value.values():
+                remove_unoffered(field)
+
+    remove_unoffered(public)
     return public
+
+
+def public_payload(runtime, share_token: str) -> dict:
+    _, exp = _resolve_public_expedition(runtime, share_token)
+    return _public_course(exp)
 
 
 def public_get_expedition(runtime, share_token: str):
@@ -1069,7 +1089,7 @@ def public_get_expedition(runtime, share_token: str):
 
 def public_get_asset(runtime, share_token: str, asset_id: str):
     db, exp = _resolve_public_expedition(runtime, share_token)
-    public = model.sanitize_public_expedition(exp)
+    public = _public_course(exp)
     if asset_id not in model.media_ids(public):
         raise model.ElearningError('Asset not found.', 404)
     return _serve_asset(db, exp['id'], asset_id)
