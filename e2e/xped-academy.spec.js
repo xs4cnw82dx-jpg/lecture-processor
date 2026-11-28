@@ -314,7 +314,7 @@ test('a Studio user can download personal data and resume a confirmed deletion',
   await page.getByRole('button', { name: 'Delete account', exact: true }).click();
   await page.getByRole('button', { name: 'Permanently delete account' }).click();
   expect(requestTimes).toHaveLength(0);
-  await expect(page.getByText('If you leave this page', { exact: false })).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveAccessibleDescription(/If you leave this page, return here and confirm again/);
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Permanently delete account' }).click();
   await expect(page.getByRole('status')).toHaveText('Your Studio account has been deleted.');

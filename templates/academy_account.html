@@ -22,8 +22,8 @@
       <p>Your expeditions and media transfer to the Studio administrator for review. Learner links and shared responses stay available. Your sign-in, folder names and author access are removed.</p>
       <button type="button" class="btn danger" id="acct-begin" aria-expanded="false" aria-controls="acct-confirmation">Delete account</button>
       <form id="acct-confirmation" hidden>
-        <p>Once deletion starts, your author access ends and editing is blocked. If you leave this page, return here and confirm again to finish deleting your account.</p>
-        <label><input type="checkbox" id="acct-consent" required> I understand that deleting my Studio account is permanent.</label>
+        <p id="acct-deletion-effects">Once deletion starts, your author access ends and editing is blocked. If you leave this page, return here and confirm again to finish deleting your account.</p>
+        <label><input type="checkbox" id="acct-consent" aria-describedby="acct-deletion-effects" required> I understand that deleting my Studio account is permanent.</label>
         <div class="acct-actions">
           <button type="submit" class="btn danger">Permanently delete account</button>
           <button type="button" class="btn" id="acct-cancel">Cancel</button>
