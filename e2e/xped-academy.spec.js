@@ -300,23 +300,26 @@ test('a Studio user can download personal data and resume a confirmed deletion',
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download account data' }).click();
   expect((await download).suggestedFilename()).toBe('xped-academy-account.json');
-  let attempts = 0;
+  const requestTimes = [];
   await page.route('**/api/academy/account/delete', route => {
-    attempts += 1;
+    requestTimes.push(Date.now());
+    const attempts = requestTimes.length;
     expect(route.request().postDataJSON()).toEqual({ confirmUid: 'studio-owner' });
     expect(route.request().headers().authorization).toBe('Bearer academy-preview-token');
-    return route.fulfill({ status: attempts === 1 ? 202 : 200, json: { complete: attempts > 1 } });
+    return route.fulfill({ status: attempts === 1 ? 202 : 200, headers: { 'Retry-After': '2' }, json: { complete: attempts > 1 } });
   });
   await page.getByRole('button', { name: 'Delete account', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
   await page.getByRole('button', { name: 'Delete account', exact: true }).click();
   await page.getByRole('button', { name: 'Permanently delete account' }).click();
-  expect(attempts).toBe(0);
+  expect(requestTimes).toHaveLength(0);
+  await expect(page.getByText('If you leave this page', { exact: false })).toBeVisible();
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Permanently delete account' }).click();
   await expect(page.getByRole('status')).toHaveText('Your Studio account has been deleted.');
-  expect(attempts).toBe(2);
+  expect(requestTimes).toHaveLength(2);
+  expect(requestTimes[1] - requestTimes[0]).toBeGreaterThanOrEqual(1900);
   await expect(page.getByRole('button', { name: 'Download account data' })).toBeHidden();
 });
 

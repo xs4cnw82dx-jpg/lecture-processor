@@ -129,7 +129,9 @@ def test_multiple_requests_move_every_course_and_keep_the_review_folder(accounts
     client, store, claims, remote, _ = accounts
     for i in range(15):
         store.put(f'elearning_expeditions/{i}', {'owner_uid': claims['uid'], 'id': str(i), 'share': {'enabled': True}})
-    assert submit(client).status_code == 202
+    more = submit(client)
+    assert more.status_code == 202
+    assert more.headers['Retry-After'] == '1'
     remote.assert_not_called()
     receipt = store.get('account_deletions/author-1')
     assert receipt['admin_uid'] == 'studio-owner' and receipt['status'] == 'transferring'

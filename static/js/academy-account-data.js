@@ -81,6 +81,11 @@
           throw new Error('Unexpected account status');
         }
         complete = result.complete;
+        if (!complete) {
+          const seconds = Number(response.headers.get('Retry-After'));
+          const delay = Number.isFinite(seconds) && seconds >= 1 ? seconds : 1;
+          await new Promise(resolve => window.setTimeout(resolve, delay * 1000));
+        }
       } while (!complete);
       if (auth.currentUser === user) await auth.signOut();
       status.textContent = 'Your Studio account has been deleted.';

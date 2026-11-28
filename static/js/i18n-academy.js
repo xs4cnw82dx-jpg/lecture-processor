@@ -55,6 +55,7 @@
   "Download account data": "Accountgegevens downloaden",
   "Delete your Studio account": "Je Studio-account verwijderen",
   "Your expeditions and media transfer to the Studio administrator for review. Learner links and shared responses stay available. Your sign-in, folder names and author access are removed.": "Je expedities en media gaan ter beoordeling naar de Studio-beheerder. Deelnemerslinks en gedeelde reacties blijven beschikbaar. Je inloggegevens, mapnamen en auteurstoegang worden verwijderd.",
+  "Once deletion starts, your author access ends and editing is blocked. If you leave this page, return here and confirm again to finish deleting your account.": "Zodra het verwijderen begint, vervalt je auteurstoegang en kun je niets meer bewerken. Verlaat je deze pagina? Keer dan hier terug en bevestig opnieuw om je account volledig te verwijderen.",
   "I understand that deleting my Studio account is permanent.": "Ik begrijp dat mijn Studio-account definitief wordt verwijderd.",
   "Permanently delete account": "Account definitief verwijderen",
   "Sign in again": "Opnieuw inloggen",

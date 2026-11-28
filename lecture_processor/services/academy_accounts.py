@@ -278,7 +278,7 @@ def delete():
         state = _start(db, uid, studio._verified_member_email(user), destination)
         if state['status'] == 'transferring':
             if not _transfer_page(db, uid, state['email'], destination):
-                return jsonify(complete=False), 202
+                return jsonify(complete=False), 202, {'Retry-After': '1'}
             _ready(db, uid, state['email'])
     if state.get('status') != 'deleted':
         try:
