@@ -21,6 +21,9 @@ def test_classify_and_transient_provider_errors():
     assert provider.classify_provider_error_code(RuntimeError('request timed out'), runtime=runtime) == 'TIMEOUT'
     assert provider.is_transient_provider_error(_ErrorWithStatus(429), runtime=runtime) is True
     assert provider.is_transient_provider_error(RuntimeError('temporarily unavailable'), runtime=runtime) is True
+    invalid = RuntimeError('Requested option is temporarily unavailable')
+    invalid.status_code = 400
+    assert provider.is_transient_provider_error(invalid, runtime=runtime) is False
 
 
 def test_run_with_provider_retry_retries_transient_failures_once():
