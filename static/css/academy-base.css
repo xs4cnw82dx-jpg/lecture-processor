@@ -219,7 +219,7 @@ button:disabled { cursor: default; }
 .app-date { position: relative; }
 .app-date-native { position: absolute; width: 1px !important; height: 1px !important; padding: 0 !important; opacity: 0; pointer-events: none; }
 .app-date-trigger { min-height: 2.5rem; padding: .375rem .75rem; border: 1px solid var(--theme-line); border-radius: var(--ac-radius-control); background: var(--theme-surface); color: var(--theme-ink); }
-.app-date-trigger[aria-invalid="true"] { border-color: var(--theme-danger, currentColor); }
+.app-date-trigger[aria-invalid="true"] { border-color: var(--theme-danger-ink); }
 .app-date-panel { position: absolute; z-index: var(--z-dropdown); width: min(19rem, calc(100vw - 2rem)); padding: .75rem; border: 1px solid var(--theme-line); border-radius: var(--ac-radius-control); background: var(--theme-surface); color: var(--theme-ink); box-shadow: var(--ac-shadow-popover); }
 .app-date-panel[hidden] { display: none; }
 .app-date-heading, .app-date-footer { display: flex; align-items: center; justify-content: space-between; gap: .25rem; }
