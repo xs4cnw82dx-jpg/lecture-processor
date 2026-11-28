@@ -57,7 +57,7 @@ test('a course owner can cancel or clear every language and collect new results 
   await expect(confirmation).toContainText(target.title);
   const cancel = confirmation.getByRole('button', { name: 'Annuleren' });
   await expect(cancel).toBeFocused();
-  await page.screenshot({ path: testInfo.outputPath('reset-confirmation.png') });
+  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('reset-confirmation.png') });
   await cancel.click();
   await expect(confirmation).toBeHidden();
   expect(await allSessions(request, target)).toBe(2);
