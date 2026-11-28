@@ -21,10 +21,12 @@ class _ClientRuntime:
 
 
 class ProviderSession:
-    def __init__(self, runtime, *, routes=None):
+    def __init__(self, runtime, *, routes=None, allow_gemini_fallback=True, before_request=None):
         from lecture_processor.runtime.bootstrap import is_forced_fake_provider
 
         self.runtime = runtime
+        self._allow_gemini_fallback = allow_gemini_fallback
+        self._before_request = before_request
         self.routes = routes if routes is not None else getattr(runtime, 'AI_ROUTING_SNAPSHOT', None)
         if self.routes is None:
             root = Path(getattr(runtime, 'PROJECT_ROOT_DIR', Path(__file__).resolve().parents[4]))
@@ -96,6 +98,8 @@ class ProviderSession:
         if any(isinstance(part, PreparedFilePart) for part in parts):
             raise ValueError('Prepared provider files require Gemini.')
         if exceeds_pdf_request_limit(parts):
+            if not self._allow_gemini_fallback:
+                raise ValueError('PDF input exceeds the private request limit.')
             logger = getattr(self.runtime, 'logger', None) or logging.getLogger(__name__)
             logger.warning('PDF input exceeds the OpenRouter request limit; using Gemini for %s.', stage)
             return self._gemini_fallback(stage, parts, max_output_tokens, call, source_slide_text, record_discarded)
@@ -125,7 +129,7 @@ class ProviderSession:
                 result = self._generate_openrouter(route, adapted_parts, cap, attempt_call)
             except ProviderRequestError as error:
                 # Never bypass refusals, authentication, endpoint constraints or input validation.
-                if not error.retryable:
+                if not error.retryable or not self._allow_gemini_fallback:
                     raise
                 logger.warning('OpenRouter %s ended with %s after retries.', stage, error.error_code)
                 break
@@ -140,6 +144,8 @@ class ProviderSession:
             if result.finish_reason != 'length':
                 break
 
+        if not self._allow_gemini_fallback:
+            raise ProviderRequestError('incomplete')
         logger.warning('Using the configured Gemini fallback for %s.', stage)
         return self._gemini_fallback(stage, parts, max_output_tokens, call, source_slide_text, record_discarded)
 
@@ -161,6 +167,11 @@ class ProviderSession:
     def _generate_openrouter(self, route, parts, cap, call):
         options = {'reasoning_effort': route.options['reasoning_effort'], 'max_output_tokens': cap}
         extra = {} if self._forced else {'options': options}
+        if self._before_request is not None:
+            if self._forced:
+                self._before_request()
+            else:
+                extra['before_request'] = self._before_request
         return self._adapter(route).generate(route.model, parts, max_output_tokens=cap, **extra, **call)
 
     def close(self):
@@ -176,5 +187,6 @@ class ProviderSession:
         self.close()
 
 
-def open_provider_session(runtime, *, routes=None):
-    return ProviderSession(runtime, routes=routes)
+def open_provider_session(runtime, *, routes=None, allow_gemini_fallback=True, before_request=None):
+    return ProviderSession(runtime, routes=routes, allow_gemini_fallback=allow_gemini_fallback,
+                           before_request=before_request)

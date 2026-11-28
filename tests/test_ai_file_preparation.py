@@ -429,3 +429,12 @@ def test_oversize_fallback_rejects_truncated_native_document_and_records_usage(t
     assert list(discarded.keys()) == ['slides_extraction_incomplete_fallback']
     assert discarded['slides_extraction_incomplete_fallback'].usage.input_tokens == 11
     assert len(harness.uploads) == len(harness.generations) == 1
+
+
+def test_private_overnight_rejects_oversize_pdf_without_opening_either_adapter(tmp_path):
+    runtime = Harness().runtime
+    snapshot = RoutingSnapshot({STAGE: openrouter_route()})
+    with factory.open_provider_session(runtime, routes=snapshot, allow_gemini_fallback=False) as session:
+        with pytest.raises(ValueError, match='private request limit'):
+            session.generate(STAGE, [sized_pdf(tmp_path, 10 * 1024 * 1024 + 1)])
+        assert not session._adapters

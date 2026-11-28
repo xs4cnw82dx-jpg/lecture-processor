@@ -465,3 +465,33 @@ def test_truncated_non_document_schema_records_partial_usage_before_failure(adap
     usage = tokens.as_dict()
     assert usage['token_total'] == 37
     assert usage['token_usage_by_stage']['interview_coding_incomplete']['cost_usd'] == 0.004
+
+
+@pytest.mark.parametrize('behavior', ['truncated', 'transient', 'stopped'])
+def test_private_session_never_crosses_providers_and_rechecks_before_retry(adapter_runtime, behavior):
+    from lecture_processor.domains.ai.batch_orchestrator import _BatchStopped
+    from lecture_processor.domains.ai.providers.factory import ProviderSession
+    from lecture_processor.domains.ai.providers.routing import Route, RoutingSnapshot
+
+    def respond(_request):
+        if behavior == 'truncated':
+            payload = success()
+            payload['choices'][0]['finish_reason'] = 'length'
+            return 200, payload
+        return 503, {'error': {'code': 503}}
+
+    transport = _Transport(respond)
+    def active():
+        if behavior == 'stopped' and transport.requests:
+            raise _BatchStopped()
+
+    snapshot = RoutingSnapshot({'notes_merge': Route('openrouter', MODEL, OPTIONS)})
+    with ProviderSession(adapter_runtime, routes=snapshot, allow_gemini_fallback=False,
+                         before_request=active) as session:
+        session._forced = False
+        session._adapters['openrouter'] = OpenRouterProvider(adapter_runtime, transport=transport, api_key=KEY)
+        expected = _BatchStopped if behavior == 'stopped' else ProviderRequestError
+        with pytest.raises(expected):
+            session.generate('notes_merge', [TextPart('synthetic')])
+        assert set(session._adapters) == {'openrouter'}
+    assert len(transport.requests) == (3 if behavior == 'transient' else 1)
