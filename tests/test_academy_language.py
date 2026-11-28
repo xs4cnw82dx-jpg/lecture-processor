@@ -71,7 +71,8 @@ def test_learners_get_only_complete_reviewed_languages_and_may_request_an_offere
     headers = {'Accept-Language': 'de-DE,de;q=0.9'}
     assert html.fromstring(client.get(endpoint, headers=headers).data).get('lang') == 'de'
     assert html.fromstring(client.get(endpoint + '?lang=nl', headers=headers).data).get('lang') == 'nl'
-    course['startPage']['title']['_review'] = {'de': True}
+    # Older Studio versions also marked the canonical text when a translation changed.
+    course['startPage']['title']['_review'] = {'nl': True, 'de': True}
     store.put('elearning_expeditions/course', course)
     response = client.get(endpoint + '?lang=de', headers=headers)
     assert response.status_code == 200
@@ -80,10 +81,82 @@ def test_learners_get_only_complete_reviewed_languages_and_may_request_an_offere
     data = json.loads(page.get_element_by_id('academy-initial-course').text)
     assert data['enabledLanguages'] == ['nl']
     assert data['startPage']['title'] == {'nl': 'Voorbeeld'}
-    assert store.get('elearning_expeditions/course')['startPage']['title']['en'] == 'Historical text'
+    assert store.get('elearning_expeditions/course')['startPage']['title'] == {
+        'nl': 'Voorbeeld', 'de': 'Beispiel', 'en': 'Historical text', '_review': {'nl': True, 'de': True},
+    }
     course['startPage']['title']['nl'] = ''
     store.put('elearning_expeditions/course', course)
     assert client.get(endpoint).status_code == 410
+
+
+@pytest.mark.parametrize(('source', 'target'), [('nl', 'de'), ('de', 'nl')])
+def test_editing_published_course_preserves_source_and_requires_review_of_stale_translation(studio, source, target):
+    client, store = studio
+    api = '/api/elearning/expeditions'
+    auth = {'Authorization': 'Bearer academy-preview-token', 'X-Elearning-Session': 'author-tab'}
+    created = client.post(api, json={'title': 'Route', 'defaultLanguage': source}, headers=auth)
+    assert created.status_code == 201
+    course = created.json['expedition']
+    endpoint = f"{api}/{course['id']}"
+    token = course['share']['token']
+    assert client.post(endpoint + '/sharing', headers=auth,
+                       json={'action': 'update_public', 'enabled': True}).status_code == 200
+    lease = client.post(endpoint + '/lease', headers=auth, json={'action': 'acquire'}).json['lease_token']
+
+    def save_as(content, edited):
+        response = client.put(endpoint, headers=auth, json={
+            **content, 'editedLanguage': edited, 'base_revision': content['revision'], 'lease_token': lease,
+        })
+        assert response.status_code == 200, response.json
+        return response.json['expedition']
+
+    def offered():
+        response = client.get('/start/' + token + '?lang=' + target)
+        assert response.status_code == 200
+        page = html.fromstring(response.data)
+        payload = json.loads(page.get_element_by_id('academy-initial-course').text)
+        assert client.get('/api/elearning/public/' + token).json['expedition'] == payload
+        return payload['enabledLanguages']
+
+    assert offered() == [source]
+    course['startPage']['title'][target] = 'Vertaling'
+    course = save_as(course, target)
+    assert source not in course['startPage']['title'].get('_review', {})
+    assert offered() == [source]
+    card = client.get(api, headers=auth).json['expeditions'][0]['languageCoverage']
+    assert card[source]['needsReview'] == 0 and card[source]['translated'] == card[source]['total']
+    assert card[target]['translated'] == 1 < card[target]['total']
+
+    # A historical source flag must not hide the course while an author is still translating it.
+    path = 'elearning_expeditions/' + course['id']
+    historic = store.get(path)
+    historic['startPage']['title']['_review'] = {source: True}
+    store.put(path, historic)
+    assert offered() == [source]
+    assert client.get(api, headers=auth).json['expeditions'][0]['languageCoverage'][source]['needsReview'] == 0
+    for _, _, field in model._walk_localized_fields(course):
+        if field[source]:
+            field[target] = 'Vertaling'
+    course = save_as(course, target)
+    assert '_review' not in course['startPage']['title']
+    assert offered() == ['nl', 'de']
+
+    # Editing the source invalidates the translated field, even when written in the translation workspace.
+    edited = client.post(endpoint + '/translations', headers=auth,
+                         json={'targetLanguage': source, 'textUpdates': {'startPage.title': 'Gewijzigd'}})
+    assert edited.status_code == 200
+    assert edited.json['expedition']['startPage']['title']['_review'] == {target: True}
+    assert offered() == [source]
+    approved = client.post(endpoint + '/translations', headers=auth,
+                           json={'targetLanguage': target, 'textUpdates': {'startPage.title': 'Vertaling'}})
+    assert approved.status_code == 200
+    assert offered() == ['nl', 'de']
+
+    course = approved.json['expedition']
+    course['startPage']['title'][source] = 'Laatste versie'
+    course = save_as(course, source)
+    assert course['startPage']['title']['_review'] == {target: True}
+    assert offered() == [source]
 
 
 def test_every_academy_catalog_key_is_used_and_preserves_its_placeholders():

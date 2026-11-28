@@ -269,7 +269,7 @@ def _summary_card(exp: dict, role: str) -> dict:
         'shareEnabled': bool(share.get('enabled') and not exp.get('deleted')),
         'shareToken': share.get('token', '') if role in ('owner', 'edit') else '',
         'coverMedia': model.course_cover(exp),
-        'languageCoverage': model.compute_language_coverage(exp),
+        'languageCoverage': model.compute_language_coverage(exp, canonical_source=current_app.config.get('XPED_ACADEMY')),
         'updatedAt': exp.get('updated_at', 0),
         'createdAt': exp.get('created_at', 0),
     }
@@ -514,7 +514,9 @@ def save_expedition(runtime, expedition_id: str):
         next_exp = deepcopy(current)
         next_exp.update(normalized)
         elearning_storage.attach_new_media(unit, current, next_exp)
-        model.mark_translations_for_review(current, next_exp, edited_lang)
+        model.mark_translations_for_review(
+            current, next_exp, edited_lang, canonical_source=current_app.config.get('XPED_ACADEMY'),
+        )
         next_exp['revision'] = int(current.get('revision', 1)) + 1
         next_exp['updated_at'] = now()
         if current_app.config.get('XPED_ACADEMY'):
@@ -956,7 +958,9 @@ def save_translations(runtime, expedition_id: str):
 
     def txn(unit):
         _, current, _, _, _ = access(runtime, expedition_id, 'translate', unit=unit)
-        patched = model.apply_translation_patch(current, target_lang, text_updates, media_updates)
+        patched = model.apply_translation_patch(
+            current, target_lang, text_updates, media_updates, canonical_source=current_app.config.get('XPED_ACADEMY'),
+        )
         elearning_storage.attach_new_media(unit, current, patched)
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
@@ -973,7 +977,8 @@ def export_translations_csv(runtime, expedition_id: str):
     _, exp, _, _, grant_lang = access(runtime, expedition_id, required='translate')
     source_lang = model.normalize_lang(request.args.get('source', exp.get('defaultLanguage', 'nl')))
     target_lang = model.normalize_lang(request.args.get('target', grant_lang or 'de'))
-    rows = model.extract_translation_rows(exp, source_lang=source_lang, target_lang=target_lang)
+    rows = model.extract_translation_rows(exp, source_lang=source_lang, target_lang=target_lang,
+                                          canonical_source=current_app.config.get('XPED_ACADEMY'))
     csv_data = model.translation_rows_to_csv(rows, target_lang=target_lang)
     filename = f"xped-translations-{expedition_id}-{target_lang}.csv"
     return send_file(
@@ -1008,7 +1013,9 @@ def import_translations_csv(runtime, expedition_id: str):
                     for k, v in updates.items() if k in original}
         if not filtered:
             raise model.ElearningError('No matching translation keys found in this CSV.', 400)
-        patched = model.apply_translation_patch(current, target_lang, filtered)
+        patched = model.apply_translation_patch(
+            current, target_lang, filtered, canonical_source=current_app.config.get('XPED_ACADEMY'),
+        )
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
         if current_app.config.get('XPED_ACADEMY'):
@@ -1155,7 +1162,7 @@ def _public_course(exp):
         return public
 
     # Hidden stations do not disqualify a translation of what participants actually see.
-    coverage = model.compute_language_coverage(public)
+    coverage = model.compute_language_coverage(public, canonical_source=True)
     available = [lang for lang in ('nl', 'de') if lang in coverage and coverage[lang]['total']
                  and coverage[lang]['translated'] == coverage[lang]['total'] and not coverage[lang]['needsReview']]
     if not available:

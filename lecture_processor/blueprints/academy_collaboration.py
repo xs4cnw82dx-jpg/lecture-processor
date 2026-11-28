@@ -25,7 +25,7 @@ def workspace(expedition_id):
     _, course, role, _, target = studio.access(runtime, expedition_id, required='translate')
     user = studio.identity(runtime)
     language = target or ('nl' if course.get('defaultLanguage') == 'de' else 'de')
-    rows = model.extract_translation_rows(course, course.get('defaultLanguage', 'nl'), language)
+    rows = model.extract_translation_rows(course, course.get('defaultLanguage', 'nl'), language, canonical_source=True)
     stations = []
     for station in course.get('modules') or []:
         steps = station.get('steps') or []
@@ -38,7 +38,7 @@ def workspace(expedition_id):
     translations = [{'key': row['key'], 'source': row['source'] or row['nl'], 'target': row['target'],
                      'status': row['status']} for row in rows]
     return jsonify(
-        course=overview, coverage=model.compute_language_coverage(course), cover=model.course_cover(course),
+        course=overview, coverage=model.compute_language_coverage(course, canonical_source=True), cover=model.course_cover(course),
         target=language, translations=translations,
         canCreate=bool(user and studio._can_author(runtime, user)),
         studioAdmin=bool(user and studio._is_studio_admin(runtime, user)),

@@ -22,6 +22,17 @@ def test_structural_saves_preserve_persisted_translation_review_decisions():
     assert stale['startPage']['title']['_review'] == {'en': True}
 
 
+def test_lecture_processor_keeps_bidirectional_review_for_nondefault_language_edits():
+    course = model.build_default_expedition('Bron', 'nl')
+    modified = deepcopy(course)
+    modified['startPage']['title']['de'] = 'Übersetzung'
+    model.mark_translations_for_review(course, modified, 'de')
+    assert modified['startPage']['title']['_review'] == {'nl': True}
+    assert model.compute_language_coverage(modified)['nl']['needsReview'] == 1
+    row = next(row for row in model.extract_translation_rows(modified, 'de', 'nl') if row['key'] == 'startPage.title')
+    assert row['status'] == 'needs_review'
+
+
 def test_translation_rejects_text_that_a_later_structural_save_would_shorten():
     exp = model.build_default_expedition()
     with pytest.raises(model.ElearningError, match='300'):
