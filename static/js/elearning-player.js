@@ -68,6 +68,12 @@
           (location.protocol === 'https:' ? '; Secure' : '');
       }
       saveLocalProgress();
+      if (window.Xped?.i18n && val !== window.Xped.i18n.language) {
+        const destination = new URL(location.href);
+        destination.searchParams.set('lang', val);
+        location.replace(destination);
+        return;
+      }
       updateLangDropdown();
       render();
     },
