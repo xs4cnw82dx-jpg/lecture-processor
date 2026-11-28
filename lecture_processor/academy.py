@@ -20,6 +20,7 @@ from lecture_processor.blueprints.academy_folders import academy_folders_bp
 from lecture_processor.blueprints.academy_language import academy_language_bp
 from lecture_processor.blueprints.academy_pages import academy_pages
 from lecture_processor.blueprints.academy_overview import overview_bp
+from lecture_processor.blueprints.academy_reports import academy_reports
 from lecture_processor.blueprints.elearning import elearning_bp
 from lecture_processor.domains.elearning.model import ElearningError
 from lecture_processor.repositories import users_repo
@@ -180,6 +181,7 @@ def create_app():
     app.register_blueprint(academy_account_bp)
     app.register_blueprint(academy_language_bp)
     app.register_blueprint(academy_pages)
+    app.register_blueprint(academy_reports)
     static_root = Path(app.static_folder)
     public_assets = {
         file.relative_to(static_root).as_posix()

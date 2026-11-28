@@ -732,6 +732,32 @@
     });
   }
 
+  var outlineSwitch = document.getElementById('academy-outline-toggle');
+  var outlineResults;
+  function wireOutlineResults() {
+    if (!outlineSwitch || grantToken || !['owner','edit'].includes(state.role)) return;
+    outlineSwitch.hidden = false;
+    var input = outlineSwitch.querySelector('input');
+    var preference = 'xped-outline-results:' + activeUser.uid;
+    try { input.checked = localStorage.getItem(preference) === '1'; } catch (_) { /* Keep the in-page switch available. */ }
+    var status = document.getElementById('academy-outline-status');
+    var de = document.documentElement.lang === 'de';
+    async function update() {
+      status.textContent = '';
+      if (input.checked && !outlineResults) {
+        try { outlineResults = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/outline-results'); }
+        catch (_) { status.textContent = de ? 'Ergebnisse konnten nicht geladen werden.' : 'De resultaten konden niet worden geladen.'; }
+      }
+      if (input.checked && outlineResults && !outlineResults.totalSessions) status.textContent = de ? 'Noch keine geteilten Sitzungen.' : 'Nog geen gedeelde sessies.';
+      if (!leavingAccount) renderOutline();
+    }
+    input.onchange = function () {
+      try { localStorage.setItem(preference, input.checked ? '1' : '0'); } catch (_) { /* In-page choice remains active. */ }
+      update();
+    };
+    if (input.checked) update();
+  }
+
   /* ---- Left Rail with Real Drag-and-Drop ---- */
   function renderOutline(focusSelector) {
     var startBtn = document.getElementById('el-nav-start-page');
@@ -963,6 +989,17 @@
         titleSpan.className = 'el-outline-item-text';
         titleSpan.setAttribute('translate', 'no');
         titleSpan.textContent = (sIdx + 1) + '. ' + cleanStepTitle;
+        if (outlineSwitch && outlineSwitch.querySelector('input').checked && outlineResults?.totalSessions) {
+          var metric = outlineResults.steps[step.id];
+          if (metric) {
+            var caption = document.createElement('small');
+            caption.className = 'academy-builder-metric';
+            var amount = metric.time ? Math.floor(metric.time.median/60) + ':' + String(metric.time.median%60).padStart(2,'0') + ' · ' : '';
+            var percent = new Intl.NumberFormat(document.documentElement.lang, {style:'percent'}).format(metric.reached/outlineResults.totalSessions);
+            caption.textContent = amount + percent + (document.documentElement.lang === 'de' ? ' erreicht' : ' bereikt');
+            titleSpan.appendChild(caption);
+          }
+        }
         sbtn.appendChild(titleSpan);
 
         if (canEditStructure() && (mod.steps || []).length > 1) {
@@ -5205,6 +5242,7 @@
           retBar.hidden = false;
         }
       }
+      wireOutlineResults();
       restoreEditingPosition();
       if (deepStepId) {
         var matchedMod = (state.exp.modules || []).find(function (m) {

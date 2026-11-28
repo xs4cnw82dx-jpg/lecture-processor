@@ -38,6 +38,7 @@ export const minifiedTargets = [
   { entry: 'static/js/elearning-dashboard.js', out: 'static/js/elearning-dashboard.min.js' },
   { entry: 'static/js/elearning-builder.js', out: 'static/js/elearning-builder.min.js' },
   { entry: 'static/js/elearning-player.js', out: 'static/js/elearning-player.min.js' },
+  { entry: 'static/js/academy-report.js', out: 'static/js/academy-report.min.js' },
   { entry: 'static/js/elearning-responses.js', out: 'static/js/elearning-responses.min.js' },
 ];
 
@@ -79,6 +80,8 @@ export const intentionallyUnminifiedScripts = [
   'static/js/academy-shell.js',
   'static/js/academy-signin.js',
   'static/js/display-format-utils.js',
+  'static/js/elearning-step-timer.js',
+  'static/js/academy-report-details.js',
   'static/js/credit-utils.js',
   'static/js/download-utils.js',
   'static/js/features.js',

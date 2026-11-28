@@ -44,7 +44,7 @@
       next.disabled = true;
     }
     var details = [];
-    var description = Model.ui(lang, 'authorAccess');
+    var description = Model.ui(lang, options.activeTimeDisclosure ? 'authorAccessWithTime' : 'authorAccess');
     if (options.showPeerResults) {
       var shared = modules.flatMap(function (module) {
         return module.steps.flatMap(function (step) { return step.blocks; });

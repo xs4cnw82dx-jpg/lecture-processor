@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-builder-authoring.css') }}">
+  {% if academy_mode %}<link rel="stylesheet" href="{{ url_for('static', filename='css/academy-report.css') }}">{% endif %}
   {% include '_academy_foundation.html' %}
 {% endblock %}
 {% block body %}
@@ -95,6 +96,12 @@
         <span>{{ tr("Stations") }}</span>
         <button type="button" class="el-btn el-btn-sm" id="el-add-module-btn">{{ tr("Add station") }}</button>
       </div>
+      {% if academy_mode %}
+      <label class="academy-outline-toggle" id="academy-outline-toggle" hidden>
+        <input type="checkbox"> {{ 'Ergebnisse in der Übersicht' if academy_locale == 'de' else 'Resultaten in het overzicht' }}
+      </label>
+      <small id="academy-outline-status" role="status"></small>
+      {% endif %}
       <div id="el-outline-modules"></div>
     </aside>
 

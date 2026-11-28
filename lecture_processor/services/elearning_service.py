@@ -21,7 +21,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from lecture_processor.domains.account import lifecycle
 from lecture_processor.domains.books.model import BookError
-from lecture_processor.domains.elearning import model
+from lecture_processor.domains.elearning import model, reporting
 from lecture_processor.domains.shared import sanitize_csv_cell, sanitize_csv_row
 from lecture_processor.repositories.elearning_repo import ElearningStore
 from lecture_processor.services import access_service, book_storage, elearning_storage
@@ -515,6 +515,8 @@ def save_expedition(runtime, expedition_id: str):
         model.mark_translations_for_review(current, next_exp, edited_lang)
         next_exp['revision'] = int(current.get('revision', 1)) + 1
         next_exp['updated_at'] = now()
+        if current_app.config.get('XPED_ACADEMY'):
+            reporting.record_public_revision(next_exp, next_exp['updated_at'])
         unit.put(_exp_path(expedition_id), next_exp)
         return next_exp
 
@@ -759,7 +761,10 @@ def sharing(runtime, expedition_id: str, *, admin=False):
                 if old_token:
                     unit.delete('elearning_share_index/' + old_token)
                 unit.put('elearning_share_index/' + new_token, {'expedition_id': expedition_id, 'updated_at': now()})
+            first_publication = share.get('enabled') and not (exp.get('share') or {}).get('enabled')
             exp['share'] = share
+            if current_app.config.get('XPED_ACADEMY') and first_publication:
+                reporting.record_public_revision(exp, now())
             exp['updated_at'] = now()
             unit.put(_exp_path(expedition_id), exp)
             return jsonify(share=share)
@@ -929,6 +934,8 @@ def save_translations(runtime, expedition_id: str):
         elearning_storage.attach_new_media(unit, current, patched)
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
+        if current_app.config.get('XPED_ACADEMY'):
+            reporting.record_public_revision(patched, patched['updated_at'])
         unit.put(_exp_path(expedition_id), patched)
         return patched
 
@@ -977,6 +984,8 @@ def import_translations_csv(runtime, expedition_id: str):
         patched = model.apply_translation_patch(current, target_lang, filtered)
         patched['revision'] = int(current.get('revision', 1)) + 1
         patched['updated_at'] = now()
+        if current_app.config.get('XPED_ACADEMY'):
+            reporting.record_public_revision(patched, patched['updated_at'])
         unit.put(_exp_path(expedition_id), patched)
         return patched, len(filtered)
 
@@ -1246,6 +1255,15 @@ def public_submit_response(runtime, share_token: str):
                 else:
                     peer_answers.pop(bid, None)
                 answers[bid] = answer
+        timing = {}
+        if current_app.config.get('XPED_ACADEMY'):
+            # Consent belongs to one session. Older response records cannot start measuring
+            # without a fresh session after the learner sees and accepts the disclosure.
+            existing_disclosure = old.get('activeTimeDisclosure') == 1
+            explicit_disclosure = type(body.get('activeTimeDisclosure')) is int and body['activeTimeDisclosure'] == 1
+            if existing_disclosure or (not old and explicit_disclosure):
+                timing['activeTimeDisclosure'] = 1
+                timing['stepSeconds'] = reporting.merge_seconds(old.get('stepSeconds'), body.get('stepSeconds') if explicit_disclosure else None, steps)
         visited = list(old.get('visitedStepIds') or [])
         if isinstance(body.get('visitedStepIds'), list):
             visited.extend(s for s in body['visitedStepIds'] if isinstance(s, str) and s in steps)
@@ -1272,7 +1290,8 @@ def public_submit_response(runtime, share_token: str):
         tx.put(path, {'id': doc_id, 'expedition_id': exp['id'], 'session_id': session_id,
                       'cohort': cohort, 'language': lang, 'answers': answers, 'peerAnswers': peer_answers,
                       'consentVersion': options['collectionVersion'], 'consented_at': old.get('consented_at', ts),
-                      'visitedStepIds': list(dict.fromkeys(visited)), 'completed': bool(body.get('completed') or old.get('completed')),
+                      'visitedStepIds': list(dict.fromkeys(visited)), **timing,
+                      'completed': bool(body.get('completed') or old.get('completed')),
                       'pilotFeedback': feedback, 'stepComments': comments, 'started_at': old.get('started_at', ts), 'updated_at': ts})
 
     _store(runtime).atomic(save)
@@ -1387,6 +1406,10 @@ def get_responses(runtime, expedition_id: str):
         and (not lang_filter or r.get('language') == lang_filter)
     ]
 
+    academy = current_app.config.get('XPED_ACADEMY')
+    if academy:
+        rows = reporting.filter_responses(all_rows, request.args, now())
+
     completed_count = sum(1 for r in rows if r.get('completed'))
     durations = [
         max(0, float(r.get('updated_at', 0)) - float(r.get('started_at', 0)))
@@ -1447,6 +1470,12 @@ def get_responses(runtime, expedition_id: str):
                     'language': r.get('language', 'nl'),
                 })
 
+    summary_metrics, extra = {}, {}
+    if academy:
+        stamp = now()
+        summary_metrics, stations = reporting.course_metrics(exp, rows, funnel, block_stats)
+        extra = {'stations': stations, 'weekly': reporting.weekly_activity(
+            rows, exp.get('publicRevisionWeeks', []), stamp, reporting.period_start(request.args, stamp))}
     return jsonify(
         expedition={'id': exp['id'], 'title': exp.get('title', ''), 'defaultLanguage': exp.get('defaultLanguage', 'nl'), 'modules': exp.get('modules', [])},
         summary={
@@ -1456,20 +1485,27 @@ def get_responses(runtime, expedition_id: str):
             'medianSeconds': median_sec,
             'avgClarity': round(sum(clarity_scores) / len(clarity_scores), 2) if clarity_scores else None,
             'avgEngagement': round(sum(engagement_scores) / len(engagement_scores), 2) if engagement_scores else None,
+            **summary_metrics,
         },
         cohorts=cohorts,
         funnel=funnel,
         blockStats=block_stats,
         pilotFeedback=feedback,
         stepComments=step_comments,
+        **extra,
     )
 
 
-def export_responses_csv(runtime, expedition_id: str):
+def export_responses_csv(runtime, expedition_id: str, extension='csv'):
     db, exp, _, _, _ = access(runtime, expedition_id, required='edit')
     cohort_filter = str(request.args.get('cohort') or '').strip()
     lang_filter = str(request.args.get('language') or '').strip().lower()
     all_rows = db.list('elearning_responses', 'expedition_id', expedition_id, limit=None)
+    if current_app.config.get('XPED_ACADEMY'):
+        stamp = now()
+        scoped = reporting.filter_responses(all_rows, request.args, stamp)
+        buf, media, filename = reporting.export_file(exp, scoped, extension, stamp)
+        return send_file(buf, mimetype=media, as_attachment=True, download_name=filename)
     rows = [
         r for r in all_rows
         if (not cohort_filter or r.get('cohort') == cohort_filter)
@@ -1517,3 +1553,19 @@ def export_responses_csv(runtime, expedition_id: str):
         as_attachment=True,
         download_name=f'xped-responses-{expedition_id}{scope_suffix}.csv',
     )
+
+
+def outline_results(runtime, expedition_id):
+    store, course, _, _, _ = access(runtime, expedition_id, required='edit')
+    ids = [step['id'] for module in course.get('modules', []) for step in module.get('steps', [])]
+    rows = store.list('elearning_responses', 'expedition_id', expedition_id, limit=None,
+                      fields=('visitedStepIds', 'activeTimeDisclosure', 'stepSeconds'))
+    visits = Counter()
+    samples = {sid: [] for sid in ids}
+    for row in rows:
+        visits.update(set(row.get('visitedStepIds') or []))
+        for sid, seconds in reporting.measured_seconds(row).items():
+            if sid in samples:
+                samples[sid].append(seconds)
+    return jsonify(totalSessions=len(rows), steps={sid: {'reached': visits[sid], 'time': reporting.quartiles(samples[sid])}
+                                                   for sid in ids})
