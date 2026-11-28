@@ -32,6 +32,13 @@
   var label = document.getElementById('el-resp-expedition');
   var retry = document.getElementById('el-resp-retry');
   var exportFilteredBtn = document.getElementById('el-resp-export-csv');
+  var resetButton = document.getElementById('academy-report-reset');
+  var resetDialog = document.getElementById('academy-reset-dialog');
+  var resetConfirm = document.getElementById('academy-reset-confirm');
+  var resetCancel = document.getElementById('academy-reset-cancel');
+  var resetError = document.getElementById('academy-reset-error');
+  var resetOffer;
+  var resetAction;
   var hasLoadedOnce = false;
   var requestId = 0;
   var auth;
@@ -601,10 +608,17 @@
       var qs = filterQuery();
       syncAddress();
       var base = '/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses';
-      var resp = await client.authFetch(base + (qs.size ? '?' + qs : ''));
+      var resp = await client.authFetch(base + (qs.size ? '?' + qs : ''), {cache: 'no-store'});
       var data = await resp.json();
       if (sequence !== requestId) return;
-      if (!resp.ok) throw new Error(data.error || uiText('Could not load responses.'));
+      if (!resp.ok) {
+        if ([401, 403, 404].includes(resp.status)) {
+          clearReport();
+          updateReset(null);
+        }
+        throw new Error(data.error || uiText('Could not load responses.'));
+      }
+      updateReset(data.statisticsReset, data.expedition.title);
       var courseLang = data.expedition.defaultLanguage || 'nl';
       var reportLang = langSelect.value || i18n.language;
       label.textContent = data.expedition.title || '';
@@ -909,6 +923,93 @@
     }
   }
 
+  function updateReset(offer, title) {
+    resetOffer = offer && (offer.pending || offer.totalSessions > 0) ? { ...offer, title } : null;
+    resetButton.hidden = !resetOffer;
+    resetButton.textContent = resetOffer?.pending ? uiText('report.resetResume') : uiText('report.resetAction');
+  }
+
+  resetButton.addEventListener('click', function () {
+    if (!resetOffer) return;
+    resetAction = { body: JSON.stringify({version: resetOffer.version, confirmTitle: resetOffer.title}), attempted: false };
+    document.getElementById('academy-reset-title').textContent = resetOffer.pending ? uiText('report.resetResumeTitle') : uiText('report.resetTitle');
+    document.getElementById('academy-reset-course').textContent = resetOffer.title;
+    const count = document.getElementById('academy-reset-count');
+    count.hidden = resetOffer.pending;
+    count.textContent = uiText('report.resetCount', {count: resetOffer.totalSessions});
+    document.getElementById('academy-reset-description').textContent = resetOffer.pending ? uiText('report.resetResumeDescription') : uiText('report.resetDescription');
+    resetConfirm.textContent = resetOffer.pending ? uiText('report.resetResume') : uiText('report.resetConfirm');
+    resetError.hidden = true;
+    resetDialog.showModal();
+  });
+
+  function setResetBusy(busy) {
+    resetCancel.disabled = busy;
+    window.XpedAcademyControls.busy(resetConfirm, busy);
+  }
+
+  function closeReset() {
+    resetAction = null;
+    if (resetDialog.open) resetDialog.close();
+    setResetBusy(false);
+  }
+
+  function cancelReset() {
+    if (resetConfirm.disabled) return;
+    const refresh = resetAction?.attempted;
+    closeReset();
+    if (refresh) loadResponses();
+  }
+  resetCancel.addEventListener('click', cancelReset);
+  resetDialog.addEventListener('cancel', function (event) { event.preventDefault(); cancelReset(); });
+  resetDialog.querySelector('form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    const action = resetAction;
+    if (!action || resetConfirm.disabled) return;
+    const session = client.captureSession();
+    setResetBusy(true);
+    resetError.hidden = true;
+    action.attempted = true;
+    ++requestId;
+    clearReport();
+    status.textContent = uiText('report.resetWorking');
+    try {
+      let pending;
+      do {
+        const response = await client.authFetch('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/responses/reset', {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: action.body,
+        });
+        if (action !== resetAction) return;
+        if ([401, 403, 404, 409].includes(response.status)) {
+          closeReset();
+          updateReset(null);
+          await loadResponses();
+          if (session.isCurrent() && response.status === 409) platformUx.toast(uiText('report.resetChanged'), {type: 'warning'});
+          return;
+        }
+        if (!response.ok) throw new Error();
+        const result = await response.json();
+        if (action !== resetAction) return;
+        if (result.reset !== true || typeof result.pending !== 'boolean') throw new Error();
+        pending = result.pending;
+      } while (pending);
+      closeReset();
+      updateReset(null);
+      // Cohort names come from the deleted responses themselves.
+      activeGroups.clear();
+      document.getElementById('el-resp-title').focus();
+      platformUx.toast(uiText('report.resetDone'), {type: 'success'});
+      await loadResponses();
+    } catch (error) {
+      if (action !== resetAction || !session.isCurrent()) return;
+      resetError.textContent = uiText('report.resetFailed');
+      resetError.hidden = false;
+      resetConfirm.textContent = uiText('Try again');
+      setResetBusy(false);
+      resetConfirm.focus();
+    }
+  });
+
   async function downloadCsv(filtered, extension = 'csv') {
     try {
       var qs = filtered ? filterQuery() : new URLSearchParams();
@@ -925,24 +1026,30 @@
   if (exportFilteredBtn) exportFilteredBtn.addEventListener('click', function () { downloadCsv(true); });
   document.getElementById('el-resp-export-xlsx').addEventListener('click', function () { downloadCsv(true, 'xlsx'); });
 
-  function accountChanged(user) {
-    ++requestId;
+  function clearReport() {
     hasLoadedOnce = false;
     report.setAttribute('aria-busy', 'false');
     report.hidden = true;
     report.classList.remove('el-resp-updating');
-    actions.hidden = !user;
-    retry.hidden = true;
-    document.getElementById('el-signin').hidden = !!user;
-    label.textContent = '';
-    document.title = pageTitle;
-    document.dispatchEvent(new CustomEvent('academy:course-title',{detail:''}));
     lastAnalytics = null;
     window.Xped.reportDetails.reset();
     [kpisEl, funnelEl, blocksEl, feedbackEl, timeEl, trendEl, orderEl, document.getElementById('el-resp-comments')].forEach(function (el) { el.replaceChildren(); });
     timeEl.hidden = trendEl.hidden = orderEl.hidden = true;
     groupField.querySelectorAll('label,p').forEach(function (item) { item.remove(); });
     chips.hidden = true;
+  }
+
+  function accountChanged(user) {
+    ++requestId;
+    clearReport();
+    closeReset();
+    updateReset(null);
+    actions.hidden = !user;
+    retry.hidden = true;
+    document.getElementById('el-signin').hidden = !!user;
+    label.textContent = '';
+    document.title = pageTitle;
+    document.dispatchEvent(new CustomEvent('academy:course-title',{detail:''}));
     if (user) loadResponses();
     else status.textContent = uiText('Sign in to view responses.');
   }

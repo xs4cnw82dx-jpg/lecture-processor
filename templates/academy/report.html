@@ -11,7 +11,7 @@
       <a id="academy-report-editor" href="{{ url_for('academy.builder', expedition_id=expedition_id, **{'from': 'responses'}) }}" class="el-back-link">{{ tr("← Back to Builder") }}</a>
       <header class="el-dash-header">
         <div>
-          <h1 id="el-resp-title" class="page-title">{{ tr("Pilot responses") }}</h1>
+          <h1 id="el-resp-title" class="page-title" tabindex="-1">{{ tr("Pilot responses") }}</h1>
           <p class="page-lead" id="el-resp-expedition" translate="no"></p>
         </div>
         <div class="el-dash-actions" id="el-response-actions" hidden>
@@ -41,7 +41,7 @@
             <button type="button" class="btn" id="el-resp-export-csv">{{ tr('report.downloadCSV') }}</button>
             <button type="button" class="btn" id="el-resp-export-xlsx">{{ tr('report.downloadExcel') }}</button>
           </details>
-
+          <button class="btn small" type="button" id="academy-report-reset" aria-haspopup="dialog" aria-controls="academy-reset-dialog" hidden>{{ tr('report.resetAction') }}</button>
         </div>
       </header>
 
@@ -74,6 +74,20 @@
   {% include 'academy/runtime.html' %}
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+
+  <dialog class="el-dialog" id="academy-reset-dialog" aria-labelledby="academy-reset-title" aria-describedby="academy-reset-course academy-reset-count academy-reset-description">
+    <div class="el-dialog-header"><h2 id="academy-reset-title"></h2></div>
+    <form class="el-dialog-body">
+      <p><strong id="academy-reset-course" translate="no" data-user-content></strong></p>
+      <p id="academy-reset-count"></p>
+      <p id="academy-reset-description"></p>
+      <p class="field-error" id="academy-reset-error" role="alert" hidden></p>
+      <div class="el-dash-actions">
+        <button type="button" class="btn" id="academy-reset-cancel" autofocus>{{ tr('Cancel') }}</button>
+        <button type="submit" class="btn danger" id="academy-reset-confirm"></button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog class="academy-step-details" id="academy-step-details" aria-labelledby="academy-step-title">
     <header><span data-detail-parent></span><form method="dialog"><button class="btn" value="close">{{ tr('report.close') }}</button></form></header>

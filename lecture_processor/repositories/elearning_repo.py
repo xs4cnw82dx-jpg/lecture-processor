@@ -100,20 +100,30 @@ class ElearningStore:
     def list(self, collection: str, field=None, value=None, operator: str = '==', limit: int | None = 200, fields=None):
         return list(self.stream(collection, field, value, operator, limit, fields))
 
-    def dashboard_sessions(self, expedition_id, start, end, fields):
+    def dashboard_sessions(self, expedition_id, start, end, fields, *, generation=None):
+        # Use the same course/date composite index across resets. Older generations
+        # coexist only while a reset is clearing its bounded batches.
         query = apply_where(self.db.collection('elearning_responses'), 'expedition_id', '==', expedition_id)
+        if generation:
+            fields = [*fields, 'statisticsScope']
+
+        def current(row):
+            return not generation or row.get('statisticsScope') == generation
+
         period = apply_where(apply_where(query, 'started_at', '>=', start), 'started_at', '<', end)
         count = 0
         try:
             for doc in period.select(fields).stream():
                 count += 1
-                yield decode(doc.to_dict())
+                row = decode(doc.to_dict())
+                if current(row):
+                    yield row
         except FailedPrecondition as exc:
             if count or 'index' not in str(exc).lower():
                 raise
             # Serve new projects through the existing single-course index while the period index builds.
             rows = self.stream('elearning_responses', 'expedition_id', expedition_id, limit=None, fields=fields)
-            yield from (row for row in rows if start <= (row.get('started_at') or 0) < end)
+            yield from (row for row in rows if start <= (row.get('started_at') or 0) < end and current(row))
         finally:
             record('reads', max(1, count))
 
@@ -130,6 +140,17 @@ class ElearningStore:
                 record('reads')
                 snap = self.ref(path).get(transaction=transaction, field_paths=fields)
                 return decode(snap.to_dict()) if snap.exists else None
+
+            def response_page(_, scope, after, limit):
+                field, value = scope
+                collection = self.db.collection('elearning_responses')
+                query = apply_where(collection, field, '==', value).order_by('__name__')
+                if after:
+                    query = query.start_after({'__name__': collection.document(after)})
+                docs = query.select(['statisticsScope', 'expedition_id']).limit(limit).stream(transaction=transaction)
+                page = [dict(doc.to_dict(), _id=doc.id) for doc in docs]
+                record('reads', max(1, len(page)))
+                return page
 
             def put(_, path: str, value: dict) -> None:
                 record('writes')

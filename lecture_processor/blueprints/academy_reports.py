@@ -18,6 +18,11 @@ def response_workbook(expedition_id):
     return elearning_service.export_responses_csv(get_runtime(), expedition_id, 'xlsx')
 
 
+@academy_reports.post('/<expedition_id>/responses/reset')
+def reset_statistics(expedition_id):
+    return elearning_service.reset_statistics(get_runtime(), expedition_id)
+
+
 @academy_reports.get('/<expedition_id>/outline-results')
 def outline_results(expedition_id):
     return elearning_service.outline_results(get_runtime(), expedition_id)
