@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
-from flask import Blueprint, abort, current_app, g, jsonify, render_template, request
+from flask import Blueprint, current_app, g, jsonify, render_template, request
 from google.api_core.exceptions import GoogleAPICallError
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -192,22 +192,6 @@ def public_player_page(share_token: str):
 
 
 # --- Studio REST API ---
-
-@elearning_bp.get('/api/academy/navigation')
-def academy_navigation():
-    if not current_app.config.get('XPED_ACADEMY'):
-        abort(404)
-    from lecture_processor.services.academy_overview import navigation
-    return jsonify(navigation(get_runtime()))
-
-
-@elearning_bp.get('/api/academy/overview')
-def academy_overview():
-    if not current_app.config.get('XPED_ACADEMY'):
-        abort(404)
-    from lecture_processor.services.academy_overview import dashboard
-    return jsonify(dashboard(get_runtime(), request.args))
-
 
 @elearning_bp.route('/api/elearning/expeditions', methods=['GET', 'POST'])
 def api_expeditions():
