@@ -80,7 +80,7 @@
     nl: {
       notCompleted: 'Niet voltooid', medianActive: 'Mediane actieve tijd', middleHalf: 'Middelste helft',
       timedSessions: 'Sessies met gemeten tijd', timeTitle: 'Tijdsbesteding', estimated: 'geschat {n} min',
-      longer: 'langer dan geschat', sessionsShort: 'n {n}', hourShort: 'u',
+      sessionsShort: 'n {n}', hourShort: 'u',
       noTime: 'Nog geen gemeten tijd. Tijd wordt alleen gemeten bij deelnemers die hebben gekozen om te delen.',
       timeNote: 'n = {n} sessies met gemeten tijd. Actieve tijd telt alleen als de pagina open is en de deelnemer bezig is, maximaal 15 minuten per bezoek. Open een station voor de tijd per stap.',
       dropTitle: 'Uitval ten opzichte van de vorige stap',
@@ -91,11 +91,23 @@
       period: 'Periode', allTime: 'Alle tijd', lastDays: 'Laatste {n} dagen',
       order: 'Volgorde van de vragen', courseOrder: 'Cursusvolgorde', hardestFirst: 'Minst vaak goed eerst',
       correctShare: '{pct} goed beantwoord',
+      clarity: 'Duidelijkheid', engagement: 'Betrokkenheid', outOfFive: '{value} / 5', aboutMetric: 'Uitleg bij {name}',
+      defCompleted: 'Gedeelde sessies die het einde van de expeditie bereikten, gedeeld door alle gedeelde sessies binnen je filters.',
+      defNotCompleted: 'Gedeelde sessies binnen je filters die het einde nog niet bereikten.',
+      defTesters: 'Gedeelde sessies binnen je filters. Privésessies tellen nergens mee.',
+      defMedianActive: 'De middelste actieve tijd per sessie, alleen voor sessies met gemeten tijd. Actieve tijd telt als de pagina open is en de deelnemer bezig is, maximaal 15 minuten per bezoek.',
+      defMiddleHalf: 'De helft van de sessies met gemeten tijd ligt tussen deze twee waarden (25e tot 75e percentiel).',
+      defTimed: 'Gedeelde sessies waarvan we actieve tijd hebben gemeten. Dat gebeurt alleen na toestemming voor de tijdregistratie.',
+      defClarity: 'Gemiddelde duidelijkheidsscore uit de pilotfeedback, op een schaal van 1 (onduidelijk) tot 5 (heel duidelijk).',
+      defEngagement: 'Gemiddelde betrokkenheidsscore uit de pilotfeedback, op een schaal van 1 (weinig) tot 5 (heel betrokken).',
+      stepSummary: 'Bereikt {reached} · verder gegaan {continued} · mediane actieve tijd {time}', noTimeShort: 'niet gemeten',
+      longerBy: '+{amount} langer dan geschat', shorterBy: '−{amount} korter dan geschat',
+      estimateRule: 'Getoond als de mediaan meer dan de helft afwijkt van de richttijd en er minstens {n} sessies met gemeten tijd zijn.',
     },
     de: {
       notCompleted: 'Nicht abgeschlossen', medianActive: 'Mediane aktive Zeit', middleHalf: 'Mittlere Hälfte',
       timedSessions: 'Sitzungen mit gemessener Zeit', timeTitle: 'Zeitaufwand', estimated: 'geschätzt {n} Min.',
-      longer: 'länger als geschätzt', sessionsShort: 'n {n}', hourShort: 'Std.',
+      sessionsShort: 'n {n}', hourShort: 'Std.',
       noTime: 'Noch keine gemessene Zeit. Zeit wird nur bei Teilnehmenden gemessen, die dem Teilen zugestimmt haben.',
       timeNote: 'n = {n} Sitzungen mit gemessener Zeit. Aktive Zeit zählt nur, solange die Seite geöffnet ist und die Person aktiv ist, höchstens 15 Minuten pro Besuch. Öffnen Sie eine Station für die Zeit pro Schritt.',
       dropTitle: 'Abbruch gegenüber dem vorherigen Schritt',
@@ -106,11 +118,23 @@
       period: 'Zeitraum', allTime: 'Gesamter Zeitraum', lastDays: 'Letzte {n} Tage',
       order: 'Reihenfolge der Fragen', courseOrder: 'Kursreihenfolge', hardestFirst: 'Am seltensten richtig zuerst',
       correctShare: '{pct} richtig beantwortet',
+      clarity: 'Verständlichkeit', engagement: 'Beteiligung', outOfFive: '{value} / 5', aboutMetric: 'Erklärung zu {name}',
+      defCompleted: 'Geteilte Sitzungen, die das Ende der Expedition erreicht haben, geteilt durch alle geteilten Sitzungen in Ihren Filtern.',
+      defNotCompleted: 'Geteilte Sitzungen in Ihren Filtern, die das Ende noch nicht erreicht haben.',
+      defTesters: 'Geteilte Sitzungen in Ihren Filtern. Private Sitzungen zählen nirgends mit.',
+      defMedianActive: 'Die mittlere aktive Zeit pro Sitzung, nur für Sitzungen mit gemessener Zeit. Aktive Zeit zählt, solange die Seite geöffnet ist und die Person aktiv ist, höchstens 15 Minuten pro Besuch.',
+      defMiddleHalf: 'Die Hälfte der Sitzungen mit gemessener Zeit liegt zwischen diesen beiden Werten (25. bis 75. Perzentil).',
+      defTimed: 'Geteilte Sitzungen, deren aktive Zeit gemessen wurde. Das geschieht nur nach Zustimmung zur Zeiterfassung.',
+      defClarity: 'Durchschnittliche Verständlichkeit aus dem Pilot-Feedback auf einer Skala von 1 (unklar) bis 5 (sehr klar).',
+      defEngagement: 'Durchschnittliche Beteiligung aus dem Pilot-Feedback auf einer Skala von 1 (gering) bis 5 (sehr hoch).',
+      stepSummary: 'Erreicht {reached} · weitergegangen {continued} · mediane aktive Zeit {time}', noTimeShort: 'nicht gemessen',
+      longerBy: '+{amount} länger als geschätzt', shorterBy: '−{amount} kürzer als geschätzt',
+      estimateRule: 'Wird angezeigt, wenn der Median um mehr als die Hälfte von der Richtzeit abweicht und mindestens {n} Sitzungen mit gemessener Zeit vorliegen.',
     },
     en: {
       notCompleted: 'Not completed', medianActive: 'Median active time', middleHalf: 'Middle half',
       timedSessions: 'Sessions with measured time', timeTitle: 'Time spent', estimated: 'estimated {n} min',
-      longer: 'longer than estimated', sessionsShort: 'n {n}', hourShort: 'h',
+      sessionsShort: 'n {n}', hourShort: 'h',
       noTime: 'No measured time yet. Time is only measured for learners who chose to share.',
       timeNote: 'n = {n} sessions with measured time. Active time counts only while the page is open and the learner is using it, up to 15 minutes per visit. Open a station for the time per step.',
       dropTitle: 'Drop-off from the previous step',
@@ -121,6 +145,18 @@
       period: 'Period', allTime: 'All time', lastDays: 'Last {n} days',
       order: 'Question order', courseOrder: 'Course order', hardestFirst: 'Least often correct first',
       correctShare: '{pct} answered correctly',
+      clarity: 'Clarity', engagement: 'Engagement', outOfFive: '{value} / 5', aboutMetric: 'About {name}',
+      defCompleted: 'Shared sessions that reached the end of the expedition, divided by all shared sessions within your filters.',
+      defNotCompleted: 'Shared sessions within your filters that have not reached the end yet.',
+      defTesters: 'Shared sessions within your filters. Private sessions are never counted.',
+      defMedianActive: 'The middle active time per session, only for sessions with measured time. Active time counts while the page is open and the learner is using it, up to 15 minutes per visit.',
+      defMiddleHalf: 'Half of the sessions with measured time fall between these two values (25th to 75th percentile).',
+      defTimed: 'Shared sessions whose active time was measured. This only happens after consent to time measurement.',
+      defClarity: 'Average clarity score from pilot feedback, on a scale from 1 (unclear) to 5 (very clear).',
+      defEngagement: 'Average engagement score from pilot feedback, on a scale from 1 (low) to 5 (very engaged).',
+      stepSummary: 'Reached {reached} · continued {continued} · median active time {time}', noTimeShort: 'not measured',
+      longerBy: '+{amount} longer than estimated', shorterBy: '−{amount} shorter than estimated',
+      estimateRule: 'Shown when the median differs from the estimate by more than half and at least {n} sessions have measured time.',
     },
   };
   function uiLanguage() { return document.documentElement.lang === 'de' ? 'de' : 'nl'; }
@@ -291,17 +327,46 @@
     return note;
   }
 
-  function splitFigure(label, value, good, own) {
+  // A figure with an optional definition: an info button shows it, and the value is described by it.
+  var definitionCount = 0;
+  function splitFigure(label, value, good, own, definition) {
     var item = document.createElement('div');
-    item.className = 'el-split-figure' + (good ? ' is-good' : '');
+    item.className = 'el-split-figure' + (good ? ' is-good' : '') + (definition ? ' has-definition' : '');
     var term = document.createElement('dt');
     term.textContent = label;
     if (own) term.setAttribute('translate', 'no');
     var amount = document.createElement('dd');
+    amount.className = 'academy-metric-value';
     amount.textContent = value;
     item.append(term, amount);
+    if (definition) {
+      var text = document.createElement('dd');
+      text.className = 'academy-metric-definition';
+      text.id = 'academy-metric-definition-' + (++definitionCount);
+      text.setAttribute('translate', 'no');
+      text.hidden = true;
+      text.textContent = definition;
+      var info = document.createElement('button');
+      info.type = 'button';
+      info.className = 'academy-metric-info';
+      info.textContent = 'i';
+      info.setAttribute('translate', 'no');
+      info.setAttribute('aria-label', copy('aboutMetric', { name: label }));
+      info.setAttribute('aria-expanded', 'false');
+      info.setAttribute('aria-controls', text.id);
+      info.addEventListener('click', function () {
+        text.hidden = !text.hidden;
+        info.setAttribute('aria-expanded', String(!text.hidden));
+      });
+      term.append(' ', info);
+      amount.setAttribute('aria-describedby', text.id);
+      item.appendChild(text);
+    }
     return item;
   }
+
+  // A station's time is compared with its estimate only from this many timed sessions.
+  var MIN_ESTIMATE_SAMPLE = 5;
 
   // Time spent: course figures, then one bar per station that opens into its steps.
   function renderTime(data, reportLang, courseLang) {
@@ -319,9 +384,9 @@
     var figures = document.createElement('dl');
     figures.className = 'el-split-stats el-time-figures';
     figures.append(
-      splitFigure(copy('medianActive'), formatDuration(active.median), false, true),
-      splitFigure(copy('middleHalf'), formatDurationRange(active.p25, active.p75), false, true),
-      splitFigure(copy('timedSessions'), String(summary.timedSessions || active.count), false, true)
+      splitFigure(copy('medianActive'), formatDuration(active.median), false, true, copy('defMedianActive')),
+      splitFigure(copy('middleHalf'), formatDurationRange(active.p25, active.p75), false, true, copy('defMiddleHalf')),
+      splitFigure(copy('timedSessions'), String(summary.timedSessions || active.count), false, true, copy('defTimed'))
     );
     var stations = (data.stations || []).filter(function (station) { return station.time; });
     var slowestStation = Math.max.apply(null, stations.map(function (station) { return station.time.median; }).concat(1));
@@ -329,14 +394,16 @@
     list.className = 'el-time-stations';
     stations.forEach(function (station) {
       var estimate = Number(station.estimatedMinutes) || 0;
-      var over = estimate > 0 && station.time.median > estimate * 60 * 1.5;
+      var difference = estimate > 0 ? station.time.median - estimate * 60 : 0;
+      var notable = estimate > 0 && station.time.count >= MIN_ESTIMATE_SAMPLE && Math.abs(difference) > estimate * 60 * 0.5;
       var detail = 'P75 ' + formatDuration(station.time.p75) + (estimate ? ' · ' + copy('estimated', { n: estimate }) : '');
       var row = barRow(Model.getLocalized(station.moduleTitle, reportLang, courseLang), formatDuration(station.time.median),
-        detail, station.time.median, slowestStation, over ? 'is-over' : '');
-      if (over) {
+        detail, station.time.median, slowestStation, notable ? (difference > 0 ? 'is-over' : 'is-under') : '');
+      if (notable) {
         var flag = document.createElement('span');
-        flag.className = 'el-chart-flag';
-        flag.textContent = copy('longer');
+        flag.className = 'el-chart-flag' + (difference < 0 ? ' is-under' : '');
+        flag.textContent = copy(difference > 0 ? 'longerBy' : 'shorterBy', { amount: formatDuration(Math.abs(difference)) });
+        flag.title = copy('estimateRule', { n: MIN_ESTIMATE_SAMPLE });
         row.querySelector('.el-chart-value').append(' ', flag);
       }
       var item = document.createElement('details');
@@ -493,6 +560,29 @@
     }).observe(trendEl);
   }
 
+  // One bar split across all answers: correct in mint, other answers in alternating neutrals.
+  function answerMix(keys, counts, rightKeys, text) {
+    var total = keys.reduce(function (sum, key) { return sum + (counts[key] || 0); }, 0);
+    var mix = document.createElement('div');
+    mix.className = 'academy-answer-mix';
+    var bar = svgNode('svg', { viewBox: '0 0 100 8', preserveAspectRatio: 'none', class: 'academy-answer-bar', 'aria-hidden': 'true', focusable: 'false' });
+    var x = 0;
+    var others = 0;
+    keys.forEach(function (key) {
+      var width = total ? 100 * (counts[key] || 0) / total : 0;
+      if (!width) return;
+      bar.appendChild(svgNode('rect', { x: x, y: 0, width: width, height: 8,
+        class: rightKeys[key] ? 'is-correct' : 'is-other tone-' + (others++ % 2) }));
+      x += width;
+    });
+    var summary = document.createElement('p');
+    summary.className = 'academy-answer-mix-text';
+    summary.setAttribute('translate', 'no');
+    summary.textContent = text;
+    mix.append(bar, summary);
+    return mix;
+  }
+
   // Graded questions can be listed with the least often correctly answered first.
   var questionOrder = 'hardest';
   function applyQuestionOrder() {
@@ -551,8 +641,8 @@
     var shares = document.createElement('dl');
     shares.className = 'el-split-figures';
     shares.append(
-      splitFigure(uiText('Completed'), total ? formatPercent(rate) : '—', true),
-      splitFigure(copy('notCompleted'), total ? formatPercent(100 - rate) : '—', false, true)
+      splitFigure(uiText('Completed'), total ? formatPercent(rate) : '—', true, false, copy('defCompleted')),
+      splitFigure(copy('notCompleted'), total ? formatPercent(100 - rate) : '—', false, true, copy('defNotCompleted'))
     );
     var bar = chartBar(total ? rate : 0, 'el-split-bar' + (total ? '' : ' is-empty'));
     var counts = document.createElement('div');
@@ -568,21 +658,16 @@
     // Wall-clock duration is not shown: only measured active time is reported.
     var active = summary.activeSeconds;
     figures.append(
-      splitFigure(uiText('Testers'), String(total)),
-      splitFigure(copy('medianActive'), active ? formatDuration(active.median) : '—', false, true)
+      splitFigure(uiText('Testers'), String(total), false, false, copy('defTesters')),
+      splitFigure(copy('medianActive'), active ? formatDuration(active.median) : '—', false, true, copy('defMedianActive'))
     );
-    if (summary.avgClarity !== null && summary.avgClarity !== undefined || summary.avgEngagement !== null && summary.avgEngagement !== undefined) {
-      figures.append(splitFigure(uiText('Clarity / Engagement'), formatScore(summary.avgClarity) + ' / ' + formatScore(summary.avgEngagement)));
-    }
-    var guide = document.createElement('details');
-    var toggle = document.createElement('summary');
-    toggle.textContent = uiLanguage()==='de' ? 'Was bedeuten die Kennzahlen?' : 'Wat betekenen deze cijfers?';
-    var note = document.createElement('p');
-    note.textContent = uiLanguage()==='de'
-      ? 'Abschlussquote: abgeschlossene geteilte Sitzungen geteilt durch alle geteilten Sitzungen im Filter. Dauer: Zeit zwischen erster und letzter Übermittlung, einschließlich Pausen. Bewertungen reichen von 1 bis 5. Aktive Zeit wird nur nach Zustimmung zum Zeithinweis gemessen.'
-      : 'Voltooiingsgraad: afgeronde gedeelde sessies gedeeld door alle gedeelde sessies binnen het filter. Duur: tijd tussen de eerste en laatste inzending, inclusief pauzes. Beoordelingen lopen van 1 tot 5. Actieve tijd meten we alleen na toestemming voor de tijdregistratie.';
-    guide.append(toggle,note);
-    kpisEl.replaceChildren(title, shares, bar, counts, figures, guide);
+    // Each pilot rating is its own 1–5 figure; definitions sit with the figure they explain.
+    [['avgClarity', 'clarity', 'defClarity'], ['avgEngagement', 'engagement', 'defEngagement']].forEach(function (rating) {
+      var value = summary[rating[0]];
+      if (value === null || value === undefined) return;
+      figures.append(splitFigure(copy(rating[1]), copy('outOfFive', { value: formatScore(value) }), false, true, copy(rating[2])));
+    });
+    kpisEl.replaceChildren(title, shares, bar, counts, figures);
   }
 
   async function loadResponses() {
@@ -658,7 +743,24 @@
         stepLink.className = 'academy-report-step';
         stepLink.textContent = Model.getLocalized(row.stepTitle, reportLang, courseLang);
         stepLink.addEventListener('click', function () { window.Xped.reportDetails.openStep(row.stepId); });
-        reachRow.querySelector('.el-chart-label').replaceChildren(stepLink);
+        var stepSummary = document.createElement('span');
+        stepSummary.className = 'academy-step-summary';
+        stepSummary.id = 'academy-step-summary-' + index;
+        stepSummary.setAttribute('role', 'tooltip');
+        stepSummary.setAttribute('translate', 'no');
+        stepSummary.textContent = copy('stepSummary', {
+          reached: row.reached,
+          continued: row.continued === undefined || row.continued === null ? '—' : row.continued,
+          time: row.time ? formatDuration(row.time.median) : copy('noTimeShort'),
+        });
+        stepLink.setAttribute('aria-describedby', stepSummary.id);
+        stepLink.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape') stepSummary.classList.add('is-dismissed');
+        });
+        ['blur', 'mouseleave'].forEach(function (type) {
+          stepLink.addEventListener(type, function () { stepSummary.classList.remove('is-dismissed'); });
+        });
+        reachRow.querySelector('.el-chart-label').replaceChildren(stepLink, stepSummary);
         stationGroup.appendChild(reachRow);
       });
       if (funnelEl.childElementCount) {
@@ -686,6 +788,8 @@
             h.setAttribute('translate', 'no');
             var authoredTitle = Model.getLocalized(blk.data.question || blk.data.statement || blk.data.prompt || blk.data.title, reportLang, courseLang);
             h.textContent = authoredTitle || name + ' · ' + position;
+            // The statement is clamped to two lines; the full text stays readable on hover and to assistive technology.
+            if (authoredTitle) h.title = authoredTitle;
             card.appendChild(h);
             var sub = chartNote('n = ' + agg.count + (authoredTitle ? ' · ' + name + ' · ' + position : ''));
             sub.setAttribute('translate', 'no');
@@ -726,12 +830,14 @@
               var keys = Array.from(new Set(choices.concat(Object.keys(agg.counts))));
               var rows = document.createElement('div');
               rows.className = 'el-chart-rows';
+              var rightKeys = {};
               keys.forEach(function (k) {
                 var cnt = agg.counts[k] || 0;
                 var pct = Math.min(100, Math.round((cnt / denom) * 100));
                 var opt = (blk.data.options || []).find(function (o) { return o.id === k; });
                 var isRight = (blk.type === 'myth_fact' && k === (blk.data.correctAnswer || 'myth')) || !!(opt && opt.isCorrect && blk.data.graded !== false);
                 var name = opt ? Model.getLocalized(opt.label, reportLang, courseLang) : (k === 'myth' || k === 'fact' ? Model.ui(reportLang, k) : k);
+                rightKeys[k] = isRight;
                 var row = chartRow(name, cnt, pct, isRight);
                 if (isRight && window.XpedElearningIcons) {
                   var chkIco = window.XpedElearningIcons.icon('check', 14);
@@ -744,7 +850,9 @@
               card.appendChild(rows);
               if (agg.gradedAnswers) {
                 card.dataset.correct = String(agg.correctAnswers / agg.gradedAnswers);
-                card.appendChild(chartNote(copy('correctShare', {pct: formatPercent(100 * agg.correctAnswers / agg.gradedAnswers)}) + ' · ' + agg.correctAnswers + '/' + agg.gradedAnswers));
+                var correctText = copy('correctShare', {pct: formatPercent(100 * agg.correctAnswers / agg.gradedAnswers)}) + ' · ' + agg.correctAnswers + '/' + agg.gradedAnswers;
+                if (isMulti) card.appendChild(chartNote(correctText));
+                else card.insertBefore(answerMix(keys, agg.counts, rightKeys, correctText), h.nextSibling);
               }
             }
             if (Array.isArray(agg.words) && agg.words.length) {
