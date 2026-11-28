@@ -381,6 +381,9 @@ def create_expedition(runtime):
             title=title,
             default_lang=str(raw.get('defaultLanguage') or 'nl'),
         )
+        if current_app.config.get('XPED_ACADEMY'):
+            normalized['defaultLanguage'] = 'de' if raw.get('defaultLanguage') == 'de' else 'nl'
+            normalized['enabledLanguages'] = ['nl', 'de']
     eid = model.new_id('exp')
     share_token = 'xped-' + secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:14]
     ts = now()
@@ -1037,9 +1040,26 @@ def _resolve_public_expedition(runtime, share_token: str, unit=None):
     return db, exp
 
 
-def public_get_expedition(runtime, share_token: str):
+def public_payload(runtime, share_token: str):
     _, exp = _resolve_public_expedition(runtime, share_token)
-    return jsonify(expedition=model.sanitize_public_expedition(exp))
+    public = model.sanitize_public_expedition(exp)
+    if current_app.config.get('XPED_ACADEMY'):
+        # Score only the material learners can actually see. Hidden draft stations
+        # do not disqualify an otherwise reviewed translation of the public course.
+        coverage = model.compute_language_coverage(public)
+        public['enabledLanguages'] = [
+            lang for lang in ('nl', 'de') if lang in coverage and coverage[lang]['total']
+            and coverage[lang]['translated'] == coverage[lang]['total'] and not coverage[lang]['needsReview']
+        ]
+        if not public['enabledLanguages']:
+            raise model.ElearningError('There is no reviewed course language available yet.', 410)
+        if public['defaultLanguage'] not in public['enabledLanguages']:
+            public['defaultLanguage'] = public['enabledLanguages'][0]
+    return public
+
+
+def public_get_expedition(runtime, share_token: str):
+    return jsonify(expedition=public_payload(runtime, share_token))
 
 
 def public_get_asset(runtime, share_token: str, asset_id: str):

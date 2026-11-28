@@ -160,9 +160,24 @@ def studio_responses_page(expedition_id: str):
 @elearning_bp.route('/elearning/p/<share_token>')
 def public_player_page(share_token: str):
     runtime = get_runtime()
+    initial_course = None
+    player_error = None
+    if current_app.config.get('XPED_ACADEMY'):
+        from lecture_processor.blueprints.academy_language import learner_language
+        try:
+            initial_course = service.public_payload(runtime, share_token)
+        except ElearningError as exc:
+            player_error = {'status': exc.status, 'message': str(exc), 'code': getattr(exc, 'code', '')}
+        except (GoogleAPICallError, RuntimeError):
+            player_error = {'status': 503, 'message': '', 'code': 'temporarily_unavailable'}
+        available = initial_course['enabledLanguages'] if initial_course else ('nl', 'de')
+        g.academy_player_language = learner_language(available)
+        if player_error:
+            return render_template('academy/learner_error.html', academy_player_error=player_error), player_error['status']
     return render_template(
         'elearning_player.html',
         share_token=share_token,
+        academy_initial_course=initial_course,
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),
         elearning_icons_js=runtime.resolve_js_asset('js/elearning-icons.js'),
         elearning_route_map_js=runtime.resolve_js_asset('js/elearning-route-map.js'),

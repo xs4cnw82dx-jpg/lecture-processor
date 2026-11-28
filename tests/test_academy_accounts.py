@@ -38,6 +38,8 @@ def test_transfers_live_courses_and_preserves_learner_materials(accounts):
     from lecture_processor.services.elearning_service import _author_key
     course = {'id': 'one', 'owner_uid': user['uid'], 'owner_email': email, 'share': {'token': 'published', 'enabled': True},
               'lease': {'user_id': user['uid']}, 'members': {'third@test.com': 'edit'}, 'modules': [{'id': 'mod'}]}
+    from lecture_processor.domains.elearning import model
+    course.update(model.build_default_expedition('Les over pijn', 'nl'))
     store.put('elearning_expeditions/one', course)
     store.put('elearning_expeditions/two', {'owner_uid': 'other', 'members': {email: 'edit'}, 'member_emails': [email]})
     store.put('elearning_expeditions/leased', {'owner_uid': 'someone', 'lease': {'user_id': user['uid'], 'name': email}})

@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
 
   const byId = function (id) { return document.getElementById('academy-' + id); };
   const form = byId('auth-form');
@@ -7,19 +8,21 @@
   const password = byId('password');
   const status = byId('auth-status');
   const views = {
-    signin: ['Sign in', 'Open your expeditions in xPEDitie Pijn Studio.', 'Sign in'],
-    signup: ['Create an account', 'Use your email address to create a Studio account.', 'Create account'],
-    reset: ['Reset your password', 'We’ll send a password reset link to your email address.', 'Send reset link'],
-    verify: ['Verify your email', 'Follow the verification link in your email to open the Studio.', '']
+    signin: [uiText('Sign in'), uiText('Open your expeditions in xPEDitie Pijn Studio.'), uiText('Sign in')],
+    signup: [uiText('Create an account'), uiText('Use your email address to create a Studio account.'), uiText('Create account')],
+    reset: [uiText('Reset your password'), uiText('We’ll send a password reset link to your email address.'), uiText('Send reset link')],
+    verify: [uiText('Verify your email'), uiText('Follow the verification link in your email to open the Studio.'), '']
   };
   let view = 'signin';
   let busy = false;
   let auth;
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) {
     byId('auth-credentials').hidden = true;
-    status.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
+    status.textContent = uiText('Sign-in is temporarily unavailable. Reload this page to try again.');
     return;
   }
+
+  auth.languageCode = window.Xped.i18n.language;
 
   function show(nextView) {
     view = nextView;
@@ -58,16 +61,16 @@
   }
 
   const errors = {
-    'auth/invalid-credential': 'Check your email and password and try again.',
-    'auth/wrong-password': 'Check your email and password and try again.',
-    'auth/user-not-found': 'Check your email and password and try again.',
-    'auth/email-already-in-use': 'This email already has an account. Sign in or reset your password.',
-    'auth/weak-password': 'Choose a stronger password and try again.',
-    'auth/invalid-email': 'Enter a valid email address.',
-    'auth/popup-blocked': 'Allow the Google sign-in window or sign in with email.',
-    'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
-    'auth/too-many-requests': 'Please wait a moment before trying again.',
-    'auth/network-request-failed': 'Check your connection and try again.'
+    'auth/invalid-credential': uiText('Check your email and password and try again.'),
+    'auth/wrong-password': uiText('Check your email and password and try again.'),
+    'auth/user-not-found': uiText('Check your email and password and try again.'),
+    'auth/email-already-in-use': uiText('This email already has an account. Sign in or reset your password.'),
+    'auth/weak-password': uiText('Choose a stronger password and try again.'),
+    'auth/invalid-email': uiText('Enter a valid email address.'),
+    'auth/popup-blocked': uiText('Allow the Google sign-in window or sign in with email.'),
+    'auth/popup-closed-by-user': uiText('Google sign-in was cancelled.'),
+    'auth/too-many-requests': uiText('Please wait a moment before trying again.'),
+    'auth/network-request-failed': uiText('Check your connection and try again.')
   };
 
   async function run(action) {
@@ -77,7 +80,7 @@
     const buttons = document.querySelectorAll('#main-content button');
     for (const button of buttons) button.disabled = true;
     try { await action(); } catch (error) {
-      status.textContent = errors[error.code] || 'The request could not be completed. Please try again.';
+      status.textContent = errors[error.code] || uiText('The request could not be completed. Please try again.');
     } finally {
       busy = false;
       for (const button of buttons) button.disabled = false;
@@ -98,12 +101,12 @@
     run(async function () {
       if (view === 'reset') {
         await auth.sendPasswordResetEmail(email.value.trim());
-        status.textContent = 'If your email has an account, check your inbox for a reset link.';
+        status.textContent = uiText('If your email has an account, check your inbox for a reset link.');
       } else if (view === 'signup') {
         const result = await auth.createUserWithEmailAndPassword(email.value.trim(), password.value);
         show('verify');
         await result.user.sendEmailVerification();
-        status.textContent = 'Verification email sent.';
+        status.textContent = uiText('Verification email sent.');
       } else {
         const result = await auth.signInWithEmailAndPassword(email.value.trim(), password.value);
         continueWithUser(result.user);
@@ -113,14 +116,14 @@
   byId('resend').addEventListener('click', function () {
     run(async function () {
       await auth.currentUser.sendEmailVerification();
-      status.textContent = 'Verification email sent.';
+      status.textContent = uiText('Verification email sent.');
     });
   });
   byId('check').addEventListener('click', function () {
     run(async function () {
       await auth.currentUser.reload();
       if (!auth.currentUser.emailVerified) {
-        status.textContent = 'Your email has not been verified yet. Check your inbox for the link.';
+        status.textContent = uiText('Your email has not been verified yet. Check your inbox for the link.');
         return;
       }
       await auth.currentUser.getIdToken(true);

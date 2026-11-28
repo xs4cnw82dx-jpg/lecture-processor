@@ -1,19 +1,20 @@
+{% from '_academy_copy.html' import tr with context %}
 <dialog class="el-dialog" id="academy-folder-dialog" closedby="any" aria-labelledby="academy-folder-title">
   <div class="el-dialog-header"><h2 id="academy-folder-title"></h2></div>
   <form class="el-dialog-body" id="academy-folder-form">
     <div class="el-field" id="academy-folder-name-field">
-      <label for="academy-folder-name">Folder name</label>
+      <label for="academy-folder-name">{{ tr("Folder name") }}</label>
       <input id="academy-folder-name" maxlength="80" type="text">
     </div>
     <div class="el-field" id="academy-folder-destination-field" hidden>
-      <label for="academy-folder-destination">Destination folder</label>
+      <label for="academy-folder-destination">{{ tr("Destination folder") }}</label>
       <select id="academy-folder-destination"></select>
     </div>
-    <p id="academy-folder-delete-note" hidden>Expeditions in this folder will move to Unfiled. Learner links and responses stay available.</p>
+    <p id="academy-folder-delete-note" hidden>{{ tr("Expeditions in this folder will move to Unfiled. Learner links and responses stay available.") }}</p>
     <p id="academy-folder-error" class="field-error" role="alert" hidden></p>
     <div class="el-dash-actions">
-      <button type="button" class="btn" id="academy-folder-cancel">Cancel</button>
-      <button type="submit" class="btn primary" id="academy-folder-confirm">Save</button>
+      <button type="button" class="btn" id="academy-folder-cancel">{{ tr("Cancel") }}</button>
+      <button type="submit" class="btn primary" id="academy-folder-confirm">{{ tr("Save") }}</button>
     </div>
   </form>
 </dialog>

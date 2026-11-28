@@ -1,5 +1,6 @@
 {% extends '_base.html' %}
-{% block title %}Sign in · xPEDitie Pijn Studio{% endblock %}
+{% from '_academy_copy.html' import tr with context %}
+{% block title %}{{ tr("Sign in") }} · xPEDitie Pijn Studio{% endblock %}
 {% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
@@ -10,30 +11,30 @@
   {% set academy_show_account = false %}
   {% include '_academy_header.html' %}
   <main class="academy-auth" id="main-content" tabindex="-1">
-    <h1 id="academy-auth-title">Sign in</h1>
-    <p id="academy-auth-intro">Open your expeditions in xPEDitie Pijn Studio.</p>
+    <h1 id="academy-auth-title">{{ tr("Sign in") }}</h1>
+    <p id="academy-auth-intro">{{ tr("Open your expeditions in xPEDitie Pijn Studio.") }}</p>
     <section id="academy-auth-credentials" aria-labelledby="academy-auth-title">
-      <button type="button" class="btn" id="academy-google">Continue with Google</button>
+      <button type="button" class="btn" id="academy-google">{{ tr("Continue with Google") }}</button>
       <form id="academy-auth-form">
-        <label for="academy-email">Email</label>
+        <label for="academy-email">{{ tr("Email") }}</label>
         <input type="email" id="academy-email" autocomplete="username" required>
-        <label id="academy-password-label" for="academy-password">Password</label>
+        <label id="academy-password-label" for="academy-password">{{ tr("Password") }}</label>
         <input type="password" id="academy-password" autocomplete="current-password" required>
-        <button type="submit" class="btn primary" id="academy-submit">Sign in</button>
+        <button type="submit" class="btn primary" id="academy-submit">{{ tr("Sign in") }}</button>
       </form>
       <div class="academy-auth-links">
-        <button type="button" id="academy-signup">Create an account</button>
-        <button type="button" id="academy-reset">Forgot password?</button>
-        <button type="button" id="academy-login" hidden>Back to sign in</button>
+        <button type="button" id="academy-signup">{{ tr("Create an account") }}</button>
+        <button type="button" id="academy-reset">{{ tr("Forgot password?") }}</button>
+        <button type="button" id="academy-login" hidden>{{ tr("Back to sign in") }}</button>
       </div>
     </section>
     <section id="academy-verify" aria-labelledby="academy-auth-title" hidden>
-      <button type="button" class="btn primary" id="academy-check">I’ve verified my email</button>
-      <button type="button" class="btn" id="academy-resend">Resend verification email</button>
-      <button type="button" class="btn" id="academy-switch">Use another account</button>
+      <button type="button" class="btn primary" id="academy-check">{{ tr("I’ve verified my email") }}</button>
+      <button type="button" class="btn" id="academy-resend">{{ tr("Resend verification email") }}</button>
+      <button type="button" class="btn" id="academy-switch">{{ tr("Use another account") }}</button>
     </section>
     <p id="academy-auth-status" role="status" aria-live="polite"></p>
-    <noscript>Enable JavaScript to sign in to the Studio.</noscript>
+    <noscript>{{ tr("Enable JavaScript to sign in to the Studio.") }}</noscript>
   </main>
   {% include '_academy_footer.html' %}
   {% include '_firebase_scripts.html' %}

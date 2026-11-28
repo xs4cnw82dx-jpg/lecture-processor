@@ -52,9 +52,9 @@ def test_learner_pages_make_no_font_requests_to_fontshare(academy_client):
 def test_privacy_page_discloses_the_fontshare_request(academy_client):
     page = html.fromstring(academy_client.get('/privacy').data)
     headings = [heading.text_content().strip() for heading in page.iter('h2')]
-    assert 'Fonts in the Studio' in headings
+    assert 'Lettertypen in de studio' in headings
     text = re.sub(r'\s+', ' ', page.text_content())
-    assert 'Fontshare' in text and 'IP address' in text and 'Learner pages do not load these fonts' in text
+    assert 'Fontshare' in text and 'IP-adres' in text and 'De deelnemerspagina’s laden deze lettertypen niet' in text
 
 
 @pytest.mark.parametrize('path', ('/physio/elearning', '/physio/elearning/x/edit', '/physio/elearning/x/responses'))

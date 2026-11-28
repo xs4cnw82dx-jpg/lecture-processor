@@ -1,5 +1,6 @@
 (function (root) {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
 
   function makeEditable(node, placeholder, editable, onCommit) {
     if (!editable) return node;
@@ -127,7 +128,7 @@
     h1.className = 'xped-hero-title';
     h1.textContent = Model.getLocalized(sp.title, lang, defLang) || (editable ? '' : (exp.title || ''));
     if (options.onLocalizedField) options.onLocalizedField(h1, sp.title);
-    makeEditable(h1, 'Click to write your xPEDitie title…', editable, function (v) { onEditField('title', v); });
+    makeEditable(h1, uiText('Click to write your xPEDitie title…'), editable, function (v) { onEditField('title', v); });
     col.appendChild(h1);
 
     var subText = Model.getLocalized(sp.subtitle, lang, defLang);
@@ -136,7 +137,7 @@
       p.className = 'xped-hero-subtitle';
       p.textContent = subText;
       if (options.onLocalizedField) options.onLocalizedField(p, sp.subtitle);
-      makeEditable(p, 'Click to add a calm welcome introduction…', editable, function (v) { onEditField('subtitle', v); });
+      makeEditable(p, uiText('Click to add a calm welcome introduction…'), editable, function (v) { onEditField('subtitle', v); });
       col.appendChild(p);
     }
 
@@ -158,7 +159,7 @@
         spn.className = 'xped-hl-text';
         spn.textContent = txt;
         if (options.onLocalizedField) options.onLocalizedField(spn, hl.text);
-        makeEditable(spn, 'Highlight bullet…', editable, function (v) { onEditField('highlight:' + hl.id, v); });
+        makeEditable(spn, uiText('Highlight bullet…'), editable, function (v) { onEditField('highlight:' + hl.id, v); });
         li.appendChild(spn);
         if (editable) {
           var tools = document.createElement('span');
@@ -167,7 +168,7 @@
             var upB = document.createElement('button');
             upB.type = 'button';
             upB.className = 'xped-hl-btn';
-            upB.title = 'Move up';
+            upB.title = uiText('Move up');
             if (Icons) upB.appendChild(Icons.icon('chevronUp', 13));
             upB.addEventListener('click', function () { onMoveHighlight(hlIdx, -1); });
             tools.appendChild(upB);
@@ -176,7 +177,7 @@
             var dnB = document.createElement('button');
             dnB.type = 'button';
             dnB.className = 'xped-hl-btn';
-            dnB.title = 'Move down';
+            dnB.title = uiText('Move down');
             if (Icons) dnB.appendChild(Icons.icon('chevronDown', 13));
             dnB.addEventListener('click', function () { onMoveHighlight(hlIdx, 1); });
             tools.appendChild(dnB);
@@ -185,7 +186,7 @@
             var rmB = document.createElement('button');
             rmB.type = 'button';
             rmB.className = 'xped-hl-btn';
-            rmB.title = 'Remove highlight';
+            rmB.title = uiText('Remove highlight');
             if (Icons) rmB.appendChild(Icons.icon('x', 13));
             rmB.addEventListener('click', function () { onDeleteHighlight(hl.id); });
             tools.appendChild(rmB);
@@ -214,7 +215,7 @@
       ? Model.ui(lang, 'continueExpedition')
       : (Model.getLocalized(sp.ctaLabel, lang, defLang) || Model.ui(lang, 'startExpedition'));
     if (editable) {
-      makeEditable(ctaSpan, 'Start button label', true, function (v) { onEditField('ctaLabel', v); });
+      makeEditable(ctaSpan, uiText('Start button label'), true, function (v) { onEditField('ctaLabel', v); });
     }
     cta.appendChild(ctaSpan);
     if (Icons) cta.appendChild(Icons.icon('arrowRight', 18));
@@ -247,7 +248,7 @@
       vf.className = 'xped-video-frame';
       var ifr = document.createElement('iframe');
       ifr.src = sp.heroVideoEmbedUrl;
-      ifr.title = 'Intro video';
+      ifr.title = uiText('Intro video');
       ifr.allowFullscreen = true;
       vf.appendChild(ifr);
       vSec.appendChild(vf);
@@ -345,7 +346,7 @@
 
       var title = document.createElement('strong');
       title.className = 'xped-journey-title';
-      title.textContent = Model.getLocalized(mod.title, lang, defaultLang) || ('Station ' + (idx + 1));
+      title.textContent = Model.getLocalized(mod.title, lang, defaultLang) || (uiText('Station ') + (idx + 1));
       if (options.onLocalizedField) options.onLocalizedField(title, mod.title);
       cardMain.appendChild(title);
 

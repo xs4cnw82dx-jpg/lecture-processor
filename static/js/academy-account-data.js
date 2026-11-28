@@ -1,11 +1,12 @@
 (function () {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
   const byId = id => document.getElementById('acct-' + id);
   const status = byId('status');
   const form = byId('confirmation');
   let auth;
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) {
-    status.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
+    status.textContent = uiText('Sign-in is temporarily unavailable. Reload this page to try again.');
     return;
   }
   const api = window.LectureProcessorAuth.createAuthClient(auth);
@@ -35,7 +36,7 @@
     const buttons = byId('controls').querySelectorAll('button');
     buttons.forEach(button => { button.disabled = true; });
     try { await action(auth.currentUser); } catch (error) {
-      status.textContent = error.studioMessage || 'The request could not be completed. Please try again.';
+      status.textContent = error.studioMessage || uiText('The request could not be completed. Please try again.');
     } finally {
       busy = false;
       buttons.forEach(button => { button.disabled = false; });
@@ -46,14 +47,14 @@
     if (response.ok) return;
     if (response.status === 403 || response.status === 401) byId('reauth').hidden = false;
     const error = new Error();
-    error.studioMessage = (await response.json()).error;
+    error.studioMessage = uiText((await response.json()).error);
     throw error;
   }
   byId('export').addEventListener('click', () => run(async () => {
     const response = await api.authFetch('/api/academy/account/export');
     await checkResponse(response);
     await window.LectureProcessorDownload.downloadResponseBlob(response, 'xped-academy-account.json');
-    status.textContent = 'Your account download is ready.';
+    status.textContent = uiText('Your account download is ready.');
   }));
   byId('begin').addEventListener('click', () => confirmDeletion(form.hidden));
   byId('cancel').addEventListener('click', () => { confirmDeletion(false); byId('begin').focus(); });
@@ -68,7 +69,7 @@
       return;
     }
     run(async user => {
-      status.textContent = 'Transferring course records and removing your account…';
+      status.textContent = uiText('Transferring course records and removing your account…');
       let complete = false;
       do {
         if (auth.currentUser !== user) throw new Error('Account changed');
@@ -88,7 +89,7 @@
         }
       } while (!complete);
       if (auth.currentUser === user) await auth.signOut();
-      status.textContent = 'Your Studio account has been deleted.';
+      status.textContent = uiText('Your Studio account has been deleted.');
       byId('controls').hidden = true;
       byId('signin').hidden = false;
       status.setAttribute('tabindex', '-1');

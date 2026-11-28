@@ -75,6 +75,7 @@ def export():
         account={key: user[key] for key in ('uid', 'email', 'email_verified', 'name', 'picture', 'phone_number') if key in user},
         createdAtMillis=profile.user_metadata.creation_timestamp,
         lastSignInAtMillis=profile.user_metadata.last_sign_in_timestamp,
+        preferences={key: value for key, value in (db.get('academy_users/' + uid) or {}).items() if key == 'language'},
         signInProviders=sorted(provider.provider_id for provider in profile.provider_data),
         invitedAuthor=bool(email and db.get(studio._author_key(email))),
         studioAdmin=runtime.is_admin_user(user),

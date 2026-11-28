@@ -1027,16 +1027,26 @@
   Icons.wireAnimatedDialogs();
   Model.enableDialogLightDismissFallback();
 
+  var academyLocale = window.Xped && window.Xped.i18n;
   async function init() {
     setTextScale('md');
     loadLocalProgress();
-    state.lang = Model.detectBrowserLanguage(Model.SUPPORTED_LANGS, 'nl', queryLang || (state.hasSavedLanguage ? state.lang : ''), navigator.languages);
+    var savedContentLanguage = state.hasSavedLanguage ? state.lang : '';
+    state.lang = academyLocale ? academyLocale.language : Model.detectBrowserLanguage(Model.SUPPORTED_LANGS, 'nl', queryLang || (state.hasSavedLanguage ? state.lang : ''), navigator.languages);
     document.documentElement.lang = state.lang;
     updateComfortLabels();
     try {
-      var resp = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
-      var data = await resp.json().catch(function () { return {}; });
-      if (!resp.ok) {
+      var prepared = document.getElementById('academy-initial-course');
+      var data;
+      var resp;
+      if (prepared) {
+        data = { expedition: JSON.parse(prepared.textContent) };
+        prepared.remove();
+      } else {
+        resp = await fetch('/api/elearning/public/' + encodeURIComponent(shareToken));
+        data = await resp.json().catch(function () { return {}; });
+      }
+      if (resp && !resp.ok) {
         if (resp.status !== 404 && resp.status !== 410 && resp.status !== 403) throw new Error('Course unavailable');
         mainEl.textContent = '';
         var errCard = document.createElement('div');
@@ -1057,7 +1067,10 @@
       document.body.setAttribute('data-xped-theme', (state.exp.theme && state.exp.theme.preset) || 'xped-warm-sand');
       var enabled = state.exp.enabledLanguages || ['nl'];
       var navLangs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'nl'];
-      if (queryLang) {
+      if (academyLocale) {
+        const preferred = [queryLang, savedContentLanguage, academyLocale.language, 'nl', 'de'];
+        state.lang = preferred.find(code => enabled.includes(code) && (code === 'nl' || code === 'de')) || 'nl';
+      } else if (queryLang) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, queryLang, navLangs);
       } else if (!state.hasSavedLanguage || enabled.indexOf(state.lang) < 0) {
         state.lang = Model.detectBrowserLanguage(enabled, state.exp.defaultLanguage, '', navLangs);

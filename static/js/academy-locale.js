@@ -1,0 +1,59 @@
+(function (root) {
+  'use strict';
+  const language = document.documentElement.lang === 'de' ? 'de' : 'nl';
+  const locale = language === 'de' ? 'de-DE' : 'nl-NL';
+  const messages = root.XpedMessages || {};
+  const storageKey = 'xped-preferences';
+
+  function readPreferences() {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) return JSON.parse(saved) || {};
+      // Only migrate a valid appearance choice. The old Studio defaulted to English.
+      const legacy = JSON.parse(localStorage.getItem('lp-preferences') || '{}');
+      const value = legacy && ['light', 'dark'].includes(legacy.theme) ? { theme: legacy.theme } : {};
+      localStorage.setItem(storageKey, JSON.stringify(value));
+      return value;
+    } catch (_) { return {}; }
+  }
+
+  function writePreference(key, value) {
+    try { localStorage.setItem(storageKey, JSON.stringify({ ...readPreferences(), [key]: value })); }
+    catch (_) { /* The current document can still apply the preference. */ }
+  }
+
+  function copy(nl, de) { return language === 'de' ? de : nl; }
+  function t(key, values) {
+    const text = messages[key] ?? key;
+    return values ? text.replace(/\{(\w+)\}/g, (field, name) => values[name] ?? field) : text;
+  }
+  function number(value, options) { return new Intl.NumberFormat(locale, options).format(value); }
+  function date(value, options) { return new Intl.DateTimeFormat(locale, options).format(value); }
+  function relative(epochSeconds, now = Date.now()) {
+    const seconds = Math.trunc((epochSeconds * 1000 - now) / 1000);
+    const days = Math.abs(seconds) >= 86400;
+    const hours = Math.abs(seconds) >= 3600;
+    const minutes = Math.abs(seconds) >= 60;
+    const unit = days ? 'day' : hours ? 'hour' : minutes ? 'minute' : 'second';
+    const amount = Math.trunc(seconds / (days ? 86400 : hours ? 3600 : minutes ? 60 : 1));
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(amount, unit);
+  }
+  function setTheme(theme) {
+    if (!['dark', 'light'].includes(theme)) return;
+    writePreference('theme', theme);
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  }
+  function setLanguage(next) {
+    if (!['nl', 'de'].includes(next)) return;
+    document.cookie = 'xped-language=' + next + '; Path=/; Max-Age=31536000; SameSite=Lax' +
+      (location.protocol === 'https:' ? '; Secure' : '');
+    if (next !== language) location.reload();
+  }
+  const preferences = readPreferences();
+  const theme = preferences.theme || (root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+  root.Xped = root.Xped || {};
+  root.Xped.i18n = Object.freeze({ language, locale, copy, t, number, date, relative, setLanguage, setTheme });
+})(window);

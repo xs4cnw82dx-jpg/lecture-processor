@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -24,7 +25,7 @@
   var auth;
   try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   if (!auth && academy) {
-    statusEl.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
+    statusEl.textContent = uiText('Sign-in is temporarily unavailable. Reload this page to try again.');
     return;
   }
   var client = window.LectureProcessorAuth.createAuthClient(auth);
@@ -73,16 +74,20 @@
   function formatRelativeTime(epochSec) {
     if (!epochSec) return { rel: '', exact: '' };
     var d = new Date(epochSec * 1000);
+    const i18n = window.Xped && window.Xped.i18n;
+    if (i18n) {
+      return { rel: i18n.relative(epochSec), exact: i18n.date(d, { dateStyle: 'medium', timeStyle: 'short' }) };
+    }
     var exact = d.toLocaleString(document.documentElement.lang || undefined, {
       year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
     var diffSec = Math.max(0, Math.floor(Date.now() / 1000 - epochSec));
     var rel;
-    if (diffSec < 60) rel = 'Updated just now';
-    else if (diffSec < 3600) rel = 'Updated ' + Math.floor(diffSec / 60) + 'm ago';
-    else if (diffSec < 86400) rel = 'Updated ' + Math.floor(diffSec / 3600) + 'h ago';
-    else if (diffSec < 86400 * 7) rel = 'Updated ' + Math.floor(diffSec / 86400) + 'd ago';
-    else rel = 'Updated ' + d.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' });
+    if (diffSec < 60) rel = uiText('Updated just now');
+    else if (diffSec < 3600) rel = uiText('Updated ') + Math.floor(diffSec / 60) + uiText('m ago');
+    else if (diffSec < 86400) rel = uiText('Updated ') + Math.floor(diffSec / 3600) + uiText('h ago');
+    else if (diffSec < 86400 * 7) rel = uiText('Updated ') + Math.floor(diffSec / 86400) + uiText('d ago');
+    else rel = uiText('Updated ') + d.toLocaleDateString(document.documentElement.lang || undefined, { month: 'short', day: 'numeric' });
     return { rel: rel, exact: exact };
   }
 
@@ -92,7 +97,7 @@
     templatePreviewEl.textContent = '';
     if (!tpl) return;
     var top = document.createElement('strong');
-    top.textContent = tpl.stations + (tpl.stations === 1 ? ' station' : ' stations') + ' · ' + tpl.steps + (tpl.steps === 1 ? ' step' : ' steps') + ' · ~' + tpl.minutes + ' min';
+    top.textContent = tpl.stations + (tpl.stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' + tpl.steps + (tpl.steps === 1 ? uiText(' step') : uiText(' steps')) + ' · ~' + tpl.minutes + ' min';
     var sum = document.createElement('p');
     sum.className = 'el-exp-meta';
     sum.textContent = tpl.summary;
@@ -122,7 +127,7 @@
   async function api(url, options) {
     var response = await client.authFetch(url, options, { ensureJsonContentType: true });
     var data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Could not complete this request.');
+    if (!response.ok) throw new Error(uiText(data.error) || uiText('Could not complete this request.'));
     return data;
   }
 
@@ -151,23 +156,23 @@
       var body = document.createElement('div');
       var h2 = document.createElement('h2');
       if (folders && folders.selected()) {
-        h2.textContent = 'No expeditions in this folder';
+        h2.textContent = uiText('No expeditions in this folder');
         body.appendChild(h2);
         empty.appendChild(body);
         grid.appendChild(empty);
         return;
       }
-      h2.textContent = canCreate ? 'Create your first expedition' : 'Author access is by invitation';
+      h2.textContent = canCreate ? uiText('Create your first expedition') : uiText('Author access is by invitation');
       var p = document.createElement('p');
       p.textContent = canCreate
-        ? 'Start with a blank station, a three-station BPS skeleton, or explore an interactive example.'
-        : 'To create expeditions, ask the Studio administrator to add your verified email address. To take an expedition, open the learner link you received.';
+        ? uiText('Start with a blank station, a three-station BPS skeleton, or explore an interactive example.')
+        : uiText('To create expeditions, ask the Studio administrator to add your verified email address. To take an expedition, open the learner link you received.');
       body.append(h2, p);
       if (canCreate) {
         var cta = document.createElement('button');
         cta.type = 'button';
         cta.className = 'btn primary';
-        cta.textContent = 'Create expedition';
+        cta.textContent = uiText('Create expedition');
         cta.addEventListener('click', openCreateDialog);
         body.appendChild(cta);
       }
@@ -176,15 +181,15 @@
       return;
     }
     if (!visible.length) {
-      statusEl.textContent = '0 matching expeditions';
+      statusEl.textContent = uiText('0 matching expeditions');
       var noMatch = document.createElement('div');
       noMatch.className = 'el-dash-empty';
       var nh = document.createElement('h2');
-      nh.textContent = 'No expeditions match "' + searchInput.value.trim() + '"';
+      nh.textContent = uiText('No expeditions match "') + searchInput.value.trim() + '"';
       var clr = document.createElement('button');
       clr.type = 'button';
       clr.className = 'btn small';
-      clr.textContent = 'Clear search';
+      clr.textContent = uiText('Clear search');
       clr.addEventListener('click', function () {
         searchInput.value = '';
         renderExpeditions(allExpeditions);
@@ -195,8 +200,8 @@
       return;
     }
     statusEl.textContent = q
-      ? ('Showing ' + visible.length + ' of ' + items.length + ' expeditions')
-      : (items.length + (items.length === 1 ? ' expedition' : ' expeditions'));
+      ? (uiText('Showing ') + visible.length + uiText(' of ') + items.length + uiText(' expeditions'))
+      : (items.length + (items.length === 1 ? uiText(' expedition') : uiText(' expeditions')));
 
     var focusDuplicateLink = null;
     visible.forEach(function (exp) {
@@ -235,21 +240,21 @@
       var h2 = document.createElement('h2');
       var title = document.createElement(exp.deletionPending ? 'span' : 'a');
       if (!exp.deletionPending) title.href = editUrl;
-      title.textContent = exp.title || 'Untitled Expedition';
+      title.textContent = exp.title || uiText('Untitled Expedition');
       title.setAttribute('translate', 'no');
       h2.appendChild(title);
       var badge = document.createElement('span');
       badge.className = 'el-status-inline ' + (exp.shareEnabled ? 'is-live' : '');
-      badge.textContent = exp.deletionPending ? 'Removal pending' : (exp.shareEnabled ? (exp.collectResponses ? 'Pilot link active' : 'Learner link active') : 'Private draft');
+      badge.textContent = exp.deletionPending ? uiText('Removal pending') : (exp.shareEnabled ? (exp.collectResponses ? uiText('Pilot link active') : uiText('Learner link active')) : uiText('Private draft'));
       top.append(h2, badge);
 
       var meta = document.createElement('p');
       meta.className = 'el-exp-meta';
-      var role = exp.role === 'owner' ? 'Owner' : (exp.role === 'translate' ? 'Translator' : 'Co-Editor');
+      var role = exp.role === 'owner' ? uiText('Owner') : (exp.role === 'translate' ? uiText('Translator') : uiText('Co-Editor'));
       var metaParts = [
         role,
-        exp.moduleCount + (exp.moduleCount === 1 ? ' station' : ' stations'),
-        exp.stepCount + (exp.stepCount === 1 ? ' step' : ' steps'),
+        exp.moduleCount + (exp.moduleCount === 1 ? uiText(' station') : uiText(' stations')),
+        exp.stepCount + (exp.stepCount === 1 ? uiText(' step') : uiText(' steps')),
       ];
       metaParts.forEach(function (value, i) {
         if (i) meta.append(' · ');
@@ -274,7 +279,7 @@
 
       // UX-010: Per-locale translation coverage readiness badges
       var cov = exp.languageCoverage || null;
-      var langs = exp.enabledLanguages || ['nl'];
+      var langs = (exp.enabledLanguages || ['nl']).filter(code => !academy || code === 'nl' || code === 'de');
       var covRow = document.createElement('div');
       covRow.className = 'el-lang-cov-row';
       var coverageDetail = document.createElement('p');
@@ -297,7 +302,7 @@
             coverageDetail.hidden = !open;
           });
           pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
-          pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? ' · review' : '');
+          pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? uiText(' · review') : '');
         } else {
           pill.className = 'el-lang-cov';
           pill.textContent = code.toUpperCase();
@@ -312,22 +317,22 @@
       var menuItems = [];
       if (!exp.deletionPending) {
         var isCopy = justDuplicatedId === exp.id;
-        var open = actionLink(isCopy ? 'Open copy' : exp.role === 'translate' ? 'Open Translator' : 'Open Builder', editUrl, true);
+        var open = actionLink(isCopy ? uiText('Open copy') : exp.role === 'translate' ? uiText('Open Translator') : uiText('Open Builder'), editUrl, true);
         if (isCopy) focusDuplicateLink = open;
         actions.appendChild(open);
       }
       if (!exp.deletionPending && exp.role !== 'translate') {
-        actions.appendChild(actionLink('Responses', '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
+        actions.appendChild(actionLink(uiText('Responses'), '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
         if (exp.shareEnabled && exp.shareToken) {
-          menuItems.push({ label: 'Open learner link', icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
+          menuItems.push({ label: uiText('Open learner link'), icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
         }
       }
       if (canCreate && !exp.deletionPending && exp.role !== 'translate') {
-        menuItems.push({ label: 'Duplicate', icon: 'copy', onClick: async function () {
+        menuItems.push({ label: uiText('Duplicate'), icon: 'copy', onClick: async function () {
           try {
             var dupRes = await api('/api/elearning/expeditions/' + encodeURIComponent(exp.id) + '/duplicate', { method: 'POST', body: '{}' });
             justDuplicatedId = (dupRes && dupRes.expedition && dupRes.expedition.id) || '';
-            toast('Expedition duplicated. Highlighted in list.', 'success');
+            toast(uiText('Expedition duplicated. Highlighted in list.'), 'success');
             await loadList();
           } catch (err) { if (err.code !== 'auth/session-changed') toast(err.message, 'error'); }
         } });
@@ -335,10 +340,10 @@
       if (exp.role !== 'translate') {
         if (exp.role === 'owner') {
           if (folders && canCreate && !exp.deletionPending) {
-            menuItems.push({ label: 'Move to folder', onClick: function () { folders.move(exp); } });
+            menuItems.push({ label: uiText('Move to folder'), onClick: function () { folders.move(exp); } });
           }
           if (menuItems.length) menuItems.push({ divider: true });
-          menuItems.push({ label: 'Delete', icon: 'trash', danger: true, onClick: function () {
+          menuItems.push({ label: uiText('Delete'), icon: 'trash', danger: true, onClick: function () {
             pendingDeleteExp = exp;
             document.getElementById('el-delete-dialog-msg').textContent = exp.title;
             document.getElementById('el-delete-error').hidden = true;
@@ -347,7 +352,7 @@
           } });
         }
         if (menuItems.length) {
-          var menu = Icons.createDropdown({ ariaLabel: 'More actions for ' + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
+          var menu = Icons.createDropdown({ ariaLabel: uiText('More actions for ') + exp.title, leadingIcon: 'more', align: 'right', fixedLabel: '', showChevron: false, items: menuItems });
           actions.appendChild(menu.el);
         }
       }
@@ -455,6 +460,7 @@
     lockDialog(createDialog, true);
     confirm.textContent = 'Creating expedition…';
     var payload = Model.createExpeditionPreset(preset, titleInput.value, lang);
+    if (academy) payload.enabledLanguages = ['nl', 'de'];
     try {
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(payload) });
       createDialog.close();
@@ -568,7 +574,7 @@
     document.getElementById('el-create-progress').textContent = '';
     var createButton = document.getElementById('el-create-confirm');
     createButton.disabled = false;
-    createButton.textContent = 'Create & Open Builder';
+    createButton.textContent = uiText('Create & Open Builder');
     pendingDeleteExp = null;
     if (deleteDialog.open) deleteDialog.close();
     if (createDialog.open) createDialog.close();
@@ -579,7 +585,7 @@
     actionsEl.hidden = !user || !canCreate;
     signIn.hidden = !!user;
     retry.hidden = true;
-    statusEl.textContent = user ? 'Loading your expeditions…' : 'Sign in to view your expeditions.';
+    statusEl.textContent = user ? uiText('Loading your expeditions…') : uiText('Sign in to view your expeditions.');
     if (user) loadList();
   }
   if (auth) auth.onAuthStateChanged(accountChanged);

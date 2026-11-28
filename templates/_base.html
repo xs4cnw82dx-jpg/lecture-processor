@@ -9,7 +9,7 @@
    A page that must set a variable before _preferences_head (e.g. i18n_dutch_source)
    sets it at its top level, outside any block. -#}
 <!DOCTYPE html>
-<html lang="{% block html_lang %}en{% endblock %}"{% if academy_mode %} data-product="academy"{% endif %}>
+<html lang="{% block html_lang %}{{ academy_locale if academy_mode else 'en' }}{% endblock %}"{% if academy_mode %} data-product="academy"{% endif %}>
 <head>
   <meta charset="UTF-8">
   {% include '_academy_head.html' if academy_mode else '_preferences_head.html' %}

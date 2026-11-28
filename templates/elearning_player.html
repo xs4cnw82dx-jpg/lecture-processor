@@ -1,7 +1,9 @@
+{% from '_academy_copy.html' import tr with context %}
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="{{ academy_locale if academy_mode else 'nl' }}">
 <head>
   <meta charset="UTF-8">
+  {% if academy_mode %}{% include '_academy_locale_head.html' %}{% endif %}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
   <title>xPEDitie Pijn · {{ 'xPED Academy' if academy_mode else 'Lecture Processor' }}</title>
@@ -12,31 +14,31 @@
 <body class="el-player-body xped-surface-scope" {% if academy_mode %}data-site-title="xPED Academy"{% endif %} data-share-token="{{ share_token }}" data-xped-theme="xped-warm-sand" data-text-scale="md">
   <header class="el-player-header">
     <div class="el-player-header-inner">
-      <button type="button" class="el-player-brand" id="el-player-home-btn" aria-label="Return to start page">
+      <button type="button" class="el-player-brand" id="el-player-home-btn" aria-label="{{ tr("Return to start page") }}">
         <img src="{{ url_for('static', filename='images/xped/logo_nl.svg') }}" alt="xPEDitie Pijn">
         <span id="el-player-course-label">xPEDitie Pijn</span>
       </button>
 
       <div class="el-player-controls">
-        <button type="button" class="xped-btn xped-btn-ghost" id="el-player-map-btn" hidden>Route</button>
+        <button type="button" class="xped-btn xped-btn-ghost" id="el-player-map-btn" hidden>{{ tr("Route") }}</button>
         <div class="el-dd el-comfort-dd" id="el-comfort-dd">
-          <button type="button" class="el-dd-trigger el-comfort-trigger" id="el-comfort-trigger" aria-controls="el-comfort-menu" aria-expanded="false" aria-label="Leescomfort">
+          <button type="button" class="el-dd-trigger el-comfort-trigger" id="el-comfort-trigger" aria-controls="el-comfort-menu" aria-expanded="false" aria-label="{{ tr("Leescomfort") }}">
             <span>Aa</span>
           </button>
           <div class="el-dd-menu is-right el-comfort-menu" id="el-comfort-menu">
             <div class="el-comfort-section">
-              <span class="el-comfort-label" id="el-comfort-size-lbl">Text size</span>
+              <span class="el-comfort-label" id="el-comfort-size-lbl">{{ tr("Text size") }}</span>
               <div class="el-text-scale-group" role="group" aria-labelledby="el-comfort-size-lbl">
-                <button type="button" data-scale="sm" aria-label="Smaller text">A-</button>
-                <button type="button" data-scale="md" class="is-active" aria-label="Default text">A</button>
-                <button type="button" data-scale="lg" aria-label="Larger text">A+</button>
+                <button type="button" data-scale="sm" aria-label="{{ tr("Smaller text") }}">A-</button>
+                <button type="button" data-scale="md" class="is-active" aria-label="{{ tr("Default text") }}">A</button>
+                <button type="button" data-scale="lg" aria-label="{{ tr("Larger text") }}">A+</button>
               </div>
             </div>
             <div class="el-comfort-section">
-              <span class="el-comfort-label" id="el-comfort-theme-lbl">Appearance</span>
+              <span class="el-comfort-label" id="el-comfort-theme-lbl">{{ tr("Appearance") }}</span>
               <div class="el-theme-toggle-group" role="group" aria-labelledby="el-comfort-theme-lbl">
-                <button type="button" data-theme-pref="default" class="is-active" id="el-theme-warm-btn">Warm</button>
-                <button type="button" data-theme-pref="high-contrast" id="el-theme-contrast-btn">Contrast</button>
+                <button type="button" data-theme-pref="default" class="is-active" id="el-theme-warm-btn">{{ tr("Warm") }}</button>
+                <button type="button" data-theme-pref="high-contrast" id="el-theme-contrast-btn">{{ tr("Contrast") }}</button>
               </div>
             </div>
           </div>
@@ -44,28 +46,29 @@
         <div id="el-player-lang-host"></div>
       </div>
     </div>
-    <progress class="el-player-progress-bar" id="el-player-progress-fill" max="100" value="0" aria-label="Voortgang"></progress>
+    <progress class="el-player-progress-bar" id="el-player-progress-fill" max="100" value="0" aria-label="{{ tr("Voortgang") }}"></progress>
   </header>
 
   <main class="el-player-main" id="el-player-main" tabindex="-1">
     <div class="xped-card el-player-state" id="el-player-loading" role="status">
       <h1>xPEDitie Pijn</h1>
-      <p>Even laden…</p>
+      <p>{{ tr("Even laden…") }}</p>
     </div>
   </main>
 
   {% if academy_mode %}
-  <footer class="academy-player-footer"><a href="/privacy">Privacy</a></footer>
+  <footer class="academy-player-footer"><a href="/privacy">{{ tr("Privacy") }}</a></footer>
   {% endif %}
 
   <dialog class="el-dialog" id="el-player-route-dialog" closedby="any" aria-labelledby="el-player-route-title">
     <div class="el-route-dialog-header">
-      <h2 id="el-player-route-title">xPEDitie Route</h2>
-      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="Close">×</button></form>
+      <h2 id="el-player-route-title">{{ tr("xPEDitie Route") }}</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
     </div>
     <div class="el-route-dialog-body" id="el-player-route-body"></div>
   </dialog>
 
+  {% if academy_initial_course %}<script type="application/json" id="academy-initial-course">{{ academy_initial_course|tojson }}</script>{% endif %}
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_route_map_js) }}"></script>
