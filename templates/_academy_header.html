@@ -31,6 +31,7 @@
   <div class="ac-bar-inner">
     {% if public %}{{ brand() }}{% else %}
       <button type="button" class="ac-icon ac-nav-toggle" id="ac-nav-toggle" aria-label="{{ say('Navigatie openen','Navigation öffnen') }}" aria-controls="ac-rail" aria-expanded="false">{{ icon('menu') }}</button>
+      <a class="ac-mobile-brand" href="/" aria-label="{{ say('Naar het overzicht','Zur Übersicht') }}"><img src="{{ url_for('static',filename='images/xped/academy-mark.webp') }}" alt="xPED"></a>
       <nav class="ac-crumbs" aria-label="{{ say('Kruimelpad','Brotkrumennavigation') }}"><a href="/">Academy</a>{{ icon('chevron',13) }}
         {% if courses %}<a href="/expedities">{{ labels['/expedities'] }}</a>{{ icon('chevron',13) }}<span aria-current="page">{{ say('Resultaten','Ergebnisse') if path.endswith(('/resultaten','/responses')) else say('Bewerken','Bearbeiten') if path.endswith(('/edit','/bewerken')) else say('Expeditie','Expedition') }}</span>
         {% else %}<span aria-current="page">{{ labels.get(current, 'Academy') }}</span>{% endif %}
@@ -41,7 +42,7 @@
       <button type="button" class="ac-settings-trigger" id="ac-settings-toggle" aria-controls="ac-settings-popover" aria-expanded="false">{{ icon('settings',17) }}<span>{{ say('Instellingen','Einstellungen') }}</span>{{ icon('down',13) }}</button>
       <div class="ac-popover" id="ac-settings-popover" hidden aria-labelledby="ac-settings-toggle">
         <div class="ac-pop-group"><span class="ac-pop-label" id="ac-pop-language">{{ say('Taal','Sprache') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-pop-language"><button type="button" data-academy-language="nl" lang="nl" aria-pressed="{{ 'false' if academy_locale|default('nl') == 'de' else 'true' }}">Nederlands</button><button type="button" data-academy-language="de" lang="de" aria-pressed="{{ 'true' if academy_locale|default('nl') == 'de' else 'false' }}">Deutsch</button></div></div>
-        <div class="ac-pop-group"><span class="ac-pop-label" id="ac-pop-theme">{{ say('Weergave','Darstellung') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-pop-theme"><button type="button" data-academy-theme="light">{{ icon('sun',15) }}{{ say('Licht','Hell') }}</button><button type="button" data-academy-theme="dark">{{ icon('moon',15) }}{{ say('Donker','Dunkel') }}</button></div></div>
+        <div class="ac-pop-group"><span class="ac-pop-label" id="ac-pop-theme">{{ say('Weergave','Darstellung') }}</span><div class="ac-choice" role="group" aria-labelledby="ac-pop-theme"><button type="button" data-academy-theme="light">{{ icon('sun',15) }}{{ say('Licht','Hell') }}</button><button type="button" data-academy-theme="dark">{{ icon('moon',15) }}{{ say('Donker','Dunkel') }}</button><button type="button" data-academy-theme="system">{{ say('Systeem','System') }}</button></div></div>
         {% if not public %}<div class="ac-pop-links"><a href="/instellingen">{{ icon('user',16) }}{{ say('Mijn account','Mein Konto') }}</a><a href="/inloggen" id="academy-verify-email" hidden>{{ say('E-mailadres bevestigen','E-Mail-Adresse bestätigen') }}</a><button type="button" id="academy-signout" hidden>{{ icon('logout',16) }}{{ say('Uitloggen','Abmelden') }}</button></div>{% endif %}
         <a class="ac-privacy-link" href="/privacy">{{ icon('privacy',14) }}{{ say('Privacy','Datenschutz') }}</a>
       </div>
