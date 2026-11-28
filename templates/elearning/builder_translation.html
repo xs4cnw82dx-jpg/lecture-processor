@@ -18,7 +18,7 @@
       </div>
       <div class="el-btn-row el-tr-actions">
         <div id="el-tr-filter-host"></div>
-        {% if not academy_mode %}<button type="button" class="el-btn el-btn-sm" id="el-tr-alt-toggle" aria-pressed="false">{{ tr("3rd language ref") }}</button>{% endif %}
+        {% block reference_language %}{% endblock %}
         <button type="button" class="el-btn el-btn-sm" id="el-tr-next-missing">{{ tr("Next missing") }}</button>
         <button type="button" class="el-btn el-btn-sm" id="el-tr-toggle-preview" aria-pressed="true">{{ tr("Live Preview") }}</button>
         <details class="el-tr-transfer">

@@ -7,10 +7,6 @@
   503: ('De Academy is even niet bereikbaar', 'Die Academy ist vorübergehend nicht erreichbar', 'Kom over een paar minuten terug.', 'Bitte versuchen Sie es in ein paar Minuten erneut.')
 }.get(status_code, ('Deze pagina is niet beschikbaar', 'Diese Seite ist nicht verfügbar', 'Ga naar het overzicht om verder te gaan.', 'Gehen Sie zur Übersicht, um fortzufahren.')) %}
 {% block title %}{{ wording[1 if de else 0] }} · xPED Academy{% endblock %}
-{% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
-  {% include '_academy_foundation.html' %}
-{% endblock %}
 {% block body_attrs %} class="academy-body"{% endblock %}
 {% block body %}
   <main class="academy-error" id="main-content">

@@ -1,30 +1,29 @@
 (function (root) {
   'use strict';
 
-  const de = document.documentElement.lang === 'de';
-  const copy = (nl, german) => de ? german : nl;
-  // A missing count shows as a dash, never as NaN.
-  const num = value => value === null || value === undefined || Number.isNaN(Number(value)) ? '—' : new Intl.NumberFormat(de ? 'de-DE' : 'nl-NL').format(value);
-  const pct = (n, d) => d ? new Intl.NumberFormat(de ? 'de-DE' : 'nl-NL', { style: 'percent', maximumFractionDigits: 1 }).format(n / d) : '—';
-  const duration = s => typeof s === 'number' ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : '—';
+  const i18n = root.Xped.i18n;
+  const uiText = i18n.t;
+  const num = value => Number.isFinite(value) ? i18n.number(value) : '—';
+  const pct = (count, total) => Number.isFinite(count) && total ? i18n.percent(100 * count / total) : '—';
+  const duration = seconds => i18n.duration(seconds, 'compact');
   const el = (tag, text) => {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
     return node;
   };
-  const local = value => root.XpedElearningModel.getLocalized(value, de ? 'de' : 'nl', state.expedition.defaultLanguage);
+  const local = value => root.XpedElearningModel.getLocalized(value, i18n.language, state.expedition.defaultLanguage);
   const host = document.getElementById('academy-station-report');
   const dialog = document.getElementById('academy-step-details');
   const columns = [
-    ['name', copy('Station of stap', 'Station oder Schritt')],
-    ['reached', copy('Bereikt', 'Erreicht')],
-    ['continued', copy('Verder gegaan', 'Weitergegangen')],
-    ['lost', copy('Niet verder', 'Nicht weiter')],
-    ['time', copy('Mediane tijd', 'Medianzeit')],
-    ['estimatedMinutes', copy('Richttijd', 'Richtzeit')],
-    ['delta', copy('Verschil', 'Abweichung')],
-    ['score', copy('Goed beantwoord', 'Richtig beantwortet')],
-    ['comments', copy('Opmerkingen', 'Kommentare')],
+    ['name', uiText('report.stationOrStep')],
+    ['reached', uiText('report.reached')],
+    ['continued', uiText('report.continued')],
+    ['lost', uiText('report.stopped')],
+    ['time', uiText('report.medianTime')],
+    ['estimatedMinutes', uiText('report.estimate')],
+    ['delta', uiText('report.difference')],
+    ['score', uiText('report.correct')],
+    ['comments', uiText('report.comments')],
   ];
   let state, selected = -1, sort = null, descending = false;
   const expanded = new Set();
@@ -57,33 +56,33 @@
       const tr = data.tBodies[0].insertRow();
       row.forEach(value => { tr.insertCell().textContent = value; });
     });
-    details.append(el('summary', copy('Tabel bekijken', 'Datentabelle anzeigen')), data);
+    details.append(el('summary', uiText('report.viewTable')), data);
     return details;
   }
 
-  const dropLabel = copy('Uitval vanuit de vorige stap', 'Abbruch seit dem vorherigen Schritt');
+  const dropLabel = uiText('report.stepDrop');
   const withShare = (count, total) => num(count) + ' (' + pct(count, total) + ')';
   const drop = step => step.previousReached ? withShare(step.lostFromPrevious, step.previousReached) : '—';
 
   function timeDistribution(step) {
     const bins = step.timeHistogram || [];
-    const title = copy('Verdeling van de actieve tijd', 'Verteilung der aktiven Zeit');
+    const title = uiText('report.timeDistribution');
     const section = el('section');
     section.className = 'academy-time-histogram';
     section.append(el('h3', title));
     if (!bins.length) {
-      section.append(el('p', copy('Nog geen gemeten tijd voor deze stap.', 'Für diesen Schritt wurde noch keine Zeit gemessen.')));
+      section.append(el('p', uiText('report.noStepTime')));
       return section;
     }
-    const interval = bin => duration(bin.fromSeconds) + '–' + duration(bin.fromSeconds + 29);
+    const interval = bin => i18n.duration(bin.fromSeconds, 'clock') + '–' + i18n.duration(bin.fromSeconds + 29, 'clock');
     if (bins.length === 1) {
       const bin = bins[0];
-      const noun = bin.sessionCount === 1 ? copy('sessie', 'Sitzung') : copy('sessies', 'Sitzungen');
+      const noun = bin.sessionCount === 1 ? uiText('report.session') : uiText('report.sessions');
       section.append(el('p', num(bin.sessionCount) + ' ' + noun + ' · ' + interval(bin) + ' (min:s)'));
       return section;
     }
     const figure = el('figure');
-    const caption = copy('Aantal sessies per 30 seconden', 'Sitzungen je 30 Sekunden');
+    const caption = uiText('report.histogram');
     figure.append(el('figcaption', caption));
     const list = el('ul');
     list.setAttribute('aria-hidden', 'true');
@@ -98,7 +97,7 @@
       list.append(item);
     }
     figure.append(list);
-    section.append(figure, tableToggle(caption, [copy('Tijd (min:s)', 'Zeit (Min:s)'), copy('Sessies', 'Sitzungen')],
+    section.append(figure, tableToggle(caption, [uiText('report.clockUnit'), uiText('report.sessionsHeading')],
       bins.map(bin => [interval(bin), num(bin.sessionCount)])));
     return section;
   }
@@ -115,15 +114,15 @@
     dialog.querySelector('[data-detail-parent]').textContent = local(current.moduleTitle);
     const metrics = el('dl');
     const add = (k, v) => { metrics.append(el('dt', k), el('dd', v)); };
-    add(copy('Bereikt', 'Erreicht'), num(current.reached) + ' / ' + num(state.summary.totalSessions) + ' (' + pct(current.reached, state.summary.totalSessions) + ')');
+    add(uiText('report.reached'), num(current.reached) + ' / ' + num(state.summary.totalSessions) + ' (' + pct(current.reached, state.summary.totalSessions) + ')');
     if (current.previousReached != null) add(dropLabel, drop(current));
-    add(copy('Verder gegaan', 'Weitergegangen'), num(current.continued) + ' / ' + num(current.reached));
-    add(copy('Mediane actieve tijd', 'Mediane aktive Zeit'), current.time ? duration(current.time.median) + ' · P25–P75 ' + duration(current.time.p25) + '–' + duration(current.time.p75) + ' · n = ' + num(current.time.count) : '—');
-    add(copy('Goed beantwoord', 'Richtig beantwortet'), num(current.correctAnswers) + ' / ' + num(current.gradedAnswers));
+    add(uiText('report.continued'), num(current.continued) + ' / ' + num(current.reached));
+    add(uiText('Median active time'), current.time ? duration(current.time.median) + ' · P25–P75 ' + duration(current.time.p25) + '–' + duration(current.time.p75) + ' · n = ' + num(current.time.count) : '—');
+    add(uiText('report.correct'), num(current.correctAnswers) + ' / ' + num(current.gradedAnswers));
     body.append(metrics, timeDistribution(current));
     const results = Array.from(document.querySelectorAll('#el-resp-blocks > [data-step]')).filter(card => card.dataset.step === id);
     if (results.length) {
-      body.append(el('h3', copy('Antwoorden', 'Antworten')));
+      body.append(el('h3', uiText('Responses')));
       results.forEach(card => {
         const clone = card.cloneNode(true);
         clone.removeAttribute('id');
@@ -132,11 +131,11 @@
         body.append(clone);
       });
     } else if (step.blocks.length) {
-      body.append(el('p', copy('Voor deze stap zijn geen antwoorden gedeeld.', 'Für diesen Schritt wurden keine Antworten geteilt.')));
+      body.append(el('p', uiText('report.noSharedAnswers')));
     }
     const notes = (state.stepComments || []).filter(n => n.stepId === id);
     if (notes.length) {
-      body.append(el('h3', copy('Opmerkingen', 'Kommentare')));
+      body.append(el('h3', uiText('report.comments')));
       notes.forEach(note => body.append(el('blockquote', note.comment)));
     }
     const params = new URLSearchParams({ step: id, module: module.id, from: 'responses' });
@@ -168,9 +167,9 @@
   }
 
   function stations(focusKey) {
-    const title = el('h2', copy('Vergelijk de stations', 'Stationen vergleichen'));
+    const title = el('h2', uiText('report.compareStations'));
     const data = table(columns.map(entry => entry[1]));
-    data.createCaption().textContent = copy('Resultaten per station en stap', 'Ergebnisse pro Station und Schritt');
+    data.createCaption().textContent = uiText('report.stationResults');
     columns.forEach(([key, label], index) => {
       const th = data.tHead.rows[0].cells[index];
       const trigger = button(label, () => {
@@ -187,7 +186,7 @@
     if (sort) items.sort((a, b) => {
       const x = sortValue(a, sort), y = sortValue(b, sort);
       if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
-      return (typeof x === 'string' ? x.localeCompare(y, de ? 'de' : 'nl') : x - y) * (descending ? -1 : 1);
+      return (typeof x === 'string' ? x.localeCompare(y, i18n.language) : x - y) * (descending ? -1 : 1);
     });
     for (const row of items) {
       const trigger = button(local(row.moduleTitle), () => {
@@ -213,9 +212,8 @@
     scroller.setAttribute('aria-label',title.textContent);
     scroller.append(data);
     const definitions = el('details');
-    definitions.append(el('summary',copy('Hoe we dit berekenen', 'Wie wir diese Werte berechnen')),
-      el('p',copy('Bereik telt unieke gedeelde sessies binnen je filters. Verder gegaan betekent dat een sessie een latere stap bereikte of de cursus afrondde. Voor een station geldt de laatste stap. Goed beantwoord telt volledig juiste antwoorden op beoordeelde vragen. Privésessies tellen nergens mee.',
-        'Reichweite zählt unterschiedliche geteilte Sitzungen im Filter. Weitergegangen heißt, dass ein späterer Schritt erreicht oder der Kurs abgeschlossen wurde. Bei Stationen gilt der letzte Schritt. Richtig beantwortet zählt vollständig richtige Antworten auf bewertete Fragen. Private Sitzungen sind ausgeschlossen.')));
+    definitions.append(el('summary',uiText('report.definitionTitle')),
+      el('p',uiText('report.reachDefinition')));
     host.replaceChildren(title, scroller, definitions);
     host.hidden = !items.length;
     if (focusKey) Array.from(host.querySelectorAll('[data-focus-key]')).find(n=>n.dataset.focusKey===focusKey)?.focus();
@@ -225,15 +223,15 @@
     state = data;
     stations();
     const funnel = document.getElementById('el-resp-funnel');
-    const reachTable = tableToggle(copy('Bereik per stap', 'Reichweite je Schritt'),
-      [copy('Stap', 'Schritt'), copy('Bereik van alle sessies', 'Anteil aller Sitzungen'), copy('Vorige stap bereikt', 'Vorherigen Schritt erreicht'), dropLabel],
+    const reachTable = tableToggle(uiText('report.stepReach'),
+      [uiText('Step'), uiText('report.allSessionsShare'), uiText('report.previousReached'), dropLabel],
       data.funnel.map(step => [local(step.stepTitle), withShare(step.reached, data.summary.totalSessions),
         step.previousReached == null ? '—' : num(step.previousReached), drop(step)]));
     funnel.append(reachTable);
     for (const card of document.querySelectorAll('#el-resp-blocks > [data-step]')) {
       const rows = Array.from(card.querySelectorAll('.el-chart-row'), r => [r.querySelector('.el-chart-label')?.textContent || '',r.querySelector('.el-chart-value')?.textContent || '']);
-      if (rows.length) card.append(tableToggle(card.querySelector('h2, h3')?.textContent || '',[copy('Antwoord','Antwort'),copy('Aantal en aandeel','Anzahl und Anteil')],rows));
-      card.append(button(copy('Stap bekijken', 'Schritt ansehen'), () => openStep(card.dataset.step)));
+      if (rows.length) card.append(tableToggle(card.querySelector('h2, h3')?.textContent || '',[uiText('report.answer'),uiText('report.answerShare')],rows));
+      card.append(button(uiText('report.viewStep'), () => openStep(card.dataset.step)));
     }
   }
   function reset() {

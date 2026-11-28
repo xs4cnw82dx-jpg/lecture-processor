@@ -51,7 +51,7 @@
   // Reuse bounded numeric rules on the course stylesheet for image positioning.
   var imageRules = new WeakMap();
   function imageProperty(image, property, value, unit) {
-    var sheet = document.querySelector('link[href*="/css/xped-theme.css"]')?.sheet;
+    var sheet = document.querySelector('link[data-elearning-styles]')?.sheet;
     if (!sheet) return;
     var rules = imageRules.get(sheet) || new Set();
     imageRules.set(sheet, rules);
@@ -377,11 +377,11 @@
         styleToolbar?.remove();
         styleToolbar = el('div', 'el-fmt-bar el-field-style');
         styleToolbar.setAttribute('role', 'group');
-        styleToolbar.setAttribute('aria-label', root.LectureI18n?.t('Text style') || uiText('Text style'));
+        styleToolbar.setAttribute('aria-label', root.ElearningHost?.i18n?.t('Text style') || uiText('Text style'));
         [['p', 'Paragraph'], ['h2', 'Heading 2'], ['h3', 'Heading 3']].forEach(function (option) {
           var button = el('button', 'el-fmt-btn', option[0].toUpperCase());
           button.type = 'button';
-          button.title = root.LectureI18n?.t(option[1]) || option[1];
+          button.title = root.ElearningHost?.i18n?.t(option[1]) || option[1];
           button.setAttribute('aria-label', button.title);
           button.setAttribute('aria-pressed', String(option[0] === tag));
           button.addEventListener('mousedown', function (ev) { ev.preventDefault(); });

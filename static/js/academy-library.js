@@ -1,11 +1,11 @@
 (function () {
   'use strict';
-  const { language, copy, courseStatus: state } = window.Xped.i18n;
+  const { language, t: uiText, courseStatus: state } = window.Xped.i18n;
   const headings = [
-    ['title', copy('Expeditie', 'Expedition')], ['state', 'Status'],
-    ['role', copy('Rol', 'Rolle')], ['stepCount', copy('Opbouw', 'Aufbau')],
-    ['languages', copy('Talen', 'Sprachen')], ['updatedAt', copy('Bijgewerkt', 'Aktualisiert')],
-    ['actions', copy('Acties', 'Aktionen')],
+    ['title', uiText('library.course')], ['state', 'Status'],
+    ['role', uiText('library.role')], ['stepCount', uiText('library.structure')],
+    ['languages', uiText('library.languages')], ['updatedAt', uiText('library.updated')],
+    ['actions', uiText('library.actions')],
   ];
   const help = document.getElementById('ac-library-help');
   const helpTrigger = document.getElementById('ac-library-keys');
@@ -39,9 +39,9 @@
   }
 
   function role(course) {
-    if (course.role === 'owner') return copy('Eigenaar', 'Eigentümer:in');
-    if (course.role === 'translate') return copy('Vertaler', 'Übersetzer:in');
-    return copy('Mede-auteur', 'Mitautor:in');
+    if (course.role === 'owner') return uiText('library.owner');
+    if (course.role === 'translate') return uiText('library.translator');
+    return uiText('library.coauthor');
   }
 
   function sortedValue(course) {
@@ -66,9 +66,9 @@
     }
     compactDirection.textContent = direction === 1 ? '↑' : '↓';
     compactDirection.setAttribute('aria-label', direction === 1
-      ? copy('Aflopend sorteren', 'Absteigend sortieren') : copy('Oplopend sorteren', 'Aufsteigend sortieren'));
+      ? uiText('library.sortDesc') : uiText('library.sortAsc'));
     const table = node('table', undefined, 'ac-library-table');
-    table.setAttribute('aria-label', copy('Expedities', 'Expeditionen'));
+    table.setAttribute('aria-label', uiText('library.courses'));
     const labels = table.createTHead().insertRow();
     for (const [key, label] of headings) {
       const th = node('th');
@@ -115,8 +115,8 @@
     const [kind, text] = state(course);
     const status = node('span',text,'ac-course-state');
     status.dataset.state = kind;
-    const structure = node('span', String(course.moduleCount) + ' ' + copy(course.moduleCount === 1 ? 'station' : 'stations',course.moduleCount === 1 ? 'Station' : 'Stationen'));
-    structure.append(node('small',String(course.stepCount) + ' ' + copy(course.stepCount === 1 ? 'stap' : 'stappen',course.stepCount === 1 ? 'Schritt' : 'Schritte')));
+    const structure = node('span', uiText('count.stations', { count: course.moduleCount ?? 0 }));
+    structure.append(node('small',uiText('count.steps', { count: course.stepCount ?? 0 })));
     const coverage = node('div'); coverage.append(languages,detail);
     const values = [main,status,node('span',role(course)),structure,coverage,time || node('span','—'),actions];
     values.forEach((value,i) => {
@@ -163,7 +163,7 @@
     }
     const version = ++countRequest;
     confirm.disabled = true;
-    message.textContent = copy('Het aantal opgeslagen resultaten wordt opgehaald…','Die Anzahl gespeicherter Ergebnisse wird geladen…');
+    message.textContent = uiText('library.loadingImpact');
     let count;
     try {
       const result = await api('/api/elearning/expeditions/' + encodeURIComponent(course.id) + '/outline-results',
@@ -171,16 +171,8 @@
       if (Number.isSafeInteger(result.totalSessions) && result.totalSessions >= 0) count = result.totalSessions;
     } catch (_) { /* The owner can still confirm with the explicit unknown-count warning. */ }
     if (version !== countRequest || !dialog.open) return;
-    if (count === undefined) message.textContent = copy(
-      'Het aantal opgeslagen resultaten is onbekend. Bestaande resultaten zijn na verwijdering niet meer toegankelijk.',
-      'Die Anzahl gespeicherter Ergebnisse ist unbekannt. Vorhandene Ergebnisse sind nach dem Löschen nicht mehr zugänglich.');
-    else if (count === 0) message.textContent = copy('Deze expeditie heeft geen opgeslagen resultaten.', 'Diese Expedition hat keine gespeicherten Ergebnisse.');
-    else {
-      const amount = new Intl.NumberFormat(language).format(count);
-      message.textContent = count === 1
-        ? copy('1 opgeslagen resultaat is na verwijdering niet meer toegankelijk.', '1 gespeichertes Ergebnis ist nach dem Löschen nicht mehr zugänglich.')
-        : amount + ' ' + copy('opgeslagen resultaten zijn na verwijdering niet meer toegankelijk.', 'gespeicherte Ergebnisse sind nach dem Löschen nicht mehr zugänglich.');
-    }
+    if (count === undefined) message.textContent = uiText('library.unknownImpact');
+    else message.textContent = uiText('library.deletionImpact', { count });
     confirm.disabled = false;
   }
 

@@ -12,7 +12,7 @@
           <button type="button" class="el-vp-btn is-active" id="el-pv-desktop" aria-pressed="true">{{ tr("Available width") }}</button>
           <button type="button" class="el-vp-btn" id="el-pv-mobile" aria-pressed="false">{{ tr("Phone") }}</button>
         </div>
-        {% if academy_mode %}{% include 'academy/preview_appearance.html' %}{% endif %}
+        {% block preview_appearance %}{% endblock %}
         <label class="el-field-check el-pv-peer-toggle">
           <input type="checkbox" id="el-pv-sample-peers">
           <span>{{ tr("Sample peer votes") }}</span>

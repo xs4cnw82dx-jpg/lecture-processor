@@ -102,7 +102,7 @@ for (const width of [390, 1440]) {
     expect((await exchange()).status()).toBe(404);
     await page.getByRole('button',{name:'Ongedaan maken'}).click();
     await expect(grantRow).toBeVisible(); expect((await exchange()).status()).toBe(200);
-    await expect(page.locator('#xc-feedback')).toContainText('Toegang hersteld');
+    await expect(page.getByRole('status').filter({hasText:'Toegang hersteld'})).toContainText('Toegang hersteld');
     await snapshots('sharing');
     await page.locator('[data-view=instellingen]').click();
     await page.getByRole('button',{name:'Link vernieuwen'}).click();
@@ -147,15 +147,18 @@ test('team assignments grant actual scoped author and translator access', async 
   const context = await browser.newContext();
   try {
     await page.goto(origin + '/expedities/' + course.id + '#vertalingen');
-    await page.getByLabel('Streefdatum vertaling').fill('2027-02-12');
+    await page.getByRole('button',{name:/Streefdatum vertaling/}).click();
+    const today = page.getByRole('dialog',{name:'Kies een datum'}).locator('[data-date][aria-current]');
+    const deadline = await today.getAttribute('data-date');
+    await today.click();
     await page.getByRole('button',{name:'Datum opslaan'}).click();
-    await expect(page.locator('#xc-feedback')).toContainText('Streefdatum opgeslagen');
+    await expect(page.getByRole('status').filter({hasText:'Streefdatum opgeslagen'})).toContainText('Streefdatum opgeslagen');
     const translator = await context.newPage();
     await account(translator, 'translator');
     await translator.goto(origin);
-    await expect(translator.getByRole('row').filter({hasText:course.title}).locator('time')).toHaveAttribute('datetime','2027-02-12');
+    await expect(translator.getByRole('row').filter({hasText:course.title}).locator('time')).toHaveAttribute('datetime',deadline);
     await translator.goto(origin + '/expedities/' + course.id);
-    await expect(translator.locator('#xc-deadline-label time')).toHaveAttribute('datetime','2027-02-12');
+    await expect(translator.locator('#xc-deadline-label time')).toHaveAttribute('datetime',deadline);
     await expect(translator.getByRole('link',{name:'Vertalen',exact:true})).toHaveAttribute('href', /modus=vertalen&taal=de/);
     await expect(translator.getByRole('heading',{name:'Vertaling naar DE'})).toBeVisible();
     await expect(translator.locator('.xc-translation-action a').first()).toHaveAttribute('href', /modus=vertalen.*veld=/);
@@ -208,7 +211,7 @@ test('library duplicates immediately from the keyboard and restores focus on suc
   await expect(copied.locator('.el-exp-card-actions a').first()).toBeFocused();
   const savedId = await copied.getAttribute('data-expedition-row');
   expect(savedId).not.toBe(course.id);
-  await expect(page.locator('.app-toast').getByRole('link')).toHaveAttribute('href','/expedities/' + savedId);
+  await expect(page.getByRole('status').getByRole('link',{name:'Openen'})).toHaveAttribute('href','/expedities/' + savedId);
 });
 
 test('library command links open only the controls the author can use', async ({page}) => {

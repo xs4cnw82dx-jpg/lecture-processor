@@ -1,9 +1,10 @@
 (function () {
   'use strict';
   var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message) { return message; };
-  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
-  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
-  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
+  var academyLocale = window.Xped && window.Xped.i18n;
+  var platformUx = window.ElearningHost.ux;
+  var platformBootstrap = window.ElearningHost.bootstrap;
+  var platformAuth = window.ElearningHost.auth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -98,13 +99,22 @@
     return { rel: rel, exact: exact };
   }
 
+  function courseStructure(stations, steps) {
+    if (academyLocale) {
+      return uiText('count.stations', { count: stations }) + ' · ' + uiText('count.steps', { count: steps });
+    }
+    return stations + (stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' +
+      steps + (steps === 1 ? uiText(' step') : uiText(' steps'));
+  }
+
   function renderTemplatePreview() {
     if (!templatePreviewEl || !templateSelect) return;
     var tpl = (Model.EXPEDITION_TEMPLATES && Model.EXPEDITION_TEMPLATES[templateSelect.value]) || null;
     templatePreviewEl.textContent = '';
     if (!tpl) return;
     var top = document.createElement('strong');
-    top.textContent = tpl.stations + (tpl.stations === 1 ? uiText(' station') : uiText(' stations')) + ' · ' + tpl.steps + (tpl.steps === 1 ? uiText(' step') : uiText(' steps')) + ' · ~' + tpl.minutes + uiText(' min');
+    top.textContent = courseStructure(tpl.stations, tpl.steps) + ' · ~' +
+      (academyLocale ? academyLocale.duration(tpl.minutes * 60) : tpl.minutes + uiText(' min'));
     var sum = document.createElement('p');
     sum.className = 'el-exp-meta';
     sum.textContent = tpl.summary;
@@ -187,11 +197,8 @@
         renderExpeditions(allExpeditions);
       } else await loadList();
       var copied = Model.coursePaths(result.expedition.id).overview;
-      platformUx.toast(copyLabel('Kopie gemaakt.', 'Kopie erstellt.'), {
-        type: 'success', duration: 5000,
-        render: function (region, message) {
-          region.replaceChildren(document.createTextNode(message + ' '), actionLink(copyLabel('Openen', 'Öffnen'), copied));
-        },
+      platformUx.toast(uiText('Expedition duplicated.'), {
+        type: 'success', action: { label: uiText('Open'), href: copied },
       });
     } catch (error) {
       if (pendingCopies.get(expedition.id) !== session) return;
@@ -264,9 +271,15 @@
       grid.appendChild(noMatch);
       return;
     }
-    statusEl.textContent = q
-      ? (uiText('Showing ') + visible.length + uiText(' of ') + items.length + uiText(' expeditions'))
-      : (items.length + (items.length === 1 ? uiText(' expedition') : uiText(' expeditions')));
+    if (academyLocale) {
+      statusEl.textContent = q
+        ? uiText('library.filteredCount', { count: items.length, visible: academyLocale.number(visible.length) })
+        : uiText('count.courses', { count: items.length });
+    } else {
+      statusEl.textContent = q
+        ? (uiText('Showing ') + visible.length + uiText(' of ') + items.length + uiText(' expeditions'))
+        : (items.length + (items.length === 1 ? uiText(' expedition') : uiText(' expeditions')));
+    }
 
     var focusDuplicateLink = null;
     var list = grid;
@@ -373,11 +386,15 @@
             var open = pill.getAttribute('aria-expanded') !== 'true';
             covRow.querySelectorAll('button').forEach(function (other) { other.setAttribute('aria-expanded', 'false'); });
             pill.setAttribute('aria-expanded', String(open));
-            coverageDetail.textContent = code.toUpperCase() + ' · ' + stat.translated + uiText(' of ') + stat.total + uiText(' fields translated') + (stat.needsReview ? ' · ' + stat.needsReview + uiText(' need review') : '');
+            const counts = academyLocale
+              ? uiText('count.translated', { ready: academyLocale.number(stat.translated), count: stat.total }) +
+                (stat.needsReview ? ' · ' + uiText('count.needsReview', { count: stat.needsReview }) : '')
+              : stat.translated + uiText(' of ') + stat.total + uiText(' fields translated') + (stat.needsReview ? ' · ' + stat.needsReview + uiText(' need review') : '');
+            coverageDetail.textContent = code.toUpperCase() + ' · ' + counts;
             coverageDetail.hidden = !open;
           });
           pill.className = 'el-lang-cov' + (pct === 100 && !stat.needsReview ? ' is-done' : (stat.needsReview ? ' is-warn' : ''));
-          pill.textContent = code.toUpperCase() + ' ' + pct + '%' + (stat.needsReview ? uiText(' · review') : '');
+          pill.textContent = code.toUpperCase() + ' ' + (academyLocale ? academyLocale.percent(pct) : pct + '%') + (stat.needsReview ? uiText(' · review') : '');
           if (library) {
             pill.setAttribute('aria-label', pill.textContent);
             var progress = document.createElement('progress');
@@ -467,6 +484,10 @@
 
   async function loadList(folderSelection) {
     var request = ++listRequest;
+    if (library && !grid.childElementCount) {
+      grid.setAttribute('aria-busy', 'true');
+      statusEl.textContent = uiText('Loading your expeditions…');
+    }
     retry.hidden = true;
     try {
       var data = await api('/api/elearning/expeditions');
@@ -493,6 +514,8 @@
       if (request !== listRequest || err.code === 'auth/session-changed') return;
       retry.hidden = false;
       statusEl.textContent = err.message;
+    } finally {
+      if (library && request === listRequest) grid.setAttribute('aria-busy', 'false');
     }
   }
 
@@ -516,20 +539,26 @@
       if (!pendingDeleteExp) return;
       var target = pendingDeleteExp;
       var confirm = document.getElementById('el-delete-confirm');
-      confirm.disabled = true;
+      setBusy(confirm, true);
       try {
         await api('/api/elearning/expeditions/' + encodeURIComponent(target.id), { method: 'DELETE' });
         if (Icons) Icons.closeDialogAnimated(deleteDialog);
         else deleteDialog.close();
-        toast('Expedition deleted.', 'success');
+        toast(uiText('Expedition deleted.'), 'success');
         loadList();
       } catch (err) {
         if (pendingDeleteExp === target) dialogError('delete', err);
-      } finally { confirm.disabled = false; }
+      } finally { setBusy(confirm, false); }
     });
     deleteDialog.addEventListener('close', function () { deleteDialog.returnValue = ''; });
   }
   if (Icons) Icons.wireAnimatedDialogs();
+
+  // Long-running dialog actions use the Academy busy state when it is available (item 39).
+  function setBusy(button, on, label) {
+    if (window.XpedAcademyControls && window.XpedAcademyControls.busy) window.XpedAcademyControls.busy(button, on, label);
+    else button.disabled = !!on;
+  }
 
   function lockDialog(dialog, saving) {
     dialog.setAttribute('closedby', saving ? 'none' : 'any');
@@ -564,9 +593,9 @@
     var origText = confirm.textContent;
     var progress = document.getElementById('el-create-progress');
     progress.textContent = uiText('Creating expedition…');
-    confirm.disabled = true;
+    // The busy state hides the label behind the spinner, so the button keeps its width.
+    setBusy(confirm, true, origText);
     lockDialog(createDialog, true);
-    confirm.textContent = uiText('Creating expedition…');
     var payload = Model.createExpeditionPreset(preset, titleInput.value, lang, { academy: academy });
     if (academy) payload.enabledLanguages = ['nl', 'de'];
     try {
@@ -579,7 +608,7 @@
       dialogError('create', err);
       progress.textContent = '';
       confirm.textContent = origText;
-      confirm.disabled = false;
+      setBusy(confirm, false);
     }
   });
 
@@ -595,20 +624,19 @@
       if (!pendingImportPayload) return;
       var btn = document.getElementById('el-import-confirm');
       if (btn.disabled) return;
-      btn.disabled = true;
+      setBusy(btn, true, uiText('Importing…'));
       lockDialog(importDialog, true);
-      btn.textContent = uiText('Importing…');
       try {
         var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(pendingImportPayload) });
         pendingImportPayload = null;
         importDialog.close();
-        toast('Imported expedition!', 'success');
+        toast(uiText('Imported expedition!'), 'success');
         window.location.href = Model.coursePaths(res.expedition.id).edit;
       } catch (err) {
         if (err.code === 'auth/session-changed') return;
         lockDialog(importDialog, false);
         dialogError('import', err);
-        btn.disabled = false;
+        setBusy(btn, false);
         btn.textContent = uiText('Import & Open Builder');
       }
     });
@@ -644,8 +672,7 @@
       title.setAttribute('translate', 'no');
       var info = document.createElement('p');
       info.className = 'el-exp-meta';
-      info.textContent = checked.stationCount + (checked.stationCount === 1 ? uiText(' station') : uiText(' stations')) + ' · ' +
-        checked.stepCount + (checked.stepCount === 1 ? uiText(' step') : uiText(' steps')) + ' · ' +
+      info.textContent = courseStructure(checked.stationCount, checked.stepCount) + ' · ' +
         checked.enabledLanguages.join(', ').toUpperCase() + uiText(' · Private draft');
       summary.replaceChildren(title, info);
       confirm.disabled = false;
@@ -689,6 +716,7 @@
     if (deleteDialog.open) deleteDialog.close();
     if (createDialog.open) createDialog.close();
     grid.replaceChildren();
+    if (library) grid.setAttribute('aria-busy', 'false');
     if (library) library.showHelp(false);
     document.getElementById('el-delete-dialog-msg').textContent = '';
     titleInput.value = '';

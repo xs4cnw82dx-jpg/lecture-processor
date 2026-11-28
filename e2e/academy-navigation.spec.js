@@ -109,7 +109,7 @@ test('the results and translation indexes show the courses available to each rol
   await expect(entries.getByRole('link')).toHaveAttribute('href','/expedities/one/resultaten');
   await page.goto(academyOrigin + '/vertalingen');
   await expect(entries.getByRole('link')).toHaveCount(2);
-  await expect(entries.getByRole('link',{name:/Te controleren/})).toHaveAttribute('href','/expedities/one/bewerken?modus=vertalen&taal=de');
+  await expect(entries.getByRole('link',{name:/2 teksten te controleren/})).toHaveAttribute('href','/expedities/one/bewerken?modus=vertalen&taal=de');
   await expect(entries.getByRole('link',{name:/Eine Route/})).toHaveAttribute('href','/expedities/two/bewerken?modus=vertalen&taal=nl');
 });
 

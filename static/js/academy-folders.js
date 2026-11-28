@@ -23,7 +23,7 @@
     }
 
     function folderOption(folder) {
-      const label = folder.id === 'account-review' ? window.Xped.i18n.copy('Te beoordelen', 'Zur Prüfung') : folder.name;
+      const label = folder.id === 'account-review' ? uiText('library.reviewFolder') : folder.name;
       return option(label, folder.id, folder.id !== 'account-review');
     }
 

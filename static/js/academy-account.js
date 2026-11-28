@@ -2,6 +2,7 @@
   'use strict';
 
   const locale = window.Xped.i18n;
+  const uiText = locale.t;
   let preferenceVersion = 0;
   let writing = Promise.resolve();
   let interacted = false;
@@ -47,9 +48,8 @@
       } catch (_) {
         if (requestVersion === preferenceVersion) {
           checkControls(languageControls, 'academyLanguage', locale.language);
-          const ux = window.Xped.ux || window.LectureProcessorUx;
-          if (ux) ux.toast(locale.copy('Je taalkeuze is niet opgeslagen. Probeer het opnieuw.',
-            'Ihre Spracheinstellung wurde nicht gespeichert. Bitte versuchen Sie es erneut.'), { type: 'error' });
+          const ux = window.Xped.ux;
+          if (ux) ux.toast(uiText('settings.preferenceFailed'), { type: 'error' });
         }
         return;
       }
@@ -70,7 +70,11 @@
 
   var verify = document.getElementById('academy-verify-email');
   if (verify) verify.href = '/inloggen?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+  var actor;
   bootstrap.onAuthStateReady(auth, async function (user) {
+    const nextActor = user?.uid || null;
+    if (actor !== undefined && actor !== nextActor) window.Xped.ux.clearToasts();
+    actor = nextActor;
     const requestVersion = ++preferenceVersion;
     if (button) button.hidden = !user;
     if (verify) verify.hidden = !user || user.emailVerified !== false;
@@ -92,8 +96,7 @@
       window.location.replace('/');
     } catch (_) {
       button.disabled = false;
-      (window.Xped.ux).toast(locale.copy('Uitloggen is niet gelukt. Probeer het opnieuw.',
-        'Sie konnten nicht abgemeldet werden. Bitte versuchen Sie es erneut.'), { type: 'error' });
+      window.Xped.ux.toast(uiText('settings.signOutFailed'), { type: 'error' });
     }
   });
 })();

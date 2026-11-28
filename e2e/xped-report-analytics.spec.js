@@ -62,15 +62,27 @@ for (const size of [{width:390,height:844},{width:1280,height:900}]) {
       requests.push(new URL(route.request().url()).search);
       return route.fulfill({json:data});
     });
+    if (size.width === 390) {
+      // The report must render when its controls arrive after the page finishes parsing.
+      await page.route('**/static/js/academy-controls.js*', async route => {
+        const source = await route.fetch();
+        await page.waitForFunction(() => document.readyState === 'interactive' && document.getElementById('el-resp-funnel'));
+        await route.fulfill({ response: source });
+      });
+    }
     await page.goto(academyOrigin + '/expedities/visual/resultaten');
     const time = page.locator('#el-resp-time');
     await expect(time.getByRole('heading',{name:'Tijdsbesteding'})).toBeVisible();
-    await expect(time.locator('.el-time-figures')).toContainText('15 min');
+    await expect(time.locator('.el-time-figures')).toContainText('15:00 min');
+    const shares = time.getByRole('table', { name: 'Aandeel in de gemeten actieve tijd per station' });
+    await expect(shares.getByRole('row', { name: /Opening/ })).toContainText('60%');
+    await expect(shares.getByRole('row', { name: /Plan/ })).toContainText('40%');
     const opening = time.locator('details').filter({hasText:'Opening'});
     await opening.locator('summary').click();
     await expect(opening.locator('.el-time-steps')).toContainText('7:45');
     const funnel = page.locator('#el-resp-funnel');
     await expect(funnel.locator('.el-chart-row').filter({hasText:'Explainer'})).toContainText('−12');
+    await expect(funnel.getByText(/Het getal na − telt deelnemers/)).toBeVisible();
     await funnel.locator('summary').click();
     const reach = funnel.getByRole('table');
     await expect(reach.getByRole('columnheader', {name:'Uitval vanuit de vorige stap'})).toBeVisible();
@@ -175,10 +187,10 @@ test('an Academy author can enable real outline results and retains the preferen
   expect(reads).toBe(0);
   await control.check();
   const result = page.locator('.academy-builder-metric').first();
-  await expect(result).toHaveText('1:40 · 80% bereikt');
+  await expect(result).toHaveText('1:40 min · 80% bereikt');
   await page.reload();
   await expect(control).toBeChecked();
-  await expect(result).toHaveText('1:40 · 80% bereikt');
+  await expect(result).toHaveText('1:40 min · 80% bereikt');
   await control.uncheck();
   await expect(result).toHaveCount(0);
 });
@@ -190,21 +202,21 @@ test('the author previews light and dark learner canvases independently of the w
   await page.locator('[role=tab][data-mode=preview]').click();
   const canvas = page.locator('#el-preview-container');
   const background = () => canvas.evaluate(node => getComputedStyle(node).backgroundColor);
-  const appearance = page.getByRole('group', {name:'Voorbeeldweergave'});
-  const light = appearance.getByRole('button', {name:'Licht'});
-  const dark = appearance.getByRole('button', {name:'Donker'});
-  await expect(light).toHaveAttribute('aria-pressed','true');
+  const appearance = page.getByRole('radiogroup', {name:'Voorbeeldweergave'});
+  const light = appearance.getByRole('radio', {name:'Licht'});
+  const dark = appearance.getByRole('radio', {name:'Donker'});
+  await expect(light).toBeChecked();
   const lightBackground = await background();
   const workspace = await page.evaluate(() => document.documentElement.dataset.theme);
   await dark.click();
-  await expect(dark).toHaveAttribute('aria-pressed','true');
+  await expect(dark).toBeChecked();
   const darkBackground = await background();
   expect(darkBackground).not.toBe(lightBackground);
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(workspace);
   await testInfo.attach('dark-learner-preview', {body: await canvas.screenshot(),contentType:'image/png'});
   await page.reload();
   await page.locator('[role=tab][data-mode=preview]').click();
-  await expect(dark).toHaveAttribute('aria-pressed','true');
+  await expect(dark).toBeChecked();
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   await light.click();
   expect(await background()).toBe(lightBackground);

@@ -1,26 +1,21 @@
 {% extends 'academy/base.html' %}
-{% set tr = xped_copy %}
-{% block title %}{{ tr('Hulp','Hilfe') }} · xPED Academy{% endblock %}
-{% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
-  {% include '_academy_foundation.html' %}
-{% endblock %}
+{% block title %}{{ xped_t('help.title') }} · xPED Academy{% endblock %}
 {% block body_attrs %} class="academy-body"{% endblock %}
 {% block body %}
   {% include '_academy_header.html' %}
   <main class="ac-settings-page ac-help" id="main-content" tabindex="-1">
-    <h1>{{ tr('Hulp','Hilfe') }}</h1>
-    <section><h2>{{ tr('Een expeditie maken en delen','Eine Expedition erstellen und teilen') }}</h2>
-      <p>{{ tr('Open Expedities en kies Nieuwe expeditie. Voeg in de editor stations en stappen toe. Open daarna Delen en toegang op de expeditiepagina om de deelnemerslink in te schakelen en de link of QR-code te kopiëren.', 'Öffnen Sie Expeditionen und wählen Sie Neue Expedition. Ergänzen Sie im Editor Stationen und Schritte. Unter Freigabe und Zugriff auf der Expeditionsseite können Sie den Teilnahmelink aktivieren und den Link oder QR-Code abrufen.') }}</p>
-      <a href="/expedities">{{ tr('Naar expedities','Zu den Expeditionen') }}</a>
+    <h1>{{ xped_t('help.title') }}</h1>
+    <section><h2>{{ xped_t('help.create') }}</h2>
+      <p>{{ xped_t('help.createHelp') }}</p>
+      <a class="ac-inline-link" href="/expedities">{{ xped_t('help.courses') }}</a>
     </section>
-    <section><h2>{{ tr('Een vertaling controleren','Eine Übersetzung prüfen') }}</h2>
-      <p>{{ tr('Open een vertaalopdracht en kies Te controleren. Vergelijk de vertaling met de brontekst. Pas de tekst aan of keur de vertaling goed.', 'Öffnen Sie einen Übersetzungsauftrag und wählen Sie Zu prüfen. Vergleichen Sie die Übersetzung mit dem Ausgangstext. Bearbeiten Sie den Text oder bestätigen Sie die Übersetzung.') }}</p>
-      <a href="/vertalingen">{{ tr('Naar vertalingen','Zu den Übersetzungen') }}</a>
+    <section><h2>{{ xped_t('help.translation') }}</h2>
+      <p>{{ xped_t('help.translationHelp') }}</p>
+      <a class="ac-inline-link" href="/vertalingen">{{ xped_t('help.translations') }}</a>
     </section>
-    <section><h2>{{ tr('Meedoen als deelnemer','An einer Expedition teilnehmen') }}</h2>
-      <p>{{ tr('Gebruik de link of QR-code van de persoon die je heeft uitgenodigd. Je hebt geen Studio-account nodig. Werkt de link niet meer? Vraag dan om de actuele link.', 'Öffnen Sie den Link oder QR-Code der Person, die Sie eingeladen hat. Sie benötigen kein Studio-Konto. Funktioniert der Link nicht mehr, bitten Sie um einen aktuellen Link.') }}</p>
-      <a href="/privacy">{{ tr('Privacy en deelname','Datenschutz und Teilnahme') }}</a>
+    <section><h2>{{ xped_t('help.learner') }}</h2>
+      <p>{{ xped_t('help.learnerHelp') }}</p>
+      <a class="ac-inline-link" href="/privacy">{{ xped_t('help.privacy') }}</a>
     </section>
   </main>
 {% endblock %}

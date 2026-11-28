@@ -1,12 +1,10 @@
 (function () {
   'use strict';
   const xped = window.Xped;
-  const { copy, number, date, relative, language } = xped.i18n;
+  const { t: uiText, number, date, relative, language, percent, duration } = xped.i18n;
   const el = id => document.getElementById('ao-' + id);
   const status = el('status');
-  const percent = v => v == null ? '—' : number(v / 100, { style: 'percent', maximumFractionDigits: 1 });
-  const duration = secs => secs == null ? '—' : number(secs / 60, { maximumFractionDigits: 1 }) + ' min';
-  const defaultGroup = name => name === 'default' ? copy('Algemene groep','Allgemeine Gruppe') : name;
+  const defaultGroup = name => name === 'default' ? uiText('overview.defaultGroup') : name;
   const courseUrl = id => '/expedities/' + encodeURIComponent(id);
   const presets = [...document.querySelectorAll('[data-preset]')];
   const lang = value => typeof value === 'string' ? value : value?.[language] || value?.nl || value?.de || '';
@@ -27,16 +25,21 @@
   let metricFilter = '';
   let showRoutes = false;
   const headings = [
-    ['title','Expeditie','Expedition'], ['shareEnabled','Status','Status'], ['languages','Talen','Sprachen'],
-    ['sessions','Sessies','Sitzungen'], ['completion','Voltooiing','Abschlussquote'],
-    ['medianSeconds','Actief / geschat','Aktiv / geschätzt'], ['drop','Grootste uitval','Größter Rückgang'],
-    ['updatedAt','Bijgewerkt','Aktualisiert'], ['owner','Eigenaar','Eigentümer'],
+    ['title', uiText('overview.column.title')],
+    ['shareEnabled', uiText('overview.column.shareEnabled')],
+    ['languages', uiText('overview.column.languages')],
+    ['sessions', uiText('overview.column.sessions')],
+    ['completion', uiText('overview.column.completion')],
+    ['medianSeconds', uiText('overview.column.medianSeconds')],
+    ['drop', uiText('overview.column.drop')],
+    ['updatedAt', uiText('overview.column.updatedAt')],
+    ['owner', uiText('overview.column.owner')],
   ];
   const metrics = [
-    ['sessions','Gestarte sessies','Gestartete Sitzungen','Sessies die in deze periode zijn gestart en gedeeld.','Geteilte Sitzungen, die in diesem Zeitraum begonnen haben.'],
-    ['completion','Voltooiingsgraad','Abschlussquote','Afgeronde sessies als aandeel van alle gestarte sessies.','Abgeschlossene Sitzungen als Anteil aller gestarteten Sitzungen.'],
-    ['medianSeconds','Mediane actieve tijd','Mediane aktive Zeit','Het midden van de gemeten actieve tijden in gedeelde sessies.','Der mittlere Wert der gemessenen aktiven Zeiten in geteilten Sitzungen.'],
-    ['active','Actieve expedities','Aktive Expeditionen','Expedities met minstens één gedeelde sessie in deze periode.','Expeditionen mit mindestens einer geteilten Sitzung in diesem Zeitraum.'],
+    ['sessions', uiText('overview.metric.sessions'), uiText('overview.metric.sessionsHelp')],
+    ['completion', uiText('overview.metric.completion'), uiText('overview.metric.completionHelp')],
+    ['medianSeconds', uiText('overview.metric.medianSeconds'), uiText('overview.metric.medianSecondsHelp')],
+    ['active', uiText('overview.metric.active'), uiText('overview.metric.activeHelp')],
   ];
 
   function node(tag, text, cls) {
@@ -69,8 +72,8 @@
     if (!window.XpedAcademyControls) return;
     const localized = stations.map(s => ({title:lang(s.title), steps:s.steps, reached:s.reached}));
     const reach = localized.filter(s => Number.isFinite(s.reached)).map(s => s.title + ' ' + percent(100 * s.reached));
-    let label = copy('Route met ','Route mit ') + number(stations.length) + copy(' stations',' Stationen');
-    if (reach.length) label += ' · ' + copy('Bereik','Reichweite') + ' · ' + reach.join(', ');
+    let label = uiText('overview.routeStations', { count: stations.length });
+    if (reach.length) label += ' · ' + uiText('overview.reach') + ' · ' + reach.join(', ');
     parent.replaceChildren(window.XpedAcademyControls.routeStrip(localized, {
       size:'compact', label,
     }));
@@ -84,25 +87,24 @@
   function metricValue(key,value) {
     if (value == null) return '—';
     if (key === 'completion') return percent(value);
-    if (key === 'medianSeconds') return duration(value);
+    if (key === 'medianSeconds') return duration(value, 'compact');
     return number(value);
   }
   function drawStats() {
     const {current,previous} = data;
     const completion = el('completion'), distribution = el('distribution'), kpis = el('kpis');
-    const periodName = copy(' · gedeelde sessies',' · geteilte Sitzungen');
+    const sample = uiText('overview.sample', { count: current.sessions });
     const legend = node('div',null,'ao-split-counts');
     const openCount = current.sessions - current.completed;
-    legend.append(node('span',number(current.completed) + copy(' afgerond',' abgeschlossen')),
-      node('span',number(openCount) + copy(' open',' offen') + (current.sessions ? ' · ' + percent(100 * openCount / current.sessions) : '')));
+    legend.append(node('span',uiText('overview.completedCount', { count: number(current.completed) })),
+      node('span',uiText('overview.openCount', { count: number(openCount) }) + (current.sessions ? ' · ' + percent(100 * openCount / current.sessions) : '')));
     completion.replaceChildren();
     if (current.sessions) {
       completion.append(node('div',percent(current.completion),'ao-metric-big'),
-        bar(current.completed,current.sessions,copy('Voltooiing','Abschlussquote')),legend,
-        node('p','n = ' + number(current.sessions) + periodName,'ao-caption'));
+        bar(current.completed,current.sessions,uiText('overview.completion')),legend,
+        node('p',sample,'ao-caption'));
     } else {
-      completion.append(node('p',copy('Er zijn in deze periode nog geen gedeelde sessies om de voltooiing te berekenen.',
-        'In diesem Zeitraum liegen noch keine geteilten Sitzungen für die Berechnung der Abschlussquote vor.')));
+      completion.append(node('p',uiText('overview.completionUnavailable')));
     }
     const participants = data.courses.filter(c => c.metrics?.sessions > 0).sort((a,b) => b.metrics.sessions - a.metrics.sessions);
     distribution.replaceChildren();
@@ -112,18 +114,18 @@
       distribution.append(label);
       if (participants.length > 1) distribution.append(bar(course.metrics.sessions,participants[0].metrics.sessions,course.title));
     }
-    if (!participants.length) distribution.append(node('p',copy('Nog geen gedeelde sessies in deze periode.','In diesem Zeitraum wurden noch keine Sitzungen geteilt.')));
-    if (participants.length) distribution.append(node('p','n = ' + number(current.sessions) + periodName,'ao-caption'));
+    if (!participants.length) distribution.append(node('p',uiText('overview.noSessions')));
+    if (participants.length) distribution.append(node('p',sample,'ao-caption'));
     kpis.replaceChildren();
-    metrics.forEach(([key,nl,de,desc,deDesc]) => {
-      const b=node('button'); b.type='button'; b.title=copy(desc,deDesc); b.dataset.metric=key; b.setAttribute('aria-pressed',String(metricFilter === key));
+    metrics.forEach(([key,label,description]) => {
+      const b=node('button'); b.type='button'; b.title=description; b.dataset.metric=key; b.setAttribute('aria-pressed',String(metricFilter === key));
       const delta = !previous.sessions || current[key] == null || previous[key] == null ? null : current[key] - previous[key];
       const change = delta == null ? null : (delta > 0 ? '+' : delta < 0 ? '−' : '') +
         (key === 'completion' ? number(Math.abs(delta),{maximumFractionDigits:1}) + ' pp' : metricValue(key,Math.abs(delta)));
-      const comparison = node('small',change == null ? copy('Geen vergelijkingsgegevens','Keine Vergleichsdaten') :
-        change + copy(' t.o.v. vorige periode',' zur Vorperiode'));
+      const comparison = node('small',change == null ? uiText('overview.noComparison') :
+        uiText('overview.comparedToPrevious', { difference: change }));
       if (key === 'completion' && delta) comparison.dataset.direction = delta > 0 ? 'up' : 'down';
-      b.append(node('span',copy(nl,de)),node('strong',metricValue(key,current[key])),comparison);
+      b.append(node('span',label),node('strong',metricValue(key,current[key])),comparison);
       b.addEventListener('click',() => {
         metricFilter = metricFilter === key ? '' : key;
         drawStats(); drawTable(); el('courses').scrollIntoView({block:'nearest'}); el('kpis').querySelector('[data-metric="' + key + '"]').focus({preventScroll:true});
@@ -134,7 +136,7 @@
 
   function filterControls() {
     const cohort = el('cohort'); const value = docs.get('cohort') || '';
-    cohort.replaceChildren(new Option(copy('Alle groepen','Alle Gruppen'),''));
+    cohort.replaceChildren(new Option(uiText('overview.allGroups'),''));
     [...new Set([...data.cohorts, ...(value ? [value] : [])])].forEach(name => cohort.add(new Option(defaultGroup(name),name)));
     cohort.value = value; cohort.dispatchEvent(new CustomEvent('academy:options'));
     const custom = docs.has('from');
@@ -201,7 +203,7 @@
       const wrap=node('span',null,'ao-cell'); wrap.title=label;
       wrap.append(node('span',code.toUpperCase()),bar(completed,coverage.total,label)); td.append(wrap);
       if (['owner','edit','translate'].includes(course.role) && !course.deletionPending && code !== course.defaultLanguage && coverage.needsReview > 0) {
-        const action = copy('Te controleren','Zu prüfen') + ' (' + number(coverage.needsReview) + ')';
+        const action = uiText('overview.review') + ' (' + number(coverage.needsReview) + ')';
         const reviewLink = link(action,courseUrl(course.id) + '/bewerken?modus=vertalen&taal=' + code + '&filter=controleren','ao-review');
         reviewLink.setAttribute('aria-label',action + ' · ' + code.toUpperCase() + ' · ' + course.title);
         td.append(reviewLink);
@@ -239,7 +241,7 @@
     const editorial = data.studioAdmin || data.canCreate || data.courses.some(c => c.role !== 'translate');
     const columns = editorial ? headings : [
       ...headings.filter(([k]) => ['title','languages'].includes(k)),
-      ['dueDate','Streefdatum','Zieldatum'], headings.find(([k]) => k === 'updatedAt'),
+      ['dueDate', uiText('overview.column.dueDate')], headings.find(([k]) => k === 'updatedAt'),
     ];
     let rows = [...data.courses];
     if (metricFilter) rows = rows.filter(c => metricFilter === 'medianSeconds' ? c.metrics?.measured > 0 : metricFilter === 'completion' ? c.metrics?.completed > 0 : c.metrics?.sessions > 0);
@@ -250,9 +252,9 @@
       return ascending ? cmp : -cmp;
     });
     const tr=node('tr');
-    for (const [key,nl,de] of columns) {
+    for (const [key,label] of columns) {
       const th=node('th'); th.scope='col';
-      const sort=node('button',copy(nl,de)); sort.type='button';
+      const sort=node('button',label); sort.type='button';
       if (sorting===key) { th.setAttribute('aria-sort',ascending?'ascending':'descending'); sort.append(node('span',ascending?' ↑':' ↓')); }
       sort.addEventListener('click',() => { ascending = sorting === key ? !ascending : ['title','owner','languages'].includes(key); sorting=key; drawTable(); htmlHead.querySelector('[aria-sort] button').focus(); });
       th.append(sort); tr.append(th);
@@ -277,7 +279,7 @@
         row.append(due);
       }
       if (editorial) row.append(node('td',c.metrics ? number(c.metrics.sessions) : '—'),node('td',percent(c.metrics?.completion)),
-        node('td',duration(c.metrics?.medianSeconds) + ' / ' + number(c.estimate || 0) + ' min'),
+        node('td',duration(c.metrics?.medianSeconds, 'compact') + ' / ' + duration((c.estimate || 0) * 60)),
         node('td',c.drop ? lang(c.drop.title) + ' · ' + percent(c.drop.percent) : '—'));
       row.append(node('td',c.updatedAt ? date(c.updatedAt * 1000,{dateStyle:'medium'}) : '—'));
       if (editorial) row.append(node('td',c.owner || '—'));
@@ -292,14 +294,14 @@
     window.dispatchEvent(new CustomEvent('academy:workspace-access',{detail:{canCreate:data.canCreate,studioAdmin:data.studioAdmin,courses:data.courses}}));
     const canEdit = data.canCreate || data.studioAdmin;
     const translationsOnly = !canEdit && data.courses.length && data.courses.every(c => c.role === 'translate');
-    el('title').textContent = canEdit || !data.courses.length ? copy('Overzicht','Übersicht') : translationsOnly ? copy('Mijn vertaalopdrachten','Meine Übersetzungsaufträge') : copy('Gedeeld met mij','Mit mir geteilt');
+    el('title').textContent = canEdit || !data.courses.length ? uiText('overview.title') : translationsOnly ? uiText('overview.myTranslations') : uiText('overview.sharedWithMe');
     if (!data.courses.length) {
       if (canEdit) {
-        welcome(copy('Nog geen expedities','Noch keine Expeditionen'),
-          copy('Geef je eerste expeditie vorm. Kies hieronder een opzet en voeg je eigen stations en stappen toe.','Gestalten Sie Ihre erste Expedition. Wählen Sie unten eine Vorlage und ergänzen Sie Ihre Stationen und Schritte.'));
+        welcome(uiText('overview.noCourses'),
+          uiText('overview.startHelp'));
         el('start').hidden=false; drawTemplates();
       } else {
-        welcome(copy('Toegang op uitnodiging','Zugang auf Einladung'),copy('Vraag de beheerder om een uitnodiging om hier expedities te maken of te bewerken. Als deelnemer gebruik je de link die je hebt gekregen.','Bitten Sie die Administration um eine Einladung, um Expeditionen zu erstellen oder zu bearbeiten. Als teilnehmende Person nutzen Sie Ihren persönlichen Lernlink.'),'contact');
+        welcome(uiText('overview.invitedOnly'),uiText('overview.invitationHelp'),'contact');
       }
       return;
     }
@@ -317,7 +319,7 @@
     const loadingTimer = setTimeout(() => {
       if (request !== generation) return;
       el('loading').hidden=false;
-      notice(copy('Je werkruimte wordt opgehaald…','Ihr Arbeitsbereich wird geladen…'));
+      notice(uiText('overview.loading'));
     }, 300);
     try {
       const response = await api.authFetch('/api/academy/overview?' + docs);
@@ -328,7 +330,7 @@
     } catch (_) {
       if (request !== generation) return;
       el('loading').hidden=true; el('retry').hidden=false;
-      notice(copy('Je overzicht kon niet worden opgehaald.','Ihre Übersicht konnte nicht geladen werden.'));
+      notice(uiText('overview.loadFailed'));
     } finally { clearTimeout(loadingTimer); }
   }
   function changePeriod() {
@@ -340,11 +342,14 @@
     docs.delete('from'); docs.delete('to'); docs.set('days',btn.dataset.days); changePeriod();
   }));
   el('custom').addEventListener('click',() => {
-    const open = el('dates').hidden; el('dates').hidden=!open; el('custom').setAttribute('aria-expanded',String(open)); if (open) el('from').focus();
+    const open = el('dates').hidden;
+    el('dates').hidden = !open;
+    el('custom').setAttribute('aria-expanded', String(open));
+    if (open) (el('from')._appDateInstance?.trigger || el('from')).focus();
   });
   el('filters').addEventListener('submit',evt => {
     evt.preventDefault(); const start=el('from').value, end=el('to').value;
-    if (!start || !end || start>end) { notice(copy('Kies een geldige begin- en einddatum.','Wählen Sie ein gültiges Anfangs- und Enddatum.')); return; }
+    if (!start || !end || start>end) { notice(uiText('overview.invalidDates')); return; }
     docs.delete('days'); docs.set('from',start); docs.set('to',end); changePeriod();
   });
   el('route-toggle').addEventListener('click',() => { showRoutes=!showRoutes; el('route-toggle').setAttribute('aria-pressed',String(showRoutes)); drawTable(); });
@@ -358,7 +363,7 @@
   presets.forEach(btn => btn.addEventListener('click', async () => {
     if (!user || btn.disabled) return;
     const creatingAs=user.uid;
-    presets.forEach(other => {other.disabled=true;}); notice(copy('De expeditie wordt aangemaakt…','Die Expedition wird erstellt…'));
+    presets.forEach(other => {other.disabled=true;}); notice(uiText('overview.creating'));
     try {
       const title=btn.querySelector('strong').textContent;
       const payload=window.XpedElearningModel.createExpeditionPreset(btn.dataset.preset,title,'nl',{academy:true});
@@ -368,7 +373,7 @@
       const result=await res.json();
       if (auth.currentUser?.uid===creatingAs) location.assign(courseUrl(result.expedition.id) + '/bewerken');
     } catch (_) {
-      if (auth.currentUser?.uid===creatingAs) notice(copy('Aanmaken is niet gelukt. Probeer het opnieuw.','Die Expedition konnte nicht erstellt werden. Versuchen Sie es erneut.'));
+      if (auth.currentUser?.uid===creatingAs) notice(uiText('overview.createFailed'));
     } finally { presets.forEach(other => {other.disabled=false;}); }
   }));
   try {
@@ -382,11 +387,11 @@
       catch (_) { dismissedArchive = new Set(); }
       if (user) { refresh(); return; }
       notice(''); el('loading').hidden=true;
-      welcome(copy('Welkom bij xPED Academy','Willkommen in der xPED Academy'),
-        copy('Maak en beheer interactieve expedities over pijn. Log in om je werkruimte te openen.','Erstellen und verwalten Sie interaktive Expeditionen rund um das Thema Schmerz. Melden Sie sich an, um Ihren Arbeitsbereich zu öffnen.'),'signin');
+      welcome(uiText('overview.welcome'),
+        uiText('overview.welcomeHelp'),'signin');
     });
   } catch (_) {
     hideContent(); el('loading').hidden=true;
-    notice(copy('Inloggen is tijdelijk niet beschikbaar. Ververs de pagina om het opnieuw te proberen.','Die Anmeldung ist vorübergehend nicht verfügbar. Laden Sie die Seite erneut.'));
+    notice(uiText('overview.authUnavailable'));
   }
 })();

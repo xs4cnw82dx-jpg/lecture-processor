@@ -48,10 +48,10 @@
   padding: clamp(22px, 4vw, 36px);
   background: var(--theme-surface);
   border: 1px solid var(--theme-line);
-  border-radius: var(--xped-radius-lg);
+  border-radius: var(--ac-radius-surface);
 }
 .academy-document { width: min(calc(100% - 32px), 720px); line-height: 1.65; }
-.academy-document a { color: var(--theme-accent-ink); }
+.academy-document p a { color: var(--theme-accent-ink); text-decoration: underline; text-underline-offset: .15em; }
 .academy-auth h1, .academy-document h1 { margin: 0; font: 700 clamp(1.7rem, 4vw, 2.2rem)/1.15 var(--xped-font-display); }
 .academy-document h2 { margin-top: 1.5em; font-size: 1.18rem; }
 .academy-auth p { line-height: 1.5; }
@@ -67,7 +67,7 @@
   margin-bottom: 8px;
   padding: 11px 12px;
   border: 1px solid var(--theme-control-border);
-  border-radius: 8px;
+  border-radius: var(--ac-radius-control);
   color: var(--theme-ink);
   background: var(--theme-surface);
   font: inherit;
@@ -79,7 +79,7 @@
   background: transparent;
   color: var(--theme-accent-ink);
   cursor: pointer;
-  text-decoration: underline;
+  text-decoration: none;
   font: inherit;
   font-size: .9rem;
 }
@@ -107,7 +107,7 @@
   padding: 14px;
   background: var(--theme-surface);
   border: 1px solid var(--theme-line);
-  border-radius: 10px;
+  border-radius: var(--ac-radius-surface);
   box-shadow: var(--xped-shadow-md);
 }
 .academy-preferences-panel select { padding: 6px; font: inherit; color: var(--theme-ink); background: var(--theme-surface); }
@@ -133,11 +133,11 @@
   margin-block: 20px 8px;
 }
 .academy-folder-bar[hidden] { display: none; }
-.academy-folder-bar label { font-weight: 650; }
+.academy-folder-bar label { color: var(--theme-muted-strong); font-size: var(--ac-type-label); font-weight: 500; }
 .academy-folder-bar select { width: min(100%, 18rem); min-width: 0; }
 .academy-preferences-panel a { color: var(--theme-accent-ink); }
 .academy-account-page h1 { margin-top: .6em; }
-.academy-account-page form { margin-block: 1em; padding: 1em; border: 1px solid var(--theme-danger-line); border-radius: .6em; }
+.academy-account-page form { margin-block: 1em; padding: 1em; border: 1px solid var(--theme-danger-line); border-radius: var(--ac-radius-surface); }
 .academy-account-page .acct-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 1em; }
 #acct-identity { overflow-wrap: anywhere; }
 #acct-status:empty { display: none; }

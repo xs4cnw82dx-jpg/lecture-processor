@@ -5,7 +5,8 @@
   var platformBootstrap = window.Xped.bootstrap;
   var platformAuth = window.Xped.auth;
 
-  var uiText = window.Xped.i18n ? window.Xped.i18n.t : function (text) { return text; };
+  var i18n = window.Xped.i18n;
+  var uiText = i18n.t;
   var Model = window.XpedElearningModel;
   var expeditionId = document.body.dataset.expeditionId || '';
   var kpisEl = document.getElementById('el-resp-kpis');
@@ -48,7 +49,7 @@
   dates.addEventListener('submit', function (event) {
     event.preventDefault();
     if (fromDate.value && toDate.value && toDate.value < fromDate.value) {
-      toDate.setCustomValidity(uiLanguage() === 'de' ? 'Das Enddatum liegt vor dem Anfang.' : 'De einddatum ligt vóór de begindatum.');
+      toDate.setCustomValidity(uiText('report.invalidDates'));
       toDate.reportValidity();
       return;
     }
@@ -61,134 +62,32 @@
   periodSelect.addEventListener('change', function () { fromDate.value = toDate.value = ''; loadResponses(); });
   retry.addEventListener('click', loadResponses);
 
-  function activityName(type, lang) {
+  function activityName(type) {
     var names = {
-      mcq: ['Meerkeuzevraag', 'Multiple choice', 'Multiple-Choice-Frage'],
-      myth_fact: ['Feit of fabel', 'Myth or fact', 'Mythos oder Fakt'],
-      scale: ['Schaalvraag', 'Rating scale', 'Skalenfrage'],
-      wordcloud: ['Woordwolk', 'Word cloud', 'Wortwolke'],
-      ranking: ['Rangschikking', 'Ranking', 'Rangfolge'],
-      reflection: ['Reflectie', 'Reflection', 'Reflexion'],
-      balance_scale: ['Draagkracht en draaglast', 'Balance scale', 'Belastung und Ressourcen'],
-      mini_plan: ['Persoonlijk miniplan', 'Personal mini-plan', 'Persönlicher Mini-Plan'],
+      mcq: uiText('report.activity.mcq'),
+      myth_fact: uiText('report.activity.myth_fact'),
+      scale: uiText('report.activity.scale'),
+      wordcloud: uiText('report.activity.wordcloud'),
+      ranking: uiText('report.activity.ranking'),
+      reflection: uiText('report.activity.reflection'),
+      balance_scale: uiText('report.activity.balance_scale'),
+      mini_plan: uiText('report.activity.mini_plan'),
     };
-    return names[type] ? names[type][lang === 'nl' ? 0 : lang === 'de' ? 2 : 1] : Model.getBlockMeta(type).label;
+    return names[type] || Model.getBlockMeta(type).label;
   }
 
-  // Report copy, keyed per interface language (Dutch first). Numbers use the same locale.
-  var COPY = {
-    nl: {
-      notCompleted: 'Niet voltooid', medianActive: 'Mediane actieve tijd', middleHalf: 'Middelste helft',
-      timedSessions: 'Sessies met gemeten tijd', timeTitle: 'Tijdsbesteding', estimated: 'geschat {n} min',
-      sessionsShort: 'n {n}', hourShort: 'u',
-      noTime: 'Nog geen gemeten tijd. Tijd wordt alleen gemeten bij deelnemers die hebben gekozen om te delen.',
-      timeNote: 'n = {n} sessies met gemeten tijd. Actieve tijd telt alleen als de pagina open is en de deelnemer bezig is, maximaal 15 minuten per bezoek. Open een station voor de tijd per stap.',
-      dropTitle: 'Uitval ten opzichte van de vorige stap',
-      dropNote: 'Na het streepje: deelnemers die de vorige stap bereikten maar deze niet.',
-      trendTitle: 'Verloop per week', started: 'Gestart', completed: 'Voltooid', weekOf: 'Week van',
-      trendSummary: '{weeks} weken: {started} sessies gestart, {completed} voltooid.',
-      trendNote: 'Sessies per week waarin ze startten (maandag tot en met zondag).',
-      period: 'Periode', allTime: 'Alle tijd', lastDays: 'Laatste {n} dagen',
-      order: 'Volgorde van de vragen', courseOrder: 'Cursusvolgorde', hardestFirst: 'Minst vaak goed eerst',
-      correctShare: '{pct} goed beantwoord',
-      clarity: 'Duidelijkheid', engagement: 'Betrokkenheid', outOfFive: '{value} / 5', aboutMetric: 'Uitleg bij {name}',
-      defCompleted: 'Gedeelde sessies die het einde van de expeditie bereikten, gedeeld door alle gedeelde sessies binnen je filters.',
-      defNotCompleted: 'Gedeelde sessies binnen je filters die het einde nog niet bereikten.',
-      defTesters: 'Gedeelde sessies binnen je filters. Privésessies tellen nergens mee.',
-      defMedianActive: 'De middelste actieve tijd per sessie, alleen voor sessies met gemeten tijd. Actieve tijd telt als de pagina open is en de deelnemer bezig is, maximaal 15 minuten per bezoek.',
-      defMiddleHalf: 'De helft van de sessies met gemeten tijd ligt tussen deze twee waarden (25e tot 75e percentiel).',
-      defTimed: 'Gedeelde sessies waarvan we actieve tijd hebben gemeten. Dat gebeurt alleen na toestemming voor de tijdregistratie.',
-      defClarity: 'Gemiddelde duidelijkheidsscore uit de pilotfeedback, op een schaal van 1 (onduidelijk) tot 5 (heel duidelijk).',
-      defEngagement: 'Gemiddelde betrokkenheidsscore uit de pilotfeedback, op een schaal van 1 (weinig) tot 5 (heel betrokken).',
-      stepSummary: 'Bereikt {reached} · verder gegaan {continued} · mediane actieve tijd {time}', noTimeShort: 'niet gemeten',
-      longerBy: '+{amount} langer dan geschat', shorterBy: '−{amount} korter dan geschat',
-      estimateRule: 'Getoond als de mediaan meer dan de helft afwijkt van de richttijd en er minstens {n} sessies met gemeten tijd zijn.',
-    },
-    de: {
-      notCompleted: 'Nicht abgeschlossen', medianActive: 'Mediane aktive Zeit', middleHalf: 'Mittlere Hälfte',
-      timedSessions: 'Sitzungen mit gemessener Zeit', timeTitle: 'Zeitaufwand', estimated: 'geschätzt {n} Min.',
-      sessionsShort: 'n {n}', hourShort: 'Std.',
-      noTime: 'Noch keine gemessene Zeit. Zeit wird nur bei Teilnehmenden gemessen, die dem Teilen zugestimmt haben.',
-      timeNote: 'n = {n} Sitzungen mit gemessener Zeit. Aktive Zeit zählt nur, solange die Seite geöffnet ist und die Person aktiv ist, höchstens 15 Minuten pro Besuch. Öffnen Sie eine Station für die Zeit pro Schritt.',
-      dropTitle: 'Abbruch gegenüber dem vorherigen Schritt',
-      dropNote: 'Nach dem Strich: Teilnehmende, die den vorherigen Schritt erreicht haben, diesen aber nicht.',
-      trendTitle: 'Verlauf pro Woche', started: 'Gestartet', completed: 'Abgeschlossen', weekOf: 'Woche ab',
-      trendSummary: '{weeks} Wochen: {started} Sitzungen gestartet, {completed} abgeschlossen.',
-      trendNote: 'Sitzungen nach der Woche, in der sie begonnen haben (Montag bis Sonntag).',
-      period: 'Zeitraum', allTime: 'Gesamter Zeitraum', lastDays: 'Letzte {n} Tage',
-      order: 'Reihenfolge der Fragen', courseOrder: 'Kursreihenfolge', hardestFirst: 'Am seltensten richtig zuerst',
-      correctShare: '{pct} richtig beantwortet',
-      clarity: 'Verständlichkeit', engagement: 'Beteiligung', outOfFive: '{value} / 5', aboutMetric: 'Erklärung zu {name}',
-      defCompleted: 'Geteilte Sitzungen, die das Ende der Expedition erreicht haben, geteilt durch alle geteilten Sitzungen in Ihren Filtern.',
-      defNotCompleted: 'Geteilte Sitzungen in Ihren Filtern, die das Ende noch nicht erreicht haben.',
-      defTesters: 'Geteilte Sitzungen in Ihren Filtern. Private Sitzungen zählen nirgends mit.',
-      defMedianActive: 'Die mittlere aktive Zeit pro Sitzung, nur für Sitzungen mit gemessener Zeit. Aktive Zeit zählt, solange die Seite geöffnet ist und die Person aktiv ist, höchstens 15 Minuten pro Besuch.',
-      defMiddleHalf: 'Die Hälfte der Sitzungen mit gemessener Zeit liegt zwischen diesen beiden Werten (25. bis 75. Perzentil).',
-      defTimed: 'Geteilte Sitzungen, deren aktive Zeit gemessen wurde. Das geschieht nur nach Zustimmung zur Zeiterfassung.',
-      defClarity: 'Durchschnittliche Verständlichkeit aus dem Pilot-Feedback auf einer Skala von 1 (unklar) bis 5 (sehr klar).',
-      defEngagement: 'Durchschnittliche Beteiligung aus dem Pilot-Feedback auf einer Skala von 1 (gering) bis 5 (sehr hoch).',
-      stepSummary: 'Erreicht {reached} · weitergegangen {continued} · mediane aktive Zeit {time}', noTimeShort: 'nicht gemessen',
-      longerBy: '+{amount} länger als geschätzt', shorterBy: '−{amount} kürzer als geschätzt',
-      estimateRule: 'Wird angezeigt, wenn der Median um mehr als die Hälfte von der Richtzeit abweicht und mindestens {n} Sitzungen mit gemessener Zeit vorliegen.',
-    },
-    en: {
-      notCompleted: 'Not completed', medianActive: 'Median active time', middleHalf: 'Middle half',
-      timedSessions: 'Sessions with measured time', timeTitle: 'Time spent', estimated: 'estimated {n} min',
-      sessionsShort: 'n {n}', hourShort: 'h',
-      noTime: 'No measured time yet. Time is only measured for learners who chose to share.',
-      timeNote: 'n = {n} sessions with measured time. Active time counts only while the page is open and the learner is using it, up to 15 minutes per visit. Open a station for the time per step.',
-      dropTitle: 'Drop-off from the previous step',
-      dropNote: 'After the dash: learners who reached the previous step but not this one.',
-      trendTitle: 'Weekly activity', started: 'Started', completed: 'Completed', weekOf: 'Week of',
-      trendSummary: '{weeks} weeks: {started} sessions started, {completed} completed.',
-      trendNote: 'Sessions by the week they started (Monday to Sunday).',
-      period: 'Period', allTime: 'All time', lastDays: 'Last {n} days',
-      order: 'Question order', courseOrder: 'Course order', hardestFirst: 'Least often correct first',
-      correctShare: '{pct} answered correctly',
-      clarity: 'Clarity', engagement: 'Engagement', outOfFive: '{value} / 5', aboutMetric: 'About {name}',
-      defCompleted: 'Shared sessions that reached the end of the expedition, divided by all shared sessions within your filters.',
-      defNotCompleted: 'Shared sessions within your filters that have not reached the end yet.',
-      defTesters: 'Shared sessions within your filters. Private sessions are never counted.',
-      defMedianActive: 'The middle active time per session, only for sessions with measured time. Active time counts while the page is open and the learner is using it, up to 15 minutes per visit.',
-      defMiddleHalf: 'Half of the sessions with measured time fall between these two values (25th to 75th percentile).',
-      defTimed: 'Shared sessions whose active time was measured. This only happens after consent to time measurement.',
-      defClarity: 'Average clarity score from pilot feedback, on a scale from 1 (unclear) to 5 (very clear).',
-      defEngagement: 'Average engagement score from pilot feedback, on a scale from 1 (low) to 5 (very engaged).',
-      stepSummary: 'Reached {reached} · continued {continued} · median active time {time}', noTimeShort: 'not measured',
-      longerBy: '+{amount} longer than estimated', shorterBy: '−{amount} shorter than estimated',
-      estimateRule: 'Shown when the median differs from the estimate by more than half and at least {n} sessions have measured time.',
-    },
-  };
-  function uiLanguage() { return document.documentElement.lang === 'de' ? 'de' : 'nl'; }
-  function copy(key, params) {
-    var text = COPY[uiLanguage()][key] || COPY.nl[key] || key;
-    Object.keys(params || {}).forEach(function (name) { text = text.split('{' + name + '}').join(String(params[name])); });
-    return text;
-  }
-  // Under a minute: seconds. Under ten minutes: m:ss. Then whole minutes, then hours.
   function formatDuration(seconds) {
-    var total = Math.max(0, Math.round(Number(seconds) || 0));
-    if (total < 60) return total + ' s';
-    if (total < 600) return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0') + ' min';
-    var minutes = Math.round(total / 60);
-    if (minutes < 60) return minutes + ' min';
-    return Math.floor(minutes / 60) + ' ' + copy('hourShort') + ' ' + String(minutes % 60).padStart(2, '0') + ' min';
+    return i18n.duration(seconds, 'compact');
   }
   function formatDurationRange(low, high) {
-    var a = Math.round(Number(low) || 0);
-    var b = Math.round(Number(high) || 0);
-    if (a >= 600 && b < 3600) return Math.round(a / 60) + '–' + Math.round(b / 60) + ' min';
-    return formatDuration(a) + ' – ' + formatDuration(b);
-  }
-  function uiLocale() {
-    return { nl: 'nl-NL', de: 'de-DE', en: 'en-GB' }[uiLanguage()];
+    if (!Number.isFinite(low) || !Number.isFinite(high)) return '—';
+    return formatDuration(low) + ' – ' + formatDuration(high);
   }
   function formatPercent(value) {
-    var share = Math.max(0, Number(value) || 0) / 100;
-    return new Intl.NumberFormat(uiLocale(), { style: 'percent', maximumFractionDigits: 1 }).format(share);
+    return i18n.percent(value);
   }
   function formatScore(value) {
-    return value === null || value === undefined ? '—' : new Intl.NumberFormat(uiLocale(), { maximumFractionDigits: 1 }).format(value);
+    return value == null ? '—' : i18n.number(value, { maximumFractionDigits: 1 });
   }
   function sessionsLabel(count) {
     return count + (count === 1 ? uiText(' session') : uiText(' sessions'));
@@ -236,9 +135,9 @@
   // Options are rebuilt rather than relabelled, so the enhanced select picks up the new text.
   function labelPeriods() {
     var value = periodSelect.value;
-    periodSelect.setAttribute('aria-label', copy('period'));
+    periodSelect.setAttribute('aria-label', uiText('Period'));
     periodSelect.replaceChildren.apply(periodSelect, ['', '7', '30', '90'].map(function (days) {
-      return new Option(days ? copy('lastDays', { n: days }) : copy('allTime'), days);
+      return new Option(days ? uiText('Last {n} days', { n: days }) : uiText('All time'), days);
     }));
     periodSelect.value = value;
   }
@@ -253,7 +152,7 @@
     toDate.value = params.get('to') || '';
   })();
 
-  function groupName(value) { return value === 'default' ? (uiLanguage() === 'de' ? 'Ohne Gruppe' : 'Zonder groep') : value; }
+  function groupName(value) { return value === 'default' ? uiText('report.ungrouped') : value; }
 
   function renderFilterControls(cohorts) {
     var legend = groupField.querySelector('legend');
@@ -268,16 +167,16 @@
     });
     if (!cohorts.length && !activeGroups.size) {
       var empty = document.createElement('p');
-      empty.textContent = uiLanguage() === 'de' ? 'Noch keine Gruppen.' : 'Nog geen groepen.';
+      empty.textContent = uiText('report.noGroups');
       groupField.append(empty);
     }
     chips.replaceChildren();
     for (const [key, value] of filterQuery()) {
       var chip = document.createElement('button');
-      var labels = {cohort:groupName(value),from:(uiLanguage()==='de'?'Von ':'Van ')+value,to:(uiLanguage()==='de'?'Bis ':'T/m ')+value,
-        language:value.toUpperCase(),days:copy('lastDays',{n:value})};
+      var labels = {cohort:groupName(value),from:uiText('report.fromPrefix') + value,to:uiText('report.untilPrefix') + value,
+        language:value.toUpperCase(),days:uiText('Last {n} days',{n:value})};
       chip.textContent = labels[key] + ' ×';
-      chip.setAttribute('aria-label',(uiLanguage()==='de'?'Filter entfernen: ':'Filter verwijderen: ')+labels[key]);
+      chip.setAttribute('aria-label',uiText('report.removeFilter') + labels[key]);
       chip.onclick = function () {
         if (key === 'cohort') activeGroups.delete(value);
         if (key === 'language') langSelect.value='';
@@ -355,7 +254,7 @@
       info.className = 'academy-metric-info';
       info.textContent = 'i';
       info.setAttribute('translate', 'no');
-      info.setAttribute('aria-label', copy('aboutMetric', { name: label }));
+      info.setAttribute('aria-label', uiText('About {name}', { name: label }));
       info.setAttribute('aria-expanded', 'false');
       info.setAttribute('aria-controls', text.id);
       info.addEventListener('click', function () {
@@ -379,18 +278,18 @@
     var title = document.createElement('h2');
     title.id = 'el-resp-time-title';
     title.setAttribute('translate', 'no');
-    title.textContent = copy('timeTitle');
+    title.textContent = uiText('Time spent');
     timeEl.hidden = !(data.funnel || []).length;
     if (!active) {
-      timeEl.replaceChildren(title, chartNote(copy('noTime')));
+      timeEl.replaceChildren(title, chartNote(uiText('No measured time yet. Time is only measured for learners who chose to share.')));
       return;
     }
     var figures = document.createElement('dl');
     figures.className = 'el-split-stats el-time-figures';
     figures.append(
-      splitFigure(copy('medianActive'), formatDuration(active.median), false, true, copy('defMedianActive')),
-      splitFigure(copy('middleHalf'), formatDurationRange(active.p25, active.p75), false, true, copy('defMiddleHalf')),
-      splitFigure(copy('timedSessions'), String(summary.timedSessions || active.count), false, true, copy('defTimed'))
+      splitFigure(uiText('Median active time'), formatDuration(active.median), false, true, uiText('The middle active time per session, only for sessions with measured time. Active time counts while the page is open and the learner is using it, up to 15 minutes per visit.')),
+      splitFigure(uiText('Middle half'), formatDurationRange(active.p25, active.p75), false, true, uiText('Half of the sessions with measured time fall between these two values (25th to 75th percentile).')),
+      splitFigure(uiText('Sessions with measured time'), String(summary.timedSessions || active.count), false, true, uiText('Shared sessions whose active time was measured. This only happens after consent to time measurement.'))
     );
     var stations = (data.stations || []).filter(function (station) { return station.time; });
     var slowestStation = Math.max.apply(null, stations.map(function (station) { return station.time.median; }).concat(1));
@@ -400,14 +299,14 @@
       var estimate = Number(station.estimatedMinutes) || 0;
       var difference = estimate > 0 ? station.time.median - estimate * 60 : 0;
       var notable = estimate > 0 && station.time.count >= MIN_ESTIMATE_SAMPLE && Math.abs(difference) > estimate * 60 * 0.5;
-      var detail = 'P75 ' + formatDuration(station.time.p75) + (estimate ? ' · ' + copy('estimated', { n: estimate }) : '');
+      var detail = 'P75 ' + formatDuration(station.time.p75) + (estimate ? ' · ' + uiText('estimated {n} min', { n: estimate }) : '');
       var row = barRow(Model.getLocalized(station.moduleTitle, reportLang, courseLang), formatDuration(station.time.median),
         detail, station.time.median, slowestStation, notable ? (difference > 0 ? 'is-over' : 'is-under') : '');
       if (notable) {
         var flag = document.createElement('span');
         flag.className = 'el-chart-flag' + (difference < 0 ? ' is-under' : '');
-        flag.textContent = copy(difference > 0 ? 'longerBy' : 'shorterBy', { amount: formatDuration(Math.abs(difference)) });
-        flag.title = copy('estimateRule', { n: MIN_ESTIMATE_SAMPLE });
+        flag.textContent = difference > 0 ? uiText('+{amount} longer than estimated', { amount: formatDuration(difference) }) : uiText('−{amount} shorter than estimated', { amount: formatDuration(-difference) });
+        flag.title = uiText('Shown when the median differs from the estimate by more than half and at least {n} sessions have measured time.', { n: MIN_ESTIMATE_SAMPLE });
         row.querySelector('.el-chart-value').append(' ', flag);
       }
       var item = document.createElement('details');
@@ -422,7 +321,7 @@
       var slowestStep = Math.max.apply(null, stationSteps.map(function (step) { return step.time.median; }).concat(1));
       stationSteps.forEach(function (step) {
         steps.appendChild(barRow(Model.getLocalized(step.stepTitle, reportLang, courseLang), formatDuration(step.time.median),
-          'P75 ' + formatDuration(step.time.p75) + ' · ' + copy('sessionsShort', { n: step.time.count }), step.time.median, slowestStep));
+          'P75 ' + formatDuration(step.time.p75) + ' · ' + uiText('n {n}', { n: step.time.count }), step.time.median, slowestStep));
       });
       item.append(head, steps);
       list.appendChild(item);
@@ -434,22 +333,33 @@
     var hasDistribution = totals.filter(function (seconds) { return seconds > 0; }).length > 1;
     if (hasDistribution) {
       var svg = svgNode('svg',{viewBox:'0 0 100 8',preserveAspectRatio:'none','aria-hidden':'true'});
-      var legend = document.createElement('ul');
+      var shares = document.createElement('table');
+      var shareCaption = shares.createCaption();
+      shareCaption.textContent = uiText('report.stationTimeShare');
+      var columns = shares.createTHead().insertRow();
+      [uiText('report.stationColumn'), uiText('report.timeShareColumn')].forEach(function (name) {
+        var heading = document.createElement('th');
+        heading.scope = 'col';
+        heading.textContent = name;
+        columns.append(heading);
+      });
+      var values = shares.createTBody();
       var left = 0;
       stations.forEach(function (station,i) {
         var percent = 100*totals[i]/total;
-        var item = document.createElement('li');
-        item.textContent = Model.getLocalized(station.moduleTitle, reportLang, courseLang) + ' · ' + formatPercent(percent);
+        var row = values.insertRow();
+        var stationName = document.createElement('th');
+        stationName.scope = 'row';
+        stationName.textContent = Model.getLocalized(station.moduleTitle, reportLang, courseLang);
+        row.append(stationName);
+        row.insertCell().textContent = formatPercent(percent);
         svg.appendChild(svgNode('rect',{x:left,y:0,width:percent,height:8,class:'academy-time-segment tone-'+i%4}));
         left += percent;
-        legend.appendChild(item);
       });
-      var caption = document.createElement('figcaption');
-      caption.textContent = uiLanguage()==='de' ? 'Anteil der gemessenen aktiven Zeit pro Station' : 'Aandeel in de gemeten actieve tijd per station';
-      distribution.append(caption,svg,legend);
+      distribution.append(svg, shares);
     }
     distribution.hidden = !hasDistribution;
-    timeEl.replaceChildren(title, figures, distribution, list, chartNote(copy('timeNote', { n: summary.timedSessions || active.count })));
+    timeEl.replaceChildren(title, figures, distribution, list, chartNote(uiText('n = {n} sessions with measured time. Active time counts only while the page is open and the learner is using it, up to 15 minutes per visit. Open a station for the time per step.', { n: summary.timedSessions || active.count })));
   }
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
@@ -459,7 +369,7 @@
     return node;
   }
   function weekLabel(isoDate) {
-    return new Intl.DateTimeFormat(uiLocale(), { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(isoDate + 'T00:00:00Z'));
+    return i18n.date(new Date(isoDate + 'T00:00:00Z'), { day: 'numeric', month: 'short', timeZone: 'UTC' });
   }
 
   // Weekly starts (neutral) with completions (mint) drawn over them, plus a table for screen readers.
@@ -473,10 +383,10 @@
     var title = document.createElement('h2');
     title.id = 'el-resp-trend-title';
     title.setAttribute('translate', 'no');
-    title.textContent = copy('trendTitle');
+    title.textContent = uiText('Weekly activity');
     if (weeks.length === 1) {
       var only = weeks[0];
-      var description = copy('weekOf') + ' ' + weekLabel(only.week) + ' · ' + copy('started') + ' ' + only.started + ' · ' + copy('completed') + ' ' + only.completed;
+      var description = uiText('Week of') + ' ' + weekLabel(only.week) + ' · ' + uiText('Started') + ' ' + only.started + ' · ' + uiText('Completed') + ' ' + only.completed;
       if (only.revision) description += ' · v' + only.revision.revision;
       trendEl.replaceChildren(title, chartNote(description));
       return;
@@ -484,7 +394,7 @@
     var legend = document.createElement('div');
     legend.className = 'el-trend-legend';
     legend.setAttribute('aria-hidden', 'true');
-    [['is-started', copy('started')], ['is-completed', copy('completed')]].forEach(function (entry) {
+    [['is-started', uiText('Started')], ['is-completed', uiText('Completed')]].forEach(function (entry) {
       var key = document.createElement('span');
       key.className = 'el-trend-key ' + entry[0];
       key.textContent = entry[1];
@@ -500,14 +410,14 @@
     var barWidth = Math.max(4, Math.min(28, slot * 0.58));
     var most = Math.max.apply(null, weeks.map(function (week) { return week.started; }).concat(1));
     var chart = svgNode('svg', { viewBox: '0 0 ' + width + ' 160', width: width, height: 160, class: 'el-trend-chart', role: 'img',
-      'aria-label': copy('trendSummary', { weeks: weeks.length, started: started, completed: completed }) });
+      'aria-label': uiText('{weeks} weeks: {started} sessions started, {completed} completed.', { weeks: weeks.length, started: started, completed: completed }) });
     chart.appendChild(svgNode('line', { x1: 0, x2: width, y1: plot + 0.5, y2: plot + 0.5, class: 'el-trend-axis' }));
     var every = Math.ceil(weeks.length / Math.max(2, Math.floor(width / 84)));
     weeks.forEach(function (week, index) {
       var x = index * slot + (slot - barWidth) / 2;
       var group = svgNode('g');
       var hint = svgNode('title');
-      hint.textContent = copy('weekOf') + ' ' + weekLabel(week.week) + ': ' + week.started + ' · ' + week.completed;
+      hint.textContent = uiText('Week of') + ' ' + weekLabel(week.week) + ': ' + week.started + ' · ' + week.completed;
       group.appendChild(hint);
       var startHeight = plot * week.started / most;
       var doneHeight = plot * week.completed / most;
@@ -516,7 +426,7 @@
       if (week.revision) {
         var marker = svgNode('line', {x1: x+barWidth/2, x2: x+barWidth/2, y1: 4, y2: plot, class:'academy-report-revision'});
         var caption = svgNode('title');
-        caption.textContent = 'v' + week.revision.revision + ' · ' + new Intl.DateTimeFormat(uiLocale(), {dateStyle:'medium',timeZone:'UTC'}).format(week.revision.at*1000);
+        caption.textContent = 'v' + week.revision.revision + ' · ' + i18n.date(week.revision.at * 1000, { dateStyle: 'medium', timeZone: 'UTC' });
         marker.appendChild(caption);
         group.appendChild(marker);
       }
@@ -530,9 +440,9 @@
     var table = document.createElement('table');
     table.className = 'academy-week-table';
     var caption = document.createElement('caption');
-    caption.textContent = copy('trendTitle');
+    caption.textContent = uiText('Weekly activity');
     var headRow = table.createTHead().insertRow();
-    [copy('weekOf'), copy('started'), copy('completed'), uiLanguage() === 'de' ? 'Öffentliche Version' : 'Openbare versie'].forEach(function (text) {
+    [uiText('Week of'), uiText('Started'), uiText('Completed'), uiText('report.publicVersion')].forEach(function (text) {
       var cell = document.createElement('th');
       cell.scope = 'col';
       cell.textContent = text;
@@ -547,13 +457,13 @@
     var details = document.createElement('details');
     details.className = 'academy-chart-table';
     var hint = document.createElement('summary');
-    hint.textContent = uiLanguage() === 'de' ? 'Datentabelle anzeigen' : 'Tabel bekijken';
+    hint.textContent = uiText('report.viewTable');
     details.append(hint,table);
     var figure = document.createElement('figure');
     var captionNode = document.createElement('figcaption');
-    captionNode.textContent = copy('trendSummary', {weeks: weeks.length, started: started, completed: completed});
+    captionNode.textContent = uiText('{weeks} weeks: {started} sessions started, {completed} completed.', {weeks: weeks.length, started: started, completed: completed});
     figure.append(chart,captionNode);
-    trendEl.replaceChildren(title, legend, figure, details, chartNote(copy('trendNote')));
+    trendEl.replaceChildren(title, legend, figure, details, chartNote(uiText('Sessions by the week they started (Monday to Sunday).')));
   }
 
   var trendWidth = 0;
@@ -610,12 +520,12 @@
     var name = document.createElement('span');
     name.id = 'el-resp-order-label';
     name.className = 'el-resp-order-label';
-    name.textContent = copy('order');
+    name.textContent = uiText('Question order');
     var group = document.createElement('div');
     group.className = 'el-seg';
     group.setAttribute('role', 'group');
     group.setAttribute('aria-labelledby', name.id);
-    [['course', copy('courseOrder')], ['hardest', copy('hardestFirst')]].forEach(function (choice) {
+    [['course', uiText('Course order')], ['hardest', uiText('Least often correct first')]].forEach(function (choice) {
       var button = document.createElement('button');
       button.type = 'button';
       button.textContent = choice[1];
@@ -645,8 +555,8 @@
     var shares = document.createElement('dl');
     shares.className = 'el-split-figures';
     shares.append(
-      splitFigure(uiText('Completed'), total ? formatPercent(rate) : '—', true, false, copy('defCompleted')),
-      splitFigure(copy('notCompleted'), total ? formatPercent(100 - rate) : '—', false, true, copy('defNotCompleted'))
+      splitFigure(uiText('Completed'), total ? formatPercent(rate) : '—', true, false, uiText('Shared sessions that reached the end of the expedition, divided by all shared sessions within your filters.')),
+      splitFigure(uiText('Not completed'), total ? formatPercent(100 - rate) : '—', false, true, uiText('Shared sessions within your filters that have not reached the end yet.'))
     );
     var bar = chartBar(total ? rate : 0, 'el-split-bar' + (total ? '' : ' is-empty'));
     var counts = document.createElement('div');
@@ -662,14 +572,14 @@
     // Wall-clock duration is not shown: only measured active time is reported.
     var active = summary.activeSeconds;
     figures.append(
-      splitFigure(uiText('Testers'), String(total), false, false, copy('defTesters')),
-      splitFigure(copy('medianActive'), active ? formatDuration(active.median) : '—', false, true, copy('defMedianActive'))
+      splitFigure(uiText('Testers'), String(total), false, false, uiText('Shared sessions within your filters. Private sessions are never counted.')),
+      splitFigure(uiText('Median active time'), active ? formatDuration(active.median) : '—', false, true, uiText('The middle active time per session, only for sessions with measured time. Active time counts while the page is open and the learner is using it, up to 15 minutes per visit.'))
     );
     // Each pilot rating is its own 1–5 figure; definitions sit with the figure they explain.
-    [['avgClarity', 'clarity', 'defClarity'], ['avgEngagement', 'engagement', 'defEngagement']].forEach(function (rating) {
+    [['avgClarity', uiText('Clarity'), uiText('Average clarity score from pilot feedback, on a scale from 1 (unclear) to 5 (very clear).')], ['avgEngagement', uiText('Engagement'), uiText('Average engagement score from pilot feedback, on a scale from 1 (low) to 5 (very engaged).')]].forEach(function (rating) {
       var value = summary[rating[0]];
       if (value === null || value === undefined) return;
-      figures.append(splitFigure(copy(rating[1]), copy('outOfFive', { value: formatScore(value) }), false, true, copy(rating[2])));
+      figures.append(splitFigure(rating[1], uiText('{value} / 5', { value: formatScore(value) }), false, true, rating[2]));
     });
     kpisEl.replaceChildren(title, shares, bar, counts, figures);
   }
@@ -679,7 +589,7 @@
     retry.hidden = true;
     // UX-119: Keep existing report visible with subtle Updating state while switching filters
     if (hasLoadedOnce && !report.hidden) {
-      status.textContent = uiLanguage() === 'de' ? 'Die Ergebnisse werden aktualisiert.' : 'De resultaten worden bijgewerkt.';
+      status.textContent = uiText('report.updating');
       report.setAttribute('aria-busy', 'true');
       report.classList.add('el-resp-updating');
     } else {
@@ -696,13 +606,13 @@
       if (sequence !== requestId) return;
       if (!resp.ok) throw new Error(data.error || uiText('Could not load responses.'));
       var courseLang = data.expedition.defaultLanguage || 'nl';
-      var reportLang = langSelect.value || document.documentElement.lang || courseLang;
+      var reportLang = langSelect.value || i18n.language;
       label.textContent = data.expedition.title || '';
-      document.title = label.textContent ? window.Xped.i18n.copy('Resultaten','Ergebnisse') + ' · ' + label.textContent + ' · xPED Academy' : pageTitle;
+      document.title = label.textContent ? uiText('report.title') + ' · ' + label.textContent + ' · xPED Academy' : pageTitle;
       document.dispatchEvent(new CustomEvent('academy:course-title',{detail:label.textContent}));
       renderFilterControls(data.cohorts || []);
       labelPeriods();
-      status.textContent = uiLanguage() === 'de' ? 'Ergebnisse für die gewählten Filter.' : 'Resultaten voor de gekozen filters.';
+      status.textContent = uiText('report.filteredResults');
       report.classList.remove('el-resp-updating');
       report.setAttribute('aria-busy', 'false');
       report.hidden = false;
@@ -727,7 +637,7 @@
           title:Model.getLocalized(station.moduleTitle,reportLang,courseLang),
           reached:station.reached / s.totalSessions,
         }));
-        const label = window.Xped.i18n.copy('Bereik per station','Reichweite je Station') + ' · ' +
+        const label = uiText('report.stationReach') + ' · ' +
           route.map(station => station.title + ' ' + formatPercent(100 * station.reached)).join(', ');
         funnelEl.appendChild(window.XpedAcademyControls.routeStrip(route,{size:'regular',label}));
       }
@@ -749,7 +659,7 @@
           var previous = row.previousReached;
           var drop = document.createElement('span');
           drop.className = 'el-chart-drop' + (drops[index] === largestDrop ? ' is-largest' : '');
-          drop.title = copy('dropTitle');
+          drop.title = uiText('Drop-off from the previous step');
           drop.textContent = '−' + drops[index] + ' (−' + formatPercent(100 * drops[index] / previous) + ')';
           reachRow.querySelector('.el-chart-value').append(' ', drop);
         }
@@ -762,10 +672,10 @@
         stepSummary.id = 'academy-step-summary-' + index;
         stepSummary.setAttribute('role', 'tooltip');
         stepSummary.setAttribute('translate', 'no');
-        stepSummary.textContent = copy('stepSummary', {
+        stepSummary.textContent = uiText('Reached {reached} · continued {continued} · median active time {time}', {
           reached: row.reached,
           continued: row.continued === undefined || row.continued === null ? '—' : row.continued,
-          time: row.time ? formatDuration(row.time.median) : copy('noTimeShort'),
+          time: row.time ? formatDuration(row.time.median) : uiText('not measured'),
         });
         stepLink.setAttribute('aria-describedby', stepSummary.id);
         stepLink.addEventListener('keydown', function (event) {
@@ -779,10 +689,11 @@
       });
       if (funnelEl.childElementCount) {
         let caption = 'n = ' + (s.totalSessions || 0);
+        if (drops.length > 1) caption += ' · ' + uiText('report.stepDropMeaning');
         if (largestDrop) {
           const steps = data.funnel.filter((row, i) => drops[i] === largestDrop)
             .map(row => Model.getLocalized(row.stepTitle,reportLang,courseLang));
-          caption += ' · ' + window.Xped.i18n.copy('Grootste uitval bij ','Größter Rückgang bei ') + steps.join(', ') + ' (−' + largestDrop + ')';
+          caption += ' · ' + uiText('report.worstDrop') + steps.join(', ') + ' (−' + largestDrop + ')';
         }
         funnelEl.appendChild(chartNote(caption));
       }
@@ -798,7 +709,7 @@
           (step.blocks || []).forEach(function (blk) {
             var agg = statsMap[blk.id];
             if (!agg) return;
-            var name = activityName(blk.type, reportLang);
+            var name = activityName(blk.type);
             var position = uiText('Station ') + (mIdx + 1) + ' · ' + (reportLang === 'de' ? uiText('Schritt') : reportLang === 'nl' ? uiText('Stap') : uiText('Step')) + ' ' + (sIdx + 1);
             var card = document.createElement('article');
             card.className = 'el-exp-card';
@@ -870,7 +781,7 @@
               card.appendChild(rows);
               if (agg.gradedAnswers) {
                 card.dataset.correct = String(agg.correctAnswers / agg.gradedAnswers);
-                var correctText = copy('correctShare', {pct: formatPercent(100 * agg.correctAnswers / agg.gradedAnswers)}) + ' · ' + agg.correctAnswers + '/' + agg.gradedAnswers;
+                var correctText = uiText('{pct} answered correctly', {pct: formatPercent(100 * agg.correctAnswers / agg.gradedAnswers)}) + ' · ' + agg.correctAnswers + '/' + agg.gradedAnswers;
                 if (isMulti) card.appendChild(chartNote(correctText));
                 else card.insertBefore(answerMix(keys, agg.counts, rightKeys, correctText), h.nextSibling);
               }
@@ -899,7 +810,7 @@
                 cntMeta.className = 'el-exp-meta';
                 var total = agg.sampleTotal === undefined ? agg.samples.length : agg.sampleTotal;
                 cntMeta.textContent = uiText('Showing ') + shown.length + uiText(' of ') + total + uiText(' reflection excerpts');
-                if (total > agg.samples.length) cntMeta.textContent += '. Export the CSV for all responses.';
+                if (total > agg.samples.length) cntMeta.textContent += ' ' + uiText('Export the CSV for all responses.');
                 samplesWrap.appendChild(cntMeta);
                 shown.forEach(function (txt) {
                   var q = document.createElement('blockquote');

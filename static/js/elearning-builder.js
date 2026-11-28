@@ -3,9 +3,9 @@
   var uiText = typeof window !== 'undefined' && window.Xped && window.Xped.i18n ? window.Xped.i18n.t : function (message, values) {
     return values ? message.replace(/\{(\w+)\}/g, function (field, name) { return values[name] ?? field; }) : message;
   };
-  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
-  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
-  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
+  var platformUx = window.ElearningHost.ux;
+  var platformBootstrap = window.ElearningHost.bootstrap;
+  var platformAuth = window.ElearningHost.auth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -182,7 +182,7 @@
       return;
     }
     if (editLangDD.trigger.getAttribute('aria-expanded') === 'true') return;
-    var contentLabel = academyUi.copy('Inhoudstaal', 'Inhaltssprache');
+    var contentLabel = uiText('builder.contentLanguage');
     var items = LANG_OPTIONS.map(function (item) {
       var other = item.value === 'nl' ? 'de' : 'nl';
       var stats = Model.getTranslationStats(Model.extractTranslationRows(state.exp, other, item.value));
@@ -275,6 +275,16 @@
   document.getElementById('el-preview-lang-host').appendChild(previewLangDD.el);
 
   function showToast(msg, undoCb) {
+    if (academyUi) {
+      var modeAtChange = state.mode;
+      ux.toast(msg, {
+        type: undoCb === 'error' ? 'error' : 'info', scope: 'editor',
+        action: typeof undoCb === 'function' ? { label: 'Undo', onClick: function () {
+          if (state.mode === modeAtChange) undoCb();
+        } } : null,
+      });
+      return;
+    }
     ux.toast(msg, {
       element: toastEl,
       type: undoCb === 'error' ? 'error' : 'info',
@@ -442,7 +452,7 @@
 
   function setSaveStatus(text, isLive, showRetry) {
     var failed = academyUi && showRetry && savedVersion !== saveVersion;
-    var label = failed ? academyUi.copy('Niet opgeslagen', 'Nicht gespeichert') : text;
+    var label = failed ? uiText('builder.notSaved') : text;
     if (saveStateEl.textContent !== label) {
       saveStateEl.textContent = '';
       if (isLive && !academyUi) saveStateEl.appendChild(Icons.icon('cloudCheck', 13));
@@ -455,7 +465,7 @@
       var savedAt = isLive && Number(acceptedCourse?.updated_at);
       if (savedAt > 0) {
         var time = academyUi.date(savedAt * 1000, {hour: '2-digit', minute: '2-digit', hour12: false});
-        saveStateEl.dataset.academyTip = academyUi.copy('Laatst opgeslagen om ', 'Zuletzt gespeichert um ') + time;
+        saveStateEl.dataset.academyTip = uiText('builder.savedAt', { time: time });
         saveStateEl.tabIndex = 0;
       } else {
         delete saveStateEl.dataset.academyTip;
@@ -686,12 +696,12 @@
   function updateEditorHeading() {
     if (!academyUi || !state.exp) return;
     var course = state.exp.title;
-    var mode = state.mode === 'translate' ? uiText('Translate') : (state.mode === 'preview' ? uiText('Preview') : academyUi.copy('Bewerken', 'Bearbeiten'));
+    var mode = state.mode === 'translate' ? uiText('Translate') : (state.mode === 'preview' ? uiText('Preview') : uiText('shell.edit'));
     document.title = [mode, course, 'xPED Academy'].filter(Boolean).join(' · ');
     if (grantToken) return;
     document.querySelector('.ac-editor-view').textContent = mode;
-    backLink.querySelector('span').textContent = course || academyUi.copy('Expeditie', 'Expedition');
-    var description = academyUi.copy('Terug naar ', 'Zurück zu ') + backLink.querySelector('span').textContent;
+    backLink.querySelector('span').textContent = course || uiText('shell.course');
+    var description = uiText('builder.returnTo', { course: backLink.querySelector('span').textContent });
     backLink.setAttribute('aria-label', description);
     backLink.dataset.academyTip = description;
     backLink.removeAttribute('title');
@@ -699,7 +709,10 @@
 
   function setMode(nextMode) {
     if (!canEditStructure() && nextMode === 'edit') nextMode = 'translate';
-    if (state.mode !== nextMode) toastEl.hidden = true;
+    if (state.mode !== nextMode) {
+      if (academyUi) ux.clearToasts('editor');
+      else toastEl.hidden = true;
+    }
     state.mode = nextMode;
     updateEditorHeading();
     if (academyUi && nextMode === 'edit') refreshEditLanguages();
@@ -811,14 +824,13 @@
     var preference = 'xped-outline-results:' + activeUser.uid;
     try { input.checked = localStorage.getItem(preference) === '1'; } catch (_) { /* Keep the in-page switch available. */ }
     var status = document.getElementById('academy-outline-status');
-    var de = document.documentElement.lang === 'de';
     async function update() {
       status.textContent = '';
       if (input.checked && !outlineResults) {
         try { outlineResults = await api('/api/elearning/expeditions/' + encodeURIComponent(expeditionId) + '/outline-results'); }
-        catch (_) { status.textContent = de ? 'Ergebnisse konnten nicht geladen werden.' : 'De resultaten konden niet worden geladen.'; }
+        catch (_) { status.textContent = uiText('builder.outlineLoadFailed'); }
       }
-      if (input.checked && outlineResults && !outlineResults.totalSessions) status.textContent = de ? 'Noch keine geteilten Sitzungen.' : 'Nog geen gedeelde sessies.';
+      if (input.checked && outlineResults && !outlineResults.totalSessions) status.textContent = uiText('builder.noSessions');
       if (!leavingAccount) renderOutline();
     }
     input.onchange = function () {
@@ -1064,9 +1076,9 @@
           if (metric) {
             var caption = document.createElement('small');
             caption.className = 'academy-builder-metric';
-            var amount = metric.time ? Math.floor(metric.time.median/60) + ':' + String(metric.time.median%60).padStart(2,'0') + ' · ' : '';
-            var percent = new Intl.NumberFormat(document.documentElement.lang, {style:'percent'}).format(metric.reached/outlineResults.totalSessions);
-            caption.textContent = amount + percent + (document.documentElement.lang === 'de' ? ' erreicht' : ' bereikt');
+            var amount = metric.time ? academyUi.duration(metric.time.median, 'compact') + ' · ' : '';
+            var percent = academyUi.percent(100 * metric.reached / outlineResults.totalSessions);
+            caption.textContent = amount + uiText('builder.reached', { percent: percent });
             titleSpan.appendChild(caption);
           }
         }
@@ -1723,8 +1735,10 @@
     wrap.className = 'el-field';
     var lab = document.createElement('label');
     lab.textContent = label;
-    var items = (options || []).map(function (opt) { return { value: opt[0], label: opt[1] }; });
+    // A value picker: listbox semantics, the current value focused on open, optional descriptions (item 34).
+    var items = (options || []).map(function (opt) { return { value: opt[0], label: opt[1], description: typeof opt[2] === 'string' ? opt[2] : undefined }; });
     var dd = Icons.createDropdown({
+      select: document.documentElement.dataset.product === 'academy',
       className: 'is-full',
       triggerClass: 'el-dd-trigger is-full',
       ariaLabel: label,
@@ -1756,13 +1770,12 @@
   }
 
   function currentMediaPreview(ref, asset, audioOnly) {
-    var german = document.documentElement.lang === 'de';
     var preview = document.createElement('div');
     preview.className = 'academy-media-file';
     var info = document.createElement('span');
     var title = document.createElement('strong');
-    title.textContent = asset ? (asset.labels?.[german ? 'de' : 'nl'] || asset.label)
-      : audioOnly ? (german ? 'Audiodatei' : 'Audiobestand') : (german ? 'Bild' : 'Afbeelding');
+    title.textContent = asset ? (asset.labels?.[academyUi.language] || asset.label)
+      : audioOnly ? uiText('builder.audioFile') : uiText('Image');
     var detail = document.createElement('small');
     var size = '';
     var dimensions = '';
@@ -1816,7 +1829,7 @@
       box.appendChild(currentMediaPreview(currentRef, selectedAsset, audioOnly));
     }
     box.appendChild(Blocks.createDropzone(
-      academy && hasMedia ? window.Xped.i18n.copy('Vervangen','Ersetzen') : audioOnly ? (hasMedia ? uiText('Replace audio clip') : uiText('Upload audio clip')) : (hasMedia ? uiText('Replace custom photo') : uiText('Upload custom photo')),
+      academy && hasMedia ? uiText('builder.replaceFile') : audioOnly ? (hasMedia ? uiText('Replace audio clip') : uiText('Upload audio clip')) : (hasMedia ? uiText('Replace custom photo') : uiText('Upload custom photo')),
       audioOnly ? uiText('MP3, M4A or OGG') : uiText('Drop or click · PNG, JPG, WebP'),
       audioOnly ? 'audio/*' : 'image/png,image/jpeg,image/webp',
       function (file) { uploadFileForBlock(targetForUpload, file); }
@@ -1856,7 +1869,7 @@
       var rmBtn = document.createElement('button');
       rmBtn.type = 'button';
       rmBtn.className = 'el-btn el-btn-danger el-btn-sm';
-      rmBtn.textContent = academy ? window.Xped.i18n.copy('Verwijderen','Entfernen') : audioOnly ? uiText('Remove audio') : uiText('Remove image');
+      rmBtn.textContent = academy ? uiText('Remove') : audioOnly ? uiText('Remove audio') : uiText('Remove image');
       rmBtn.addEventListener('click', function () {
         chooseMedia({ kind: 'none', assetId: '', staticPath: '' });
       });
@@ -1896,7 +1909,7 @@
 
       Model.XPED_ASSETS.forEach(function (asset) {
         if (!academy && asset.academyOnly) return;
-        var label = asset.labels?.[document.documentElement.lang] || asset.label;
+        var label = asset.labels?.[academyUi?.language || document.documentElement.lang] || asset.label;
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'el-asset-thumb' + (currentRef && currentRef.staticPath === asset.path ? ' is-selected' : '');
@@ -3180,7 +3193,7 @@
 
   /* ---- Split-Screen German Translation Studio with Live Slide Preview & Autosave ---- */
   function translationLocation(location) {
-    var i18n = academyUi || window.LectureI18n;
+    var i18n = window.ElearningHost.i18n;
     if (!i18n) return location;
     return location.split(' · ').map(function (part) {
       var number = part.match(/^(.*?) (#[0-9]+|[0-9]+)$/);
@@ -3556,9 +3569,7 @@
       notice.hidden = !state.exp.enabledLanguages.includes('en') || !rows.some(function (r) {
         return typeof r.locObj.en === 'string' && r.locObj.en.trim();
       });
-      notice.textContent = window.Xped.i18n.copy(
-        'Deze expeditie bevat ook Engelse tekst. Die blijft in het cursusbestand bewaard.',
-        'Diese Expedition enthält auch englische Texte. Sie bleiben in der Kursdatei erhalten.');
+      notice.textContent = uiText('builder.legacyEnglish');
     }
 
     translateRowsEl.querySelectorAll('details[data-group-key]').forEach(function (group) {
@@ -3729,7 +3740,7 @@
           var approve = document.createElement('button');
           approve.type = 'button';
           approve.className = 'el-btn el-btn-sm';
-          approve.textContent = window.Xped.i18n.copy('Vertaling goedkeuren', 'Übersetzung freigeben');
+          approve.textContent = uiText('builder.approveTranslation');
           approve.addEventListener('click', function () {
             updateLocalizedText(ta.value);
             updateTranslationBadge(rEl, st, 'translated');
@@ -4453,7 +4464,7 @@
     grants.forEach(function (g) {
       var row = document.createElement('div');
       row.className = 'el-member-row';
-      var url = window.location.origin + (g.urlPath || ((window.Xped ? '/vertalen/' : '/elearning/translate/') + encodeURIComponent(g.token || '')));
+      var url = window.location.origin + (g.urlPath || window.ElearningHost.translatorPath(g.token || ''));
       var grantName = (g.label || uiText('Translator')) + ' (' + String(g.targetLanguage || 'de').toUpperCase() + ')';
       var inp = document.createElement('input');
       inp.type = 'text';
@@ -4524,7 +4535,8 @@
     });
     updateUndoButtons();
     // Deletion toasts can retain a separate one-click undo snapshot.
-    toastEl.querySelector('button')?.remove();
+    if (academyUi) ux.clearToasts('editor');
+    else toastEl.querySelector('button')?.remove();
     var url = assetUrl(assetId);
     var cached = privateMedia.get(url);
     if (cached) {
@@ -4539,9 +4551,9 @@
 
   function mediaSize(bytes) {
     var small = bytes < 1024 * 1024;
-    return new Intl.NumberFormat(document.documentElement.lang || 'en', {
-      style: 'unit', unit: small ? 'kilobyte' : 'megabyte', maximumFractionDigits: 1,
-    }).format(bytes / (small ? 1024 : 1024 * 1024));
+    var options = { style: 'unit', unit: small ? 'kilobyte' : 'megabyte', maximumFractionDigits: 1 };
+    var amount = bytes / (small ? 1024 : 1024 * 1024);
+    return academyUi ? academyUi.number(amount, options) : new Intl.NumberFormat(document.documentElement.lang || 'en', options).format(amount);
   }
 
   async function openUnusedMedia() {
@@ -4651,7 +4663,7 @@
       }
       if (notices.length) {
         var title = result.excludedUploads ? uiText('Export without uploaded files?') : uiText('Export course content');
-        var message = notices.map(function (note) { return academyUi ? uiText(note) : window.LectureI18n ? window.LectureI18n.t(note) : note; }).join(' ');
+        var message = notices.map(function (note) { return window.ElearningHost.i18n?.t(note) || note; }).join(' ');
         if (!(await showConfirmDialog(title, message, uiText('Export course content')))) return;
       }
       downloadCourseJson(result.course, '-content');
@@ -4858,6 +4870,7 @@
       event.preventDefault();
       inspectorTabs[next].focus();
       inspectorTabs[next].click();
+      if (academyUi) inspectorTabs[next].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     });
   });
 

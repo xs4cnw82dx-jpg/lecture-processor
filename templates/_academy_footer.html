@@ -1,2 +1,4 @@
 {% from '_academy_copy.html' import tr with context %}
+{% if not academy_show_account|default(true) %}
 <footer class="academy-footer"><a href="/privacy">{{ tr("Privacy") }}</a></footer>
+{% endif %}

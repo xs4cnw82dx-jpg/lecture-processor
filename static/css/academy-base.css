@@ -11,7 +11,15 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
-:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+/* Items 85 and 86: shared motion durations and one focus ring for author pages and the learner player. */
+:root {
+  --ac-motion-fast: 120ms;
+  --ac-motion-medium: 180ms;
+  --ac-motion-slow: 240ms;
+  --ac-focus-width: 2px;
+  --ac-focus-offset: 2px;
+}
+:focus-visible { outline: var(--ac-focus-width) solid var(--focus-ring); outline-offset: var(--ac-focus-offset); }
 button, input, select, textarea { font: inherit; }
 button, summary { cursor: pointer; }
 button:disabled { cursor: default; }
@@ -212,4 +220,79 @@ button:disabled { cursor: default; }
 [data-learner-appearance="dark"][data-xped-theme="high-contrast"].xped-surface-scope .xped-hero-band {
   background: var(--xped-canvas);
   border: 2px solid var(--xped-border-strong);
+}
+
+:lang(de) :is(h1, h2, h3, th, .ac-entry-detail, .ao-template-desc, .xc-field) { hyphens: auto; }
+
+.app-date { position: relative; }
+.app-date-native { position: absolute; width: 1px !important; height: 1px !important; padding: 0 !important; opacity: 0; pointer-events: none; }
+.app-date-trigger { min-height: 2.5rem; padding: .375rem .75rem; border: 1px solid var(--theme-line); border-radius: var(--ac-radius-control); background: var(--theme-surface); color: var(--theme-ink); }
+.app-date-trigger[aria-invalid="true"] { border-color: var(--theme-danger-ink); }
+.app-date-panel { position: absolute; z-index: var(--z-dropdown); width: min(19rem, calc(100vw - 2rem)); padding: .75rem; border: 1px solid var(--theme-line); border-radius: var(--ac-radius-control); background: var(--theme-surface); color: var(--theme-ink); box-shadow: var(--ac-shadow-popover); }
+.app-date-panel[hidden] { display: none; }
+.app-date-heading, .app-date-footer { display: flex; align-items: center; justify-content: space-between; gap: .25rem; }
+.app-date-heading { margin-bottom: .5rem; }
+.app-date-panel button { min-height: 2rem; min-width: 0; border: 0; border-radius: var(--ac-radius-control); padding: .25rem; color: inherit; background: transparent; }
+.app-date-panel button:hover { background: var(--theme-surface-soft); }
+.app-date-panel button:disabled { opacity: .45; }
+.app-date-grid { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); text-align: center; }
+.app-date-grid > span { color: var(--theme-muted); font-size: .8rem; }
+.app-date-grid button[aria-current] { box-shadow: inset 0 0 0 1px var(--theme-accent-ink); }
+.app-date-grid button[aria-pressed="true"] { color: var(--btn-primary-ink); background: var(--btn-primary-start); }
+.app-date-footer { margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--theme-line); }
+
+.ac-toast-stack {
+  position: fixed;
+  z-index: var(--z-toast);
+  inset-inline-end: max(24px,env(safe-area-inset-right));
+  inset-block-end: max(24px,env(safe-area-inset-bottom));
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  max-width: min(28rem,calc(100% - 32px));
+  pointer-events: none;
+}
+.ac-toast-stack:empty { display: none; }
+.ac-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-line);
+  border-radius: var(--ac-radius-surface);
+  background: var(--theme-surface);
+  color: var(--theme-ink);
+  box-shadow: var(--ac-shadow-popover);
+  font: 500 13px/1.45 var(--ac-font);
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+}
+.ac-toast-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--theme-accent-ink);
+  font-size: 12px;
+  line-height: 1;
+}
+.ac-toast[data-type="success"] .ac-toast-icon { color: var(--theme-success-ink); background: var(--theme-success-soft); }
+.ac-toast[data-type="error"] .ac-toast-icon { color: var(--theme-danger-ink); background: var(--theme-danger-soft); }
+.ac-toast[data-type="warning"] .ac-toast-icon { color: var(--theme-warning-ink); background: var(--theme-warning-soft); }
+.ac-toast-action {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--theme-control-border);
+  border-radius: var(--ac-radius-control);
+  background: var(--theme-surface);
+  color: var(--theme-ink);
+  text-decoration: none;
+  font: inherit;
+}
+.ac-toast-action:hover { background: var(--theme-surface-soft); }
+@media (max-width: 600px) {
+  .ac-toast-stack { inset-inline: 16px; justify-items: center; max-width: none; }
 }

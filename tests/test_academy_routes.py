@@ -81,7 +81,7 @@ def test_player_status_and_private_pause_note_before_any_script_runs(academy):
     from lecture_processor.domains.elearning import model
     exp = {**model.build_default_expedition('Preview course', 'nl'), 'id': 'exp-preview', 'share': share}
     store.put(course, exp)
-    for note in ('', 'We oefenen dinsdag verder.'):
+    for note in ('', 'Dinsdag verder met {course} & <start>.'):
         share['pausedMessage'] = note
         store.put(course, exp)
         result = client.get('/start/' + token)
@@ -89,6 +89,9 @@ def test_player_status_and_private_pause_note_before_any_script_runs(academy):
         page = html.fromstring(result.data)
         assert 'gepauzeerd' in page.findtext('.//h1')
         assert (note or 'Probeer het later opnieuw') in page.text_content()
+        german = html.fromstring(client.get('/start/' + token + '?lang=de').data)
+        assert german.findtext('.//h1') == 'Diese Expedition ist pausiert'
+        assert german.findtext('.//main//p') == (note or 'Versuchen Sie es später erneut oder fragen Sie die Person, die Ihnen den Link geschickt hat.')
         assert not page.xpath('//script[@src]') and 'fontshare' not in result.text
     share.update(token='new-preview-token', enabled=True)
     store.put(course, exp)
@@ -117,3 +120,70 @@ def test_studio_pages_and_errors_have_the_requested_language_before_javascript(a
         response = client.get(path)
         assert response.status_code == (404 if path == '/unknown-preview-page' else 200), path
         assert html.fromstring(response.data).get('lang') == locale, path
+
+
+def test_all_registered_pages_only_reference_academy_pages_and_available_product_assets(academy):
+    from urllib.parse import urljoin, urlsplit
+    import re
+
+    from lecture_processor.domains.elearning import model
+
+    client, store = academy
+    token = 'published-preview-token'
+    course = model.build_default_expedition('Preview course', 'nl')
+    course.update(id='preview', share={'token': token, 'enabled': True})
+    store.put('elearning_expeditions/preview', course)
+    store.put('elearning_share_index/' + token, {'expedition_id': 'preview'})
+    args = {'expedition_id': 'preview', 'grant_token': 'preview-grant', 'share_token': token}
+    non_pages = {'static', 'academy_style', 'healthz', 'academy_language.messages'}
+    urls = client.application.url_map.bind('localhost')
+    pages = {urls.build(rule.endpoint, {name: args[name] for name in rule.arguments})
+             for rule in urls.map.iter_rules() if not rule.rule.startswith('/api/') and rule.endpoint not in non_pages}
+    checked_assets = set()
+    for path in sorted(pages | {'/start/unavailable', '/missing-preview-page'}):
+        response = client.get(path, follow_redirects=True)
+        assert response.status_code == (404 if path in ('/start/unavailable', '/missing-preview-page') else 200), path
+        for previous in response.history:
+            assert previous.status_code == 301 and previous.location in pages, path
+        page = html.fromstring(response.data)
+        final = response.request.path
+        for item in page.xpath('//a[@href] | //form | //*[@formaction]'):
+            target = item.get('formaction') or item.get('action') or item.get('href') or final
+            url = urlsplit(urljoin('http://localhost' + final, target))
+            if url.scheme == 'mailto':
+                assert url.path == 'contact@example.test', (path, target)
+            elif url.hostname != 'localhost':
+                assert item.tag == 'a' and url.geturl() in ('https://xped.net/nl/', 'https://xped.net/de/'), (path, target)
+            else:
+                method = item.get('formmethod') or item.get('method') or 'GET'
+                # A dialog form closes locally without submitting an HTTP method.
+                endpoint, _ = urls.match(url.path, method='GET' if method.lower() == 'dialog' else method.upper())
+                assert endpoint.startswith('academy.') or endpoint == 'privacy', (path, target)
+        sheets = page.xpath('//link[@rel="stylesheet"]/@href')
+        assert len([href for href in sheets if href.startswith('/static/')]) == 1, (path, sheets)
+        assets = page.xpath('//link[@href]/@href | //script[@src]/@src | //img[@src]/@src | //source[@srcset]/@srcset')
+        for asset in assets:
+            if asset in checked_assets:
+                continue
+            checked_assets.add(asset)
+            if urlsplit(asset).netloc:
+                assert urlsplit(asset).hostname in {'www.gstatic.com', 'api.fontshare.com', 'cdn.fontshare.com'}, asset
+                continue
+            resource = client.get(asset)
+            assert resource.status_code == 200, (path, asset)
+            if resource.mimetype == 'text/css':
+                for match in re.finditer(r'''url\(["']?([^\s()"']+)["']?\)''', resource.text):
+                    relative = match[1]
+                    if not relative.startswith('data:'):
+                        assert client.get(urljoin(asset, relative)).status_code == 200, (asset, relative)
+
+
+def test_each_host_owns_its_editor_controls(academy, client):
+    academy_client, _ = academy
+    academy_editor = html.fromstring(academy_client.get('/expedities/preview/bewerken').data)
+    lp_editor = html.fromstring(client.get('/physio/elearning/preview/edit').data)
+    for page, standalone in ((academy_editor, True), (lp_editor, False)):
+        assert bool(page.xpath('//*[@id="academy-outline-toggle"]')) == standalone
+        assert bool(page.xpath('//*[@id="el-tr-alt-toggle"]')) != standalone
+        rotate, = page.xpath('//*[@id="el-share-rotate-btn"]')
+        assert bool(rotate.xpath('ancestor::details[@id="academy-link-reset"]')) == standalone

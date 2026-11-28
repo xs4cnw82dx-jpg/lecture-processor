@@ -29,15 +29,18 @@ from lecture_processor.runtime.environment import normalize_public_base_url, res
 from lecture_processor.runtime.http_security import apply_security_headers, build_content_security_policy
 from lecture_processor.runtime.proxy import apply_proxy_fix
 from lecture_processor.runtime.static_assets import register_static_versioning
+from lecture_processor.web.academy_styles import register_academy_styles
 from lecture_processor.services.academy_accounts import academy_account_bp
 from lecture_processor.services import auth_service, elearning_service, rate_limit_service
 
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC_ASSETS = (
-    'brand/books/xped/mark-white.png', 'css/academy*.css', 'css/elearning-*.css',
-    'css/xped-theme.css', 'fonts/books/xped-*', 'images/xped/*', 'js/academy-*.js',
-    'js/elearning-*.js', 'js/vendor/qrcode-generator-2.0.4/*',
+    'brand/books/xped/mark-white.png', 'fonts/books/xped-*', 'images/xped/*', 'js/academy-*.js',
+    'js/elearning-step-timer.js', 'js/vendor/qrcode-generator-2.0.4/qrcode.min.js',
+    *(f'js/elearning-{module}{suffix}.js'
+      for module in ('model', 'icons', 'qr', 'route-map', 'blocks', 'builder', 'dashboard', 'player')
+      for suffix in ('', '.min')),
 )
 _REQUIRED_ENV = (
     'FLASK_SECRET_KEY', 'PUBLIC_BASE_URL', 'ACADEMY_FIREBASE_PROJECT_ID',
@@ -174,6 +177,7 @@ def create_app():
     app.extensions['lecture_processor'] = {'runtime': AcademyRuntime(db, firebase_app)}
     apply_proxy_fix(app, 1)
     register_static_versioning(app)
+    register_academy_styles(app)
     app.register_blueprint(elearning_bp)
     app.register_blueprint(overview_bp)
     app.register_blueprint(academy_folders_bp)
