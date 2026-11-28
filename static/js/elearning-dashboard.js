@@ -1,5 +1,8 @@
 (function () {
   'use strict';
+  var platformUx = window.Xped ? window.Xped.ux : window.LectureProcessorUx;
+  var platformBootstrap = window.Xped ? window.Xped.bootstrap : window.LectureProcessorBootstrap;
+  var platformAuth = window.Xped ? window.Xped.auth : window.LectureProcessorAuth;
 
   var Model = window.XpedElearningModel;
   var Icons = window.XpedElearningIcons;
@@ -22,12 +25,12 @@
   var retry = document.getElementById('el-retry');
   var signIn = document.getElementById('el-signin');
   var auth;
-  try { auth = window.LectureProcessorBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
+  try { auth = platformBootstrap.getAuth(); } catch (_) { /* SDK unavailable */ }
   if (!auth && academy) {
     statusEl.textContent = 'Sign-in is temporarily unavailable. Reload this page to try again.';
     return;
   }
-  var client = window.LectureProcessorAuth.createAuthClient(auth);
+  var client = platformAuth.createAuthClient(auth);
   var admin = window.XpedStudioAdmin.create(api, loadList);
   var folders = academy && window.XpedAcademyFolders(api, loadList, function () { renderExpeditions(allExpeditions); });
   var listRequest = 0;
@@ -67,7 +70,7 @@
   }
 
   function toast(message, type) {
-    window.LectureProcessorUx.toast(message, { type: type });
+    platformUx.toast(message, { type: type });
   }
 
   function formatRelativeTime(epochSec) {
@@ -202,7 +205,7 @@
     visible.forEach(function (exp) {
       var card = document.createElement('article');
       card.className = 'el-exp-row' + (justDuplicatedId && exp.id === justDuplicatedId ? ' is-just-duplicated' : '');
-      var editUrl = '/physio/elearning/' + encodeURIComponent(exp.id) + '/edit';
+      var editUrl = Model.coursePaths(exp.id).edit;
 
       var mainWrap = document.createElement('div');
       mainWrap.className = 'el-exp-row-main';
@@ -317,9 +320,9 @@
         actions.appendChild(open);
       }
       if (!exp.deletionPending && exp.role !== 'translate') {
-        actions.appendChild(actionLink('Responses', '/physio/elearning/' + encodeURIComponent(exp.id) + '/responses'));
+        actions.appendChild(actionLink('Responses', Model.coursePaths(exp.id).report));
         if (exp.shareEnabled && exp.shareToken) {
-          menuItems.push({ label: 'Open learner link', icon: 'external', href: '/elearning/p/' + encodeURIComponent(exp.shareToken) });
+          menuItems.push({ label: 'Open learner link', icon: 'external', href: Model.learnerPath(exp.shareToken) });
         }
       }
       if (canCreate && !exp.deletionPending && exp.role !== 'translate') {
@@ -458,7 +461,7 @@
     try {
       var res = await api('/api/elearning/expeditions', { method: 'POST', body: JSON.stringify(payload) });
       createDialog.close();
-      window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
+      window.location.href = Model.coursePaths(res.expedition.id).edit;
     } catch (err) {
       if (err.code === 'auth/session-changed') return;
       lockDialog(createDialog, false);
@@ -489,7 +492,7 @@
         pendingImportPayload = null;
         importDialog.close();
         toast('Imported expedition!', 'success');
-        window.location.href = '/physio/elearning/' + encodeURIComponent(res.expedition.id) + '/edit';
+        window.location.href = Model.coursePaths(res.expedition.id).edit;
       } catch (err) {
         if (err.code === 'auth/session-changed') return;
         lockDialog(importDialog, false);

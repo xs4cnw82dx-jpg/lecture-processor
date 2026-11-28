@@ -22,14 +22,14 @@
   }
 
   var button = document.getElementById('academy-signout');
-  var bootstrap = window.LectureProcessorBootstrap;
-  if (window.LectureProcessorAuth) window.LectureProcessorAuth.updateSignInLinks();
+  var bootstrap = window.Xped.bootstrap;
+  if (window.Xped.auth) window.Xped.auth.updateSignInLinks();
   if (!button || !bootstrap) return;
   var auth;
   try { auth = bootstrap.getAuth(); } catch (_) { return; }
 
   var verify = document.getElementById('academy-verify-email');
-  verify.href = '/signin?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+  verify.href = '/inloggen?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
   bootstrap.onAuthStateReady(auth, function (user) {
     button.hidden = !user;
     verify.hidden = !user || user.emailVerified !== false;
@@ -41,7 +41,7 @@
       window.location.replace('/');
     } catch (_) {
       button.disabled = false;
-      window.LectureProcessorUx.toast('Could not sign out. Please try again.', { type: 'error' });
+      window.Xped.ux.toast('Could not sign out. Please try again.', { type: 'error' });
     }
   });
 })();

@@ -1,0 +1,26 @@
+{% extends 'academy/base.html' %}
+{% set de = academy_locale|default('nl') == 'de' %}
+{% set wording = {
+  403: ('Deze pagina is afgeschermd', 'Diese Seite ist geschützt', 'Gebruik het account waarmee je toegang hebt gekregen.', 'Melden Sie sich mit dem Konto an, das Zugriff erhalten hat.'),
+  404: ('Deze pagina bestaat niet', 'Diese Seite gibt es nicht', 'Controleer het adres of open het overzicht om verder te gaan.', 'Prüfen Sie die Adresse oder gehen Sie zur Übersicht.'),
+  500: ('Er ging iets mis', 'Etwas ist schiefgegangen', 'Probeer het over een paar minuten opnieuw.', 'Bitte versuchen Sie es in ein paar Minuten erneut.'),
+  503: ('De Academy is even niet bereikbaar', 'Die Academy ist vorübergehend nicht erreichbar', 'Kom over een paar minuten terug.', 'Bitte versuchen Sie es in ein paar Minuten erneut.')
+}.get(status_code, ('Deze pagina is niet beschikbaar', 'Diese Seite ist nicht verfügbar', 'Ga naar het overzicht om verder te gaan.', 'Gehen Sie zur Übersicht, um fortzufahren.')) %}
+{% block title %}{{ wording[1 if de else 0] }} · xPED Academy{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  {% include '_academy_foundation.html' %}
+{% endblock %}
+{% block body_attrs %} class="academy-body"{% endblock %}
+{% block body %}
+  <main class="academy-error" id="main-content">
+    <div class="academy-error-copy">
+      <a class="academy-error-brand" href="/"><img src="{{ url_for('static', filename='images/xped/academy-mark.webp' if de else 'images/xped/logo_nl.svg') }}" alt="xPEDitie Pijn"> Academy</a>
+      <p class="academy-error-code">{{ status_code }}</p>
+      <h1>{{ wording[1 if de else 0] }}</h1>
+      <p>{{ wording[3 if de else 2] }}</p>
+      <a class="btn primary" href="/">{{ 'Zur Übersicht' if de else 'Naar het overzicht' }}</a>
+    </div>
+    <div class="academy-error-art" aria-hidden="true"></div>
+  </main>
+{% endblock %}

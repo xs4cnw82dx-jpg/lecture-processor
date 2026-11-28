@@ -1,0 +1,5 @@
+{% extends 'elearning_dashboard.html' %}
+{% set studio_layout = 'academy/base.html' %}
+{% block platform_styles %}{% endblock %}
+{% block platform_runtime %}{% include 'academy/runtime.html' %}{% endblock %}
+{% block title %}{{ 'Expeditionen' if academy_locale == 'de' else 'Expedities' }} · xPED Academy{% endblock %}

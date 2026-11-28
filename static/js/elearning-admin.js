@@ -135,11 +135,11 @@
       el('paused').value = share.pausedMessage || '';
       shareKeys.forEach(function (key) { shareForm.elements[key].checked = !!share[key]; });
       el('extra').disabled = !share.collectResponses;
-      el('link').value = share.token ? new URL('/elearning/p/' + encodeURIComponent(share.token), location.origin).href : '';
+      el('link').value = share.token ? new URL(root.XpedElearningModel.learnerPath(share.token), location.origin).href : '';
       el('copy').disabled = !share.enabled || !share.token;
-      var path = '/physio/elearning/' + encodeURIComponent(course.value);
-      el('report').href = path + '/responses';
-      el('sharing-tools').href = path + '/edit?panel=sharing';
+      var paths = root.XpedElearningModel.coursePaths(course.value);
+      el('report').href = paths.report;
+      el('sharing-tools').href = paths.edit + '?panel=sharing';
     }
 
     async function loadSharing() {
@@ -305,7 +305,7 @@
       detail.textContent = value.title;
       var report = document.createElement('a');
       report.className = 'el-action-link';
-      report.href = '/physio/elearning/' + encodeURIComponent(item.id) + '/responses';
+      report.href = root.XpedElearningModel.coursePaths(item.id).report;
       report.textContent = t('Responses');
       entry.append(name, value, report, track, detail);
       return entry;
@@ -403,7 +403,7 @@
     });
     el('rotate').addEventListener('click', function () { update({ action: 'update_public', rotateToken: true }); });
     el('copy').addEventListener('click', function () { copy(el('link').value); });
-    el('copy-studio').addEventListener('click', function () { copy('/physio/elearning/' + encodeURIComponent(course.value) + '/edit'); });
+    el('copy-studio').addEventListener('click', function () { copy(root.XpedElearningModel.coursePaths(course.value).edit); });
 
     return { setCourses: setCourses, reset: reset };
   }

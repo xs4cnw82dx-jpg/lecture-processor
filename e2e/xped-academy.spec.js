@@ -76,14 +76,14 @@ test.beforeEach(async ({ page }) => {
 test('a new Studio author signs into the empty library and signs out on the Academy domain', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(academy);
+  await page.goto(academy + '/expedities');
   await expect(page.getByRole('heading', { name: 'Expeditions' })).toBeVisible();
   await page.getByRole('link', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/signin\?next=/);
+  await expect(page).toHaveURL(/\/inloggen\?next=/);
   await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
   await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/physio/elearning');
+  await expect(page).toHaveURL(academy + '/expedities');
   await expect(page.getByRole('heading', { name: 'Create your first expedition' })).toBeVisible();
   await page.getByRole('button', { name: 'Create expedition', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -94,12 +94,12 @@ test('a new Studio author signs into the empty library and signs out on the Acad
   expect(errors).toEqual([]);
 });
 
-test('the Academy sign-in returns to the library when given an unrelated destination', async ({ page }) => {
+test('the Academy sign-in returns home when given an unrelated destination', async ({ page }) => {
   await page.goto(academy + '/signin?next=' + encodeURIComponent('https://other.example.test/'));
   await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
   await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/physio/elearning');
+  await expect(page).toHaveURL(academy + '/');
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 });
 
@@ -139,17 +139,17 @@ test('author pages report unavailable sign-in when the Academy configuration is 
   for (const path of ['/signin', '/physio/elearning', '/physio/elearning/example/edit', '/physio/elearning/example/responses']) {
     await page.goto(academy + path);
     await expect(page.getByText('Sign-in is temporarily unavailable. Reload this page to try again.', { exact: true }).first()).toBeVisible();
-    expect(await page.evaluate(() => window.LectureProcessorBootstrap.firebaseConfig)).toBeNull();
+    expect(await page.evaluate(() => window.Xped.bootstrap.firebaseConfig)).toBeNull();
   }
   expect(errors).toEqual([]);
 });
 
 async function signInToLibrary(page) {
-  await page.goto(academy + '/signin');
+  await page.goto(academy + '/inloggen?next=%2Fexpedities');
   await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
   await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/physio/elearning');
+  await expect(page).toHaveURL(academy + '/expedities');
 }
 
 for (const layout of [
@@ -255,7 +255,7 @@ test('author invitations enable creation independently of course collaboration',
   }
   library.expeditions = [{ id: 'shared', title: 'Shared project', moduleCount: 0, stepCount: 0, role: 'edit' }];
   await page.reload();
-  await expect(page.getByRole('link', { name: 'Open Builder' })).toHaveAttribute('href', '/physio/elearning/shared/edit');
+  await expect(page.getByRole('link', { name: 'Open Builder' })).toHaveAttribute('href', '/expedities/shared/bewerken');
   await expect(page.getByRole('button', { name: /^More actions/ })).toHaveCount(0);
   library.canCreate = true;
   await page.reload();
@@ -267,7 +267,7 @@ test('author invitations enable creation independently of course collaboration',
 });
 
 test('an unverified author can reopen verification from the Studio', async ({ page }) => {
-  await page.goto(academy);
+  await page.goto(academy + '/expedities');
   await page.evaluate(() => {
     sessionStorage.setItem('academy-preview-user', 'studio-owner');
     sessionStorage.setItem('academy-preview-verified', 'false');
@@ -325,7 +325,7 @@ test('a Studio user can download personal data and resume a confirmed deletion',
 
 test('a stale sign-in can return to the account page for another confirmation', async ({ page }) => {
   await signInToLibrary(page);
-  await page.goto(academy + '/account');
+  await page.goto(academy + '/instellingen');
   await page.route('**/api/academy/account/delete', route => route.fulfill({
     status: 403, json: { error: 'Sign in again to finish deleting your account.' }
   }));
@@ -333,17 +333,17 @@ test('a stale sign-in can return to the account page for another confirmation', 
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Permanently delete account' }).click();
   await page.getByRole('button', { name: 'Sign in again' }).click();
-  await expect(page).toHaveURL(academy + '/signin?next=/account');
+  await expect(page).toHaveURL(academy + '/inloggen?next=/instellingen');
   await page.getByLabel('Email', { exact: true }).fill('studio@example.test');
   await page.getByLabel('Password', { exact: true }).fill('synthetic-preview-password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(academy + '/account');
+  await expect(page).toHaveURL(academy + '/instellingen');
   await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
 });
 
 test('switching identity invalidates an open deletion confirmation', async ({ page }) => {
   await signInToLibrary(page);
-  await page.goto(academy + '/account');
+  await page.goto(academy + '/instellingen');
   let attempts = 0;
   await page.route('**/api/academy/account/delete', route => {
     attempts += 1;
@@ -359,3 +359,35 @@ test('switching identity invalidates an open deletion confirmation', async ({ pa
   await expect(page.getByRole('button', { name: 'Permanently delete account' })).toBeHidden();
   expect(attempts).toBe(0);
 });
+
+for (const signedIn of [false, true]) {
+  test('Academy page links and browser identity stay on the Academy when ' + (signedIn ? 'signed in' : 'signed out'), async ({ page }) => {
+    if (signedIn) {
+      await page.goto(academy + '/inloggen');
+      await page.evaluate(() => sessionStorage.setItem('academy-preview-user', 'studio-owner'));
+    }
+    const requested = [];
+    page.on('request', request => requested.push(new URL(request.url())));
+    for (const path of ['/expedities', '/expedities/sample/bewerken?modus=vertalen', '/expedities/sample/resultaten', '/instellingen', '/privacy']) {
+      const response = await page.goto(academy + path);
+      expect(response.status()).toBe(200);
+      expect(new URL(page.url()).origin).toBe(academy);
+      const state = await page.evaluate(() => ({
+        project: window.Xped.bootstrap.firebaseConfig.projectId,
+        authenticated: window.firebase.auth().currentUser !== null,
+        legacyRuntime: Boolean(window.LectureProcessorAuth || window.LectureProcessorBootstrap || window.LectureI18n),
+        links: Array.from(document.querySelectorAll('a[href]'), node => node.href),
+      }));
+      expect(state.project).toBe('demo-xped-academy');
+      expect(state.authenticated).toBe(signedIn);
+      expect(state.legacyRuntime).toBe(false);
+      for (const href of state.links) {
+        const url = new URL(href);
+        if (url.protocol === 'mailto:' || url.protocol === 'blob:') continue;
+        expect(url.origin, href).toBe(academy);
+        expect(url.pathname, href).not.toMatch(/^\/(?:lecture-notes|dashboard|study|admin|physio)(?:\/|$)/);
+      }
+    }
+    expect(requested.some(url => url.hostname.includes('lecture-processor') || /\/(?:firebase-bootstrap|auth-utils|app-shell|shared-ui)\.(?:js|css)$/.test(url.pathname))).toBe(false);
+  });
+}

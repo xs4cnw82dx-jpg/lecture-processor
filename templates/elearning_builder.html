@@ -1,4 +1,4 @@
-{% extends '_base.html' %}
+{% extends studio_layout|default('_base.html') %}
 {% block body_attrs %}
   class="el-studio-body"
   data-expedition-id="{{ expedition_id }}"
@@ -7,8 +7,10 @@
 {% endblock %}
 {% block title %}xPEDitie Pijn Studio{% if not academy_mode %} · Lecture Processor{% endif %}{% endblock %}
 {% block head %}
+  {% block platform_styles %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/shared-ui.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  {% endblock %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-builder-authoring.css') }}">
@@ -17,7 +19,7 @@
 {% block body %}
   <header class="el-topbar">
     <div class="el-topbar-left">
-      <a href="/physio/elearning" class="el-icon-btn" id="el-back-link" aria-label="Back to Expeditions" title="Back to Expeditions"><span>Expeditions</span></a>
+      <a href="{{ url_for('academy.library') if academy_mode else url_for('elearning.studio_dashboard_page') }}" class="el-icon-btn" id="el-back-link" aria-label="Back to Expeditions" title="Back to Expeditions"><span>Expeditions</span></a>
       <div class="el-title-wrap">
         <textarea rows="1" class="el-title-input" id="el-exp-title" aria-label="Expedition title" maxlength="200"></textarea>
         <button type="button" class="el-btn el-btn-sm" id="el-title-done">Done</button>
@@ -39,7 +41,7 @@
       <div class="el-tools-anchor">
         <button type="button" class="el-icon-btn el-utilities-toggle" id="el-utilities-toggle" aria-label="Editor tools" aria-controls="el-editor-utilities" aria-expanded="false"></button>
         <div id="el-editor-utilities" class="el-utilities">
-          <a class="el-btn el-btn-sm el-mobile-expeditions" href="/physio/elearning">Expeditions</a>
+          <a class="el-btn el-btn-sm el-mobile-expeditions" href="{{ url_for('academy.library') if academy_mode else url_for('elearning.studio_dashboard_page') }}">Expeditions</a>
           <div id="el-edit-lang-host"></div>
           <div class="el-topbar-sep" aria-hidden="true"></div>
           <button type="button" class="el-icon-btn" id="el-undo-btn" aria-label="Undo" title="Undo" disabled></button>
@@ -53,7 +55,7 @@
 
   <div id="el-return-responses" class="el-return-bar" hidden>
     <span>Opened from Responses review comments.</span>
-    <a id="el-return-responses-link" href="/physio/elearning" class="el-btn el-btn-sm">Back to Responses</a>
+    <a id="el-return-responses-link" href="{{ url_for('academy.library') if academy_mode else url_for('elearning.studio_dashboard_page') }}" class="el-btn el-btn-sm">Back to Responses</a>
   </div>
 
   <div id="el-lease-banner" class="el-translate-welcome" hidden>
@@ -337,7 +339,7 @@
                   <span class="el-copy-tip" role="status"></span>
                 </span>
                 <a href="#" target="_blank" rel="noopener" class="el-btn el-btn-sm" id="el-share-open-link">Open Link</a>
-                <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">Reset Link</button>
+                {% if not academy_mode %}<button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">Reset Link</button>{% endif %}
               </div>
             </div>
             <div class="el-qr-box">
@@ -366,6 +368,13 @@
               <span>Enable Physio / PhD reviewer comments on each step</span>
             </label>
           </div>
+        {% if academy_mode %}
+          <details class="academy-link-reset" id="academy-link-reset" hidden>
+            <summary>{{ 'Gefahrenzone' if academy_locale == 'de' else 'Gevarenzone' }}</summary>
+            <p>{{ 'Ein neuer Link macht den bisherigen Link und alle gedruckten QR-Codes ungültig.' if academy_locale == 'de' else 'Als je een nieuwe link maakt, vervallen de huidige link en alle gedrukte QR-codes.' }}</p>
+            <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">{{ 'Link erneuern' if academy_locale == 'de' else 'Link vernieuwen' }}</button>
+          </details>
+          {% endif %}
         </section>
 
         <section class="el-share-panel" id="el-panel-collaborators" role="tabpanel" aria-labelledby="el-tab-collaborators" data-share-panel="collaborators" hidden>
@@ -438,9 +447,11 @@
 
   <div class="el-toast" id="el-toast" role="status" aria-live="polite" hidden></div>
 
+  {% block platform_runtime %}
   {% include '_firebase_scripts.html' %}
   <script src="{{ url_for('static', filename='js/auth-utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ux-utils.js') }}"></script>
+  {% endblock %}
   <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
   <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/qrcode-generator-2.0.4/qrcode.min.js') }}"></script>
