@@ -106,7 +106,7 @@ def invite():
             unit.put(studio._author_key(email), {'email': email})
         for course_id, course, members in selected:
             course.update(members=members, member_emails=sorted(members), updated_at=studio.now())
-            course.pop('_memberUndo', None)
+            studio._take_member_undo(course, email)
             unit.put(studio._exp_path(course_id), course)
     studio._store(runtime).atomic(apply)
     return jsonify(ok=True), 201

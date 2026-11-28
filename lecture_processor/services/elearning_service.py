@@ -688,6 +688,21 @@ def export_course_content(runtime, expedition_id: str):
     return jsonify(course=content, excludedUploads=excluded_uploads, exceedsImportLimits=exceeds_limits)
 
 
+def _take_member_undo(course, email):
+    """Pop only this member's undo and expire old undo records on the same write."""
+    entries = course.get('_memberUndo') or {}
+    if 'nonce' in entries:  # Accept a short-lived marker issued by the previous format.
+        entries = {entries['email']: entries}
+    current = now()
+    active = {key: value for key, value in entries.items() if value['until'] >= current}
+    marker = active.pop(_digest(email), {})
+    if active:
+        course['_memberUndo'] = active
+    else:
+        course.pop('_memberUndo', None)
+    return marker
+
+
 def sharing(runtime, expedition_id: str, *, admin=False):
     if admin:
         _require_studio_admin(runtime)
@@ -753,18 +768,15 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             return jsonify(share=share)
 
         if action == 'restore_member':
-            marker = exp.get('_memberUndo') or {}
-            if marker.get('until', 0) < now() or not marker.get('nonce') or marker['nonce'] != body.get('undo'):
-                raise model.ElearningError('Deze wijziging kan niet meer ongedaan worden gemaakt.', 409)
             email = model.safe_email(body.get('email'))
-            if _digest(email) != marker['email']:
+            marker = _take_member_undo(exp, email)
+            if not marker or marker['nonce'] != body.get('undo'):
                 raise model.ElearningError('Deze wijziging kan niet meer ongedaan worden gemaakt.', 409)
             _allow_invitation(runtime, unit, email)
             members = dict(exp.get('members') or {})
             if email in members or len(members) >= 20:
                 raise model.ElearningError('De toegangsrechten zijn gewijzigd.', 409)
             members[email] = marker['role']
-            exp.pop('_memberUndo')
             exp.update(members=members, member_emails=sorted(members), updated_at=now())
             unit.put(_exp_path(expedition_id), exp)
             return jsonify(restored=True)
@@ -778,7 +790,7 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             members = dict(exp.get('members') or {})
             if len(members) >= 20 and email not in members:
                 raise model.ElearningError('Maximum 20 collaborators per expedition.', 400)
-            exp.pop('_memberUndo', None)
+            _take_member_undo(exp, email)
             members[email] = member_role
             exp['members'] = members
             exp['member_emails'] = sorted(members.keys())
@@ -790,16 +802,16 @@ def sharing(runtime, expedition_id: str, *, admin=False):
             email = model.safe_email(body.get('email'))
             members = dict(exp.get('members') or {})
             previous_role = members.pop(email, None)
-            exp.pop('_memberUndo', None)
-            nonce = ''
+            marker = _take_member_undo(exp, email)
             if previous_role and current_app.config.get('XPED_ACADEMY'):
-                nonce = secrets.token_urlsafe(16)
-                exp['_memberUndo'] = {'email': _digest(email), 'role': previous_role, 'nonce': nonce, 'until': now() + 12}
+                marker = {'role': previous_role, 'nonce': secrets.token_urlsafe(16), 'until': now() + 12}
+            if marker:
+                exp.setdefault('_memberUndo', {})[_digest(email)] = marker
             exp['members'] = members
             exp['member_emails'] = sorted(members.keys())
             exp['updated_at'] = now()
             unit.put(_exp_path(expedition_id), exp)
-            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())], undo=nonce)
+            return jsonify(members=[{'email': em, 'role': r} for em, r in sorted(members.items())], undo=marker.get('nonce', ''))
 
         if action == 'create_grant':
             grant_role = str(body.get('role') or 'translate').strip()

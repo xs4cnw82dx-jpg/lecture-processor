@@ -82,3 +82,33 @@ def test_revoke_and_restore_recheck_access_and_expiry_and_rotation_checks_curren
     monkeypatch.setattr(service, 'now', lambda: future)
     assert post('restore_grant', grantId=grant['id'], undo=undo).status_code == 409
     assert exchange().status_code == 404
+
+
+def test_undo_is_scoped_to_the_member_and_retries_do_not_extend_its_deadline(studio, monkeypatch):
+    client, course = studio
+    eid = course['id']
+    sharing = f'/api/elearning/expeditions/{eid}/sharing'
+    def change(action, email, **data):
+        return client.post(sharing, headers=ADMIN, json={'action': action, 'email': email, **data})
+
+    first, second = 'first@example.test', 'second@example.test'
+    for email in (first, second):
+        assert change('add_member', email, role='edit').status_code == 200
+    timestamp = service.now()
+    monkeypatch.setattr(service, 'now', lambda: timestamp)
+    first_undo = change('remove_member', first).json['undo']
+    second_undo = change('remove_member', second).json['undo']
+    timestamp += 8
+    assert change('remove_member', first).json['undo'] == first_undo
+    assert change('restore_member', second, undo=second_undo).status_code == 200
+    assert change('restore_member', first, undo=first_undo).status_code == 200
+    first_undo = change('remove_member', first).json['undo']
+    second_undo = change('remove_member', second).json['undo']
+    assert client.post('/api/academy/team/invitations', headers=ADMIN, json={
+        'role': 'translate', 'email': second, 'courses': [eid],
+    }).status_code == 201
+    assert change('restore_member', second, undo=second_undo).status_code == 409
+    timestamp += 8
+    assert change('remove_member', first).json['undo'] == first_undo
+    timestamp += 5
+    assert change('restore_member', first, undo=first_undo).status_code == 409
