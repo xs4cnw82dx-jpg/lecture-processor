@@ -60,6 +60,48 @@
     return details;
   }
 
+  const dropLabel = copy('Uitval vanuit de vorige stap', 'Abbruch seit dem vorherigen Schritt');
+  const withShare = (count, total) => num(count) + ' (' + pct(count, total) + ')';
+  const drop = step => step.previousReached ? withShare(step.lostFromPrevious, step.previousReached) : '—';
+
+  function timeDistribution(step) {
+    const bins = step.timeHistogram || [];
+    const title = copy('Verdeling van de actieve tijd', 'Verteilung der aktiven Zeit');
+    const section = el('section');
+    section.className = 'academy-time-histogram';
+    section.append(el('h3', title));
+    if (!bins.length) {
+      section.append(el('p', copy('Nog geen gemeten tijd voor deze stap.', 'Für diesen Schritt wurde noch keine Zeit gemessen.')));
+      return section;
+    }
+    const interval = bin => duration(bin.fromSeconds) + '–' + duration(bin.fromSeconds + 29);
+    if (bins.length === 1) {
+      const bin = bins[0];
+      const noun = bin.sessionCount === 1 ? copy('sessie', 'Sitzung') : copy('sessies', 'Sitzungen');
+      section.append(el('p', num(bin.sessionCount) + ' ' + noun + ' · ' + interval(bin) + ' (min:s)'));
+      return section;
+    }
+    const figure = el('figure');
+    const caption = copy('Aantal sessies per 30 seconden', 'Sitzungen je 30 Sekunden');
+    figure.append(el('figcaption', caption));
+    const list = el('ul');
+    list.setAttribute('aria-hidden', 'true');
+    const max = Math.max(...bins.map(bin => bin.sessionCount));
+    for (const bin of bins) {
+      const bar = el('progress');
+      bar.className = 'el-chart-bar';
+      bar.max = max;
+      bar.value = bin.sessionCount;
+      const item = el('li');
+      item.append(el('span', interval(bin)), bar, el('strong', num(bin.sessionCount)));
+      list.append(item);
+    }
+    figure.append(list);
+    section.append(figure, tableToggle(caption, [copy('Tijd (min:s)', 'Zeit (Min:s)'), copy('Sessies', 'Sitzungen')],
+      bins.map(bin => [interval(bin), num(bin.sessionCount)])));
+    return section;
+  }
+
   function openStep(id) {
     selected = state.funnel.findIndex(row => row.stepId === id);
     if (selected < 0) return;
@@ -73,10 +115,11 @@
     const metrics = el('dl');
     const add = (k, v) => { metrics.append(el('dt', k), el('dd', v)); };
     add(copy('Bereikt', 'Erreicht'), num(current.reached) + ' / ' + num(state.summary.totalSessions) + ' (' + pct(current.reached, state.summary.totalSessions) + ')');
+    if (current.previousReached != null) add(dropLabel, drop(current));
     add(copy('Verder gegaan', 'Weitergegangen'), num(current.continued) + ' / ' + num(current.reached));
     add(copy('Mediane actieve tijd', 'Mediane aktive Zeit'), current.time ? duration(current.time.median) + ' · P25–P75 ' + duration(current.time.p25) + '–' + duration(current.time.p75) + ' · n = ' + num(current.time.count) : '—');
     add(copy('Goed beantwoord', 'Richtig beantwortet'), num(current.correctAnswers) + ' / ' + num(current.gradedAnswers));
-    body.append(metrics);
+    body.append(metrics, timeDistribution(current));
     const results = Array.from(document.querySelectorAll('#el-resp-blocks > [data-step]')).filter(card => card.dataset.step === id);
     if (results.length) {
       body.append(el('h3', copy('Antwoorden', 'Antworten')));
@@ -180,8 +223,10 @@
     state = data;
     stations();
     const funnel = document.getElementById('el-resp-funnel');
-    const reachTable = tableToggle(copy('Bereik per stap', 'Reichweite je Schritt'), columns.slice(0, 5).map(col => col[1]),
-      data.funnel.map(s => [local(s.stepTitle),num(s.reached),num(s.continued),num(s.reached-s.continued),duration(s.time?.median)]));
+    const reachTable = tableToggle(copy('Bereik per stap', 'Reichweite je Schritt'),
+      [copy('Stap', 'Schritt'), copy('Bereik van alle sessies', 'Anteil aller Sitzungen'), copy('Vorige stap bereikt', 'Vorherigen Schritt erreicht'), dropLabel],
+      data.funnel.map(step => [local(step.stepTitle), withShare(step.reached, data.summary.totalSessions),
+        step.previousReached == null ? '—' : num(step.previousReached), drop(step)]));
     funnel.append(reachTable);
     for (const card of document.querySelectorAll('#el-resp-blocks > [data-step]')) {
       const rows = Array.from(card.querySelectorAll('.el-chart-row'), r => [r.querySelector('.el-chart-label')?.textContent || '',r.querySelector('.el-chart-value')?.textContent || '']);

@@ -42,3 +42,9 @@
 .academy-time-segment.tone-3 { fill: var(--theme-ink-soft); }
 .academy-chart-table summary,.academy-filter-menu summary { list-style: none; }
 .academy-chart-table summary::-webkit-details-marker,.academy-filter-menu summary::-webkit-details-marker { display: none; }
+#el-resp-trend { --chart-rest: var(--theme-muted-strong); }
+.academy-time-histogram { margin-block: 1.5rem; }
+.academy-time-histogram figure { margin: 0; }
+.academy-time-histogram ul { list-style: none; padding: 0; display: grid; gap: .5rem; font-variant-numeric: tabular-nums; }
+.academy-time-histogram li { display: grid; grid-template-columns: minmax(6.5rem, auto) minmax(0, 1fr) 3ch; align-items: center; gap: .65rem; }
+.academy-time-histogram li .el-chart-bar { grid-column: auto; }

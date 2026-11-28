@@ -13,7 +13,7 @@ const test = base.extend({
     await new Promise(resolve => socket.close(resolve));
     const origin = 'http://127.0.0.1:' + port;
     const python = existsSync('.venv/bin/python') ? '.venv/bin/python' : 'python3';
-    const child = spawn(python, ['scripts/run_ui_preview.py', '--academy', '--port', String(port)], {stdio:'ignore'});
+    const child = spawn(python, ['scripts/run_ui_preview.py', '--academy-memory', '--port', String(port)], {stdio:'ignore'});
     try {
       await expect.poll(async () => { try { return (await fetch(origin + '/healthz')).status; } catch (_) { return 0; } }).toBe(200);
       await use(origin);

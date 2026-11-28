@@ -360,7 +360,8 @@
     distribution.className = 'academy-time-distribution';
     var totals = stations.map(function (station) { return station.activeSecondsTotal || 0; });
     var total = totals.reduce(function (sum, value) { return sum+value; },0);
-    if (total) {
+    var hasDistribution = totals.filter(function (seconds) { return seconds > 0; }).length > 1;
+    if (hasDistribution) {
       var svg = svgNode('svg',{viewBox:'0 0 100 8',preserveAspectRatio:'none','aria-hidden':'true'});
       var legend = document.createElement('ul');
       var left = 0;
@@ -376,7 +377,7 @@
       caption.textContent = uiLanguage()==='de' ? 'Anteil der gemessenen aktiven Zeit pro Station' : 'Aandeel in de gemeten actieve tijd per station';
       distribution.append(caption,svg,legend);
     }
-    distribution.hidden = !total;
+    distribution.hidden = !hasDistribution;
     timeEl.replaceChildren(title, figures, distribution, list, chartNote(copy('timeNote', { n: summary.timedSessions || active.count })));
   }
 
@@ -402,6 +403,13 @@
     title.id = 'el-resp-trend-title';
     title.setAttribute('translate', 'no');
     title.textContent = copy('trendTitle');
+    if (weeks.length === 1) {
+      var only = weeks[0];
+      var description = copy('weekOf') + ' ' + weekLabel(only.week) + ' · ' + copy('started') + ' ' + only.started + ' · ' + copy('completed') + ' ' + only.completed;
+      if (only.revision) description += ' · v' + only.revision.revision;
+      trendEl.replaceChildren(title, chartNote(description));
+      return;
+    }
     var legend = document.createElement('div');
     legend.className = 'el-trend-legend';
     legend.setAttribute('aria-hidden', 'true');
@@ -636,14 +644,14 @@
           stationGroup.appendChild(stationTitle);
           funnelEl.appendChild(stationGroup);
         }
-        var pct = Math.round((row.reached / maxReached) * 100);
+        var pct = (row.reached / maxReached) * 100;
         var reachRow = chartRow(Model.getLocalized(row.stepTitle, reportLang, courseLang), row.reached, pct);
         if (drops[index]) {
-          var previous = data.funnel[index - 1].reached;
+          var previous = row.previousReached;
           var drop = document.createElement('span');
           drop.className = 'el-chart-drop' + (drops[index] === largestDrop ? ' is-largest' : '');
           drop.title = copy('dropTitle');
-          drop.textContent = '−' + drops[index] + ' (−' + formatPercent(Math.round(100 * drops[index] / Math.max(1, previous))) + ')';
+          drop.textContent = '−' + drops[index] + ' (−' + formatPercent(100 * drops[index] / previous) + ')';
           reachRow.querySelector('.el-chart-value').append(' ', drop);
         }
         var stepLink = document.createElement('button');

@@ -162,10 +162,13 @@ def course_metrics(course, rows, funnel, block_stats):
     previous = None
     for line in funnel:
         sid = line['stepId']
+        measured = [value[sid] for value in times if sid in value]
+        bins = Counter(seconds // 30 * 30 for seconds in measured)
         line.update(continued=len(continued[sid]), previousReached=len(previous) if previous is not None else None,
                     lostFromPrevious=len(previous - visitors[sid]) if previous is not None else None,
                     comments=comments[sid], correctAnswers=scores[sid], gradedAnswers=graded[sid],
-                    time=quartiles(value.get(sid, 0) for value in times))
+                    time=quartiles(measured),
+                    timeHistogram=[{'fromSeconds': start, 'sessionCount': bins[start]} for start in sorted(bins)])
         previous = visitors[sid]
     stations = []
     for module in modules:

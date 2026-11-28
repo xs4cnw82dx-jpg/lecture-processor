@@ -176,3 +176,25 @@ def test_absolute_utc_dates_and_multiple_groups_scope_the_summary_and_export(set
     assert _report(client, cid, scope)['summary']['totalSessions'] == 2
     result = client.get(f'/api/elearning/expeditions/{cid}/responses/export.csv' + scope, headers=auth_headers('owner'))
     assert {r['session_id'] for r in csv.DictReader(io.StringIO(result.data.decode('utf-8-sig')), delimiter=';')} == {'include-one', 'include-two'}
+
+
+def test_step_histograms_group_consenting_measurements_in_half_minutes(setup):
+    client, _ = setup
+    course_id, url = _course(client)
+    for index, seconds in enumerate((0, 1, 29, 30, 59, 60)):
+        body = {'sessionId': f'boundary-{index}', 'cohort': 'a', 'activeTimeDisclosure': 1,
+                'visitedStepIds': ['s1'], 'stepSeconds': {'s1': seconds}}
+        assert _post_pilot_response(client, url, json=body).status_code == 200
+    for cohort, consent in [('a', None), ('b', 1)]:
+        body = {'sessionId': 'extra-session-' + cohort, 'cohort': cohort, 'activeTimeDisclosure': consent,
+                'visitedStepIds': ['s1', 's2'], 'stepSeconds': {'s1': 300, 's2': 90}}
+        assert _post_pilot_response(client, url, json=body).status_code == 200
+    first, second, third = _report(client, course_id, '?cohort=a')['funnel']
+    assert first['timeHistogram'] == [{'fromSeconds': 0, 'sessionCount': 2},
+                                      {'fromSeconds': 30, 'sessionCount': 2},
+                                      {'fromSeconds': 60, 'sessionCount': 1}]
+    assert first['time']['count'] == 5
+    assert second['timeHistogram'] == third['timeHistogram'] == []
+    other = _report(client, course_id, '?cohort=b')['funnel']
+    assert other[0]['timeHistogram'] == [{'fromSeconds': 300, 'sessionCount': 1}]
+    assert other[1]['timeHistogram'] == [{'fromSeconds': 90, 'sessionCount': 1}]
