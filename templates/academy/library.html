@@ -1,5 +1,60 @@
-{% extends 'elearning_dashboard.html' %}
-{% set studio_layout = 'academy/base.html' %}
-{% block platform_styles %}{% endblock %}
-{% block platform_runtime %}{% include 'academy/runtime.html' %}{% endblock %}
+{% extends 'academy/base.html' %}
+{% from '_academy_copy.html' import tr with context %}
+{% block body_attrs %} class="el-library-body academy-body"{% endblock %}
 {% block title %}{{ 'Expeditionen' if academy_locale == 'de' else 'Expedities' }} · xPED Academy{% endblock %}
+{% block head %}
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-studio.css') }}">
+
+  {% include '_academy_foundation.html' %}
+{% endblock %}
+{% block body %}
+  {% include '_academy_header.html' %}
+    <main class="app-shell-page el-dash" id="main-content" tabindex="-1">
+      <header class="el-library-header">
+        <div class="el-library-cover">
+          <div>
+          <h1 class="page-title">{{ tr("Expeditions") }}</h1>
+          <p class="page-lead">{{ tr("Build, translate and share your pain education modules.") }}</p>
+          </div>
+          <img src="{{ url_for('static', filename='images/xped/xped-jan.png') }}" width="175" height="112" alt="">
+        </div>
+        <div class="el-dash-actions" id="el-author-actions" hidden>
+          <a class="btn" id="el-team-link" href="/team" hidden>{{ xped_copy('Team','Team') }}</a>
+          <button type="button" class="btn" id="el-import-json-btn">{{ tr("Import JSON") }}</button>
+          <input type="file" id="el-import-json-input" accept="application/json" hidden>
+          <button type="button" class="btn primary" id="el-new-expedition-btn">{{ tr("New expedition") }}</button>
+        </div>
+      </header>
+
+      <div class="academy-folder-bar" id="academy-folder-bar" hidden>
+        <label for="academy-folder-filter">{{ tr("Folder") }}</label>
+        <select id="academy-folder-filter" class="xped-input"><option value="*">{{ tr("All expeditions") }}</option></select>
+        <button type="button" class="btn small" id="academy-folder-create">{{ tr("New folder") }}</button>
+        <button type="button" class="btn small" id="academy-folder-rename" hidden>{{ tr("Rename folder") }}</button>
+        <button type="button" class="btn small" id="academy-folder-delete" hidden>{{ tr("Delete folder") }}</button>
+      </div>
+
+      <div class="el-dash-search-row">
+        <div id="el-dash-status" class="el-exp-meta" role="status" aria-live="polite">{{ tr("Loading your expeditions…") }}</div>
+        <input type="search" id="el-dash-search" class="xped-input el-dash-search-input" placeholder="{{ tr("Search expeditions…") }}" aria-label="{{ tr("Search expeditions") }}" hidden>
+      </div>
+      <a class="btn" id="el-signin" href="{{ url_for('academy.signin', next=request.full_path.rstrip('?')) }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
+      <button type="button" class="btn small" id="el-retry" hidden>{{ tr("Try again") }}</button>
+      <section class="el-exp-list" id="el-dash-grid" aria-label="{{ tr("Expeditions") }}"></section>
+    </main>
+
+      {% include '_academy_footer.html' %}
+
+  {% include '_academy_folders.html' %}
+
+  {% set show_english = false %}
+  {% include 'elearning/library_dialogs.html' %}
+  {% include 'academy/runtime.html' %}
+  <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+
+  <script src="{{ url_for('static', filename='js/academy-folders.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_dashboard_js) }}"></script>
+{% endblock %}

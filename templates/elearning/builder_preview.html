@@ -1,0 +1,52 @@
+<!-- Mode 3: Full Interactive Learner Preview -->
+  <section class="el-stage" id="el-mode-preview" hidden>
+    <div class="el-stage-bar">
+      <div class="el-btn-row el-preview-controls">
+        <h2>{{ tr("Interactive Preview") }}</h2>
+        <div id="el-preview-lang-host"></div>
+        <div class="el-vp-switch" role="group" aria-label="{{ tr("Preview starting point") }}">
+          <button type="button" class="el-vp-btn is-active" id="el-pv-from-step" aria-pressed="true">{{ tr("Current step") }}</button>
+          <button type="button" class="el-vp-btn" id="el-pv-from-start" aria-pressed="false">{{ tr("Start page") }}</button>
+        </div>
+        <div class="el-vp-switch el-vp-width-switch" role="group" aria-label="{{ tr("Preview width") }}">
+          <button type="button" class="el-vp-btn is-active" id="el-pv-desktop" aria-pressed="true">{{ tr("Available width") }}</button>
+          <button type="button" class="el-vp-btn" id="el-pv-mobile" aria-pressed="false">{{ tr("Phone") }}</button>
+        </div>
+        {% if academy_mode %}{% include 'academy/preview_appearance.html' %}{% endif %}
+        <label class="el-field-check el-pv-peer-toggle">
+          <input type="checkbox" id="el-pv-sample-peers">
+          <span>{{ tr("Sample peer votes") }}</span>
+        </label>
+      </div>
+      <button type="button" class="el-btn el-btn-sm" id="el-preview-reset">{{ tr("Reset preview") }}</button>
+    </div>
+    <div class="el-canvas-frame xped-surface-scope" aria-label="{{ tr("Learner preview at available width") }}" id="el-preview-container" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+  </section>
+
+  <!-- Categorized + Add Block Dialog with Search & Live Preview -->
+  <dialog class="el-dialog el-dialog-wide" id="el-block-picker-dialog" closedby="any" aria-labelledby="el-picker-title">
+    <div class="el-dialog-header">
+      <h2 id="el-picker-title">{{ tr("Add a Block") }}</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="el-picker-search-wrap">
+        <input type="search" id="el-picker-search" class="xped-input" autofocus placeholder="{{ tr("Search blocks (e.g. YouTube, stelling, bronnen, waage, slider)…") }}" aria-label="{{ tr("Search blocks") }}">
+      </div>
+      <div class="el-picker-split">
+        <div id="el-picker-body"></div>
+        <aside class="el-picker-preview-pane" aria-label="{{ tr("Block preview") }}">
+          <button type="button" class="el-btn el-btn-sm" id="el-picker-change">{{ tr("← All blocks") }}</button>
+          <div class="el-picker-preview-head">{{ tr("Learner preview") }}</div>
+          <h3 id="el-picker-preview-heading"></h3>
+          <div id="el-picker-preview" class="xped-surface-scope" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+          <label class="el-field-check" id="el-picker-custom-option" hidden>
+            <input type="checkbox"> <span>{{ tr("Allow learners to add their own steps") }}</span>
+          </label>
+          <button type="button" class="el-btn el-btn-primary" id="el-picker-insert">{{ tr("Add block") }}</button>
+        </aside>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Add Module Recipe Dialog -->

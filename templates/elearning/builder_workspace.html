@@ -1,0 +1,74 @@
+<div id="el-lease-banner" class="el-translate-welcome" hidden>
+    <div>
+      <strong id="el-lease-message">{{ tr("Another collaborator is currently editing.") }}</strong>
+    </div>
+    <button type="button" class="el-btn el-btn-sm" id="el-conflict-download" hidden>{{ tr("Download my draft") }}</button>
+    <button type="button" class="el-btn el-btn-sun el-btn-sm" id="el-takeover-btn">{{ tr("Take Over Editing") }}</button>
+  </div>
+
+  <div id="el-outline-live" class="sr-only" aria-live="polite"></div>
+
+  <!-- Mode 1: Full-Viewport 3-Zone Mentimeter-Style Builder -->
+  <main class="el-workspace" id="el-mode-edit" tabindex="-1" data-pane="canvas">
+    <div class="el-pane-nav" role="group" aria-label="{{ tr("Workspace") }}">
+      <button type="button" class="el-pane-btn" data-pane="outline" aria-controls="el-outline" aria-pressed="false">{{ tr("Outline") }}</button>
+      <button type="button" class="el-pane-btn" data-pane="canvas" aria-controls="el-stage" aria-pressed="true">{{ tr("Canvas") }}</button>
+      <button type="button" class="el-pane-btn" data-pane="inspector" aria-controls="el-inspector" aria-pressed="false">{{ tr("Inspector") }}</button>
+    </div>
+    <aside class="el-outline-rail" id="el-outline" aria-label="{{ tr("Expedition outline") }}">
+      <div class="el-rail-head"><span>{{ tr("Expedition") }}</span></div>
+      <button type="button" class="el-outline-item is-active" id="el-nav-start-page">
+        <span id="el-nav-start-icon"></span>
+        <span class="el-outline-item-text">{{ tr("Start Page") }}</span>
+      </button>
+
+      <div class="el-rail-head">
+        <span>{{ tr("Stations") }}</span>
+        <button type="button" class="el-btn el-btn-sm" id="el-add-module-btn">{{ tr("Add station") }}</button>
+      </div>
+      {% if academy_mode %}
+      <label class="academy-outline-toggle" id="academy-outline-toggle" hidden>
+        <input type="checkbox"> {{ 'Ergebnisse in der Übersicht' if academy_locale == 'de' else 'Resultaten in het overzicht' }}
+      </label>
+      <small id="academy-outline-status" role="status"></small>
+      {% endif %}
+      <div id="el-outline-modules"></div>
+    </aside>
+
+    <section class="el-stage" id="el-stage" aria-label="{{ tr("Live canvas") }}">
+      <div class="el-stage-bar">
+        <span class="el-stage-crumb" id="el-canvas-crumb">{{ tr("Start Page") }}</span>
+        <div class="el-vp-switch" role="group" aria-label="{{ tr("Canvas width") }}">
+          <button type="button" class="el-vp-btn is-active" id="el-vp-desktop" aria-pressed="true">{{ tr("Available width") }}</button>
+          <button type="button" class="el-vp-btn" id="el-vp-mobile" aria-pressed="false">{{ tr("Phone") }}</button>
+        </div>
+      </div>
+
+      <div class="el-canvas-frame xped-surface-scope" aria-label="{{ tr("Editing canvas at available width") }}" id="el-canvas-frame" data-xped-theme="xped-warm-sand">
+        <div id="el-canvas-card" data-i18n-ignore></div>
+      </div>
+
+      <div class="el-stage-footer" id="el-stage-footer" hidden>
+        <div class="el-readability-wrap">
+          <div class="el-readability-bar" id="el-readability-bar"></div>
+        </div>
+        <details class="el-notes-drawer" id="el-notes-drawer">
+          <summary><span id="el-notes-icon"></span><span>{{ tr("Partner notes") }}</span></summary>
+          <div class="el-notes-drawer-body">
+            <label for="el-author-notes">{{ tr("Editors and translators can read these notes.") }}</label>
+            <textarea id="el-author-notes" class="xped-textarea" rows="3" placeholder="{{ tr("Leave a note for your co-editors…") }}"></textarea>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <aside class="el-inspector" id="el-inspector" aria-label="{{ tr("Inspector") }}">
+      <div class="el-insp-tabs" role="tablist" aria-label="{{ tr("Inspector sections") }}">
+        <button type="button" role="tab" class="el-insp-tab is-active" data-insp="block" id="el-insp-block" aria-controls="el-inspector-body" tabindex="0" aria-selected="true">{{ tr("Settings") }}</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="step" id="el-insp-step" aria-controls="el-inspector-body" tabindex="-1" aria-selected="false">{{ tr("Station") }}</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="theme" id="el-insp-theme" aria-controls="el-inspector-body" tabindex="-1" aria-selected="false">{{ tr("Design") }}</button>
+        <button type="button" role="tab" class="el-insp-tab" data-insp="languages" id="el-insp-languages" aria-controls="el-inspector-body" tabindex="-1" aria-selected="false">{{ tr("Languages") }}</button>
+      </div>
+      <div id="el-inspector-body" role="tabpanel" aria-labelledby="el-insp-block"></div>
+    </aside>
+  </main>

@@ -20,6 +20,7 @@
   var toDate = dates.elements.to;
   var chips = document.getElementById('academy-filter-chips');
   var langSelect = document.getElementById('el-resp-lang');
+  var pageTitle = document.title;
   var periodSelect = document.getElementById('el-resp-period');
   var timeEl = document.getElementById('el-resp-time');
   var trendEl = document.getElementById('el-resp-trend');
@@ -600,6 +601,7 @@
       var courseLang = data.expedition.defaultLanguage || 'nl';
       var reportLang = langSelect.value || document.documentElement.lang || courseLang;
       label.textContent = data.expedition.title || '';
+      document.title = label.textContent ? label.textContent + ' · ' + pageTitle : pageTitle;
       document.dispatchEvent(new CustomEvent('academy:course-title',{detail:label.textContent}));
       renderFilterControls(data.cohorts || []);
       labelPeriods();
@@ -885,6 +887,7 @@
     retry.hidden = true;
     document.getElementById('el-signin').hidden = !!user;
     label.textContent = '';
+    document.title = pageTitle;
     document.dispatchEvent(new CustomEvent('academy:course-title',{detail:''}));
     lastAnalytics = null;
     window.Xped.reportDetails.reset();

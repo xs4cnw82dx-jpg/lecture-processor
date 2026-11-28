@@ -180,7 +180,7 @@ def public_player_page(share_token: str):
         if player_error:
             return render_template('academy/learner_error.html', academy_player_error=player_error), player_error['status']
     return render_template(
-        'elearning_player.html',
+        'academy/player.html' if current_app.config.get('XPED_ACADEMY') else 'elearning_player.html',
         share_token=share_token,
         academy_initial_course=initial_course,
         elearning_model_js=runtime.resolve_js_asset('js/elearning-model.js'),

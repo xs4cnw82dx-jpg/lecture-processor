@@ -1,0 +1,32 @@
+{% from '_academy_copy.html' import tr with context %}
+<!DOCTYPE html>
+<html lang="{{ academy_locale }}" data-academy-player>
+<head>
+  <meta charset="UTF-8">
+  {% include '_academy_locale_head.html' %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy-base.css') }}">
+  <title>{{ academy_initial_course.title|default('xPEDitie Pijn',true) }} · xPED Academy</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/xped-theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-player.css') }}">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/academy.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/elearning-academy-experience.css') }}">
+  <script src="{{ url_for('static', filename='js/academy-controls.js') }}" defer></script>
+
+</head>
+<body class="el-player-body xped-surface-scope" data-site-title="xPED Academy" data-share-token="{{ share_token }}" data-xped-theme="xped-warm-sand" data-text-scale="md">
+  {% include 'elearning/player_controls.html' %}
+
+  <footer class="academy-player-footer"><a href="{{ url_for('privacy') }}">{{ tr("Privacy") }}</a></footer>
+
+  {% include 'elearning/player_route_dialog.html' %}
+  {% if academy_initial_course %}<script type="application/json" id="academy-initial-course">{{ academy_initial_course|tojson }}</script>{% endif %}
+  <script src="{{ url_for('static', filename=elearning_model_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_icons_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_route_map_js) }}"></script>
+  <script src="{{ url_for('static', filename=elearning_blocks_js) }}"></script>
+  <script src="{{ url_for('static', filename='js/elearning-step-timer.js') }}"></script>
+  <script src="{{ url_for('static', filename=elearning_player_js) }}"></script>
+</body>
+</html>

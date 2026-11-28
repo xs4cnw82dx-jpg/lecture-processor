@@ -1,0 +1,212 @@
+<dialog class="el-dialog" id="el-module-recipe-dialog" closedby="any" aria-labelledby="el-recipe-title">
+    <div class="el-dialog-header">
+      <h2 id="el-recipe-title">{{ tr("Add Station") }}</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="el-field">
+        <label for="el-new-station-name">{{ tr("Station Name") }}</label>
+        <input type="text" id="el-new-station-name" class="xped-input" maxlength="200" placeholder="{{ tr("Station 1") }}">
+      </div>
+      <div class="el-picker-grid el-recipe-grid">
+        <button type="button" class="el-picker-card" data-recipe="blank" data-recipe-icon="plus">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>{{ tr("Blank Station") }}</strong>
+            <span>{{ tr("One clean empty step to design from scratch.") }}</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="myth-buster" data-recipe-icon="xCircle">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>{{ tr("Myth-Buster Station") }}</strong>
+            <span>{{ tr("Myth vs. Fact + progressive takeaway reveal + reflection.") }}</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="video-reflection" data-recipe-icon="video">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>{{ tr("Video & Reflection") }}</strong>
+            <span>{{ tr("Short YouTube/Vimeo explainer + key takeaway + reflection.") }}</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="ask-teach-reflect" data-recipe-icon="spark">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>{{ tr("Ask → Teach → Reflect") }}</strong>
+            <span>{{ tr("Three ready slots: Myth/Fact, Video & Callout, Reflection.") }}</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="pain-science" data-recipe-icon="compass">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>{{ tr("Pain Science Explorer") }}</strong>
+            <span>{{ tr("Biopsychosocial Triad, Slider, and Scientific Sources.") }}</span>
+          </div>
+        </button>
+        <button type="button" class="el-picker-card" data-recipe="action-balance" data-recipe-icon="scale">
+          <span class="el-picker-ico"></span>
+          <div class="el-picker-card-body">
+            <strong>{{ tr("Balance & Action Plan") }}</strong>
+            <span>{{ tr("Draagkracht/Draaglast Balance Scale + Personal Mini-Plan.") }}</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Share, QR Code & Collaborator / German Translator Dialog -->
+  <dialog class="el-dialog" id="el-share-dialog" closedby="any" aria-labelledby="el-share-title">
+    <div class="el-dialog-header">
+      <h2 id="el-share-title">{{ tr("Share expedition") }}</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div id="el-share-loading" class="el-share-loading" hidden>
+        <p class="xped-caption" id="el-share-loading-msg">{{ tr("Loading sharing settings…") }}</p>
+        <button type="button" class="el-btn el-btn-sm" id="el-share-retry-btn" hidden>{{ tr("Retry") }}</button>
+      </div>
+      <div id="el-share-content">
+        <div role="status" id="el-share-status"></div>
+        <div class="el-share-tabs" role="tablist" aria-label="{{ tr("Share audience") }}">
+          <button type="button" role="tab" class="el-share-tab is-active" id="el-tab-learners" aria-controls="el-panel-learners" data-share-tab="learners" aria-selected="true">{{ tr("Learners") }}</button>
+          <button type="button" role="tab" class="el-share-tab" id="el-tab-collaborators" aria-controls="el-panel-collaborators" data-share-tab="collaborators" aria-selected="false">{{ tr("Collaborators") }}</button>
+          <button type="button" role="tab" class="el-share-tab" id="el-tab-translators" aria-controls="el-panel-translators" data-share-tab="translators" aria-selected="false">{{ tr("Translators") }}</button>
+        </div>
+
+        <section class="el-share-panel" id="el-panel-learners" role="tabpanel" aria-labelledby="el-tab-learners" data-share-panel="learners">
+          <p class="xped-caption">{{ tr("Anyone with an active link can take this expedition without signing in.") }}</p>
+          <label class="el-field-check">
+            <input type="checkbox" id="el-share-enabled">
+            <span>{{ tr("Enable learner link") }}</span>
+          </label>
+
+          <div class="el-share-inactive-card" id="el-share-inactive-card" hidden>
+            <strong>{{ tr("This expedition is currently private.") }}</strong>
+            <p class="xped-caption">{{ tr("Enable the learner link to invite learners.") }}</p>
+          </div>
+
+          <div class="el-share-box" id="el-share-active-box">
+            <div>
+              <div class="el-field" id="el-share-cohort-field" hidden>
+                <label for="el-share-cohort">{{ tr("Optional pilot group") }}</label>
+                <input type="text" id="el-share-cohort" placeholder="pilot-1" maxlength="48" pattern="[A-Za-z0-9_.\-]+" aria-describedby="el-share-cohort-error">
+                <p class="el-insp-error" id="el-share-cohort-error" hidden>{{ tr("Use letters A–Z, digits, dots, underscores or hyphens for the group name.") }}</p>
+              </div>
+              <div class="el-field">
+                <label for="el-share-url">{{ tr("Shareable URL") }}</label>
+                <input type="text" id="el-share-url" readonly>
+              </div>
+              <div class="el-btn-row">
+                <span class="el-copy-wrap">
+                  <button type="button" class="el-btn el-btn-primary el-btn-sm el-copy-btn" command="--copy" commandfor="el-share-url" aria-label="{{ tr("Copy shareable learner link") }}">{{ tr("Copy Link") }}</button>
+                  <span class="el-copy-tip" role="status"></span>
+                </span>
+                <a href="#" target="_blank" rel="noopener" class="el-btn el-btn-sm" id="el-share-open-link">{{ tr("Open Link") }}</a>
+                {% if not academy_mode %}<button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">{{ tr("Reset Link") }}</button>{% endif %}
+              </div>
+            </div>
+            <div class="el-qr-box">
+              <div id="el-share-qr"></div>
+              <p class="el-qr-cohort-note" id="el-share-qr-cohort" hidden></p>
+              <button type="button" class="el-btn el-btn-sm" id="el-share-qr-download">{{ tr("Download QR") }}</button>
+            </div>
+          </div>
+
+          <label class="el-field-check">
+            <input type="checkbox" id="el-share-collect-responses" aria-describedby="el-share-collection-info" aria-controls="el-share-pilot-options">
+            <span>{{ tr("Collect responses for a pilot") }}</span>
+          </label>
+          <p id="el-share-collection-info" class="xped-caption">{{ tr("For self-study, leave this off. In a pilot, learners choose whether to share before the first question.") }}</p>
+          <div id="el-share-pilot-options" hidden>
+            <label class="el-field-check">
+              <input type="checkbox" id="el-share-peer-results">
+              <span>{{ tr("Show anonymized peer results on polls & sliders") }}</span>
+            </label>
+            <label class="el-field-check">
+              <input type="checkbox" id="el-share-pilot-feedback">
+              <span>{{ tr("Include short Pilot Usability Feedback card at the end") }}</span>
+            </label>
+            <label class="el-field-check">
+              <input type="checkbox" id="el-share-step-comments">
+              <span>{{ tr("Enable Physio / PhD reviewer comments on each step") }}</span>
+            </label>
+          </div>
+        {% if academy_mode %}
+          <details class="academy-link-reset" id="academy-link-reset" hidden>
+            <summary>{{ 'Gefahrenzone' if academy_locale == 'de' else 'Gevarenzone' }}</summary>
+            <p>{{ 'Ein neuer Link macht den bisherigen Link und alle gedruckten QR-Codes ungültig.' if academy_locale == 'de' else 'Als je een nieuwe link maakt, vervallen de huidige link en alle gedrukte QR-codes.' }}</p>
+            <button type="button" class="el-btn el-btn-sm" id="el-share-rotate-btn">{{ 'Link erneuern' if academy_locale == 'de' else 'Link vernieuwen' }}</button>
+          </details>
+          {% endif %}
+        </section>
+
+        <section class="el-share-panel" id="el-panel-collaborators" role="tabpanel" aria-labelledby="el-tab-collaborators" data-share-panel="collaborators" hidden>
+          <p class="xped-caption">{{ tr("Co-Editors can edit structure and content with their account. Translators can edit localized text only.") }}</p>
+          <div class="el-share-inline-row">
+            <input type="email" aria-label="{{ tr("Collaborator email") }}" id="el-member-email" class="xped-input" placeholder="partner@university.nl">
+            <select class="xped-input" id="el-member-role" aria-label="{{ tr("Collaborator role") }}">
+              <option value="edit">{{ tr("Co-Editor") }}</option>
+              <option value="translate">{{ tr("Translator") }}</option>
+            </select>
+            <button type="button" class="el-btn el-btn-primary el-btn-sm" id="el-add-member-btn">{{ tr("Add") }}</button>
+          </div>
+          <div id="el-members-list"></div>
+        </section>
+
+        <section class="el-share-panel" id="el-panel-translators" role="tabpanel" aria-labelledby="el-tab-translators" data-share-panel="translators" hidden>
+          <p class="xped-caption">{{ tr("Direct link for an external editor (no account needed). Locked to their assigned target language.") }}</p>
+          <div class="el-share-inline-row">
+            <input type="text" aria-label="{{ tr("Translator link label") }}" id="el-grant-label" class="xped-input" placeholder="{{ tr("Recipient name") }}">
+            <select class="xped-input" id="el-grant-lang" aria-label="{{ tr("Target translation language") }}">
+              <option value="de">DE · Deutsch</option>{% if not academy_mode %}<option value="en">EN · English</option>{% endif %}<option value="nl">NL · Nederlands</option>
+            </select>
+            <button type="button" class="el-btn el-btn-sm" id="el-create-grant-btn">{{ tr("Create Link") }}</button>
+          </div>
+          <div id="el-grants-list"></div>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog" id="el-tr-preview-dialog" closedby="any" aria-labelledby="el-tr-sheet-title">
+    <div class="el-dialog-header">
+      <h2 id="el-tr-sheet-title">{{ tr("Live Slide Preview") }}</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <div class="xped-surface-scope" id="el-tr-sheet-stage" data-i18n-ignore data-xped-theme="xped-warm-sand"></div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog el-dialog-sm" id="el-confirm-dialog" aria-labelledby="el-confirm-title">
+    <div class="el-dialog-header">
+      <h2 id="el-confirm-title">{{ tr("Confirm action") }}</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <p id="el-confirm-message" class="xped-caption"></p>
+      <div class="el-btn-row">
+        <button type="button" class="el-btn" id="el-confirm-cancel" autofocus>{{ tr("Cancel") }}</button>
+        <button type="button" class="el-btn el-btn-danger" id="el-confirm-ok">{{ tr("Confirm") }}</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="el-dialog" id="el-unused-media" aria-labelledby="el-unused-title">
+    <div class="el-dialog-header">
+      <h2 id="el-unused-title">{{ tr("Free unused media") }}</h2>
+      <form method="dialog"><button type="submit" class="el-icon-btn" aria-label="{{ tr("Close") }}">×</button></form>
+    </div>
+    <div class="el-dialog-body">
+      <p class="xped-caption" id="el-unused-help">{{ tr("These files are unused in the saved expedition. Removing a file also clears undo steps that depend on it.") }}</p>
+      <div id="el-unused-files" class="el-unused-files" aria-describedby="el-unused-help"></div>
+      <p id="el-unused-status" class="xped-caption" role="status"></p>
+      <div class="el-btn-row">
+        <button type="button" class="el-btn" id="el-unused-cancel" autofocus>{{ tr("Cancel") }}</button>
+        <button type="button" class="el-btn el-btn-danger" id="el-unused-remove" disabled>{{ tr("Remove selected files") }}</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="el-toast" id="el-toast" role="status" aria-live="polite" hidden></div>
