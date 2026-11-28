@@ -21,12 +21,27 @@ def unavailable(_error):
 
 @collaboration.get('/courses/<expedition_id>/workspace')
 def workspace(expedition_id):
-    _, course, role, _, target = studio.access(get_runtime(), expedition_id, required='translate')
+    runtime = get_runtime()
+    _, course, role, _, target = studio.access(runtime, expedition_id, required='translate')
+    user = studio.identity(runtime)
     language = target or ('nl' if course.get('defaultLanguage') == 'de' else 'de')
     rows = model.extract_translation_rows(course, course.get('defaultLanguage', 'nl'), language)
+    stations = []
+    for station in course.get('modules') or []:
+        steps = station.get('steps') or []
+        stations.append({'id': station['id'], 'title': station.get('title', {}), 'steps': len(steps),
+                         'firstStepId': steps[0]['id'] if steps else ''})
+    overview = {'title': course.get('title', ''), 'role': role, 'modules': stations,
+                'updated_at': course.get('updated_at'), 'defaultLanguage': course.get('defaultLanguage', 'nl')}
+    if role != 'translate':
+        overview['share'] = {'enabled': bool((course.get('share') or {}).get('enabled'))}
+    translations = [{'key': row['key'], 'source': row['source'] or row['nl'], 'target': row['target'],
+                     'status': row['status']} for row in rows]
     return jsonify(
-        course=studio._public_studio_view(course, role, target),
-        coverage=model.compute_language_coverage(course), target=language, translations=rows,
+        course=overview, coverage=model.compute_language_coverage(course), cover=model.course_cover(course),
+        target=language, translations=translations,
+        canCreate=bool(user and studio._can_author(runtime, user)),
+        studioAdmin=bool(user and studio._is_studio_admin(runtime, user)),
         html=render_template('academy/course_controls.html', role=role, expedition_id=expedition_id),
     )
 

@@ -249,10 +249,6 @@ def _summary_card(exp: dict, role: str) -> dict:
     modules = exp.get('modules') or []
     step_count = sum(len(m.get('steps') or []) for m in modules)
     share = exp.get('share') or {}
-    start_page = exp.get('startPage') or {}
-    cover_media = model.safe_media_ref((start_page.get('heroMediaOverrides') or {}).get(exp.get('defaultLanguage')))
-    if cover_media['kind'] == 'none':
-        cover_media = model.safe_media_ref(start_page.get('heroMedia'))
     return {
         'id': exp['id'],
         'title': exp.get('title', 'Untitled Expedition'),
@@ -266,7 +262,7 @@ def _summary_card(exp: dict, role: str) -> dict:
         'collectResponses': model.collects_responses(share),
         'shareEnabled': bool(share.get('enabled') and not exp.get('deleted')),
         'shareToken': share.get('token', '') if role in ('owner', 'edit') else '',
-        'coverMedia': cover_media,
+        'coverMedia': model.course_cover(exp),
         'languageCoverage': model.compute_language_coverage(exp),
         'updatedAt': exp.get('updated_at', 0),
         'createdAt': exp.get('created_at', 0),

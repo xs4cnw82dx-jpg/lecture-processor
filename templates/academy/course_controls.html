@@ -1,5 +1,11 @@
 {% from 'academy/_collaboration_macros.html' import say, switch with context %}
-<header class="xc-page-heading"><div><p id="xc-state-mark" class="xc-status"></p><h1 id="xc-title" translate="no"></h1></div><a class="btn primary" id="xc-edit" href="{{ url_for('academy.builder', expedition_id=expedition_id) }}">{{ say('Bewerken','Bearbeiten') if role != 'translate' else say('Vertalen','Übersetzen') }}</a></header>
+<header class="xc-page-heading xc-course-heading">
+  <div class="xc-course-intro"><p id="xc-state-mark" class="xc-status"></p><h1 id="xc-title" translate="no"></h1>
+    <div class="xc-route-summary"><span id="xc-count"></span><span id="xc-strip"></span></div>
+    <a class="btn primary" id="xc-edit" href="{{ url_for('academy.builder', expedition_id=expedition_id) }}">{{ say('Bewerken','Bearbeiten') if role != 'translate' else say('Vertalen','Übersetzen') }}</a>
+  </div>
+  <div id="xc-cover" class="xc-course-cover" hidden><img id="xc-cover-image" alt="" decoding="async"></div>
+</header>
 <nav class="xc-tabs" aria-label="{{ say('Expeditiepagina’s','Expeditionsseiten') }}">
   <a href="#overzicht" data-view="overzicht">{{ say('Overzicht','Übersicht') }}</a>
   {% if role != 'translate' %}<a href="{{ url_for('academy.report', expedition_id=expedition_id) }}">{{ say('Resultaten','Ergebnisse') }}</a>
@@ -8,7 +14,7 @@
   {% if role == 'owner' %}<a href="#instellingen" data-view="instellingen">{{ say('Instellingen','Einstellungen') }}</a>{% endif %}
 </nav>
 <section id="xc-overzicht" class="xc-panel" hidden>
-  <div class="xc-overview"><section class="xc-route-card"><h2>{{ say('De route','Die Route') }}</h2><p id="xc-count"></p><div id="xc-strip"></div><ol id="xc-stations"></ol></section>
+  <div class="xc-overview"><section class="xc-route-card"><h2>{{ say('De route','Die Route') }}</h2><ol id="xc-stations"></ol></section>
   <section class="xc-metadata"><h2>{{ say('Over deze expeditie','Über diese Expedition') }}</h2><dl id="xc-meta"></dl></section></div>
 </section>
 {% if role != 'translate' %}<section id="xc-delen" class="xc-panel" hidden>

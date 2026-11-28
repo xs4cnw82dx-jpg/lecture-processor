@@ -61,6 +61,8 @@ for (const width of [390, 1440]) {
     await page.goto(url);
     await expect(page.getByRole('heading',{name:course.title})).toBeVisible();
     await expect(page.locator('#xc-stations li')).toHaveCount(3);
+    await expect(page.locator('#xc-cover img')).toHaveAttribute('src', course.startPage.heroMedia.staticPath);
+    await expect(page.locator('#xc-cover img')).toBeVisible();
     await snapshots('hub');
     await page.getByRole('link',{name:'Delen en toegang',exact:true}).click();
     const enabled = page.getByRole('switch',{name:/Deelnemerslink actief/});
@@ -69,11 +71,12 @@ for (const width of [390, 1440]) {
     const shareURL = await page.locator('#xc-learner-link a').getAttribute('href');
     const linkResponse = await page.request.get(shareURL); expect(linkResponse.status()).toBe(200);
     await page.locator('#xc-learner-link').getByRole('button',{name:'QR',exact:true}).click();
+    const qr = page.getByRole('dialog', { name: /QR-code|QR-Code/ });
     const dialog = page.locator('#xc-dialog');
     const download = page.waitForEvent('download');
-    await dialog.getByRole('button',{name:'PNG downloaden'}).click();
+    await qr.getByRole('button',{name:'PNG downloaden'}).click();
     expect((await download).suggestedFilename()).toBe('xped-qr.png');
-    await dialog.getByRole('button',{name:'Sluiten',exact:true}).last().click();
+    await qr.getByRole('button',{name:'Sluiten',exact:true}).last().click();
 
     await page.getByRole('button',{name:'Link maken',exact:true}).click();
     await dialog.getByLabel('Naam van de ontvanger').fill('Vertaalpartner');
@@ -135,6 +138,7 @@ test('team assignments grant actual scoped author and translator access', async 
     await translator.goto(origin + '/expedities/' + course.id);
     await expect(translator.getByRole('link',{name:'Vertalen',exact:true})).toHaveAttribute('href', /modus=vertalen&taal=de/);
     await expect(translator.getByRole('heading',{name:'Vertaling naar DE'})).toBeVisible();
+    await expect(translator.locator('.xc-translation-action a').first()).toHaveAttribute('href', /modus=vertalen.*veld=/);
     await expect(translator.getByRole('link',{name:'Delen en toegang'})).toHaveCount(0);
     await translator.goto(origin + '/team');
     await expect(translator.getByText('Je hebt geen toegang tot deze pagina.')).toBeVisible();
