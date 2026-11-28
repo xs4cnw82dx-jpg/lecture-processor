@@ -58,6 +58,13 @@
   --ac-scrim: rgb(6 41 64 / 38%);
   --ac-ring: 0 0 0 3px rgb(0 112 184 / 18%);
   --ac-ease: cubic-bezier(.2, .8, .2, 1);
+  /* Item 85: one set of durations for hover/press, popovers and dialogs. */
+  --ac-motion-fast: 120ms;
+  --ac-motion-medium: 180ms;
+  --ac-motion-slow: 240ms;
+  /* Item 86: one focus ring for every interactive element. */
+  --ac-focus-width: 2px;
+  --ac-focus-offset: 2px;
 
   /* Type */
   --ac-type-caption: 12px;
@@ -188,7 +195,7 @@
   font-size: 14px;
   line-height: 1.4;
   box-shadow: var(--ac-shadow-raised);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color var(--ac-motion-fast) ease, box-shadow var(--ac-motion-fast) ease;
 }
 [data-product="academy"] :is(.xped-input, .el-field :is(input, select, textarea), .academy-auth input)::placeholder { color: var(--theme-muted); opacity: .8; }
 [data-product="academy"] :is(.xped-input, .el-field :is(input, select, textarea), .academy-auth input):hover { border-color: var(--btn-hover-border); }
@@ -248,7 +255,7 @@
   box-shadow: var(--ac-shadow-popover);
   transform: translateY(-3px) scale(.985);
   transform-origin: top center;
-  transition: opacity 140ms var(--ac-ease), transform 180ms var(--ac-ease), visibility 0s 180ms;
+  transition: opacity var(--ac-motion-fast) var(--ac-ease), transform var(--ac-motion-medium) var(--ac-ease), visibility 0s var(--ac-motion-medium);
 }
 [data-product="academy"] .app-select .app-select-menu.visible { transform: none; }
 [data-product="academy"] .app-select .app-select-item {
@@ -449,7 +456,7 @@
   color: var(--ac-on-navy-muted);
   font-size: 14px;
   font-weight: 500;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--ac-motion-fast) ease, color var(--ac-motion-fast) ease;
 }
 [data-product="academy"] .academy-header .academy-nav details.academy-preferences > summary:hover,
 [data-product="academy"] .academy-header .academy-nav details.academy-preferences[open] > summary,
@@ -521,7 +528,7 @@
 [data-product="academy"] .el-exp-row {
   gap: 8px 20px;
   padding: 14px 16px 14px 18px;
-  transition: background 120ms ease;
+  transition: background var(--ac-motion-fast) ease;
 }
 [data-product="academy"] .el-exp-row + .el-exp-row { border-top-color: var(--theme-line-soft); }
 [data-product="academy"] .el-exp-row:hover { background: color-mix(in srgb, var(--theme-surface-soft) 55%, var(--theme-surface)); }
@@ -607,7 +614,7 @@
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--ac-motion-fast) ease, color var(--ac-motion-fast) ease;
 }
 [data-product="academy"] .el-action-link:hover { background: var(--theme-surface-soft); color: var(--theme-ink); }
 [data-product="academy"] .el-exp-card-actions .el-dd-trigger {
@@ -762,7 +769,7 @@
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+  transition: background var(--ac-motion-fast) ease, color var(--ac-motion-fast) ease, box-shadow var(--ac-motion-fast) ease;
 }
 [data-product="academy"] :is(.el-mode-tab, .el-vp-btn, .el-insp-tab):hover { color: var(--theme-ink); }
 [data-product="academy"] :is(.el-mode-tab.is-active, .el-vp-btn.is-active, .el-insp-tab.is-active) {
@@ -821,7 +828,7 @@
     box-shadow: var(--ac-shadow-popover);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 120ms ease;
+    transition: opacity var(--ac-motion-fast) ease;
   }
   [data-product="academy"] .xped-hero-highlights li:is(:hover, :focus-within) > .xped-hl-tools { opacity: 1; pointer-events: auto; }
 }
@@ -931,3 +938,21 @@
 }
 
 [data-product="academy"] .el-picker-preview-head { text-transform:none; letter-spacing:normal; font-size:var(--ac-type-label); }
+
+/* Item 86: one visible focus ring, in brand blue on light surfaces and mint on navy. */
+[data-product="academy"] :is(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: var(--ac-focus-width) solid var(--focus-ring);
+  outline-offset: var(--ac-focus-offset);
+}
+[data-product="academy"] :is(.academy-header, .ac-rail, .el-player-header) :is(a, button, summary, [tabindex]):focus-visible { outline-color: var(--ac-mint); }
+
+/* Item 36: tab rows scroll instead of wrapping, with a fade on each edge that hides more tabs. */
+[data-product="academy"] .academy-tab-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; scroll-padding-inline: 24px; }
+[data-product="academy"] .academy-tab-row::-webkit-scrollbar { display: none; }
+[data-product="academy"] .academy-tab-row > * { flex: none; }
+[data-product="academy"] .academy-tab-row.academy-tabs-end { -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent); mask-image: linear-gradient(to right, black calc(100% - 32px), transparent); }
+[data-product="academy"] .academy-tab-row.academy-tabs-start { -webkit-mask-image: linear-gradient(to right, transparent, black 32px); mask-image: linear-gradient(to right, transparent, black 32px); }
+[data-product="academy"] .academy-tab-row.academy-tabs-start.academy-tabs-end { -webkit-mask-image: linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent); }
+@media (max-width: 720px) {
+  [data-product="academy"] nav.xc-tabs.academy-tab-row { flex-wrap: nowrap; }
+}

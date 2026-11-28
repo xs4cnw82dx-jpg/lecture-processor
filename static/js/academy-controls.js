@@ -136,6 +136,57 @@
     root.addEventListener('resize', close);
   }
 
+  // Item 36: a scrolling tab row shows which edges hide more tabs, and keeps the current tab in view.
+  const tabRowSelector = 'nav.xc-tabs, [role="tablist"]';
+  function syncTabEdges(row) {
+    const max = row.scrollWidth - row.clientWidth;
+    const start = Math.abs(row.scrollLeft);
+    row.classList.toggle('academy-tabs-start', max > 1 && start > 1);
+    row.classList.toggle('academy-tabs-end', max > 1 && start < max - 1);
+  }
+  function watchTabRow(row) {
+    if (row.dataset.academyTabs) return;
+    row.dataset.academyTabs = '';
+    row.classList.add('academy-tab-row');
+    row.addEventListener('scroll', () => syncTabEdges(row), { passive: true });
+    if (root.ResizeObserver) new root.ResizeObserver(() => syncTabEdges(row)).observe(row);
+    const current = row.querySelector('[aria-current], [aria-selected="true"], .is-active');
+    if (current && row.scrollWidth > row.clientWidth) current.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    syncTabEdges(row);
+  }
+  function initTabRows(scope) {
+    if (!studio) return;
+    const rows = [...scope.querySelectorAll(tabRowSelector)];
+    if (scope.matches?.(tabRowSelector)) rows.push(scope);
+    rows.forEach(watchTabRow);
+  }
+
+  // Item 41: typing in an open action menu moves to the next item that starts with those letters.
+  function initMenuTypeahead() {
+    let current;
+    let letters = '';
+    let lastAt = 0;
+    doc.addEventListener('keydown', event => {
+      if (event.key.length !== 1 || event.key === ' ' || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+      const menu = event.target.closest?.('[role="menu"]');
+      if (!menu) return;
+      const lang = doc.documentElement.lang;
+      const now = Date.now();
+      const letter = event.key.toLocaleLowerCase(lang);
+      if (current !== menu || now - lastAt > 700 || letters === letter) letters = '';
+      current = menu;
+      lastAt = now;
+      letters += letter;
+      const items = [...menu.querySelectorAll('[role="menuitem"]:not([disabled]):not([aria-disabled="true"])')];
+      const previous = items.indexOf(doc.activeElement);
+      const ordered = letters.length === 1 ? items.slice(previous + 1).concat(items.slice(0, previous + 1)) : items;
+      const match = ordered.find(item => item.textContent.trim().toLocaleLowerCase(lang).startsWith(letters));
+      if (!match) return;
+      event.preventDefault();
+      match.focus();
+    });
+  }
+
   // A station per node; real step counts and measured reach are optional.
   function routeStrip(stations, options = {}) {
     const strip = doc.createElement('span');
@@ -160,9 +211,13 @@
     enhanceSelects(doc);
     if (studio) {
       initSelectTypeahead();
+      initMenuTypeahead();
+      initTabRows(doc);
       new MutationObserver(changes => {
         for (const change of changes) for (const node of change.addedNodes) {
-          if (node.nodeType === 1 && !node.closest('.app-select-upgraded')) enhanceSelects(node);
+          if (node.nodeType !== 1) continue;
+          if (!node.closest('.app-select-upgraded')) enhanceSelects(node);
+          initTabRows(node);
         }
       }).observe(doc.body, { childList: true, subtree: true });
     }
