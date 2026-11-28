@@ -80,6 +80,7 @@ def test_learners_get_only_complete_reviewed_languages_and_may_request_an_offere
     assert page.get('lang') == 'nl'
     data = json.loads(page.get_element_by_id('academy-initial-course').text)
     assert data['enabledLanguages'] == ['nl']
+    assert data['startPage']['title'] == {'nl': 'Voorbeeld'}
     assert store.get('elearning_expeditions/course')['startPage']['title']['en'] == 'Historical text'
     course['startPage']['title']['nl'] = ''
     store.put('elearning_expeditions/course', course)
