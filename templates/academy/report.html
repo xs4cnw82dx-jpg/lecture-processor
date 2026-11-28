@@ -1,5 +1,6 @@
 {% extends 'academy/base.html' %}
 {% from '_academy_copy.html' import tr with context %}
+{% from 'academy/_loading.html' import loading %}
 {% block body_attrs %} class="el-library-body academy-body" data-expedition-id="{{ expedition_id }}"{% endblock %}
 {% block title %}{{ 'Ergebnisse' if academy_locale == 'de' else 'Resultaten' }} · xPED Academy{% endblock %}
 {% block head %}
@@ -51,9 +52,11 @@
       </header>
 
       <div class="academy-filter-chips" id="academy-filter-chips" hidden></div>
-      <div id="el-resp-status" role="status">{{ tr("Loading responses…") }}</div>
+      <div class="ac-report-progress" aria-hidden="true"></div>
+      <div id="el-resp-status" role="status"></div>
       <button class="btn small" id="el-resp-retry" type="button" hidden>{{ tr("Try again") }}</button>
       <a class="btn" id="el-signin" href="{{ url_for('academy.signin', next=request.full_path.rstrip('?')) }}" data-sign-in-return hidden>{{ tr("Sign in") }}</a>
+      {{ loading('report') }}
       <div id="el-response-report" hidden>
       <section class="el-exp-card el-split-card" id="el-resp-kpis" aria-labelledby="el-resp-kpis-title"></section>
 

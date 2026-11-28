@@ -121,3 +121,15 @@ test('authors can review pending translations and see their own private cover af
   await expect.poll(()=>image.evaluate(img => img.currentSrc.startsWith('blob:') && img.naturalWidth)).toBe(1);
   expect(requests).toEqual(['Bearer academy-preview-token']);
 });
+
+test('five populated course rows fit beneath the summary at desktop size', async ({page,academyOrigin}) => {
+  await page.setViewportSize({width:1440,height:900});
+  const courses = ['Pijn begrijpen','Bewegen met vertrouwen','Slapen en rust','Herstelmomenten','Ruimte voor adem']
+    .map((title,i) => course(String(i),title));
+  await page.route('**/api/academy/overview*',route => route.fulfill({json:overview(courses)}));
+  await page.goto(academyOrigin);
+  const fifth = page.locator('#ao-rows tr').nth(4);
+  await expect(fifth).toBeVisible();
+  const row = await fifth.boundingBox();
+  expect(row.y + row.height).toBeLessThanOrEqual(900);
+});
