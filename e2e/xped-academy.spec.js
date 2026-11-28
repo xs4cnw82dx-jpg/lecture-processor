@@ -212,7 +212,7 @@ for (const layout of [
     await dialog.getByRole('button', { name: 'Opslaan' }).click();
     await expect(filter.locator('option:checked')).toHaveText('Archive');
     await choose(folderTrigger, 'Te beoordelen');
-    await page.getByRole('button', { name: 'Meer acties for ' + course.title }).click();
+    await page.getByRole('button', { name: 'Meer acties voor ' + course.title }).click();
     await page.getByRole('menuitem', { name: 'Naar map verplaatsen' }).click();
     await choose(dialog.locator('#academy-folder-destination-button'), 'Archive');
     await dialog.getByRole('button', { name: 'Verplaatsen', exact: true }).click();
